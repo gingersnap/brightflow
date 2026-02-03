@@ -1,8 +1,8 @@
-# Lighthouse Analytics API
+# Brightflow Explore API
 
 ## Overview
 
-Lighthouse is a WebSocket-based analytics backend for exploring CSV data. It loads data into memory using Polars and supports real-time queries via WebSocket or REST API.
+Brightflow Explore is a WebSocket-based analytics backend for exploring data. It loads data into memory using Polars and supports real-time queries via WebSocket or REST API.
 
 **Base URL:** `http://localhost:8080`
 
@@ -449,7 +449,7 @@ type WsResponse =
   | { type: 'metadata'; datasetId: string; name: string; rowCount: number; columns: Column[] }
   | { type: 'datasetList'; datasets: Dataset[] };
 
-class LighthouseClient {
+class BrightflowClient {
   private ws: WebSocket;
   private pending = new Map<number, { resolve: Function; reject: Function }>();
   private messageId = 0;
@@ -489,7 +489,7 @@ class LighthouseClient {
 
 ### Usage
 ```typescript
-const client = new LighthouseClient();
+const client = new BrightflowClient();
 await client.connect();
 
 // Get top industries

@@ -1,6 +1,6 @@
-# Lighthouse Analytics
+# Brightflow Explore
 
-Vue 3 frontend for exploring CSV data via a Rust+Polars backend.
+Vue 3 frontend for exploring data via a Rust+Polars backend.
 
 ## Stack
 

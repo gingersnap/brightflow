@@ -13,7 +13,7 @@ const emit = defineEmits(['upload'])
   <div class="flex h-14 items-center justify-between px-4 border-b border-default bg-default">
     <!-- Left: Logo and Dataset -->
     <div class="flex items-center gap-4">
-      <h1 class="text-lg font-semibold text-highlighted">Lighthouse</h1>
+      <h1 class="text-lg font-semibold text-highlighted">Brightflow</h1>
 
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50">
         <Database class="w-4 h-4 text-muted" />

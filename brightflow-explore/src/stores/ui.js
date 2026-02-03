@@ -3,10 +3,10 @@ import { ref, watch } from 'vue'
 
 export const useUiStore = defineStore('ui', () => {
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
-  const viewMode = ref(localStorage.getItem('lighthouse-view-mode') || 'table')
+  const viewMode = ref(localStorage.getItem('brightflow-view-mode') || 'table')
 
   // Chart type: 'bar' | 'line' | 'pie' | 'scatter'
-  const chartType = ref(localStorage.getItem('lighthouse-chart-type') || 'bar')
+  const chartType = ref(localStorage.getItem('brightflow-chart-type') || 'bar')
 
   // Section collapsed states (Filter collapsed by default, others open)
   const filterCollapsed = ref(true)
@@ -17,8 +17,8 @@ export const useUiStore = defineStore('ui', () => {
   const hasShownPivotResults = ref(false)
 
   // Persist preferences
-  watch(viewMode, (val) => localStorage.setItem('lighthouse-view-mode', val))
-  watch(chartType, (val) => localStorage.setItem('lighthouse-chart-type', val))
+  watch(viewMode, (val) => localStorage.setItem('brightflow-view-mode', val))
+  watch(chartType, (val) => localStorage.setItem('brightflow-chart-type', val))
 
   // Actions
   function setViewMode(mode) {
