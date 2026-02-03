@@ -1,0 +1,7 @@
+target/
+.cargo/config.toml
+.env
+
+# Frontend
+node_modules/
+dist/

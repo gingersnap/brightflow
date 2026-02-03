@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.dependencies]
+# Shared dependencies for consistency
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+tokio = { version = "1", features = ["full"] }
+polars = { version = "0.48", features = ["lazy", "csv", "json", "pivot", "dtype-date"] }
+axum = { version = "0.7", features = ["ws", "multipart"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"

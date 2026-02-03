@@ -1,0 +1,18 @@
+[package]
+name = "brightflow"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "brightflow"
+path = "src/main.rs"
+
+[dependencies]
+brightflow-core = { path = "../brightflow-core" }
+brightflow-connect = { path = "../brightflow-connect" }
+brightflow-store = { path = "../brightflow-store" }
+brightflow-insights = { path = "../brightflow-insights" }
+brightflow-api = { path = "../brightflow-api" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

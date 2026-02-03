@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Analytics-specific utilities */
+.font-mono-data {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,31 @@
+name,industry,status,founded,valuation,employees,location,batch
+Stripe,Fintech,Operating,2010,95000000000,8000,San Francisco,S10
+Airbnb,Travel,Operating,2008,85000000000,6000,San Francisco,W09
+DoorDash,Delivery,Operating,2013,35000000000,8500,San Francisco,S13
+Instacart,Delivery,Operating,2012,39000000000,3500,San Francisco,S12
+Coinbase,Fintech,Operating,2012,68000000000,4500,San Francisco,S12
+Dropbox,Cloud Storage,Operating,2007,10000000000,3000,San Francisco,S07
+GitLab,Developer Tools,Operating,2014,15000000000,2000,San Francisco,W15
+Gusto,HR Tech,Operating,2011,10000000000,2500,San Francisco,W12
+Brex,Fintech,Operating,2017,12400000000,1500,San Francisco,W17
+Notion,Productivity,Operating,2016,10000000000,400,San Francisco,S19
+Figma,Design,Acquired,2012,20000000000,800,San Francisco,W12
+Reddit,Social Media,Operating,2005,10000000000,2000,San Francisco,S05
+Twitch,Gaming,Acquired,2011,970000000,2500,San Francisco,W11
+OpenSea,NFT,Operating,2017,13300000000,600,New York,W18
+Rappi,Delivery,Operating,2015,5250000000,4000,Bogota,W16
+Ginkgo Bioworks,Biotech,Operating,2008,15000000000,1200,Boston,S14
+Zapier,Automation,Operating,2011,5000000000,800,San Francisco,S12
+Segment,Analytics,Acquired,2011,3200000000,500,San Francisco,S11
+PagerDuty,DevOps,Operating,2009,2000000000,1000,San Francisco,S10
+Weebly,Website Builder,Acquired,2006,365000000,200,San Francisco,W07
+Machine Zone,Gaming,Operating,2008,4000000000,500,Palo Alto,S08
+Zenefits,HR Tech,Operating,2013,4500000000,400,San Francisco,W13
+Quora,Q&A,Operating,2009,2000000000,200,San Francisco,S09
+Mixpanel,Analytics,Operating,2009,865000000,400,San Francisco,S09
+Docker,Developer Tools,Operating,2013,2100000000,500,San Francisco,S13
+Scale AI,AI,Operating,2016,7300000000,600,San Francisco,S16
+Monzo,Fintech,Operating,2015,4500000000,3500,London,W16
+Deliveroo,Delivery,Operating,2013,2000000000,2500,London,S14
+Revolut,Fintech,Operating,2015,33000000000,6000,London,S15
+Checkout.com,Fintech,Operating,2012,40000000000,1700,London,S12
