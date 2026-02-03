@@ -1,6 +1,9 @@
-# Brightflow Explore
+# Brightflow App
 
-Vue 3 frontend for exploring data via a Rust+Polars backend.
+Vue 3 web application for Brightflow analytics platform.
+
+Current features:
+- **Explore** - Interactive data exploration via Rust+Polars backend
 
 ## Stack
 

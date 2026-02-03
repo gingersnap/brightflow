@@ -13,7 +13,7 @@ crates/
 ├── brightflow-api/       # HTTP API server
 └── brightflow/           # Main binary
 
-brightflow-explore/       # Vue frontend
+brightflow-app/       # Vue frontend
 ```
 
 ## Run
@@ -26,7 +26,7 @@ cargo run --bin brightflow-api
 cargo run --bin brightflow-insights -- --help
 
 # Frontend
-cd brightflow-explore && npm run dev
+cd brightflow-app && npm run dev
 ```
 
 ## Config

@@ -1,5 +1,5 @@
 {
-  "name": "brightflow-explore",
+  "name": "brightflow-app",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "description": "Brightflow analytics frontend for exploring data",
+  "description": "Brightflow web application",
   "dependencies": {
     "echarts": "^6.0.0",
     "lucide-vue-next": "^0.562.0",

@@ -13,6 +13,6 @@ Cargo workspace. Run `cargo check` from root to verify all crates compile.
 
 ## Frontend
 
-- **brightflow-explore** - Vue 3 analytics UI
+- **brightflow-app** - Vue 3 analytics UI
 
 See each directory's CLAUDE.md for details.
