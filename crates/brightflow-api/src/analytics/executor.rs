@@ -59,16 +59,16 @@ fn apply_operation(lf: LazyFrame, op: Operation) -> AppResult<LazyFrame> {
         Operation::Filter { column, op, value } => {
             let expr = build_filter_expr(&column, op, value)?;
             Ok(lf.filter(expr))
-        }
+        },
         Operation::Select { columns } => {
             let cols: Vec<Expr> = columns.iter().map(|c| col(c)).collect();
             Ok(lf.select(cols))
-        }
+        },
         Operation::GroupBy { by, aggs } => {
             let by_exprs: Vec<Expr> = by.iter().map(|c| col(c)).collect();
             let agg_exprs: Vec<Expr> = aggs.iter().map(build_agg_expr).collect();
             Ok(lf.group_by(by_exprs).agg(agg_exprs))
-        }
+        },
         Operation::Pivot {
             index,
             columns,
@@ -101,7 +101,7 @@ fn build_filter_expr(column: &str, op: FilterOp, value: serde_json::Value) -> Ap
                 .as_str()
                 .ok_or_else(|| AppError::InvalidQuery("Contains requires string value".into()))?;
             c.cast(DataType::String).eq(lit(s.to_string()))
-        }
+        },
         FilterOp::In => {
             let arr = value
                 .as_array()
@@ -117,7 +117,7 @@ fn build_filter_expr(column: &str, op: FilterOp, value: serde_json::Value) -> Ap
                 }
                 expr
             }
-        }
+        },
         FilterOp::IsNull => c.is_null(),
         FilterOp::IsNotNull => c.is_not_null(),
     })
@@ -138,7 +138,7 @@ fn build_agg_expr(spec: &AggSpec) -> Expr {
             } else {
                 base.count()
             }
-        }
+        },
         Aggregation::Sum => base.sum(),
         Aggregation::Avg => base.mean(),
         Aggregation::Min => base.min(),
@@ -211,7 +211,7 @@ fn json_to_lit(value: &serde_json::Value) -> AppResult<Expr> {
             } else {
                 return Err(AppError::InvalidQuery("Invalid number value".into()));
             }
-        }
+        },
         serde_json::Value::String(s) => lit(s.clone()),
         _ => return Err(AppError::InvalidQuery("Unsupported value type".into())),
     })

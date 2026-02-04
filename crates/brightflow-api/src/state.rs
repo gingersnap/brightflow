@@ -43,9 +43,7 @@ impl AppState {
             .unwrap_or("default")
             .to_string();
 
-        state
-            .datasets
-            .add_dataset(name, df, DatasetSource::Default);
+        state.datasets.add_dataset(name, df, DatasetSource::Default);
 
         Ok(state)
     }

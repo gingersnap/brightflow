@@ -38,12 +38,16 @@ impl IntoResponse for AppError {
         let (status, code, message) = match &self {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
-            AppError::InvalidQuery(msg) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, "INVALID_QUERY", msg.clone())
-            }
-            AppError::Internal(msg) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", msg.clone())
-            }
+            AppError::InvalidQuery(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVALID_QUERY",
+                msg.clone(),
+            ),
+            AppError::Internal(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                msg.clone(),
+            ),
             AppError::Polars(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "POLARS_ERROR",

@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
                 }
                 _ = run_scheduler() => {}
             }
-        }
+        },
 
         Commands::Serve {
             host,
@@ -161,36 +161,34 @@ async fn main() -> Result<()> {
 
             let config = build_serve_config(&host, port, dataset);
             brightflow_api::serve(config).await?;
-        }
+        },
 
         Commands::Schedule => {
             init_tracing("brightflow=info");
             run_scheduler().await;
-        }
+        },
 
-        Commands::Insights(insights_cmd) => {
-            match insights_cmd {
-                InsightsCommands::Review { args, cadence } => match cadence {
-                    CadenceArg::All => {
-                        for c in ReviewCadence::all() {
-                            run_review(&args, *c)?;
-                        }
-                    }
-                    CadenceArg::Daily => run_review(&args, ReviewCadence::Daily)?,
-                    CadenceArg::Weekly => run_review(&args, ReviewCadence::Weekly)?,
-                    CadenceArg::Monthly => run_review(&args, ReviewCadence::Monthly)?,
-                },
-                InsightsCommands::Trends { args } => run_report(&args, ReportType::Trends)?,
-                InsightsCommands::Drivers { args } => run_report(&args, ReportType::Drivers)?,
-                InsightsCommands::All { args } => {
+        Commands::Insights(insights_cmd) => match insights_cmd {
+            InsightsCommands::Review { args, cadence } => match cadence {
+                CadenceArg::All => {
                     for c in ReviewCadence::all() {
                         run_review(&args, *c)?;
                     }
-                    run_report(&args, ReportType::Trends)?;
-                    run_report(&args, ReportType::Drivers)?;
+                },
+                CadenceArg::Daily => run_review(&args, ReviewCadence::Daily)?,
+                CadenceArg::Weekly => run_review(&args, ReviewCadence::Weekly)?,
+                CadenceArg::Monthly => run_review(&args, ReviewCadence::Monthly)?,
+            },
+            InsightsCommands::Trends { args } => run_report(&args, ReportType::Trends)?,
+            InsightsCommands::Drivers { args } => run_report(&args, ReportType::Drivers)?,
+            InsightsCommands::All { args } => {
+                for c in ReviewCadence::all() {
+                    run_review(&args, *c)?;
                 }
-            }
-        }
+                run_report(&args, ReportType::Trends)?;
+                run_report(&args, ReportType::Drivers)?;
+            },
+        },
     }
 
     Ok(())
@@ -238,14 +236,14 @@ fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
     };
 
     let suffix = format!("review_{}", cadence.suffix());
-    println!("[{}] Running...", suffix);
+    tracing::info!("[{}] Running...", suffix);
 
     let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth);
     let tree = engine.run_review_with_cadence(&df, &data_schema, cadence, &DebugLog::disabled())?;
 
     write_outputs(args, &tree, &suffix, &schema_name, cadence.title())?;
 
-    println!(
+    tracing::info!(
         "[{}] {} root findings, {} total nodes",
         suffix,
         tree.roots.len(),
@@ -267,14 +265,14 @@ fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
     };
 
     let suffix = report_type.suffix();
-    println!("[{}] Running...", suffix);
+    tracing::info!("[{}] Running...", suffix);
 
     let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth);
     let tree = engine.run_report(&df, &data_schema, report_type, &DebugLog::disabled())?;
 
     write_outputs(args, &tree, suffix, &schema_name, report_type.title())?;
 
-    println!(
+    tracing::info!(
         "[{}] {} root findings, {} total nodes",
         suffix,
         tree.roots.len(),

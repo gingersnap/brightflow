@@ -67,7 +67,7 @@ pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
                 if time_column.is_none() {
                     time_column = Some(name);
                 }
-            }
+            },
             DataType::Int8
             | DataType::Int16
             | DataType::Int32
@@ -87,7 +87,7 @@ pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
                     // Without config, treat all numeric as metrics (not KPIs)
                     kpi_columns.push(name);
                 }
-            }
+            },
             DataType::String => {
                 dimension_columns.push(name.clone());
 
@@ -97,12 +97,12 @@ pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
                 {
                     time_column = Some(name);
                 }
-            }
+            },
             _ => {
                 if dtype.is_categorical() {
                     dimension_columns.push(name);
                 }
-            }
+            },
         }
     }
 

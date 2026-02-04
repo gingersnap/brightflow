@@ -8,3 +8,6 @@ brightflow-core = { path = "../brightflow-core" }
 deltalake = "0.30"
 object_store = "0.12"
 tokio = { workspace = true }
+
+[lints]
+workspace = true

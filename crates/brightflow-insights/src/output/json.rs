@@ -6,7 +6,8 @@ use std::path::Path;
 use crate::analysis::tree::AnalysisTree;
 
 pub fn write_output(path: &Path, tree: &AnalysisTree, pretty: bool) -> Result<()> {
-    let file = File::create(path).with_context(|| format!("Failed to create output file {:?}", path))?;
+    let file =
+        File::create(path).with_context(|| format!("Failed to create output file {:?}", path))?;
     let writer = BufWriter::new(file);
 
     if pretty {

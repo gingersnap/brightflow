@@ -34,8 +34,7 @@ pub fn detect_forecast_deviation(
     let actual = *actual;
 
     // Calculate prediction interval (95% confidence)
-    let (expected, _lower, _upper, p_value) =
-        prediction_interval(&x, &y, x_new, actual, 0.95)?;
+    let (expected, _lower, _upper, p_value) = prediction_interval(&x, &y, x_new, actual, 0.95)?;
 
     if expected == 0.0 {
         return None;
@@ -54,6 +53,7 @@ pub fn detect_forecast_deviation(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

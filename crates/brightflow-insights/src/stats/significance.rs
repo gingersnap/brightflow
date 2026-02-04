@@ -2,7 +2,9 @@ use statrs::distribution::{ContinuousCDF, Normal, StudentsT};
 
 /// Calculate two-tailed p-value for a z-score using normal distribution
 pub fn p_value_from_z(z_score: f64) -> f64 {
-    let normal = Normal::new(0.0, 1.0).unwrap();
+    let Ok(normal) = Normal::new(0.0, 1.0) else {
+        return 1.0;
+    };
     2.0 * (1.0 - normal.cdf(z_score.abs()))
 }
 
@@ -15,7 +17,9 @@ pub fn p_value_for_correlation(r: f64, n: usize) -> f64 {
     let df = n as f64 - 2.0;
     let t = r * (df / (1.0 - r * r)).sqrt();
 
-    let t_dist = StudentsT::new(0.0, 1.0, df).unwrap();
+    let Ok(t_dist) = StudentsT::new(0.0, 1.0, df) else {
+        return 1.0;
+    };
     2.0 * (1.0 - t_dist.cdf(t.abs()))
 }
 

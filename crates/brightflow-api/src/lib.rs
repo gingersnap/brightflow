@@ -68,20 +68,20 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
                         );
                     }
                     s
-                }
+                },
                 Err(e) => {
                     tracing::warn!("Failed to load default dataset: {}, starting empty", e);
                     AppState::new()
-                }
+                },
             }
-        }
+        },
         Some(path) => {
             tracing::warn!(
                 "Default dataset not found at {}, starting with empty state",
                 path
             );
             AppState::new()
-        }
+        },
         None => AppState::new(),
     };
 

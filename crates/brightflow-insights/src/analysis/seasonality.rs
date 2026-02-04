@@ -3,8 +3,8 @@ use crate::stats::significance::{autocorrelation, p_value_for_autocorrelation};
 #[derive(Debug, Clone)]
 pub struct SeasonalityResult {
     pub column: String,
-    pub period_days: u32,    // 7=weekly, 30=monthly, 365=yearly
-    pub period_name: String, // "weekly", "monthly", "yearly"
+    pub period_days: u32,     // 7=weekly, 30=monthly, 365=yearly
+    pub period_name: String,  // "weekly", "monthly", "yearly"
     pub autocorrelation: f64, // strength of pattern (-1 to 1)
     pub p_value: f64,
 }
@@ -112,6 +112,7 @@ fn calculate_avg_spacing_days(timestamps: &[i64]) -> f64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;

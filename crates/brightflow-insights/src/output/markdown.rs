@@ -6,7 +6,8 @@ use std::path::Path;
 use crate::analysis::tree::{AnalysisCategory, AnalysisTree, AnalysisType, NodeId};
 
 pub fn write_markdown(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Result<()> {
-    let file = File::create(path).with_context(|| format!("Failed to create markdown file {:?}", path))?;
+    let file =
+        File::create(path).with_context(|| format!("Failed to create markdown file {:?}", path))?;
     let mut writer = BufWriter::new(file);
 
     // Header
@@ -61,7 +62,9 @@ pub fn write_markdown(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> 
 }
 
 /// Group root nodes by their analysis category
-fn group_roots_by_category(tree: &AnalysisTree) -> std::collections::HashMap<AnalysisCategory, Vec<NodeId>> {
+fn group_roots_by_category(
+    tree: &AnalysisTree,
+) -> std::collections::HashMap<AnalysisCategory, Vec<NodeId>> {
     use std::collections::HashMap;
     let mut by_category: HashMap<AnalysisCategory, Vec<NodeId>> = HashMap::new();
 
@@ -110,7 +113,9 @@ fn write_node_tree<W: Write>(
         sorted_children.sort_by(|a, b| {
             let a_sig = tree.nodes[a.0].significance;
             let b_sig = tree.nodes[b.0].significance;
-            b_sig.partial_cmp(&a_sig).unwrap_or(std::cmp::Ordering::Equal)
+            b_sig
+                .partial_cmp(&a_sig)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         for child_id in &sorted_children {
@@ -123,7 +128,8 @@ fn write_node_tree<W: Write>(
 
 /// Generate a compact tree visualization using ASCII art
 pub fn write_markdown_compact(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Result<()> {
-    let file = File::create(path).with_context(|| format!("Failed to create markdown file {:?}", path))?;
+    let file =
+        File::create(path).with_context(|| format!("Failed to create markdown file {:?}", path))?;
     let mut writer = BufWriter::new(file);
 
     let title = title.unwrap_or("Analysis Insights");
@@ -169,30 +175,54 @@ fn write_ascii_tree<W: Write>(
     let icon = match &node.analysis {
         AnalysisType::Anomaly { .. } => "⚠",
         AnalysisType::PeriodComparison { change_percent, .. } => {
-            if *change_percent > 0.0 { "📈" } else { "📉" }
-        }
-        AnalysisType::PeriodAnomaly { change_percent, .. } => {
-            if *change_percent > 0.0 { "🔺" } else { "🔻" }
-        }
-        AnalysisType::Trend { direction, .. } => {
-            match direction {
-                crate::analysis::tree::TrendDirection::Increasing => "↗",
-                crate::analysis::tree::TrendDirection::Decreasing => "↘",
+            if *change_percent > 0.0 {
+                "📈"
+            } else {
+                "📉"
             }
-        }
+        },
+        AnalysisType::PeriodAnomaly { change_percent, .. } => {
+            if *change_percent > 0.0 {
+                "🔺"
+            } else {
+                "🔻"
+            }
+        },
+        AnalysisType::Trend { direction, .. } => match direction {
+            crate::analysis::tree::TrendDirection::Increasing => "↗",
+            crate::analysis::tree::TrendDirection::Decreasing => "↘",
+        },
         AnalysisType::Segment { contribution, .. } => {
-            if *contribution > 0.0 { "+" } else { "−" }
-        }
+            if *contribution > 0.0 {
+                "+"
+            } else {
+                "−"
+            }
+        },
         AnalysisType::Correlation { r_value, .. } => {
-            if *r_value > 0.0 { "~" } else { "≈" }
-        }
+            if *r_value > 0.0 {
+                "~"
+            } else {
+                "≈"
+            }
+        },
         AnalysisType::Seasonality { .. } => "🔄",
         AnalysisType::OutlierCluster { direction, .. } => {
-            if direction == "spike" { "📊" } else { "📉" }
-        }
-        AnalysisType::ForecastDeviation { deviation_percent, .. } => {
-            if *deviation_percent > 0.0 { "⬆" } else { "⬇" }
-        }
+            if direction == "spike" {
+                "📊"
+            } else {
+                "📉"
+            }
+        },
+        AnalysisType::ForecastDeviation {
+            deviation_percent, ..
+        } => {
+            if *deviation_percent > 0.0 {
+                "⬆"
+            } else {
+                "⬇"
+            }
+        },
     };
 
     writeln!(writer, "{}{}{} {}", prefix, connector, icon, node.summary)?;
@@ -211,7 +241,9 @@ fn write_ascii_tree<W: Write>(
     sorted_children.sort_by(|a, b| {
         let a_sig = tree.nodes[a.0].significance;
         let b_sig = tree.nodes[b.0].significance;
-        b_sig.partial_cmp(&a_sig).unwrap_or(std::cmp::Ordering::Equal)
+        b_sig
+            .partial_cmp(&a_sig)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for (i, child_id) in sorted_children.iter().enumerate() {

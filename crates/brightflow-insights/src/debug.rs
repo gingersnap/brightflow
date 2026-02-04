@@ -29,7 +29,7 @@ impl DebugLog {
     /// Log a section header
     pub fn section(&self, title: &str) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let _ = writeln!(w, "\n{}", "=".repeat(80));
             let _ = writeln!(w, "  {}", title);
             let _ = writeln!(w, "{}\n", "=".repeat(80));
@@ -39,7 +39,7 @@ impl DebugLog {
     /// Log a subsection
     pub fn subsection(&self, title: &str) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let _ = writeln!(w, "\n--- {} ---\n", title);
         }
     }
@@ -47,7 +47,7 @@ impl DebugLog {
     /// Log a key-value pair
     pub fn kv(&self, key: &str, value: &str) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let _ = writeln!(w, "  {}: {}", key, value);
         }
     }
@@ -55,7 +55,7 @@ impl DebugLog {
     /// Log an analysis attempt with its result
     pub fn analysis(&self, analysis_type: &str, column: &str, result: AnalysisOutcome) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let icon = match &result {
                 AnalysisOutcome::Triggered { .. } => "[SIGNAL]",
                 AnalysisOutcome::BelowThreshold { .. } => "[skip]  ",
@@ -70,35 +70,45 @@ impl DebugLog {
                         let _ = writeln!(w, "         {} = {}", k, v);
                     }
                     let _ = writeln!(w, "         -> TRIGGERED: {}", reason);
-                }
+                },
                 AnalysisOutcome::BelowThreshold { values, reason } => {
                     for (k, v) in values {
                         let _ = writeln!(w, "         {} = {}", k, v);
                     }
                     let _ = writeln!(w, "         -> skipped: {}", reason);
-                }
+                },
                 AnalysisOutcome::NoData => {
                     let _ = writeln!(w, "         -> no data available");
-                }
+                },
                 AnalysisOutcome::Error(msg) => {
                     let _ = writeln!(w, "         -> error: {}", msg);
-                }
+                },
             }
             let _ = writeln!(w);
         }
     }
 
     /// Log a segment attribution result
-    pub fn segment(&self, target: &str, segment_col: &str, segment_val: &str, result: AnalysisOutcome) {
+    pub fn segment(
+        &self,
+        target: &str,
+        segment_col: &str,
+        segment_val: &str,
+        result: AnalysisOutcome,
+    ) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let icon = match &result {
                 AnalysisOutcome::Triggered { .. } => "[SIGNAL]",
                 AnalysisOutcome::BelowThreshold { .. } => "[skip]  ",
                 AnalysisOutcome::NoData => "[nodata]",
                 AnalysisOutcome::Error(_) => "[ERROR] ",
             };
-            let _ = writeln!(w, "{} Segment '{}' = '{}' for '{}'", icon, segment_col, segment_val, target);
+            let _ = writeln!(
+                w,
+                "{} Segment '{}' = '{}' for '{}'",
+                icon, segment_col, segment_val, target
+            );
 
             match result {
                 AnalysisOutcome::Triggered { values, reason } => {
@@ -106,19 +116,19 @@ impl DebugLog {
                         let _ = writeln!(w, "         {} = {}", k, v);
                     }
                     let _ = writeln!(w, "         -> TRIGGERED: {}", reason);
-                }
+                },
                 AnalysisOutcome::BelowThreshold { values, reason } => {
                     for (k, v) in values {
                         let _ = writeln!(w, "         {} = {}", k, v);
                     }
                     let _ = writeln!(w, "         -> skipped: {}", reason);
-                }
+                },
                 AnalysisOutcome::NoData => {
                     let _ = writeln!(w, "         -> no data");
-                }
+                },
                 AnalysisOutcome::Error(msg) => {
                     let _ = writeln!(w, "         -> error: {}", msg);
-                }
+                },
             }
             let _ = writeln!(w);
         }
@@ -127,7 +137,7 @@ impl DebugLog {
     /// Log task queue activity
     pub fn task(&self, action: &str, task_desc: &str) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let _ = writeln!(w, "  [{}] {}", action, task_desc);
         }
     }
@@ -135,7 +145,7 @@ impl DebugLog {
     /// Log a free-form message
     pub fn log(&self, msg: &str) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let _ = writeln!(w, "{}", msg);
         }
     }
@@ -143,7 +153,7 @@ impl DebugLog {
     /// Flush the buffer
     pub fn flush(&self) {
         if let Some(ref writer) = self.writer {
-            let mut w = writer.lock().unwrap();
+            let Ok(mut w) = writer.lock() else { return };
             let _ = w.flush();
         }
     }
@@ -169,10 +179,16 @@ pub enum AnalysisOutcome {
 
 impl AnalysisOutcome {
     pub fn triggered(values: Vec<(&'static str, String)>, reason: impl Into<String>) -> Self {
-        Self::Triggered { values, reason: reason.into() }
+        Self::Triggered {
+            values,
+            reason: reason.into(),
+        }
     }
 
     pub fn below_threshold(values: Vec<(&'static str, String)>, reason: impl Into<String>) -> Self {
-        Self::BelowThreshold { values, reason: reason.into() }
+        Self::BelowThreshold {
+            values,
+            reason: reason.into(),
+        }
     }
 }

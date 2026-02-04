@@ -27,8 +27,13 @@ pub fn detect_anomaly(df: &DataFrame, column: &str) -> Result<Option<AnomalyResu
         return Ok(None);
     }
 
-    let latest_value = *values.last().unwrap();
-    let historical = &values[..values.len() - 1];
+    // Safe: we checked len >= 3 above
+    let Some(&latest_value) = values.last() else {
+        return Ok(None);
+    };
+    let Some(historical) = values.get(..values.len() - 1) else {
+        return Ok(None);
+    };
 
     let col_mean = mean(historical);
     let col_std = std_dev(historical);

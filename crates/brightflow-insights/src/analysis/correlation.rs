@@ -12,11 +12,7 @@ pub struct CorrelationResult {
 }
 
 /// Calculate correlation between two numeric columns
-pub fn correlate(
-    df: &DataFrame,
-    col_a: &str,
-    col_b: &str,
-) -> Result<Option<CorrelationResult>> {
+pub fn correlate(df: &DataFrame, col_a: &str, col_b: &str) -> Result<Option<CorrelationResult>> {
     let a = df.column(col_a)?;
     let b = df.column(col_b)?;
 
@@ -34,10 +30,7 @@ pub fn correlate(
         .flatten()
         .collect();
 
-    let pairs: Vec<(f64, f64)> = a_values
-        .into_iter()
-        .zip(b_values.into_iter())
-        .collect();
+    let pairs: Vec<(f64, f64)> = a_values.into_iter().zip(b_values.into_iter()).collect();
 
     if pairs.len() < 3 {
         return Ok(None);

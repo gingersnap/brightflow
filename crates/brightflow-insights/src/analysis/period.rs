@@ -377,7 +377,7 @@ fn extract_period_labels(
                     })
                 })
                 .collect())
-        }
+        },
         DataType::Datetime(_, _) => {
             let dt_series = series.datetime()?;
             Ok(dt_series
@@ -385,14 +385,15 @@ fn extract_period_labels(
                 .map(|opt_us| {
                     opt_us.and_then(|us| {
                         let secs = us / 1_000_000;
-                        chrono::DateTime::from_timestamp(secs, 0)
-                            .map(|dt: chrono::DateTime<chrono::Utc>| {
+                        chrono::DateTime::from_timestamp(secs, 0).map(
+                            |dt: chrono::DateTime<chrono::Utc>| {
                                 format_period(dt.date_naive(), granularity)
-                            })
+                            },
+                        )
                     })
                 })
                 .collect())
-        }
+        },
         DataType::String => {
             // Try to parse string dates
             let str_series = series.str()?;
@@ -404,7 +405,7 @@ fn extract_period_labels(
                     })
                 })
                 .collect())
-        }
+        },
         DataType::Int64 | DataType::Float64 => {
             // Assume Unix timestamp (seconds or milliseconds)
             let values: Vec<Option<i64>> = if matches!(dtype, DataType::Float64) {
@@ -423,14 +424,15 @@ fn extract_period_labels(
                     opt_ts.and_then(|ts| {
                         // Detect if milliseconds (> year 2100 in seconds)
                         let secs = if ts > 4_102_444_800 { ts / 1000 } else { ts };
-                        chrono::DateTime::from_timestamp(secs, 0)
-                            .map(|dt: chrono::DateTime<chrono::Utc>| {
+                        chrono::DateTime::from_timestamp(secs, 0).map(
+                            |dt: chrono::DateTime<chrono::Utc>| {
                                 format_period(dt.date_naive(), granularity)
-                            })
+                            },
+                        )
                     })
                 })
                 .collect())
-        }
+        },
         _ => Ok(vec![None; series.len()]),
     }
 }
@@ -441,12 +443,12 @@ fn format_period(date: NaiveDate, granularity: TimeGranularity) -> String {
         TimeGranularity::Week => {
             let iso_week = date.iso_week();
             format!("{}-W{:02}", iso_week.year(), iso_week.week())
-        }
+        },
         TimeGranularity::Month => date.format("%Y-%m").to_string(),
         TimeGranularity::Quarter => {
             let quarter = (date.month() - 1) / 3 + 1;
             format!("{}-Q{}", date.year(), quarter)
-        }
+        },
         TimeGranularity::Year => date.format("%Y").to_string(),
     }
 }
@@ -462,31 +464,33 @@ pub fn extract_timestamps(series: &Column) -> Result<Vec<Option<i64>>> {
                 .into_iter()
                 .map(|opt_days| {
                     opt_days.and_then(|days| {
-                        NaiveDate::from_num_days_from_ce_opt(days + 719163)
-                            .map(|date| date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+                        NaiveDate::from_num_days_from_ce_opt(days + 719_163).and_then(|date| {
+                            date.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp())
+                        })
                     })
                 })
                 .collect())
-        }
+        },
         DataType::Datetime(_, _) => {
             let dt_series = series.datetime()?;
             Ok(dt_series
                 .into_iter()
                 .map(|opt_us| opt_us.map(|us| us / 1_000_000))
                 .collect())
-        }
+        },
         DataType::String => {
             let str_series = series.str()?;
             Ok(str_series
                 .into_iter()
                 .map(|opt_s| {
                     opt_s.and_then(|s| {
-                        parse_date_string(s)
-                            .map(|date| date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+                        parse_date_string(s).and_then(|date| {
+                            date.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp())
+                        })
                     })
                 })
                 .collect())
-        }
+        },
         DataType::Int64 | DataType::Float64 => {
             let values: Vec<Option<i64>> = if matches!(dtype, DataType::Float64) {
                 series
@@ -503,11 +507,15 @@ pub fn extract_timestamps(series: &Column) -> Result<Vec<Option<i64>>> {
                 .map(|opt_ts| {
                     opt_ts.map(|ts| {
                         // Detect if milliseconds (> year 2100 in seconds)
-                        if ts > 4_102_444_800 { ts / 1000 } else { ts }
+                        if ts > 4_102_444_800 {
+                            ts / 1000
+                        } else {
+                            ts
+                        }
                     })
                 })
                 .collect())
-        }
+        },
         _ => Ok(vec![None; series.len()]),
     }
 }

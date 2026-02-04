@@ -44,7 +44,8 @@ pub fn attribute_segment(
 
     let overall_mean = mean(&target_values);
 
-    let mut segments: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+    let mut segments: std::collections::HashMap<String, Vec<f64>> =
+        std::collections::HashMap::new();
     for (val, seg) in target_values.iter().zip(segment_values.iter()) {
         segments.entry(seg.clone()).or_default().push(*val);
     }
@@ -73,7 +74,8 @@ pub fn attribute_segment(
         let other_mean = mean(&other_data);
         let other_std = std_dev(&other_data);
 
-        let contribution = ((seg_mean - overall_mean) * seg_data.len() as f64) / target_values.len() as f64;
+        let contribution =
+            ((seg_mean - overall_mean) * seg_data.len() as f64) / target_values.len() as f64;
         let change_percent = if other_mean != 0.0 {
             ((seg_mean - other_mean) / other_mean) * 100.0
         } else {
@@ -161,7 +163,10 @@ pub fn attribute_period_segments_cached(
             if p == anomalous_period {
                 segment_in_period.entry(seg.clone()).or_default().push(*val);
             } else {
-                segment_other_periods.entry(seg.clone()).or_default().push(*val);
+                segment_other_periods
+                    .entry(seg.clone())
+                    .or_default()
+                    .push(*val);
             }
         }
     }

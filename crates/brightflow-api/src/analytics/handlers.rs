@@ -13,8 +13,7 @@ use std::io::Cursor;
 
 use crate::analytics::session::{DatasetInfo, DatasetSource};
 use crate::analytics::types::{
-    DatasetMetadataResponse, Query, QueryResponse, UploadResponse, WsClientMessage,
-    WsServerMessage,
+    DatasetMetadataResponse, Query, QueryResponse, UploadResponse, WsClientMessage, WsServerMessage,
 };
 use crate::analytics::{executor, session};
 use crate::shared::{AppError, AppResult};
@@ -76,16 +75,22 @@ pub async fn upload_dataset(
     let mut file_data: Option<Vec<u8>> = None;
     let mut file_name: Option<String> = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        AppError::BadRequest(format!("Failed to read multipart field: {e}"))
-    })? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Failed to read multipart field: {e}")))?
+    {
         let name = field.name().unwrap_or_default().to_string();
 
         if name == "file" {
             file_name = field.file_name().map(String::from);
-            file_data = Some(field.bytes().await.map_err(|e| {
-                AppError::BadRequest(format!("Failed to read file data: {e}"))
-            })?.to_vec());
+            file_data = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read file data: {e}")))?
+                    .to_vec(),
+            );
         }
     }
 
@@ -148,7 +153,8 @@ pub async fn execute_query(
     let df = dataset.df.clone();
     drop(dataset); // Release the lock before blocking
 
-    let response = tokio::task::spawn_blocking(move || executor::execute_query(&df, query)).await??;
+    let response =
+        tokio::task::spawn_blocking(move || executor::execute_query(&df, query)).await??;
 
     Ok(Json(response))
 }
@@ -158,10 +164,7 @@ pub async fn execute_query(
 // ============================================================================
 
 /// WebSocket upgrade handler
-pub async fn ws_handler(
-    State(state): State<AppState>,
-    ws: WebSocketUpgrade,
-) -> impl IntoResponse {
+pub async fn ws_handler(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -192,7 +195,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     break;
                 }
                 None
-            }
+            },
             Message::Close(_) => break,
             _ => None,
         };
@@ -207,7 +210,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         message: format!("Failed to serialize response: {e}"),
                     };
                     serde_json::to_string(&err).unwrap_or_default()
-                }
+                },
             };
 
             tracing::debug!("Sending response: {} bytes", json.len());
@@ -230,8 +233,8 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
             return WsServerMessage::Error {
                 code: "PARSE_ERROR".into(),
                 message: format!("Invalid JSON: {e}"),
-            }
-        }
+            };
+        },
     };
 
     match msg {
@@ -255,7 +258,7 @@ async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
                 code: "NOT_FOUND".into(),
                 message: format!("Dataset '{dataset_id}' not found"),
             }
-        }
+        },
     };
 
     let df = dataset.df.clone();

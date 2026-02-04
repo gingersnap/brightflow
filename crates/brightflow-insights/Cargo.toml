@@ -19,3 +19,6 @@ statrs = "0.18"
 chrono = { workspace = true }
 anyhow = "1.0"
 thiserror = { workspace = true }
+
+[lints]
+workspace = true

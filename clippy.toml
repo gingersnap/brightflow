@@ -1,0 +1,49 @@
+# Brightflow Clippy configuration
+# Settings that cannot be specified in Cargo.toml
+
+# Complexity thresholds
+cognitive-complexity-threshold = 15
+too-many-lines-threshold = 60
+too-many-arguments-threshold = 6
+
+# Size limits
+pass-by-value-size-limit = 128
+type-complexity-threshold = 200
+stack-size-threshold = 262144
+array-size-threshold = 131072
+trivial-copy-size-limit = 32
+future-size-threshold = 16384
+
+# Documentation - valid technical terms that shouldn't trigger doc_markdown
+doc-valid-idents = [
+    "GraphQL",
+    "JavaScript",
+    "TypeScript",
+    "PostgreSQL",
+    "MySQL",
+    "SQLite",
+    "DeltaLake",
+    "Polars",
+    "DataFrame",
+    "WebSocket",
+    "APIs",
+    "JSON",
+    "YAML",
+    "UUID",
+    "UTC",
+    "HTTP",
+    "HTTPS",
+    "CORS",
+    "OAuth",
+    "CSV",
+    "HTML",
+    "URL",
+    "Axum",
+    "Tokio",
+    "Avon",
+    "Brightflow",
+]
+
+# Naming
+single-char-binding-names-threshold = 4
+allowed-prefixes = ["de", "re", "pre", "post"]

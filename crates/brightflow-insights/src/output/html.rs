@@ -6,13 +6,16 @@ use std::path::Path;
 use crate::analysis::tree::{AnalysisCategory, AnalysisTree, AnalysisType, NodeId};
 
 pub fn write_html(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Result<()> {
-    let file = File::create(path).with_context(|| format!("Failed to create HTML file {:?}", path))?;
+    let file =
+        File::create(path).with_context(|| format!("Failed to create HTML file {:?}", path))?;
     let mut writer = BufWriter::new(file);
 
     let title = title.unwrap_or("Analysis Insights");
 
     // Write HTML header with minimal styling
-    writeln!(writer, r#"<!DOCTYPE html>
+    writeln!(
+        writer,
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -82,7 +85,9 @@ pub fn write_html(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Resu
     </style>
 </head>
 <body>
-    <h1>{}</h1>"#, title, title)?;
+    <h1>{}</h1>"#,
+        title, title
+    )?;
 
     if tree.roots.is_empty() {
         writeln!(writer, "    <p>No significant findings.</p>")?;
@@ -118,26 +123,45 @@ fn write_finding<W: Write>(writer: &mut W, tree: &AnalysisTree, node_id: NodeId)
 
     // Determine if this is an increase or decrease for styling
     let direction_class = match &node.analysis {
-        AnalysisType::PeriodComparison { change_percent, .. } |
-        AnalysisType::PeriodAnomaly { change_percent, .. } => {
-            if *change_percent > 0.0 { "up" } else { "down" }
-        }
-        AnalysisType::Anomaly { z_score, .. } => {
-            if *z_score > 0.0 { "up" } else { "down" }
-        }
-        AnalysisType::Trend { direction, .. } => {
-            match direction {
-                crate::analysis::tree::TrendDirection::Increasing => "up",
-                crate::analysis::tree::TrendDirection::Decreasing => "down",
+        AnalysisType::PeriodComparison { change_percent, .. }
+        | AnalysisType::PeriodAnomaly { change_percent, .. } => {
+            if *change_percent > 0.0 {
+                "up"
+            } else {
+                "down"
             }
-        }
-        _ => ""
+        },
+        AnalysisType::Anomaly { z_score, .. } => {
+            if *z_score > 0.0 {
+                "up"
+            } else {
+                "down"
+            }
+        },
+        AnalysisType::Trend { direction, .. } => match direction {
+            crate::analysis::tree::TrendDirection::Increasing => "up",
+            crate::analysis::tree::TrendDirection::Decreasing => "down",
+        },
+        _ => "",
     };
 
     writeln!(writer, "    <details>")?;
-    writeln!(writer, "        <summary class=\"{}\">{}</summary>", direction_class, html_escape(&node.summary))?;
-    writeln!(writer, "        <div class=\"description\">{}</div>", html_escape(&node.description))?;
-    writeln!(writer, "        <span class=\"tech\">{}</span>", html_escape(&node.tech_summary))?;
+    writeln!(
+        writer,
+        "        <summary class=\"{}\">{}</summary>",
+        direction_class,
+        html_escape(&node.summary)
+    )?;
+    writeln!(
+        writer,
+        "        <div class=\"description\">{}</div>",
+        html_escape(&node.description)
+    )?;
+    writeln!(
+        writer,
+        "        <span class=\"tech\">{}</span>",
+        html_escape(&node.tech_summary)
+    )?;
 
     if !node.children.is_empty() {
         writeln!(writer, "        <div class=\"children\">")?;
@@ -148,16 +172,22 @@ fn write_finding<W: Write>(writer: &mut W, tree: &AnalysisTree, node_id: NodeId)
         sorted_children.sort_by(|a, b| {
             let a_sig = tree.nodes[a.0].significance;
             let b_sig = tree.nodes[b.0].significance;
-            b_sig.partial_cmp(&a_sig).unwrap_or(std::cmp::Ordering::Equal)
+            b_sig
+                .partial_cmp(&a_sig)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         for child_id in &sorted_children {
             let child = &tree.nodes[child_id.0];
             let child_class = match &child.analysis {
                 AnalysisType::Segment { change_percent, .. } => {
-                    if *change_percent > 0.0 { "up" } else { "down" }
-                }
-                _ => ""
+                    if *change_percent > 0.0 {
+                        "up"
+                    } else {
+                        "down"
+                    }
+                },
+                _ => "",
             };
             writeln!(writer, "            <div class=\"child-item {}\">- {} <span class=\"tech\">{}</span></div>",
                 child_class, html_escape(&child.summary), html_escape(&child.tech_summary))?;
@@ -179,7 +209,9 @@ fn html_escape(s: &str) -> String {
 }
 
 /// Group root nodes by their analysis category
-fn group_roots_by_category(tree: &AnalysisTree) -> std::collections::HashMap<AnalysisCategory, Vec<NodeId>> {
+fn group_roots_by_category(
+    tree: &AnalysisTree,
+) -> std::collections::HashMap<AnalysisCategory, Vec<NodeId>> {
     use std::collections::HashMap;
     let mut by_category: HashMap<AnalysisCategory, Vec<NodeId>> = HashMap::new();
 
