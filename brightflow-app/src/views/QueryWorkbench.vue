@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import QueryBuilder from '@/components/query-builder/QueryBuilder.vue'
 import ResultsPanel from '@/components/results/ResultsPanel.vue'
 </script>

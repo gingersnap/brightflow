@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, watch } from 'vue'
 import { Plus, X, ChevronRight, ChevronDown } from 'lucide-vue-next'
 import { useQueryStore } from '@/stores/query'
@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui'
 import { useConnectionStore } from '@/stores/connection'
 import { useOperators } from '@/composables/useOperators'
 import { useQuery } from '@/composables/useQuery'
+import type { Filter, Operator } from '@/types'
 
 const queryStore = useQueryStore()
 const datasetStore = useDatasetStore()
@@ -27,14 +28,14 @@ const limitOptions = [
 ]
 
 // Re-query table data when filters or limit change
-let debounceTimer = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(
   () => [
     queryStore.filters.map(f => `${f.column}:${f.op}:${f.value}`),
     queryStore.limit
   ],
   () => {
-    clearTimeout(debounceTimer)
+    if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       if (connectionStore.isConnected && datasetStore.hasData) {
         loadTableData()
@@ -54,37 +55,21 @@ const columnOptions = computed(() => {
 })
 
 // Get dtype for a column
-function getColumnDtype(columnName) {
+function getColumnDtype(columnName: string): string {
   const col = datasetStore.columns.find(c => c.name === columnName)
-  return col?.dtype || 'string'
+  return col?.dtype ?? 'string'
 }
 
 // Get operators for a filter's column
-function getOperators(filter) {
+function getOperators(filter: Filter): Operator[] {
   if (!filter.column) return []
   const dtype = getColumnDtype(filter.column)
   return getOperatorsForType(dtype)
 }
 
-// Get operator label
-function getOperatorLabel(op) {
-  const labels = {
-    eq: '=',
-    ne: '≠',
-    gt: '>',
-    gte: '≥',
-    lt: '<',
-    lte: '≤',
-    contains: '~',
-    in: 'in',
-    isNull: 'is null',
-    isNotNull: 'is not null'
-  }
-  return labels[op] || op
-}
 
 // Handle column change
-function handleColumnChange(filterId, columnName) {
+function handleColumnChange(filterId: string, columnName: string): void {
   const dtype = getColumnDtype(columnName)
   const defaultOp = getDefaultOperator(dtype)
   queryStore.updateFilter(filterId, {
@@ -95,12 +80,12 @@ function handleColumnChange(filterId, columnName) {
 }
 
 // Handle operator change
-function handleOperatorChange(filterId, op) {
+function handleOperatorChange(filterId: string, op: string): void {
   queryStore.updateFilter(filterId, { op, value: null })
 }
 
 // Handle value change
-function handleValueChange(filterId, value) {
+function handleValueChange(filterId: string, value: unknown): void {
   queryStore.updateFilter(filterId, { value })
 }
 
@@ -108,16 +93,6 @@ function handleValueChange(filterId, value) {
 const hasActiveFilters = computed(() =>
   queryStore.filters.some(f => f.column && f.op)
 )
-
-// Get filter display text
-function getFilterDisplay(filter) {
-  if (!filter.column) return 'New filter'
-  const opLabel = getOperatorLabel(filter.op)
-  if (!operatorNeedsValue(filter.op)) {
-    return `${filter.column} ${opLabel}`
-  }
-  return `${filter.column} ${opLabel} ${filter.value || '?'}`
-}
 </script>
 
 <template>
@@ -149,14 +124,14 @@ function getFilterDisplay(filter) {
         >
           <!-- Column selector -->
           <USelectMenu
-            :model-value="filter.column"
+            :model-value="filter.column ?? ''"
             :items="columnOptions"
             placeholder="Column"
             value-key="value"
             size="xs"
             variant="none"
             class="min-w-20"
-            @update:model-value="handleColumnChange(filter.id, $event)"
+            @update:model-value="(val: string) => handleColumnChange(filter.id, val)"
           />
 
           <!-- Operator selector -->
@@ -168,19 +143,19 @@ function getFilterDisplay(filter) {
             variant="none"
             class="w-16"
             :disabled="!filter.column"
-            @update:model-value="handleOperatorChange(filter.id, $event)"
+            @update:model-value="(val: string) => handleOperatorChange(filter.id, val)"
           />
 
           <!-- Value input -->
           <UInput
             v-if="operatorNeedsValue(filter.op)"
-            :model-value="filter.value"
+            :model-value="(filter.value as string | number | null) ?? ''"
             placeholder="value"
             size="xs"
             variant="none"
             class="w-24"
             :disabled="!filter.column"
-            @update:model-value="handleValueChange(filter.id, $event)"
+            @update:model-value="(val: string | number) => handleValueChange(filter.id, val)"
           />
 
           <!-- Remove button -->

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ArrowUp, ArrowDown } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useQueryStore } from '@/stores/query'
@@ -18,9 +18,10 @@ const columnItems = computed(() =>
     <div>
       <label class="text-xs font-medium text-muted mb-2 block">Sort By</label>
       <USelectMenu
-        v-model="queryStore.sortBy"
+        :model-value="queryStore.sortBy ?? ''"
         :items="columnItems"
         placeholder="Select column"
+        @update:model-value="(val: string) => queryStore.sortBy = val"
       />
     </div>
 

@@ -1,5 +1,5 @@
-<script setup>
-import { computed } from 'vue'
+<script setup lang="ts">
+import { computed, type Component } from 'vue'
 import { Table, BarChart3, Split, Download, Loader2, TableProperties, ChevronRight, ChevronDown, Hash } from 'lucide-vue-next'
 import { useResultsStore } from '@/stores/results'
 import { useUiStore } from '@/stores/ui'
@@ -8,6 +8,7 @@ import DataTable from './DataTable.vue'
 import ChartView from '../charts/ChartView.vue'
 import PivotTable from '../pivot/PivotTable.vue'
 import BigNumber from '../charts/BigNumber.vue'
+import type { ViewMode } from '@/types'
 
 const resultsStore = useResultsStore()
 const uiStore = useUiStore()
@@ -15,7 +16,13 @@ const pivotStore = usePivotStore()
 
 const isCollapsed = computed(() => uiStore.resultsCollapsed)
 
-const viewModes = [
+interface ViewModeOption {
+  value: ViewMode
+  label: string
+  icon: Component
+}
+
+const viewModes: ViewModeOption[] = [
   { value: 'table', label: 'Table', icon: Table },
   { value: 'pivot', label: 'Pivot', icon: TableProperties },
   { value: 'number', label: 'Number', icon: Hash },

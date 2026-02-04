@@ -1,7 +1,6 @@
-<script setup>
+<script setup lang="ts">
 import { onMounted } from 'vue'
 import { useConnectionStore } from './stores/connection'
-import { useDatasetStore } from './stores/dataset'
 
 import AppHeader from './components/layout/AppHeader.vue'
 import FilterBar from './components/query/FilterBar.vue'
@@ -9,7 +8,6 @@ import QueryBuilder from './components/query/QueryBuilder.vue'
 import ResultsPanel from './components/results/ResultsPanel.vue'
 
 const connectionStore = useConnectionStore()
-const datasetStore = useDatasetStore()
 
 onMounted(() => {
   console.log('[App] Mounting, connecting to WebSocket...')

@@ -1,9 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { Filter, Aggregation, QuerySections, PivotState, QueryOperation } from '@/types'
+
+type SectionKey = keyof QuerySections
 
 export const useQueryStore = defineStore('query', () => {
   // Section states
-  const sections = ref({
+  const sections = ref<QuerySections>({
     filter: { enabled: true, collapsed: false },
     select: { enabled: false, collapsed: true },
     groupBy: { enabled: false, collapsed: true },
@@ -13,17 +16,17 @@ export const useQueryStore = defineStore('query', () => {
   })
 
   // Filter state
-  const filters = ref([])
+  const filters = ref<Filter[]>([])
 
   // Select state
-  const selectedColumns = ref([])
+  const selectedColumns = ref<string[]>([])
 
   // Group by state
-  const groupByColumns = ref([])
-  const aggregations = ref([])
+  const groupByColumns = ref<string[]>([])
+  const aggregations = ref<Aggregation[]>([])
 
   // Pivot state
-  const pivot = ref({
+  const pivot = ref<PivotState>({
     index: [],
     columns: null,
     values: null,
@@ -31,21 +34,21 @@ export const useQueryStore = defineStore('query', () => {
   })
 
   // Sort state
-  const sortBy = ref(null)
+  const sortBy = ref<string | null>(null)
   const sortDescending = ref(false)
 
   // Limit state (default 100 for table view)
   const limit = ref(100)
 
   // Computed: Build operations array for API
-  const operations = computed(() => {
-    const ops = []
+  const operations = computed((): QueryOperation[] => {
+    const ops: QueryOperation[] = []
 
     // Add filters
     if (sections.value.filter.enabled && filters.value.length > 0) {
       filters.value.forEach(filter => {
         if (filter.column && filter.op) {
-          const op = {
+          const op: QueryOperation = {
             type: 'filter',
             column: filter.column,
             op: filter.op
@@ -123,7 +126,7 @@ export const useQueryStore = defineStore('query', () => {
       ? `By: ${groupByColumns.value.join(', ')}`
       : 'Not grouped',
     pivot: pivot.value.values
-      ? `${pivot.value.index.length} rows, ${pivot.value.columns || 'no'} columns`
+      ? `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`
       : 'Not configured',
     sort: sortBy.value
       ? `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}`
@@ -137,15 +140,15 @@ export const useQueryStore = defineStore('query', () => {
   })
 
   // Actions
-  function toggleSection(section) {
+  function toggleSection(section: SectionKey): void {
     sections.value[section].enabled = !sections.value[section].enabled
   }
 
-  function toggleCollapse(section) {
+  function toggleCollapse(section: SectionKey): void {
     sections.value[section].collapsed = !sections.value[section].collapsed
   }
 
-  function addFilter() {
+  function addFilter(): void {
     filters.value.push({
       id: crypto.randomUUID(),
       column: null,
@@ -154,18 +157,18 @@ export const useQueryStore = defineStore('query', () => {
     })
   }
 
-  function updateFilter(id, updates) {
+  function updateFilter(id: string, updates: Partial<Filter>): void {
     const filter = filters.value.find(f => f.id === id)
     if (filter) {
       Object.assign(filter, updates)
     }
   }
 
-  function removeFilter(id) {
+  function removeFilter(id: string): void {
     filters.value = filters.value.filter(f => f.id !== id)
   }
 
-  function addAggregation() {
+  function addAggregation(): void {
     aggregations.value.push({
       id: crypto.randomUUID(),
       column: '*',
@@ -174,18 +177,18 @@ export const useQueryStore = defineStore('query', () => {
     })
   }
 
-  function updateAggregation(id, updates) {
+  function updateAggregation(id: string, updates: Partial<Aggregation>): void {
     const agg = aggregations.value.find(a => a.id === id)
     if (agg) {
       Object.assign(agg, updates)
     }
   }
 
-  function removeAggregation(id) {
+  function removeAggregation(id: string): void {
     aggregations.value = aggregations.value.filter(a => a.id !== id)
   }
 
-  function reset() {
+  function reset(): void {
     filters.value = []
     selectedColumns.value = []
     groupByColumns.value = []

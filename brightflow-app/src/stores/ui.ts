@@ -1,12 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
+import type { ViewMode, ChartType } from '@/types'
+
+type SectionName = 'filter' | 'summarize' | 'results'
 
 export const useUiStore = defineStore('ui', () => {
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
-  const viewMode = ref(localStorage.getItem('brightflow-view-mode') || 'table')
+  const viewMode = ref<ViewMode>((localStorage.getItem('brightflow-view-mode') as ViewMode | null) ?? 'table')
 
   // Chart type: 'bar' | 'line' | 'pie' | 'scatter'
-  const chartType = ref(localStorage.getItem('brightflow-chart-type') || 'bar')
+  const chartType = ref<ChartType>((localStorage.getItem('brightflow-chart-type') as ChartType | null) ?? 'bar')
 
   // Section collapsed states (Filter collapsed by default, others open)
   const filterCollapsed = ref(true)
@@ -21,22 +24,22 @@ export const useUiStore = defineStore('ui', () => {
   watch(chartType, (val) => localStorage.setItem('brightflow-chart-type', val))
 
   // Actions
-  function setViewMode(mode) {
+  function setViewMode(mode: ViewMode): void {
     viewMode.value = mode
   }
 
-  function setChartType(type) {
+  function setChartType(type: ChartType): void {
     chartType.value = type
   }
 
-  function toggleSection(section) {
+  function toggleSection(section: SectionName): void {
     if (section === 'filter') filterCollapsed.value = !filterCollapsed.value
     if (section === 'summarize') summarizeCollapsed.value = !summarizeCollapsed.value
     if (section === 'results') resultsCollapsed.value = !resultsCollapsed.value
   }
 
   // Called when pivot results are received
-  function onPivotResults() {
+  function onPivotResults(): void {
     if (!hasShownPivotResults.value) {
       hasShownPivotResults.value = true
       viewMode.value = 'pivot'
@@ -44,7 +47,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   // Reset for new dataset
-  function resetForNewDataset() {
+  function resetForNewDataset(): void {
     hasShownPivotResults.value = false
     viewMode.value = 'table'
   }

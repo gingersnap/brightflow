@@ -4,6 +4,7 @@ import { useQueryStore } from '@/stores/query'
 import { useResultsStore } from '@/stores/results'
 import { usePivotStore } from '@/stores/pivot'
 import { useUiStore } from '@/stores/ui'
+import type { QueryOperation, WsMessage, ErrorMessage } from '@/types'
 
 /**
  * Query execution composable
@@ -19,14 +20,14 @@ export function useQuery() {
   /**
    * Build operations for table view (filters + limit)
    */
-  function buildTableOperations() {
-    const ops = []
+  function buildTableOperations(): QueryOperation[] {
+    const ops: QueryOperation[] = []
 
     // Add filters
     if (queryStore.filters.length > 0) {
       queryStore.filters.forEach(filter => {
         if (filter.column && filter.op) {
-          const op = {
+          const op: QueryOperation = {
             type: 'filter',
             column: filter.column,
             op: filter.op
@@ -50,7 +51,7 @@ export function useQuery() {
   /**
    * Load table data with current filters and limit
    */
-  function loadTableData() {
+  function loadTableData(): void {
     if (!connectionStore.isConnected || !datasetStore.hasData) {
       return
     }
@@ -59,14 +60,15 @@ export function useQuery() {
 
     resultsStore.setLoading(true)
 
-    const unsubscribeResult = connectionStore.onMessage('queryResult', (message) => {
+    const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
       resultsStore.setTableResults(message)
       unsubscribeResult()
       unsubscribeError()
     })
 
-    const unsubscribeError = connectionStore.onMessage('error', (message) => {
-      resultsStore.setError(message.message)
+    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
+      const errMsg = message as ErrorMessage
+      resultsStore.setError(errMsg.message)
       unsubscribeResult()
       unsubscribeError()
     })
@@ -81,16 +83,16 @@ export function useQuery() {
   /**
    * Build operations based on current configuration
    */
-  function buildOperations() {
+  function buildOperations(): QueryOperation[] {
     // If pivot is configured, use pivot operation (regardless of view mode)
     if (pivotStore.isConfigured) {
-      const ops = []
+      const ops: QueryOperation[] = []
 
       // Add any filters from query store
       if (queryStore.sections.filter.enabled && queryStore.filters.length > 0) {
         queryStore.filters.forEach(filter => {
           if (filter.column && filter.op) {
-            const op = {
+            const op: QueryOperation = {
               type: 'filter',
               column: filter.column,
               op: filter.op
@@ -106,9 +108,11 @@ export function useQuery() {
       // Add pivot operation
       if (pivotStore.valueFields.length > 0) {
         const valueField = pivotStore.valueFields[0]
+        if (!valueField) return ops
+
         const rowCols = pivotStore.rowFields.map(f => f.column)
-        const colField = pivotStore.columnFields.length > 0 ? pivotStore.columnFields[0].column : null
-        const aggFunc = valueField.aggregation || 'count'
+        const colField = pivotStore.columnFields.length > 0 ? pivotStore.columnFields[0]?.column ?? null : null
+        const aggFunc = valueField.aggregation ?? 'count'
 
         // Determine the best operation based on configuration
         // Note: The UI watcher should auto-add rows when values exist but rows/columns are empty
@@ -145,7 +149,8 @@ export function useQuery() {
           })
         }
 
-        console.log('[useQuery] Pivot/GroupBy operation:', ops[ops.length - 1])
+        const lastOp = ops[ops.length - 1]
+        console.log('[useQuery] Pivot/GroupBy operation:', lastOp)
       }
 
       // Add sort
@@ -172,7 +177,7 @@ export function useQuery() {
   /**
    * Execute pivot query (only when pivot is configured with values)
    */
-  function executePivot() {
+  function executePivot(): void {
     if (!connectionStore.isConnected) {
       resultsStore.setError('Not connected to server')
       return
@@ -193,7 +198,7 @@ export function useQuery() {
     resultsStore.setLoading(true)
 
     // Register one-time handler for query result
-    const unsubscribeResult = connectionStore.onMessage('queryResult', (message) => {
+    const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
       resultsStore.setPivotResults(message)
 
       // Auto-switch to pivot view on first pivot results
@@ -204,8 +209,9 @@ export function useQuery() {
     })
 
     // Handle errors
-    const unsubscribeError = connectionStore.onMessage('error', (message) => {
-      resultsStore.setError(message.message)
+    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
+      const errMsg = message as ErrorMessage
+      resultsStore.setError(errMsg.message)
       unsubscribeResult()
       unsubscribeError()
     })
@@ -219,14 +225,14 @@ export function useQuery() {
   }
 
   // Legacy alias
-  function execute() {
+  function execute(): void {
     executePivot()
   }
 
   /**
    * Check if query can be executed
    */
-  function canExecute() {
+  function canExecute(): boolean {
     if (!connectionStore.isConnected || !datasetStore.hasData) {
       return false
     }

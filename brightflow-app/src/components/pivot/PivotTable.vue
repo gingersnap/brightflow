@@ -1,15 +1,32 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronRight, ChevronDown, Minus } from 'lucide-vue-next'
+import { ChevronRight, ChevronDown } from 'lucide-vue-next'
 import { usePivotStore } from '@/stores/pivot'
 import { useResultsStore } from '@/stores/results'
 
 const pivotStore = usePivotStore()
 const resultsStore = useResultsStore()
 
+interface ColumnInfo {
+  name: string | undefined
+  dtype: string | undefined
+}
+
+interface PivotRow {
+  id: string
+  indexValues: unknown[]
+  dataValues: unknown[]
+}
+
+interface PivotData {
+  indexColumns: ColumnInfo[]
+  valueColumns: ColumnInfo[]
+  rows: PivotRow[]
+}
+
 // Process results - the backend already returns pivoted data
 // We just need to display it with proper formatting
-const pivotData = computed(() => {
+const pivotData = computed((): PivotData | null => {
   if (!resultsStore.hasPivotResults) return null
 
   const columns = resultsStore.pivotColumns
@@ -20,11 +37,10 @@ const pivotData = computed(() => {
   // The first N columns are the index (row labels)
   // The remaining columns are the pivoted values
   const indexCols = pivotStore.rowFields.map(f => f.column)
-  const numIndexCols = indexCols.length || 1 // At least 1 for display
 
   // Determine which columns are index vs values
-  const indexColIndices = []
-  const valueColIndices = []
+  const indexColIndices: number[] = []
+  const valueColIndices: number[] = []
 
   colNames.forEach((name, idx) => {
     if (indexCols.includes(name)) {
@@ -54,8 +70,27 @@ const pivotData = computed(() => {
   }
 })
 
+interface GroupedRow {
+  id: string
+  level: number
+  isGroup: boolean
+  groupKey: string | null
+  groupLabel?: unknown
+  rowCount?: number
+  indexValues: unknown[]
+  dataValues: unknown[]
+  isCollapsed?: boolean
+  displayIndexValues?: unknown[]
+}
+
+interface Group {
+  key: unknown
+  rows: PivotRow[]
+  subtotals: number[]
+}
+
 // Group rows hierarchically when there are multiple row fields
-const groupedRows = computed(() => {
+const groupedRows = computed((): GroupedRow[] => {
   if (!pivotData.value) return []
 
   const numIndexCols = pivotData.value.indexColumns.length
@@ -71,28 +106,31 @@ const groupedRows = computed(() => {
   }
 
   // Group by first index column(s)
-  const result = []
-  const groups = new Map()
+  const result: GroupedRow[] = []
+  const groups = new Map<unknown, Group>()
 
   // Build groups
-  pivotData.value.rows.forEach(row => {
-    const groupKey = row.indexValues[0]
-    if (!groups.has(groupKey)) {
-      groups.set(groupKey, {
-        key: groupKey,
+  const pData = pivotData.value
+  pData.rows.forEach(row => {
+    const groupKeyVal = row.indexValues[0]
+    if (!groups.has(groupKeyVal)) {
+      groups.set(groupKeyVal, {
+        key: groupKeyVal,
         rows: [],
-        subtotals: pivotData.value.valueColumns.map(() => 0)
+        subtotals: pData.valueColumns.map(() => 0)
       })
     }
-    const group = groups.get(groupKey)
-    group.rows.push(row)
+    const group = groups.get(groupKeyVal)
+    if (group) {
+      group.rows.push(row)
 
-    // Accumulate subtotals
-    row.dataValues.forEach((val, idx) => {
-      if (typeof val === 'number') {
-        group.subtotals[idx] += val
-      }
-    })
+      // Accumulate subtotals
+      row.dataValues.forEach((val, idx) => {
+        if (typeof val === 'number' && group.subtotals[idx] !== undefined) {
+          group.subtotals[idx] += val
+        }
+      })
+    }
   })
 
   // Flatten into displayable rows with group headers
@@ -137,11 +175,11 @@ const hasGrouping = computed(() => {
 })
 
 // Get all group keys for expand/collapse all
-const allGroupKeys = computed(() => {
+const allGroupKeys = computed((): string[] => {
   if (!hasGrouping.value) return []
   return groupedRows.value
-    .filter(row => row.isGroup)
-    .map(row => row.groupKey)
+    .filter(row => row.isGroup && row.groupKey !== null)
+    .map(row => row.groupKey as string)
 })
 
 // Expand all groups
@@ -154,16 +192,23 @@ function collapseAll() {
   pivotStore.collapseAllGroups(allGroupKeys.value)
 }
 
+interface ColumnStat {
+  min: number
+  max: number
+  range: number
+}
+
 // Calculate min/max for each value column (for conditional formatting)
-const columnStats = computed(() => {
+const columnStats = computed((): (ColumnStat | null)[] => {
   if (!pivotData.value) return []
 
-  return pivotData.value.valueColumns.map((col, colIdx) => {
+  const pData = pivotData.value
+  return pData.valueColumns.map((_col, colIdx) => {
     let min = Infinity
     let max = -Infinity
     let hasValues = false
 
-    pivotData.value.rows.forEach(row => {
+    pData.rows.forEach(row => {
       const val = row.dataValues[colIdx]
       if (typeof val === 'number' && !isNaN(val)) {
         min = Math.min(min, val)
@@ -177,13 +222,14 @@ const columnStats = computed(() => {
 })
 
 // Calculate column totals
-const columnTotals = computed(() => {
+const columnTotals = computed((): (number | null)[] | null => {
   if (!pivotData.value || !pivotStore.showColumnTotals) return null
 
-  const totals = pivotData.value.valueColumns.map((col, colIdx) => {
+  const pData = pivotData.value
+  const totals = pData.valueColumns.map((_col, colIdx) => {
     let sum = 0
     let count = 0
-    pivotData.value.rows.forEach(row => {
+    pData.rows.forEach(row => {
       const val = row.dataValues[colIdx]
       if (typeof val === 'number') {
         sum += val
@@ -197,7 +243,7 @@ const columnTotals = computed(() => {
 })
 
 // Get cell background color based on value (conditional formatting)
-function getCellStyle(value, colIdx) {
+function getCellStyle(value: unknown, colIdx: number): Record<string, string> {
   if (!pivotStore.showConditionalFormatting) return {}
 
   const stats = columnStats.value[colIdx]
@@ -218,7 +264,7 @@ function getCellStyle(value, colIdx) {
 }
 
 // Format cell value
-function formatValue(value, dtype) {
+function formatValue(value: unknown, dtype: string | undefined): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'number') {
     const decimals = pivotStore.decimalPlaces
@@ -243,7 +289,8 @@ function formatValue(value, dtype) {
 }
 
 // Check if a value is numeric
-function isNumeric(dtype) {
+function isNumeric(dtype: string | undefined): boolean {
+  if (!dtype) return false
   return ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype)
 }
 </script>
@@ -312,7 +359,7 @@ function isNumeric(dtype) {
         <template v-for="row in groupedRows" :key="row.id">
           <!-- Group header row -->
           <tr
-            v-if="row.isGroup"
+            v-if="row.isGroup && row.groupKey"
             class="bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors"
             @click="pivotStore.toggleGroup(row.groupKey)"
           >

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -13,6 +13,7 @@ import VChart from 'vue-echarts'
 import { useResultsStore } from '@/stores/results'
 import { useUiStore } from '@/stores/ui'
 import { usePivotStore } from '@/stores/pivot'
+import type { ChartType } from '@/types'
 
 // Register ECharts components
 use([
@@ -85,8 +86,8 @@ const allColumnNames = computed(() =>
 )
 
 // Chart axis selections
-const xAxis = ref(null)
-const yAxes = ref([]) // Support multiple Y axes
+const xAxis = ref<string | null>(null)
+const yAxes = ref<string[]>([])
 
 // Detect if this is pivot data with column breakdown (multiple value columns)
 const isPivotWithColumns = computed(() => {
@@ -108,10 +109,12 @@ watch(
     // For pivot with columns, auto-select index column as X and all numeric as Y
     if (isPivotWithColumns.value && chartColumns.value.length > 0) {
       // X axis: first index column (row field)
-      if (pivotIndexColumns.value.length > 0) {
-        xAxis.value = pivotIndexColumns.value[0]
-      } else if (stringColumns.value.length > 0) {
-        xAxis.value = stringColumns.value[0]
+      const firstPivotIndex = pivotIndexColumns.value[0]
+      const firstString = stringColumns.value[0]
+      if (firstPivotIndex) {
+        xAxis.value = firstPivotIndex
+      } else if (firstString) {
+        xAxis.value = firstString
       }
       // Y axes: all numeric columns (the pivoted values)
       if (numericColumns.value.length > 0) {
@@ -123,11 +126,13 @@ watch(
       }
     } else {
       // Regular data - select first of each
-      if (stringColumns.value.length > 0 && !xAxis.value) {
-        xAxis.value = stringColumns.value[0]
+      const firstString = stringColumns.value[0]
+      const firstNumeric = numericColumns.value[0]
+      if (firstString && !xAxis.value) {
+        xAxis.value = firstString
       }
-      if (numericColumns.value.length > 0 && yAxes.value.length === 0) {
-        yAxes.value = [numericColumns.value[0]]
+      if (firstNumeric && yAxes.value.length === 0) {
+        yAxes.value = [firstNumeric]
       }
     }
   },
@@ -135,7 +140,7 @@ watch(
 )
 
 // Select all numeric columns as Y axes
-function selectAllYAxes() {
+function selectAllYAxes(): void {
   yAxes.value = [...numericColumns.value]
 }
 
@@ -150,6 +155,18 @@ const colors = [
   '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
   '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc'
 ]
+
+interface SeriesItem {
+  name: string | undefined
+  type: string
+  data: unknown[]
+  itemStyle: { color: string | undefined }
+  stack?: string
+  stackStrategy?: string
+  label?: { show: boolean; position: string; fontSize: number }
+  smooth?: boolean
+  areaStyle?: Record<string, unknown>
+}
 
 // Build ECharts options
 const chartOption = computed(() => {
@@ -168,8 +185,8 @@ const chartOption = computed(() => {
   const baseOption = {
     color: colors,
     tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' }
+      trigger: 'axis' as const,
+      axisPointer: { type: 'shadow' as const }
     },
     legend: yAxes.value.length > 1 ? {
       data: yAxes.value,
@@ -184,10 +201,10 @@ const chartOption = computed(() => {
   }
 
   // Build series for each Y axis
-  const buildSeries = (type) => {
+  const buildSeries = (type: string): SeriesItem[] => {
     return yIndices.map((yIdx, i) => {
       const yData = chartRows.value.map(row => row[yIdx])
-      const series = {
+      const series: SeriesItem = {
         name: yAxes.value[i],
         type,
         data: yData,
@@ -206,7 +223,7 @@ const chartOption = computed(() => {
       if (showValues.value) {
         series.label = {
           show: true,
-          position: type === 'bar' ? 'top' : 'top',
+          position: 'top',
           fontSize: 10
         }
       }
@@ -223,16 +240,19 @@ const chartOption = computed(() => {
     })
   }
 
+  const firstYIdx = yIndices[0]
+  const firstYAxis = yAxes.value[0]
+
   switch (uiStore.chartType) {
     case 'bar':
       if (horizontal.value) {
         return {
           ...baseOption,
-          xAxis: { type: 'value' },
+          xAxis: { type: 'value' as const },
           yAxis: {
-            type: 'category',
+            type: 'category' as const,
             data: xData,
-            axisLabel: { width: 100, overflow: 'truncate' }
+            axisLabel: { width: 100, overflow: 'truncate' as const }
           },
           series: buildSeries('bar')
         }
@@ -240,11 +260,11 @@ const chartOption = computed(() => {
       return {
         ...baseOption,
         xAxis: {
-          type: 'category',
+          type: 'category' as const,
           data: xData,
           axisLabel: { rotate: xData.length > 10 ? 45 : 0 }
         },
-        yAxis: { type: 'value' },
+        yAxis: { type: 'value' as const },
         series: buildSeries('bar')
       }
 
@@ -252,22 +272,22 @@ const chartOption = computed(() => {
       return {
         ...baseOption,
         xAxis: {
-          type: 'category',
+          type: 'category' as const,
           data: xData,
           boundaryGap: false
         },
-        yAxis: { type: 'value' },
+        yAxis: { type: 'value' as const },
         series: buildSeries('line')
       }
 
-    case 'pie':
-      const yData = chartRows.value.map(row => row[yIndices[0]])
+    case 'pie': {
+      const yData = firstYIdx !== undefined ? chartRows.value.map(row => row[firstYIdx]) : []
       return {
         color: colors,
-        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-        legend: { orient: 'vertical', left: 'left' },
+        tooltip: { trigger: 'item' as const, formatter: '{b}: {c} ({d}%)' },
+        legend: { orient: 'vertical' as const, left: 'left' },
         series: [{
-          type: 'pie',
+          type: 'pie' as const,
           radius: ['40%', '70%'],
           data: xData.map((name, i) => ({
             name: String(name),
@@ -279,15 +299,16 @@ const chartOption = computed(() => {
           } : { show: false }
         }]
       }
+    }
 
     case 'scatter':
       return {
         ...baseOption,
-        xAxis: { type: 'value', name: xAxis.value },
-        yAxis: { type: 'value', name: yAxes.value[0] },
+        xAxis: { type: 'value' as const, name: xAxis.value },
+        yAxis: { type: 'value' as const, name: firstYAxis },
         series: [{
-          type: 'scatter',
-          data: chartRows.value.map(row => [row[xIndex], row[yIndices[0]]]),
+          type: 'scatter' as const,
+          data: firstYIdx !== undefined ? chartRows.value.map(row => [row[xIndex], row[firstYIdx]]) : [],
           itemStyle: { color: colors[0] }
         }]
       }
@@ -320,11 +341,12 @@ const showHorizontalOption = computed(() =>
       <div class="flex items-center gap-2">
         <label class="text-xs text-muted">Type:</label>
         <USelectMenu
-          v-model="uiStore.chartType"
+          :model-value="uiStore.chartType"
           :items="chartTypes"
           value-key="value"
           class="w-24"
           size="xs"
+          @update:model-value="(val: ChartType) => uiStore.setChartType(val)"
         />
       </div>
 
@@ -332,11 +354,12 @@ const showHorizontalOption = computed(() =>
       <div class="flex items-center gap-2">
         <label class="text-xs text-muted">X:</label>
         <USelectMenu
-          v-model="xAxis"
+          :model-value="xAxis ?? ''"
           :items="stringColumns.length ? stringColumns : allColumnNames"
           placeholder="X axis"
           class="w-32"
           size="xs"
+          @update:model-value="(val: string) => xAxis = val"
         />
       </div>
 

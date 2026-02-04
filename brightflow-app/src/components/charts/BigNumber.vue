@@ -1,20 +1,47 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-vue-next'
 import { useResultsStore } from '@/stores/results'
 import { usePivotStore } from '@/stores/pivot'
 
 const resultsStore = useResultsStore()
 const pivotStore = usePivotStore()
 
+interface DisplayValue {
+  label: string
+  value: unknown
+  dtype: string
+}
+
+interface SingleDisplay {
+  type: 'single'
+  label: string
+  value: unknown
+  dtype: string
+}
+
+interface MultiDisplay {
+  type: 'multi'
+  values: DisplayValue[]
+}
+
+interface AggregateDisplay {
+  type: 'aggregate'
+  label: string
+  primary: { label: string; value: number }
+  secondary: Array<{ label: string; value: number }>
+  dtype: string
+}
+
+type DisplayData = SingleDisplay | MultiDisplay | AggregateDisplay | null
+
 // Get the primary value to display
-const displayData = computed(() => {
+const displayData = computed((): DisplayData => {
   // Use pivot results if available, otherwise table results
   const hasPivot = resultsStore.hasPivotResults
   const cols = hasPivot ? resultsStore.pivotColumns : resultsStore.tableColumns
   const rows = hasPivot ? resultsStore.pivotRows : resultsStore.tableRows
 
-  if (!cols.length || !rows.length) return null
+  if (cols.length === 0 || rows.length === 0) return null
 
   // Find numeric columns
   const numericIndices = cols
@@ -24,29 +51,34 @@ const displayData = computed(() => {
   if (numericIndices.length === 0) return null
 
   // For pivot data with one row, show all numeric values
-  if (hasPivot && rows.length === 1) {
+  const firstRow = rows[0]
+  if (hasPivot && rows.length === 1 && firstRow) {
     const values = numericIndices.map(({ col, idx }) => ({
       label: col.name,
-      value: rows[0][idx],
+      value: firstRow[idx],
       dtype: col.dtype
     }))
     return { type: 'multi', values }
   }
 
   // For single value pivot/aggregate
-  if (rows.length === 1 && numericIndices.length === 1) {
-    const { col, idx } = numericIndices[0]
+  const firstNumeric = numericIndices[0]
+  if (rows.length === 1 && numericIndices.length === 1 && firstNumeric && firstRow) {
     return {
       type: 'single',
-      label: col.name,
-      value: rows[0][idx],
-      dtype: col.dtype
+      label: firstNumeric.col.name,
+      value: firstRow[firstNumeric.idx],
+      dtype: firstNumeric.col.dtype
     }
   }
 
   // For table data, calculate aggregates
   const primaryNumeric = numericIndices[0]
-  const values = rows.map(row => row[primaryNumeric.idx]).filter(v => typeof v === 'number')
+  if (!primaryNumeric) return null
+
+  const values = rows
+    .map(row => row[primaryNumeric.idx])
+    .filter((v): v is number => typeof v === 'number')
 
   if (values.length === 0) return null
 
@@ -70,7 +102,7 @@ const displayData = computed(() => {
 })
 
 // Format number for display
-function formatNumber(value, dtype, compact = false) {
+function formatNumber(value: unknown, dtype: string, compact = false): string {
   if (value === null || value === undefined) return '—'
   if (typeof value !== 'number') return String(value)
 
@@ -97,15 +129,16 @@ function formatNumber(value, dtype, compact = false) {
 }
 
 // Format large primary number
-function formatPrimary(value, dtype) {
+function formatPrimary(value: unknown, dtype: string): string {
   return formatNumber(value, dtype, true)
 }
 
 // Get aggregation label from pivot config
-const aggregationLabel = computed(() => {
-  if (pivotStore.valueFields.length > 0) {
-    const agg = pivotStore.valueFields[0].aggregation
-    const labels = {
+const aggregationLabel = computed((): string | null => {
+  const firstValueField = pivotStore.valueFields[0]
+  if (firstValueField) {
+    const agg = firstValueField.aggregation
+    const labels: Record<string, string> = {
       sum: 'Sum',
       count: 'Count',
       avg: 'Average',
@@ -113,7 +146,7 @@ const aggregationLabel = computed(() => {
       max: 'Maximum',
       mean: 'Mean'
     }
-    return labels[agg] || agg
+    return (agg && labels[agg]) ?? agg ?? null
   }
   return null
 })

@@ -4,16 +4,17 @@ import { useConnectionStore } from './connection'
 import { useUiStore } from './ui'
 import { useResultsStore } from './results'
 import { useQueryStore } from './query'
+import type { Column, MetadataMessage, ErrorMessage, WsMessage, LimitOperation } from '@/types'
 
 export const useDatasetStore = defineStore('dataset', () => {
   // State
   const id = ref('default')
-  const name = ref(null)
-  const rowCount = ref(null)
-  const columnCount = ref(null)
-  const columns = ref([])
+  const name = ref<string | null>(null)
+  const rowCount = ref<number | null>(null)
+  const columnCount = ref<number | null>(null)
+  const columns = ref<Column[]>([])
   const loading = ref(false)
-  const error = ref(null)
+  const error = ref<string | null>(null)
 
   // Computed
   const numericColumns = computed(() =>
@@ -27,7 +28,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const hasData = computed(() => columns.value.length > 0)
 
   // Actions
-  function fetchMetadata(datasetId = 'default') {
+  function fetchMetadata(datasetId = 'default'): void {
     const connectionStore = useConnectionStore()
 
     if (!connectionStore.isConnected) {
@@ -50,15 +51,16 @@ export const useDatasetStore = defineStore('dataset', () => {
     }, 10000)
 
     // Register one-time handler for metadata response
-    const unsubscribe = connectionStore.onMessage('metadata', (message) => {
+    const unsubscribe = connectionStore.onMessage('metadata', (message: WsMessage) => {
+      const metaMsg = message as MetadataMessage
       // Backend uses snake_case: dataset_id, row_count
-      if (message.dataset_id === datasetId) {
+      if (metaMsg.dataset_id === datasetId) {
         clearTimeout(timeout)
-        id.value = message.dataset_id
-        name.value = message.name
-        rowCount.value = message.row_count
-        columnCount.value = message.columns?.length || 0
-        columns.value = message.columns || []
+        id.value = metaMsg.dataset_id
+        name.value = metaMsg.name
+        rowCount.value = metaMsg.row_count
+        columnCount.value = metaMsg.columns?.length ?? 0
+        columns.value = metaMsg.columns ?? []
         loading.value = false
         unsubscribe()
         unsubscribeError()
@@ -73,9 +75,10 @@ export const useDatasetStore = defineStore('dataset', () => {
     })
 
     // Handle errors
-    const unsubscribeError = connectionStore.onMessage('error', (message) => {
+    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
+      const errMsg = message as ErrorMessage
       clearTimeout(timeout)
-      error.value = message.message
+      error.value = errMsg.message
       loading.value = false
       unsubscribe()
       unsubscribeError()
@@ -88,16 +91,16 @@ export const useDatasetStore = defineStore('dataset', () => {
     })
   }
 
-  function getColumnByName(columnName) {
+  function getColumnByName(columnName: string): Column | undefined {
     return columns.value.find(c => c.name === columnName)
   }
 
-  function getColumnType(columnName) {
+  function getColumnType(columnName: string): string {
     const column = getColumnByName(columnName)
-    return column?.dtype || 'string'
+    return column?.dtype ?? 'string'
   }
 
-  function reset() {
+  function reset(): void {
     id.value = 'default'
     name.value = null
     rowCount.value = null
@@ -107,7 +110,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   }
 
   // Load initial table data after metadata is received
-  function loadInitialData() {
+  function loadInitialData(): void {
     const connectionStore = useConnectionStore()
     const resultsStore = useResultsStore()
     const queryStore = useQueryStore()
@@ -118,20 +121,21 @@ export const useDatasetStore = defineStore('dataset', () => {
 
     resultsStore.setLoading(true)
 
-    const unsubscribeResult = connectionStore.onMessage('queryResult', (message) => {
+    const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
       resultsStore.setTableResults(message)
       unsubscribeResult()
       unsubscribeError()
     })
 
-    const unsubscribeError = connectionStore.onMessage('error', (message) => {
-      resultsStore.setError(message.message)
+    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
+      const errMsg = message as ErrorMessage
+      resultsStore.setError(errMsg.message)
       unsubscribeResult()
       unsubscribeError()
     })
 
     // Query with limit from query store (default 100)
-    const ops = []
+    const ops: LimitOperation[] = []
     if (queryStore.limit > 0) {
       ops.push({ type: 'limit', n: queryStore.limit })
     }

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { Plus } from 'lucide-vue-next'
 import { useQueryStore } from '@/stores/query'
 import FilterRow from './FilterRow.vue'

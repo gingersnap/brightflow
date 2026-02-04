@@ -1,14 +1,18 @@
-<script setup>
-import { X, Hash, Type, ToggleLeft } from 'lucide-vue-next'
+<script setup lang="ts">
+import { X } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { useDatasetStore } from '@/stores/dataset'
 import { useOperators } from '@/composables/useOperators'
+import type { Filter } from '@/types'
 
-const props = defineProps({
-  filter: { type: Object, required: true }
-})
+const props = defineProps<{
+  filter: Filter
+}>()
 
-const emit = defineEmits(['update', 'remove'])
+const emit = defineEmits<{
+  update: [updates: Partial<Filter>]
+  remove: []
+}>()
 
 const datasetStore = useDatasetStore()
 const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators()
@@ -46,12 +50,12 @@ watch(() => props.filter.column, (newColumn) => {
   <div class="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
     <!-- Column select -->
     <USelectMenu
-      :model-value="filter.column"
+      :model-value="filter.column ?? ''"
       :items="columnItems"
       value-key="value"
       placeholder="Select column"
       class="w-48"
-      @update:model-value="(val) => emit('update', { column: val })"
+      @update:model-value="(val: string) => emit('update', { column: val })"
     />
 
     <!-- Operator select -->
@@ -62,17 +66,17 @@ watch(() => props.filter.column, (newColumn) => {
       placeholder="Operator"
       :disabled="!filter.column"
       class="w-40"
-      @update:model-value="(val) => emit('update', { op: val, value: null })"
+      @update:model-value="(val: string) => emit('update', { op: val, value: null })"
     />
 
     <!-- Value input -->
     <UInput
       v-if="needsValue"
-      :model-value="filter.value"
+      :model-value="(filter.value as string | number | null) ?? ''"
       placeholder="Value"
       :disabled="!filter.column || !filter.op"
       class="flex-1"
-      @update:model-value="(val) => emit('update', { value: val })"
+      @update:model-value="(val: string | number) => emit('update', { value: val })"
     />
 
     <!-- Remove button -->

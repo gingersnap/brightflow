@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Database, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useDatasetStore } from '@/stores/dataset'

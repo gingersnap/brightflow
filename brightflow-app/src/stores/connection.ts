@@ -1,13 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getWebSocketClient } from '@/services/websocket'
+import { getWebSocketClient, type WebSocketClient } from '@/services/websocket'
 import { useDatasetStore } from './dataset'
+import type { ConnectionStatus, WsMessage, ConnectedMessage } from '@/types'
+
+type MessageHandler = (message: WsMessage) => void
 
 export const useConnectionStore = defineStore('connection', () => {
   // State
-  const status = ref('disconnected') // 'connected' | 'connecting' | 'disconnected' | 'error'
-  const serverVersion = ref(null)
-  const lastError = ref(null)
+  const status = ref<ConnectionStatus>('disconnected')
+  const serverVersion = ref<string | null>(null)
+  const lastError = ref<unknown>(null)
   const reconnectCount = ref(0)
 
   // Computed
@@ -34,33 +37,36 @@ export const useConnectionStore = defineStore('connection', () => {
   })
 
   // Client reference
-  let client = null
+  let client: WebSocketClient | null = null
 
   // Message handlers
-  const messageHandlers = new Map()
+  const messageHandlers = new Map<string, MessageHandler[]>()
 
-  function handleMessage(message) {
+  function handleMessage(message: WsMessage): void {
     const { type } = message
     console.log('[WS] Received:', type, message)
 
     switch (type) {
-      case 'connected':
-        serverVersion.value = message.serverVersion
+      case 'connected': {
+        const connectedMsg = message as ConnectedMessage
+        serverVersion.value = connectedMsg.serverVersion
         status.value = 'connected'
         // Fetch initial metadata
         const datasetStore = useDatasetStore()
         datasetStore.fetchMetadata()
         break
+      }
 
       case 'queryResult':
       case 'error':
       case 'metadata':
-      case 'datasetList':
+      case 'datasetList': {
         // Route to registered handlers
-        const handlers = messageHandlers.get(type) || []
+        const handlers = messageHandlers.get(type) ?? []
         console.log('[WS] Routing to', handlers.length, 'handlers')
         handlers.forEach(handler => handler(message))
         break
+      }
 
       default:
         console.log('[WS] Unknown message type:', type, message)
@@ -68,7 +74,7 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   // Actions
-  function connect() {
+  function connect(): void {
     if (client && (client.isConnected || client.isConnecting)) {
       return
     }
@@ -85,18 +91,18 @@ export const useConnectionStore = defineStore('connection', () => {
       status.value = 'disconnected'
     })
 
-    client.on('error', (error) => {
+    client.on('error', (error: unknown) => {
       status.value = 'error'
       lastError.value = error
       reconnectCount.value++
     })
 
-    client.on('message', handleMessage)
+    client.on<WsMessage>('message', handleMessage)
 
     client.connect()
   }
 
-  function disconnect() {
+  function disconnect(): void {
     if (client) {
       client.disconnect()
       client = null
@@ -104,7 +110,7 @@ export const useConnectionStore = defineStore('connection', () => {
     status.value = 'disconnected'
   }
 
-  function send(message) {
+  function send(message: unknown): void {
     if (client && client.isConnected) {
       console.log('[WS] Sending:', message)
       client.send(message)
@@ -113,18 +119,23 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
-  function onMessage(type, handler) {
+  function onMessage(type: string, handler: MessageHandler): () => void {
     if (!messageHandlers.has(type)) {
       messageHandlers.set(type, [])
     }
-    messageHandlers.get(type).push(handler)
+    const handlers = messageHandlers.get(type)
+    if (handlers) {
+      handlers.push(handler)
+    }
 
     // Return unsubscribe function
     return () => {
-      const handlers = messageHandlers.get(type)
-      const index = handlers.indexOf(handler)
-      if (index > -1) {
-        handlers.splice(index, 1)
+      const currentHandlers = messageHandlers.get(type)
+      if (currentHandlers) {
+        const index = currentHandlers.indexOf(handler)
+        if (index > -1) {
+          currentHandlers.splice(index, 1)
+        }
       }
     }
   }

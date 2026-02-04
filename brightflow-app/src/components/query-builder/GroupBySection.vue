@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { Plus, X } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useQueryStore } from '@/stores/query'
@@ -71,7 +71,7 @@ const aggregationItems = computed(() =>
             value-key="value"
             placeholder="Function"
             class="w-32"
-            @update:model-value="(val) => queryStore.updateAggregation(agg.id, { function: val })"
+            @update:model-value="(val: string) => queryStore.updateAggregation(agg.id, { function: val })"
           />
 
           <!-- Column -->
@@ -80,7 +80,7 @@ const aggregationItems = computed(() =>
             :items="aggColumnItems"
             placeholder="Column"
             class="w-40"
-            @update:model-value="(val) => queryStore.updateAggregation(agg.id, { column: val === '* (all rows)' ? '*' : val })"
+            @update:model-value="(val: string) => queryStore.updateAggregation(agg.id, { column: val === '* (all rows)' ? '*' : val })"
           />
 
           <!-- Alias -->
@@ -88,7 +88,7 @@ const aggregationItems = computed(() =>
             :model-value="agg.alias"
             placeholder="Alias (optional)"
             class="flex-1"
-            @update:model-value="(val) => queryStore.updateAggregation(agg.id, { alias: val })"
+            @update:model-value="(val: string) => queryStore.updateAggregation(agg.id, { alias: val })"
           />
 
           <!-- Remove -->

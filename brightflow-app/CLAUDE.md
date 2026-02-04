@@ -7,26 +7,36 @@ Current features:
 
 ## Stack
 
-- **Vite + Vue 3** (JavaScript only, no TypeScript)
-- **Nuxt UI 4** as pure Vue (not Nuxt framework) - see `vite.config.js` and `main.js` for setup
+- **Vite + Vue 3 + TypeScript** (strict mode)
+- **Nuxt UI 4** as pure Vue (not Nuxt framework) - see `vite.config.ts` and `main.ts` for setup
 - **Tailwind CSS 4** (CSS-first config, no tailwind.config.js)
 - **Pinia** for state management
 - **vue-echarts** for charts
+
+## TypeScript
+
+Strict TypeScript is enabled with all strict flags plus additional checks:
+- `noUncheckedIndexedAccess` - array/object access returns `T | undefined`
+- `exactOptionalPropertyTypes` - distinguishes missing vs undefined
+- `noUnusedLocals` / `noUnusedParameters` - errors on dead code
+
+Shared types in `src/types/index.ts`. Run `npm run type-check` to verify.
 
 ## Architecture
 
 **Single dataset focus** - no workspace switching, one data source at a time.
 
-**WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.js`, query execution in `composables/useQuery.js`.
+**WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.ts`, query execution in `composables/useQuery.ts`.
 
-**Query builder as primary UX** - users build queries visually rather than writing code. Each section (filter, group by, sort, limit) is toggleable. See `stores/query.js` for state shape and `components/query-builder/` for UI.
+**Query builder as primary UX** - users build queries visually rather than writing code. Each section (filter, group by, sort, limit) is toggleable. See `stores/query.ts` for state shape and `components/query-builder/` for UI.
 
 ## Key Files
 
 - `API.md` - Backend API documentation
-- `stores/query.js` - Query state and operations builder
-- `composables/useOperators.js` - Filter operators by column type
-- `services/websocket.js` - WebSocket client with reconnection
+- `src/types/index.ts` - Shared TypeScript types
+- `stores/query.ts` - Query state and operations builder
+- `composables/useOperators.ts` - Filter operators by column type
+- `services/websocket.ts` - WebSocket client with reconnection
 
 ## Nuxt UI Notes
 

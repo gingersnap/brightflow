@@ -1,5 +1,5 @@
-<script setup>
-import { ref, watch, computed } from 'vue'
+<script setup lang="ts">
+import { watch, computed, type Component } from 'vue'
 import { Hash, Type, HelpCircle, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, ChevronDown, ArrowLeftRight } from 'lucide-vue-next'
 import draggable from 'vuedraggable'
 import { usePivotStore } from '@/stores/pivot'
@@ -9,6 +9,15 @@ import { useConnectionStore } from '@/stores/connection'
 import { useUiStore } from '@/stores/ui'
 import { useQuery } from '@/composables/useQuery'
 import BucketDropzone from '../pivot/BucketDropzone.vue'
+import type { PivotField } from '@/types'
+
+interface ColumnItem {
+  name: string
+  dtype: string
+  id: string
+  isNumeric: boolean
+  isString: boolean
+}
 
 const pivotStore = usePivotStore()
 const queryStore = useQueryStore()
@@ -20,7 +29,7 @@ const { execute, canExecute } = useQuery()
 const isCollapsed = computed(() => uiStore.summarizeCollapsed)
 
 // Columns for the sidebar
-const columns = computed(() => {
+const columns = computed((): ColumnItem[] => {
   return datasetStore.columns.map(col => ({
     ...col,
     id: col.name,
@@ -30,14 +39,14 @@ const columns = computed(() => {
 })
 
 // Get icon for column type
-function getTypeIcon(col) {
+function getTypeIcon(col: ColumnItem): Component {
   if (col.isNumeric) return Hash
   if (col.isString) return Type
   return HelpCircle
 }
 
 // Clone function for draggable
-function cloneColumn(col) {
+function cloneColumn(col: ColumnItem): ColumnItem & { column: string } {
   return {
     ...col,
     column: col.name
@@ -51,30 +60,34 @@ watch(
     rows: pivotStore.rowFields.length,
     columns: pivotStore.columnFields.length
   }),
-  ({ values, rows, columns }) => {
+  ({ values, rows, columns: colCount }) => {
     // Rule: If columns exist but rows don't, move columns to rows
-    if (columns > 0 && rows === 0) {
+    if (colCount > 0 && rows === 0) {
       const colField = pivotStore.columnFields[0]
-      pivotStore.removeColumnField(colField.id)
-      pivotStore.addRowField(colField.column, colField.dtype)
+      if (colField) {
+        pivotStore.removeColumnField(colField.id)
+        pivotStore.addRowField(colField.column, colField.dtype)
+      }
       return
     }
 
     // Rule: If only values exist, auto-add a row
-    if (values > 0 && rows === 0 && columns === 0) {
+    if (values > 0 && rows === 0 && colCount === 0) {
       const valueField = pivotStore.valueFields[0]
-      const aggFunc = valueField.aggregation || 'count'
+      if (valueField) {
+        const aggFunc = valueField.aggregation ?? 'count'
 
-      if (aggFunc === 'count') {
-        pivotStore.addRowField(valueField.column, valueField.dtype)
-      } else {
-        const stringCol = datasetStore.columns.find(c =>
-          ['string', 'text', 'varchar'].includes(c.dtype) && c.name !== valueField.column
-        )
-        if (stringCol) {
-          pivotStore.addRowField(stringCol.name, stringCol.dtype)
-        } else {
+        if (aggFunc === 'count') {
           pivotStore.addRowField(valueField.column, valueField.dtype)
+        } else {
+          const stringCol = datasetStore.columns.find(c =>
+            ['string', 'text', 'varchar'].includes(c.dtype) && c.name !== valueField.column
+          )
+          if (stringCol) {
+            pivotStore.addRowField(stringCol.name, stringCol.dtype)
+          } else {
+            pivotStore.addRowField(valueField.column, valueField.dtype)
+          }
         }
       }
     }
@@ -83,7 +96,7 @@ watch(
 )
 
 // Auto-execute when configuration changes
-let debounceTimer = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 watch(
   () => [
     pivotStore.rowFields.map(f => f.column),
@@ -96,7 +109,7 @@ watch(
     queryStore.sections.sort.enabled
   ],
   () => {
-    clearTimeout(debounceTimer)
+    if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
         execute()
@@ -106,33 +119,38 @@ watch(
   { deep: true }
 )
 
+interface FieldParam {
+  column: string
+  dtype: string
+}
+
 // Bucket handlers
-function handleAddRow(field) {
+function handleAddRow(field: FieldParam): void {
   pivotStore.addRowField(field.column, field.dtype)
 }
 
-function handleAddColumn(field) {
+function handleAddColumn(field: FieldParam): void {
   pivotStore.addColumnField(field.column, field.dtype)
 }
 
-function handleAddValue(field) {
+function handleAddValue(field: FieldParam): void {
   pivotStore.addValueField(field.column, field.dtype)
 }
 
-function handleReorderRows(newOrder) {
+function handleReorderRows(newOrder: PivotField[]): void {
   pivotStore.reorderRowFields(newOrder)
 }
 
-function handleReorderValues(newOrder) {
+function handleReorderValues(newOrder: PivotField[]): void {
   pivotStore.reorderValueFields(newOrder)
 }
 
 // Sort handlers
-function toggleSort() {
+function toggleSort(): void {
   queryStore.toggleSection('sort')
 }
 
-function handleSortColumnChange(column) {
+function handleSortColumnChange(column: string): void {
   queryStore.sortBy = column
 }
 
@@ -299,13 +317,13 @@ const sortColumnOptions = computed(() => {
 
           <template v-if="queryStore.sections.sort.enabled">
             <USelectMenu
-              :model-value="queryStore.sortBy"
+              :model-value="queryStore.sortBy ?? ''"
               :items="sortColumnOptions"
               placeholder="Sort by..."
               value-key="value"
               size="xs"
               class="w-32"
-              @update:model-value="handleSortColumnChange"
+              @update:model-value="(val: string) => handleSortColumnChange(val)"
             />
 
             <UButton

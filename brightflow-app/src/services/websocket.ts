@@ -1,8 +1,34 @@
 /**
  * WebSocket client with automatic reconnection
  */
+
+type WsEventType = 'open' | 'close' | 'error' | 'message'
+type WsHandler<T = unknown> = (data: T) => void
+
+interface WebSocketOptions {
+  reconnect: boolean
+  reconnectDelay: number
+  reconnectDelayMax: number
+  reconnectAttempts: number
+  heartbeatInterval: number
+}
+
 export class WebSocketClient {
-  constructor(url, options = {}) {
+  private url: string
+  private options: WebSocketOptions
+  private ws: WebSocket | null = null
+  private reconnectCount = 0
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private messageQueue: string[] = []
+  private handlers: Record<WsEventType, WsHandler[]> = {
+    open: [],
+    close: [],
+    error: [],
+    message: []
+  }
+
+  constructor(url: string, options: Partial<WebSocketOptions> = {}) {
     this.url = url
     this.options = {
       reconnect: true,
@@ -12,31 +38,17 @@ export class WebSocketClient {
       heartbeatInterval: 30000,
       ...options
     }
-
-    this.ws = null
-    this.reconnectCount = 0
-    this.reconnectTimer = null
-    this.heartbeatTimer = null
-    this.messageQueue = []
-
-    // Event handlers
-    this.handlers = {
-      open: [],
-      close: [],
-      error: [],
-      message: []
-    }
   }
 
-  get isConnected() {
+  get isConnected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN
   }
 
-  get isConnecting() {
+  get isConnecting(): boolean {
     return this.ws?.readyState === WebSocket.CONNECTING
   }
 
-  connect() {
+  connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
       return
     }
@@ -49,7 +61,7 @@ export class WebSocketClient {
     }
   }
 
-  disconnect() {
+  disconnect(): void {
     this.options.reconnect = false
     this.clearTimers()
 
@@ -59,10 +71,10 @@ export class WebSocketClient {
     }
   }
 
-  send(data) {
+  send(data: unknown): void {
     const message = typeof data === 'string' ? data : JSON.stringify(data)
 
-    if (this.isConnected) {
+    if (this.isConnected && this.ws) {
       this.ws.send(message)
     } else {
       // Queue message for when connection is established
@@ -70,26 +82,26 @@ export class WebSocketClient {
     }
   }
 
-  on(event, handler) {
-    if (this.handlers[event]) {
-      this.handlers[event].push(handler)
-    }
+  on<T>(event: WsEventType, handler: WsHandler<T>): () => void {
+    this.handlers[event].push(handler as WsHandler)
     // Return unsubscribe function
     return () => {
       this.handlers[event] = this.handlers[event].filter(h => h !== handler)
     }
   }
 
-  setupEventHandlers() {
-    this.ws.onopen = () => {
+  private setupEventHandlers(): void {
+    if (!this.ws) return
+
+    this.ws.onopen = (): void => {
       console.log('[WebSocket] Connection opened')
       this.reconnectCount = 0
       this.startHeartbeat()
       this.flushMessageQueue()
-      this.emit('open')
+      this.emit('open', undefined)
     }
 
-    this.ws.onclose = (event) => {
+    this.ws.onclose = (event: CloseEvent): void => {
       console.log('[WebSocket] Connection closed', event.code, event.reason)
       this.clearTimers()
       this.emit('close', event)
@@ -99,18 +111,18 @@ export class WebSocketClient {
       }
     }
 
-    this.ws.onerror = (event) => {
+    this.ws.onerror = (event: Event): void => {
       console.error('[WebSocket] Error', event)
       this.emit('error', event)
     }
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = (event: MessageEvent): void => {
       console.log('[WebSocket] Raw message:', event.data)
       try {
-        const data = JSON.parse(event.data)
+        const data = JSON.parse(event.data as string) as Record<string, unknown>
 
         // Handle pong silently
-        if (data.type === 'pong') {
+        if (data['type'] === 'pong') {
           return
         }
 
@@ -121,7 +133,7 @@ export class WebSocketClient {
     }
   }
 
-  scheduleReconnect() {
+  private scheduleReconnect(): void {
     if (this.reconnectCount >= this.options.reconnectAttempts) {
       console.warn('WebSocket: Max reconnection attempts reached')
       return
@@ -138,15 +150,15 @@ export class WebSocketClient {
     }, delay)
   }
 
-  startHeartbeat() {
+  private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
-      if (this.isConnected) {
+      if (this.isConnected && this.ws) {
         this.ws.send(JSON.stringify({ type: 'ping' }))
       }
     }, this.options.heartbeatInterval)
   }
 
-  clearTimers() {
+  private clearTimers(): void {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
@@ -157,14 +169,16 @@ export class WebSocketClient {
     }
   }
 
-  flushMessageQueue() {
+  private flushMessageQueue(): void {
     while (this.messageQueue.length > 0) {
       const message = this.messageQueue.shift()
-      this.ws.send(message)
+      if (message !== undefined && this.ws) {
+        this.ws.send(message)
+      }
     }
   }
 
-  emit(event, data) {
+  private emit(event: WsEventType, data: unknown): void {
     this.handlers[event].forEach(handler => {
       try {
         handler(data)
@@ -176,9 +190,9 @@ export class WebSocketClient {
 }
 
 // Singleton instance
-let client = null
+let client: WebSocketClient | null = null
 
-export function getWebSocketClient() {
+export function getWebSocketClient(): WebSocketClient {
   if (!client) {
     const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/ws'
     client = new WebSocketClient(wsUrl)

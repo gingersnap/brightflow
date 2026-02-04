@@ -1,16 +1,19 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { PivotField, FormatRule, PivotOperation } from '@/types'
+
+type BucketName = 'rows' | 'columns' | 'values'
 
 export const usePivotStore = defineStore('pivot', () => {
   // === Bucket State ===
   // Rows bucket - columns that become row headers
-  const rowFields = ref([])
+  const rowFields = ref<PivotField[]>([])
 
   // Columns bucket - column that becomes column headers
-  const columnFields = ref([])
+  const columnFields = ref<PivotField[]>([])
 
   // Values bucket - columns with aggregations
-  const valueFields = ref([])
+  const valueFields = ref<PivotField[]>([])
 
   // === Settings ===
   const showSubtotals = ref(true)
@@ -21,10 +24,10 @@ export const usePivotStore = defineStore('pivot', () => {
 
   // === UI State ===
   // Track which row groups are collapsed
-  const collapsedGroups = ref(new Set())
+  const collapsedGroups = ref<Set<string>>(new Set())
 
   // Conditional formatting rules
-  const formatRules = ref([])
+  const formatRules = ref<FormatRule[]>([])
 
   // === Computed ===
 
@@ -44,21 +47,24 @@ export const usePivotStore = defineStore('pivot', () => {
   })
 
   // Build operations for API
-  const pivotOperation = computed(() => {
+  const pivotOperation = computed((): PivotOperation | null => {
     if (!isConfigured.value) return null
 
     // For multi-value pivot, we need an enhanced format
     const values = valueFields.value.map(v => ({
       column: v.column,
-      agg: v.aggregation
+      agg: v.aggregation ?? 'count'
     }))
+
+    const firstValue = values[0]
+    if (!firstValue) return null
 
     return {
       type: 'pivot',
       index: rowFields.value.map(f => f.column),
-      columns: columnFields.value.length > 0 ? columnFields.value[0].column : null,
-      values: values.length === 1 ? values[0].column : values,
-      agg: values.length === 1 ? values[0].agg : values.map(v => v.agg),
+      columns: columnFields.value.length > 0 ? columnFields.value[0]?.column ?? null : null,
+      values: values.length === 1 ? firstValue.column : values,
+      agg: values.length === 1 ? firstValue.agg : values.map(v => v.agg),
       includeSubtotals: showSubtotals.value,
       includeTotals: showRowTotals.value || showColumnTotals.value
     }
@@ -66,7 +72,7 @@ export const usePivotStore = defineStore('pivot', () => {
 
   // === Actions ===
 
-  function addRowField(column, dtype) {
+  function addRowField(column: string, dtype: string): void {
     // Check if already added
     if (rowFields.value.some(f => f.column === column)) return
 
@@ -77,15 +83,15 @@ export const usePivotStore = defineStore('pivot', () => {
     })
   }
 
-  function removeRowField(id) {
+  function removeRowField(id: string): void {
     rowFields.value = rowFields.value.filter(f => f.id !== id)
   }
 
-  function reorderRowFields(newOrder) {
+  function reorderRowFields(newOrder: PivotField[]): void {
     rowFields.value = newOrder
   }
 
-  function addColumnField(column, dtype) {
+  function addColumnField(column: string, dtype: string): void {
     // Only allow one column field (Metabase behavior)
     columnFields.value = [{
       id: crypto.randomUUID(),
@@ -94,11 +100,11 @@ export const usePivotStore = defineStore('pivot', () => {
     }]
   }
 
-  function removeColumnField(id) {
+  function removeColumnField(id: string): void {
     columnFields.value = columnFields.value.filter(f => f.id !== id)
   }
 
-  function addValueField(column, dtype, aggregation = null) {
+  function addValueField(column: string, dtype: string, aggregation: string | null = null): void {
     // Choose default aggregation based on type
     // Numeric types default to sum, strings default to count
     const isNumeric = ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype)
@@ -108,27 +114,27 @@ export const usePivotStore = defineStore('pivot', () => {
       id: crypto.randomUUID(),
       column,
       dtype,
-      aggregation: aggregation || defaultAgg
+      aggregation: aggregation ?? defaultAgg
     })
   }
 
-  function updateValueField(id, updates) {
+  function updateValueField(id: string, updates: Partial<PivotField>): void {
     const field = valueFields.value.find(f => f.id === id)
     if (field) {
       Object.assign(field, updates)
     }
   }
 
-  function removeValueField(id) {
+  function removeValueField(id: string): void {
     valueFields.value = valueFields.value.filter(f => f.id !== id)
   }
 
-  function reorderValueFields(newOrder) {
+  function reorderValueFields(newOrder: PivotField[]): void {
     valueFields.value = newOrder
   }
 
   // Group collapse management
-  function toggleGroup(groupKey) {
+  function toggleGroup(groupKey: string): void {
     if (collapsedGroups.value.has(groupKey)) {
       collapsedGroups.value.delete(groupKey)
     } else {
@@ -138,32 +144,32 @@ export const usePivotStore = defineStore('pivot', () => {
     collapsedGroups.value = new Set(collapsedGroups.value)
   }
 
-  function isGroupCollapsed(groupKey) {
+  function isGroupCollapsed(groupKey: string): boolean {
     return collapsedGroups.value.has(groupKey)
   }
 
-  function expandAllGroups() {
+  function expandAllGroups(): void {
     collapsedGroups.value = new Set()
   }
 
-  function collapseAllGroups(groupKeys) {
+  function collapseAllGroups(groupKeys: string[]): void {
     collapsedGroups.value = new Set(groupKeys)
   }
 
   // Conditional formatting
-  function addFormatRule(rule) {
+  function addFormatRule(rule: Omit<FormatRule, 'id'>): void {
     formatRules.value.push({
       id: crypto.randomUUID(),
       ...rule
     })
   }
 
-  function removeFormatRule(id) {
+  function removeFormatRule(id: string): void {
     formatRules.value = formatRules.value.filter(r => r.id !== id)
   }
 
   // Reset all pivot state
-  function reset() {
+  function reset(): void {
     rowFields.value = []
     columnFields.value = []
     valueFields.value = []
@@ -177,13 +183,16 @@ export const usePivotStore = defineStore('pivot', () => {
   }
 
   // Flip/swap rows and columns
-  function flipRowsAndColumns() {
+  function flipRowsAndColumns(): void {
     const oldRows = [...rowFields.value]
     const oldColumns = [...columnFields.value]
 
     // Columns bucket only allows one item, so take first row if multiple
     if (oldRows.length > 0) {
-      columnFields.value = [oldRows[0]]
+      const firstRow = oldRows[0]
+      if (firstRow) {
+        columnFields.value = [firstRow]
+      }
       // Remaining rows stay as rows
       rowFields.value = oldRows.slice(1)
     } else {
@@ -201,24 +210,27 @@ export const usePivotStore = defineStore('pivot', () => {
   }
 
   // Move field between buckets
-  function moveField(fieldId, fromBucket, toBucket) {
-    let field = null
+  function moveField(fieldId: string, fromBucket: BucketName, toBucket: BucketName): void {
+    let field: PivotField | null = null
 
     // Find and remove from source bucket
     if (fromBucket === 'rows') {
       const idx = rowFields.value.findIndex(f => f.id === fieldId)
       if (idx !== -1) {
-        field = rowFields.value.splice(idx, 1)[0]
+        const removed = rowFields.value.splice(idx, 1)[0]
+        if (removed) field = removed
       }
     } else if (fromBucket === 'columns') {
       const idx = columnFields.value.findIndex(f => f.id === fieldId)
       if (idx !== -1) {
-        field = columnFields.value.splice(idx, 1)[0]
+        const removed = columnFields.value.splice(idx, 1)[0]
+        if (removed) field = removed
       }
     } else if (fromBucket === 'values') {
       const idx = valueFields.value.findIndex(f => f.id === fieldId)
       if (idx !== -1) {
-        field = valueFields.value.splice(idx, 1)[0]
+        const removed = valueFields.value.splice(idx, 1)[0]
+        if (removed) field = removed
       }
     }
 

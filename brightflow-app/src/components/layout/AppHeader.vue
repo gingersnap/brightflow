@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { Upload, Settings, Database } from 'lucide-vue-next'
 import { useConnectionStore } from '@/stores/connection'
 import { useDatasetStore } from '@/stores/dataset'

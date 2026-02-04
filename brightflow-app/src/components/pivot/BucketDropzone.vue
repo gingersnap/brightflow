@@ -1,55 +1,66 @@
-<script setup>
-import { ref, watch } from 'vue'
+<script setup lang="ts">
+import { ref, watch, type Component } from 'vue'
 import { X, Hash, Type, HelpCircle, GripVertical } from 'lucide-vue-next'
 import draggable from 'vuedraggable'
+import type { PivotField } from '@/types'
 
-const props = defineProps({
-  title: {
-    type: String,
-    required: true
-  },
-  fields: {
-    type: Array,
-    default: () => []
-  },
-  bucket: {
-    type: String,
-    required: true // 'rows', 'columns', 'values'
-  },
-  showAggregation: {
-    type: Boolean,
-    default: false
-  },
-  maxItems: {
-    type: Number,
-    default: null // null = unlimited
-  },
-  disabled: {
-    type: Boolean,
-    default: false
-  },
-  disabledMessage: {
-    type: String,
-    default: 'Not available'
-  },
-  aggregations: {
-    type: Array,
-    default: () => [
-      { value: 'count', label: 'Count' },
-      { value: 'sum', label: 'Sum' },
-      { value: 'avg', label: 'Average' },
-      { value: 'min', label: 'Min' },
-      { value: 'max', label: 'Max' },
-      { value: 'median', label: 'Median' }
-    ]
+interface AggregationOption {
+  value: string
+  label: string
+}
+
+interface DragElement {
+  column?: string
+  name?: string
+  dtype?: string
+}
+
+interface DragEvent {
+  added?: {
+    newIndex: number
+    element: DragElement
   }
+  moved?: {
+    oldIndex: number
+    newIndex: number
+  }
+}
+
+const props = withDefaults(defineProps<{
+  title: string
+  fields: PivotField[]
+  bucket: 'rows' | 'columns' | 'values'
+  showAggregation?: boolean
+  maxItems?: number | null
+  disabled?: boolean
+  disabledMessage?: string
+  aggregations?: AggregationOption[]
+}>(), {
+  fields: () => [],
+  showAggregation: false,
+  maxItems: null,
+  disabled: false,
+  disabledMessage: 'Not available',
+  aggregations: () => [
+    { value: 'count', label: 'Count' },
+    { value: 'sum', label: 'Sum' },
+    { value: 'avg', label: 'Average' },
+    { value: 'min', label: 'Min' },
+    { value: 'max', label: 'Max' },
+    { value: 'median', label: 'Median' }
+  ]
 })
 
-const emit = defineEmits(['add', 'remove', 'reorder', 'update'])
+const emit = defineEmits<{
+  add: [field: { column: string; dtype: string }]
+  remove: [id: string]
+  reorder: [fields: PivotField[]]
+  update: [id: string, updates: Partial<PivotField>]
+}>()
 
 // Local copy of fields for draggable - synced from props
 // This prevents vuedraggable from mutating props directly
-const localFields = ref([...props.fields])
+const localFields = ref<PivotField[]>([...props.fields])
 
 // Sync local fields when props change (from store updates)
 watch(() => props.fields, (newFields) => {
@@ -57,14 +68,14 @@ watch(() => props.fields, (newFields) => {
 }, { deep: true })
 
 // Whether we can accept more items
-function canAcceptMore() {
+function canAcceptMore(): boolean {
   if (props.disabled) return false
   if (props.maxItems === null) return true
   return props.fields.length < props.maxItems
 }
 
 // Get icon for field type
-function getTypeIcon(field) {
+function getTypeIcon(field: PivotField): Component {
   const dtype = field.dtype
   if (['int', 'float', 'decimal', 'number'].includes(dtype)) return Hash
   if (['string', 'text', 'varchar'].includes(dtype)) return Type
@@ -72,7 +83,7 @@ function getTypeIcon(field) {
 }
 
 // Handle all drag changes - differentiates between add and reorder
-function handleChange(evt) {
+function handleChange(evt: DragEvent): void {
   if (evt.added) {
     // Item was cloned from sidebar
     // Remove it from local list (vuedraggable added it) - store will add properly
@@ -83,7 +94,7 @@ function handleChange(evt) {
 
     const addedElement = evt.added.element
     if (addedElement) {
-      const column = addedElement.column || addedElement.name
+      const column = addedElement.column ?? addedElement.name
       const dtype = addedElement.dtype
 
       if (column && dtype) {
@@ -140,13 +151,13 @@ function handleChange(evt) {
             value-key="value"
             size="xs"
             class="w-20"
-            @update:model-value="$emit('update', element.id, { aggregation: $event })"
+            @update:model-value="(val: string) => emit('update', element.id, { aggregation: val })"
           />
 
           <!-- Remove button -->
           <button
             class="p-0.5 rounded hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
-            @click.stop="$emit('remove', element.id)"
+            @click.stop="emit('remove', element.id)"
           >
             <X class="w-3.5 h-3.5 text-muted hover:text-default" />
           </button>

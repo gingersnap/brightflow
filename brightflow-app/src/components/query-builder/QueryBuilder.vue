@@ -1,8 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { useQuery } from '@/composables/useQuery'
 import { useQueryStore } from '@/stores/query'
 import { useResultsStore } from '@/stores/results'
-import { useConnectionStore } from '@/stores/connection'
 import QuerySection from './QuerySection.vue'
 import FilterSection from './FilterSection.vue'
 import GroupBySection from './GroupBySection.vue'
@@ -11,7 +10,6 @@ import LimitSection from './LimitSection.vue'
 
 const queryStore = useQueryStore()
 const resultsStore = useResultsStore()
-const connectionStore = useConnectionStore()
 const { execute, canExecute } = useQuery()
 
 function handleRun() {
@@ -24,7 +22,7 @@ function handleReset() {
 }
 
 // Keyboard shortcut: Cmd/Ctrl + Enter to run
-function handleKeydown(event) {
+function handleKeydown(event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
     if (canExecute()) {

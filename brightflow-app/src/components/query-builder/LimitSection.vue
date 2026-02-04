@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { useQueryStore } from '@/stores/query'
 
 const queryStore = useQueryStore()

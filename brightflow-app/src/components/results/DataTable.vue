@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { useResultsStore } from '@/stores/results'
 
@@ -15,7 +15,7 @@ const tableColumns = computed(() =>
 // Transform rows array to objects for UTable
 const tableData = computed(() =>
   resultsStore.rows.map((row, index) => {
-    const obj = { _index: index }
+    const obj: Record<string, unknown> = { _index: index }
     resultsStore.columns.forEach((col, i) => {
       obj[col.name] = formatCell(row[i], col.dtype)
     })
@@ -23,7 +23,7 @@ const tableData = computed(() =>
   })
 )
 
-function formatCell(value, dtype) {
+function formatCell(value: unknown, dtype: string): string {
   if (value === null || value === undefined) {
     return '—'
   }
@@ -36,10 +36,11 @@ function formatCell(value, dtype) {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2
       })
-    case 'string':
+    case 'string': {
       // Truncate long strings
       const str = String(value)
       return str.length > 100 ? str.slice(0, 100) + '...' : str
+    }
     default:
       return String(value)
   }
