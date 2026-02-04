@@ -4,7 +4,7 @@ Cargo workspace. Run `cargo check` from root to verify all crates compile.
 
 ## Crates
 
-- **brightflow** - Main binary (run-all, serve, schedule, insights subcommands)
+- **brightflow-cli** - Main binary (run-all, serve, schedule, insights subcommands)
 - **brightflow-core** - Shared types (TenantId, DatasetId, errors)
 - **brightflow-connect** - Avon integration for data connectors
 - **brightflow-store** - Delta Lake storage

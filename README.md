@@ -11,7 +11,7 @@ crates/
 ├── brightflow-store/     # Delta Lake storage
 ├── brightflow-insights/  # Statistical analysis engine
 ├── brightflow-api/       # HTTP API server
-└── brightflow/           # Main binary
+└── brightflow-cli/       # Main binary
 
 brightflow-app/       # Vue frontend
 ```

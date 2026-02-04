@@ -798,23 +798,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "brightflow"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "brightflow-api",
- "brightflow-connect",
- "brightflow-core",
- "brightflow-insights",
- "brightflow-store",
- "clap",
- "dotenvy",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "brightflow-api"
 version = "0.1.0"
 dependencies = [
@@ -836,6 +819,23 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "brightflow-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "brightflow-api",
+ "brightflow-connect",
+ "brightflow-core",
+ "brightflow-insights",
+ "brightflow-store",
+ "clap",
+ "dotenvy",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
