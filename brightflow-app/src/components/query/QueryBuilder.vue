@@ -1,56 +1,68 @@
 <script setup lang="ts">
-import { watch, computed, type Component } from 'vue'
-import { Hash, Type, HelpCircle, GripVertical, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ChevronRight, ChevronDown, ArrowLeftRight } from 'lucide-vue-next'
-import draggable from 'vuedraggable'
-import { usePivotStore } from '@/stores/pivot'
-import { useQueryStore } from '@/stores/query'
-import { useDatasetStore } from '@/stores/dataset'
-import { useConnectionStore } from '@/stores/connection'
-import { useUiStore } from '@/stores/ui'
-import { useQuery } from '@/composables/useQuery'
-import BucketDropzone from '../pivot/BucketDropzone.vue'
-import type { PivotField } from '@/types'
+import { watch, computed, type Component } from 'vue';
+import {
+  Hash,
+  Type,
+  HelpCircle,
+  GripVertical,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  ChevronRight,
+  ChevronDown,
+  ArrowLeftRight,
+} from 'lucide-vue-next';
+import draggable from 'vuedraggable';
+import { usePivotStore } from '@/stores/pivot';
+import { useQueryStore } from '@/stores/query';
+import { useDatasetStore } from '@/stores/dataset';
+import { useConnectionStore } from '@/stores/connection';
+import { useUiStore } from '@/stores/ui';
+import { useQuery } from '@/composables/useQuery';
+import BucketDropzone from '../pivot/BucketDropzone.vue';
+import type { PivotField } from '@/types';
 
 interface ColumnItem {
-  name: string
-  dtype: string
-  id: string
-  isNumeric: boolean
-  isString: boolean
+  name: string;
+  dtype: string;
+  id: string;
+  isNumeric: boolean;
+  isString: boolean;
 }
 
-const pivotStore = usePivotStore()
-const queryStore = useQueryStore()
-const datasetStore = useDatasetStore()
-const connectionStore = useConnectionStore()
-const uiStore = useUiStore()
-const { execute, canExecute } = useQuery()
+const pivotStore = usePivotStore();
+const queryStore = useQueryStore();
+const datasetStore = useDatasetStore();
+const connectionStore = useConnectionStore();
+const uiStore = useUiStore();
+const { execute, canExecute } = useQuery();
 
-const isCollapsed = computed(() => uiStore.summarizeCollapsed)
+const isCollapsed = computed(() => uiStore.summarizeCollapsed);
 
 // Columns for the sidebar
 const columns = computed((): ColumnItem[] => {
-  return datasetStore.columns.map(col => ({
+  return datasetStore.columns.map((col) => ({
     ...col,
     id: col.name,
     isNumeric: ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(col.dtype),
-    isString: ['string', 'text', 'varchar'].includes(col.dtype)
-  }))
-})
+    isString: ['string', 'text', 'varchar'].includes(col.dtype),
+  }));
+});
 
 // Get icon for column type
 function getTypeIcon(col: ColumnItem): Component {
-  if (col.isNumeric) return Hash
-  if (col.isString) return Type
-  return HelpCircle
+  if (col.isNumeric) return Hash;
+  if (col.isString) return Type;
+  return HelpCircle;
 }
 
 // Clone function for draggable
 function cloneColumn(col: ColumnItem): ColumnItem & { column: string } {
   return {
     ...col,
-    column: col.name
-  }
+    column: col.name,
+  };
 }
 
 // Enforce Polars pivot rules
@@ -58,113 +70,113 @@ watch(
   () => ({
     values: pivotStore.valueFields.length,
     rows: pivotStore.rowFields.length,
-    columns: pivotStore.columnFields.length
+    columns: pivotStore.columnFields.length,
   }),
   ({ values, rows, columns: colCount }) => {
     // Rule: If columns exist but rows don't, move columns to rows
     if (colCount > 0 && rows === 0) {
-      const colField = pivotStore.columnFields[0]
+      const colField = pivotStore.columnFields[0];
       if (colField) {
-        pivotStore.removeColumnField(colField.id)
-        pivotStore.addRowField(colField.column, colField.dtype)
+        pivotStore.removeColumnField(colField.id);
+        pivotStore.addRowField(colField.column, colField.dtype);
       }
-      return
+      return;
     }
 
     // Rule: If only values exist, auto-add a row
     if (values > 0 && rows === 0 && colCount === 0) {
-      const valueField = pivotStore.valueFields[0]
+      const valueField = pivotStore.valueFields[0];
       if (valueField) {
-        const aggFunc = valueField.aggregation ?? 'count'
+        const aggFunc = valueField.aggregation ?? 'count';
 
         if (aggFunc === 'count') {
-          pivotStore.addRowField(valueField.column, valueField.dtype)
+          pivotStore.addRowField(valueField.column, valueField.dtype);
         } else {
-          const stringCol = datasetStore.columns.find(c =>
-            ['string', 'text', 'varchar'].includes(c.dtype) && c.name !== valueField.column
-          )
+          const stringCol = datasetStore.columns.find(
+            (c) => ['string', 'text', 'varchar'].includes(c.dtype) && c.name !== valueField.column,
+          );
           if (stringCol) {
-            pivotStore.addRowField(stringCol.name, stringCol.dtype)
+            pivotStore.addRowField(stringCol.name, stringCol.dtype);
           } else {
-            pivotStore.addRowField(valueField.column, valueField.dtype)
+            pivotStore.addRowField(valueField.column, valueField.dtype);
           }
         }
       }
     }
   },
-  { deep: true }
-)
+  { deep: true },
+);
 
 // Auto-execute when configuration changes
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => [
-    pivotStore.rowFields.map(f => f.column),
-    pivotStore.columnFields.map(f => f.column),
-    pivotStore.valueFields.map(f => `${f.column}:${f.aggregation}`),
-    queryStore.filters.map(f => `${f.column}:${f.op}:${f.value}`),
+    pivotStore.rowFields.map((f) => f.column),
+    pivotStore.columnFields.map((f) => f.column),
+    pivotStore.valueFields.map((f) => `${f.column}:${f.aggregation}`),
+    queryStore.filters.map((f) => `${f.column}:${f.op}:${f.value}`),
     queryStore.sections.filter.enabled,
     queryStore.sortBy,
     queryStore.sortDescending,
-    queryStore.sections.sort.enabled
+    queryStore.sections.sort.enabled,
   ],
   () => {
-    if (debounceTimer) clearTimeout(debounceTimer)
+    if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
-        execute()
+        execute();
       }
-    }, 300)
+    }, 300);
   },
-  { deep: true }
-)
+  { deep: true },
+);
 
 interface FieldParam {
-  column: string
-  dtype: string
+  column: string;
+  dtype: string;
 }
 
 // Bucket handlers
 function handleAddRow(field: FieldParam): void {
-  pivotStore.addRowField(field.column, field.dtype)
+  pivotStore.addRowField(field.column, field.dtype);
 }
 
 function handleAddColumn(field: FieldParam): void {
-  pivotStore.addColumnField(field.column, field.dtype)
+  pivotStore.addColumnField(field.column, field.dtype);
 }
 
 function handleAddValue(field: FieldParam): void {
-  pivotStore.addValueField(field.column, field.dtype)
+  pivotStore.addValueField(field.column, field.dtype);
 }
 
 function handleReorderRows(newOrder: PivotField[]): void {
-  pivotStore.reorderRowFields(newOrder)
+  pivotStore.reorderRowFields(newOrder);
 }
 
 function handleReorderValues(newOrder: PivotField[]): void {
-  pivotStore.reorderValueFields(newOrder)
+  pivotStore.reorderValueFields(newOrder);
 }
 
 // Sort handlers
 function toggleSort(): void {
-  queryStore.toggleSection('sort')
+  queryStore.toggleSection('sort');
 }
 
 function handleSortColumnChange(column: string): void {
-  queryStore.sortBy = column
+  queryStore.sortBy = column;
 }
 
 function toggleSortDirection() {
-  queryStore.sortDescending = !queryStore.sortDescending
+  queryStore.sortDescending = !queryStore.sortDescending;
 }
 
 // Column options for sort
 const sortColumnOptions = computed(() => {
-  return datasetStore.columns.map(col => ({
+  return datasetStore.columns.map((col) => ({
     label: col.name,
-    value: col.name
-  }))
-})
+    value: col.name,
+  }));
+});
 </script>
 
 <template>

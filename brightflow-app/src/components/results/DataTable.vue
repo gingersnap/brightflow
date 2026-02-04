@@ -1,48 +1,48 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useResultsStore } from '@/stores/results'
+import { computed } from 'vue';
+import { useResultsStore } from '@/stores/results';
 
-const resultsStore = useResultsStore()
+const resultsStore = useResultsStore();
 
 // Build table columns for UTable (TanStack Table format)
 const tableColumns = computed(() =>
-  resultsStore.columns.map(col => ({
+  resultsStore.columns.map((col) => ({
     accessorKey: col.name,
-    header: col.name
-  }))
-)
+    header: col.name,
+  })),
+);
 
 // Transform rows array to objects for UTable
 const tableData = computed(() =>
   resultsStore.rows.map((row, index) => {
-    const obj: Record<string, unknown> = { _index: index }
+    const obj: Record<string, unknown> = { _index: index };
     resultsStore.columns.forEach((col, i) => {
-      obj[col.name] = formatCell(row[i], col.dtype)
-    })
-    return obj
-  })
-)
+      obj[col.name] = formatCell(row[i], col.dtype);
+    });
+    return obj;
+  }),
+);
 
 function formatCell(value: unknown, dtype: string): string {
   if (value === null || value === undefined) {
-    return '—'
+    return '—';
   }
 
   switch (dtype) {
     case 'int':
-      return Number(value).toLocaleString()
+      return Number(value).toLocaleString();
     case 'float':
       return Number(value).toLocaleString(undefined, {
         minimumFractionDigits: 0,
-        maximumFractionDigits: 2
-      })
+        maximumFractionDigits: 2,
+      });
     case 'string': {
       // Truncate long strings
-      const str = String(value)
-      return str.length > 100 ? str.slice(0, 100) + '...' : str
+      const str = String(value);
+      return str.length > 100 ? str.slice(0, 100) + '...' : str;
     }
     default:
-      return String(value)
+      return String(value);
   }
 }
 </script>

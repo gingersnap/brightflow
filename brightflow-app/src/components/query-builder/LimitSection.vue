@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { useQueryStore } from '@/stores/query'
+import { useQueryStore } from '@/stores/query';
 
-const queryStore = useQueryStore()
+const queryStore = useQueryStore();
 
-const presets = [100, 500, 1000, 5000, 10000]
+const presets = [100, 500, 1000, 5000, 10000];
 </script>
 
 <template>

@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "vue-tsc --noEmit",
+    "lint": "oxlint src",
+    "lint:fix": "oxlint src --fix",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "npm run type-check && npm run lint && npm run format:check"
   },
   "description": "Brightflow web application",
   "dependencies": {
@@ -20,9 +25,11 @@
     "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
     "@nuxt/ui": "^4.3.0",
     "@types/node": "^25.2.0",
     "@vitejs/plugin-vue": "^6.0.3",
+    "oxlint": "^1.43.0",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",

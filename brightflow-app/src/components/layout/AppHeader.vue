@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Upload, Settings, Database } from 'lucide-vue-next'
-import { useConnectionStore } from '@/stores/connection'
-import { useDatasetStore } from '@/stores/dataset'
+import { Upload, Settings, Database } from 'lucide-vue-next';
+import { useConnectionStore } from '@/stores/connection';
+import { useDatasetStore } from '@/stores/dataset';
 
-const connectionStore = useConnectionStore()
-const datasetStore = useDatasetStore()
+const connectionStore = useConnectionStore();
+const datasetStore = useDatasetStore();
 
-const emit = defineEmits(['upload'])
+const emit = defineEmits(['upload']);
 </script>
 
 <template>

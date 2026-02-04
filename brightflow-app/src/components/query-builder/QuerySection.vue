@@ -1,21 +1,24 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next';
 
-const props = withDefaults(defineProps<{
-  title: string
-  enabled?: boolean
-  collapsed?: boolean
-  preview?: string
-}>(), {
-  enabled: true,
-  collapsed: false,
-  preview: ''
-})
+const props = withDefaults(
+  defineProps<{
+    title: string;
+    enabled?: boolean;
+    collapsed?: boolean;
+    preview?: string;
+  }>(),
+  {
+    enabled: true,
+    collapsed: false,
+    preview: '',
+  },
+);
 
 const emit = defineEmits<{
-  'toggle-enable': []
-  'toggle-collapse': []
-}>()
+  'toggle-enable': [];
+  'toggle-collapse': [];
+}>();
 </script>
 
 <template>

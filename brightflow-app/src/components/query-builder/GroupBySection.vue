@@ -1,29 +1,27 @@
 <script setup lang="ts">
-import { Plus, X } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { useQueryStore } from '@/stores/query'
-import { useDatasetStore } from '@/stores/dataset'
-import { useAggregations } from '@/composables/useAggregations'
+import { Plus, X } from 'lucide-vue-next';
+import { computed } from 'vue';
+import { useQueryStore } from '@/stores/query';
+import { useDatasetStore } from '@/stores/dataset';
+import { useAggregations } from '@/composables/useAggregations';
 
-const queryStore = useQueryStore()
-const datasetStore = useDatasetStore()
-const { getAllAggregations } = useAggregations()
+const queryStore = useQueryStore();
+const datasetStore = useDatasetStore();
+const { getAllAggregations } = useAggregations();
 
-const columnItems = computed(() =>
-  datasetStore.columns.map(col => col.name)
-)
+const columnItems = computed(() => datasetStore.columns.map((col) => col.name));
 
 const aggColumnItems = computed(() => [
   '* (all rows)',
-  ...datasetStore.columns.map(col => col.name)
-])
+  ...datasetStore.columns.map((col) => col.name),
+]);
 
 const aggregationItems = computed(() =>
-  getAllAggregations().map(agg => ({
+  getAllAggregations().map((agg) => ({
     label: agg.label,
-    value: agg.value
-  }))
-)
+    value: agg.value,
+  })),
+);
 </script>
 
 <template>

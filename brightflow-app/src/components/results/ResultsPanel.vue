@@ -1,25 +1,35 @@
 <script setup lang="ts">
-import { computed, type Component } from 'vue'
-import { Table, BarChart3, Split, Download, Loader2, TableProperties, ChevronRight, ChevronDown, Hash } from 'lucide-vue-next'
-import { useResultsStore } from '@/stores/results'
-import { useUiStore } from '@/stores/ui'
-import { usePivotStore } from '@/stores/pivot'
-import DataTable from './DataTable.vue'
-import ChartView from '../charts/ChartView.vue'
-import PivotTable from '../pivot/PivotTable.vue'
-import BigNumber from '../charts/BigNumber.vue'
-import type { ViewMode } from '@/types'
+import { computed, type Component } from 'vue';
+import {
+  Table,
+  BarChart3,
+  Split,
+  Download,
+  Loader2,
+  TableProperties,
+  ChevronRight,
+  ChevronDown,
+  Hash,
+} from 'lucide-vue-next';
+import { useResultsStore } from '@/stores/results';
+import { useUiStore } from '@/stores/ui';
+import { usePivotStore } from '@/stores/pivot';
+import DataTable from './DataTable.vue';
+import ChartView from '../charts/ChartView.vue';
+import PivotTable from '../pivot/PivotTable.vue';
+import BigNumber from '../charts/BigNumber.vue';
+import type { ViewMode } from '@/types';
 
-const resultsStore = useResultsStore()
-const uiStore = useUiStore()
-const pivotStore = usePivotStore()
+const resultsStore = useResultsStore();
+const uiStore = useUiStore();
+const pivotStore = usePivotStore();
 
-const isCollapsed = computed(() => uiStore.resultsCollapsed)
+const isCollapsed = computed(() => uiStore.resultsCollapsed);
 
 interface ViewModeOption {
-  value: ViewMode
-  label: string
-  icon: Component
+  value: ViewMode;
+  label: string;
+  icon: Component;
 }
 
 const viewModes: ViewModeOption[] = [
@@ -27,51 +37,51 @@ const viewModes: ViewModeOption[] = [
   { value: 'pivot', label: 'Pivot', icon: TableProperties },
   { value: 'number', label: 'Number', icon: Hash },
   { value: 'chart', label: 'Chart', icon: BarChart3 },
-  { value: 'split', label: 'Split', icon: Split }
-]
+  { value: 'split', label: 'Split', icon: Split },
+];
 
 // Row count based on view mode
 const currentRowCount = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.pivotRowCount
+    return resultsStore.pivotRowCount;
   }
-  return resultsStore.tableRowCount
-})
+  return resultsStore.tableRowCount;
+});
 
 // Total rows (before limit) - will be used when backend supports it
 const currentTotalRows = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.pivotTotalRows
+    return resultsStore.pivotTotalRows;
   }
-  return resultsStore.tableTotalRows
-})
+  return resultsStore.tableTotalRows;
+});
 
 // Execution time based on view mode
 const currentExecutionTime = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.pivotExecutionTimeMs
+    return resultsStore.pivotExecutionTimeMs;
   }
-  return resultsStore.tableExecutionTimeMs
-})
+  return resultsStore.tableExecutionTimeMs;
+});
 
 // Has results for current view
 const hasCurrentResults = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.hasPivotResults
+    return resultsStore.hasPivotResults;
   }
-  return resultsStore.hasTableResults
-})
+  return resultsStore.hasTableResults;
+});
 
 // Display text for row count
 const rowCountDisplay = computed(() => {
-  const count = currentRowCount.value
-  const total = currentTotalRows.value
+  const count = currentRowCount.value;
+  const total = currentTotalRows.value;
 
   if (total && total > count) {
-    return `Showing ${count.toLocaleString()} of ${total.toLocaleString()}`
+    return `Showing ${count.toLocaleString()} of ${total.toLocaleString()}`;
   }
-  return `${count.toLocaleString()} rows`
-})
+  return `${count.toLocaleString()} rows`;
+});
 </script>
 
 <template>

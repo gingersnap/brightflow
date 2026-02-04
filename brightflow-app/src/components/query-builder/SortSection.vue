@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { ArrowUp, ArrowDown } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { useQueryStore } from '@/stores/query'
-import { useDatasetStore } from '@/stores/dataset'
+import { ArrowUp, ArrowDown } from 'lucide-vue-next';
+import { computed } from 'vue';
+import { useQueryStore } from '@/stores/query';
+import { useDatasetStore } from '@/stores/dataset';
 
-const queryStore = useQueryStore()
-const datasetStore = useDatasetStore()
+const queryStore = useQueryStore();
+const datasetStore = useDatasetStore();
 
-const columnItems = computed(() =>
-  datasetStore.columns.map(col => col.name)
-)
+const columnItems = computed(() => datasetStore.columns.map((col) => col.name));
 </script>
 
 <template>

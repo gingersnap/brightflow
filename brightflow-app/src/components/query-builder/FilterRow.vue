@@ -1,49 +1,52 @@
 <script setup lang="ts">
-import { X } from 'lucide-vue-next'
-import { computed, watch } from 'vue'
-import { useDatasetStore } from '@/stores/dataset'
-import { useOperators } from '@/composables/useOperators'
-import type { Filter } from '@/types'
+import { X } from 'lucide-vue-next';
+import { computed, watch } from 'vue';
+import { useDatasetStore } from '@/stores/dataset';
+import { useOperators } from '@/composables/useOperators';
+import type { Filter } from '@/types';
 
 const props = defineProps<{
-  filter: Filter
-}>()
+  filter: Filter;
+}>();
 
 const emit = defineEmits<{
-  update: [updates: Partial<Filter>]
-  remove: []
-}>()
+  update: [updates: Partial<Filter>];
+  remove: [];
+}>();
 
-const datasetStore = useDatasetStore()
-const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators()
+const datasetStore = useDatasetStore();
+const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators();
 
 // Column items for select - Nuxt UI uses 'items' with 'label' for display
 const columnItems = computed(() =>
-  datasetStore.columns.map(col => ({
+  datasetStore.columns.map((col) => ({
     label: col.name,
     value: col.name,
-    dtype: col.dtype
-  }))
-)
+    dtype: col.dtype,
+  })),
+);
 
 // Get available operators for selected column
 const operatorItems = computed(() => {
-  if (!props.filter.column) return []
-  const column = datasetStore.getColumnByName(props.filter.column)
-  return getOperatorsForType(column?.dtype)
-})
+  if (!props.filter.column) return [];
+  const column = datasetStore.getColumnByName(props.filter.column);
+  return getOperatorsForType(column?.dtype);
+});
 
 // Check if current operator needs value
-const needsValue = computed(() => operatorNeedsValue(props.filter.op))
+const needsValue = computed(() => operatorNeedsValue(props.filter.op));
 
 // When column changes, update operator to appropriate default
-watch(() => props.filter.column, (newColumn) => {
-  if (newColumn) {
-    const column = datasetStore.getColumnByName(newColumn)
-    const defaultOp = getDefaultOperator(column?.dtype)
-    emit('update', { op: defaultOp, value: null })
-  }
-})
+watch(
+  () => props.filter.column,
+  (newColumn) => {
+    if (newColumn) {
+      const column = datasetStore.getColumnByName(newColumn);
+      const defaultOp = getDefaultOperator(column?.dtype);
+      emit('update', { op: defaultOp, value: null });
+    }
+  },
+);
 </script>
 
 <template>

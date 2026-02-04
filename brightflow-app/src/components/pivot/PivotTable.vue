@@ -1,142 +1,142 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ChevronRight, ChevronDown } from 'lucide-vue-next'
-import { usePivotStore } from '@/stores/pivot'
-import { useResultsStore } from '@/stores/results'
+import { computed } from 'vue';
+import { ChevronRight, ChevronDown } from 'lucide-vue-next';
+import { usePivotStore } from '@/stores/pivot';
+import { useResultsStore } from '@/stores/results';
 
-const pivotStore = usePivotStore()
-const resultsStore = useResultsStore()
+const pivotStore = usePivotStore();
+const resultsStore = useResultsStore();
 
 interface ColumnInfo {
-  name: string | undefined
-  dtype: string | undefined
+  name: string | undefined;
+  dtype: string | undefined;
 }
 
 interface PivotRow {
-  id: string
-  indexValues: unknown[]
-  dataValues: unknown[]
+  id: string;
+  indexValues: unknown[];
+  dataValues: unknown[];
 }
 
 interface PivotData {
-  indexColumns: ColumnInfo[]
-  valueColumns: ColumnInfo[]
-  rows: PivotRow[]
+  indexColumns: ColumnInfo[];
+  valueColumns: ColumnInfo[];
+  rows: PivotRow[];
 }
 
 // Process results - the backend already returns pivoted data
 // We just need to display it with proper formatting
 const pivotData = computed((): PivotData | null => {
-  if (!resultsStore.hasPivotResults) return null
+  if (!resultsStore.hasPivotResults) return null;
 
-  const columns = resultsStore.pivotColumns
-  const rows = resultsStore.pivotRows
-  const colNames = columns.map(c => c.name)
-  const colTypes = columns.map(c => c.dtype)
+  const columns = resultsStore.pivotColumns;
+  const rows = resultsStore.pivotRows;
+  const colNames = columns.map((c) => c.name);
+  const colTypes = columns.map((c) => c.dtype);
 
   // The first N columns are the index (row labels)
   // The remaining columns are the pivoted values
-  const indexCols = pivotStore.rowFields.map(f => f.column)
+  const indexCols = pivotStore.rowFields.map((f) => f.column);
 
   // Determine which columns are index vs values
-  const indexColIndices: number[] = []
-  const valueColIndices: number[] = []
+  const indexColIndices: number[] = [];
+  const valueColIndices: number[] = [];
 
   colNames.forEach((name, idx) => {
     if (indexCols.includes(name)) {
-      indexColIndices.push(idx)
+      indexColIndices.push(idx);
     } else {
-      valueColIndices.push(idx)
+      valueColIndices.push(idx);
     }
-  })
+  });
 
   // If no index columns found in results, treat first column as index
   if (indexColIndices.length === 0 && colNames.length > 0) {
-    indexColIndices.push(0)
-    valueColIndices.length = 0
+    indexColIndices.push(0);
+    valueColIndices.length = 0;
     for (let i = 1; i < colNames.length; i++) {
-      valueColIndices.push(i)
+      valueColIndices.push(i);
     }
   }
 
   return {
-    indexColumns: indexColIndices.map(i => ({ name: colNames[i], dtype: colTypes[i] })),
-    valueColumns: valueColIndices.map(i => ({ name: colNames[i], dtype: colTypes[i] })),
+    indexColumns: indexColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
+    valueColumns: valueColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
     rows: rows.map((row, rowIdx) => ({
       id: `row-${rowIdx}`,
-      indexValues: indexColIndices.map(i => row[i]),
-      dataValues: valueColIndices.map(i => row[i])
-    }))
-  }
-})
+      indexValues: indexColIndices.map((i) => row[i]),
+      dataValues: valueColIndices.map((i) => row[i]),
+    })),
+  };
+});
 
 interface GroupedRow {
-  id: string
-  level: number
-  isGroup: boolean
-  groupKey: string | null
-  groupLabel?: unknown
-  rowCount?: number
-  indexValues: unknown[]
-  dataValues: unknown[]
-  isCollapsed?: boolean
-  displayIndexValues?: unknown[]
+  id: string;
+  level: number;
+  isGroup: boolean;
+  groupKey: string | null;
+  groupLabel?: unknown;
+  rowCount?: number;
+  indexValues: unknown[];
+  dataValues: unknown[];
+  isCollapsed?: boolean;
+  displayIndexValues?: unknown[];
 }
 
 interface Group {
-  key: unknown
-  rows: PivotRow[]
-  subtotals: number[]
+  key: unknown;
+  rows: PivotRow[];
+  subtotals: number[];
 }
 
 // Group rows hierarchically when there are multiple row fields
 const groupedRows = computed((): GroupedRow[] => {
-  if (!pivotData.value) return []
+  if (!pivotData.value) return [];
 
-  const numIndexCols = pivotData.value.indexColumns.length
+  const numIndexCols = pivotData.value.indexColumns.length;
 
   // If only one index column, no grouping needed
   if (numIndexCols <= 1) {
-    return pivotData.value.rows.map(row => ({
+    return pivotData.value.rows.map((row) => ({
       ...row,
       level: 0,
       isGroup: false,
-      groupKey: null
-    }))
+      groupKey: null,
+    }));
   }
 
   // Group by first index column(s)
-  const result: GroupedRow[] = []
-  const groups = new Map<unknown, Group>()
+  const result: GroupedRow[] = [];
+  const groups = new Map<unknown, Group>();
 
   // Build groups
-  const pData = pivotData.value
-  pData.rows.forEach(row => {
-    const groupKeyVal = row.indexValues[0]
+  const pData = pivotData.value;
+  pData.rows.forEach((row) => {
+    const groupKeyVal = row.indexValues[0];
     if (!groups.has(groupKeyVal)) {
       groups.set(groupKeyVal, {
         key: groupKeyVal,
         rows: [],
-        subtotals: pData.valueColumns.map(() => 0)
-      })
+        subtotals: pData.valueColumns.map(() => 0),
+      });
     }
-    const group = groups.get(groupKeyVal)
+    const group = groups.get(groupKeyVal);
     if (group) {
-      group.rows.push(row)
+      group.rows.push(row);
 
       // Accumulate subtotals
       row.dataValues.forEach((val, idx) => {
         if (typeof val === 'number' && group.subtotals[idx] !== undefined) {
-          group.subtotals[idx] += val
+          group.subtotals[idx] += val;
         }
-      })
+      });
     }
-  })
+  });
 
   // Flatten into displayable rows with group headers
   groups.forEach((group, key) => {
-    const groupKey = `group-${key}`
-    const isCollapsed = pivotStore.isGroupCollapsed(groupKey)
+    const groupKey = `group-${key}`;
+    const isCollapsed = pivotStore.isGroupCollapsed(groupKey);
 
     // Add group header row
     result.push({
@@ -148,150 +148,150 @@ const groupedRows = computed((): GroupedRow[] => {
       rowCount: group.rows.length,
       indexValues: [key],
       dataValues: pivotStore.showSubtotals ? group.subtotals : [],
-      isCollapsed
-    })
+      isCollapsed,
+    });
 
     // Add child rows if not collapsed
     if (!isCollapsed) {
-      group.rows.forEach(row => {
+      group.rows.forEach((row) => {
         result.push({
           ...row,
           level: 1,
           isGroup: false,
           groupKey: null,
           // Hide first index value (shown in group header)
-          displayIndexValues: row.indexValues.slice(1)
-        })
-      })
+          displayIndexValues: row.indexValues.slice(1),
+        });
+      });
     }
-  })
+  });
 
-  return result
-})
+  return result;
+});
 
 // Check if we have hierarchical grouping
 const hasGrouping = computed(() => {
-  return pivotData.value && pivotData.value.indexColumns.length > 1
-})
+  return pivotData.value && pivotData.value.indexColumns.length > 1;
+});
 
 // Get all group keys for expand/collapse all
 const allGroupKeys = computed((): string[] => {
-  if (!hasGrouping.value) return []
+  if (!hasGrouping.value) return [];
   return groupedRows.value
-    .filter(row => row.isGroup && row.groupKey !== null)
-    .map(row => row.groupKey as string)
-})
+    .filter((row) => row.isGroup && row.groupKey !== null)
+    .map((row) => row.groupKey as string);
+});
 
 // Expand all groups
 function expandAll() {
-  pivotStore.expandAllGroups()
+  pivotStore.expandAllGroups();
 }
 
 // Collapse all groups
 function collapseAll() {
-  pivotStore.collapseAllGroups(allGroupKeys.value)
+  pivotStore.collapseAllGroups(allGroupKeys.value);
 }
 
 interface ColumnStat {
-  min: number
-  max: number
-  range: number
+  min: number;
+  max: number;
+  range: number;
 }
 
 // Calculate min/max for each value column (for conditional formatting)
 const columnStats = computed((): (ColumnStat | null)[] => {
-  if (!pivotData.value) return []
+  if (!pivotData.value) return [];
 
-  const pData = pivotData.value
+  const pData = pivotData.value;
   return pData.valueColumns.map((_col, colIdx) => {
-    let min = Infinity
-    let max = -Infinity
-    let hasValues = false
+    let min = Infinity;
+    let max = -Infinity;
+    let hasValues = false;
 
-    pData.rows.forEach(row => {
-      const val = row.dataValues[colIdx]
+    pData.rows.forEach((row) => {
+      const val = row.dataValues[colIdx];
       if (typeof val === 'number' && !isNaN(val)) {
-        min = Math.min(min, val)
-        max = Math.max(max, val)
-        hasValues = true
+        min = Math.min(min, val);
+        max = Math.max(max, val);
+        hasValues = true;
       }
-    })
+    });
 
-    return hasValues ? { min, max, range: max - min } : null
-  })
-})
+    return hasValues ? { min, max, range: max - min } : null;
+  });
+});
 
 // Calculate column totals
 const columnTotals = computed((): (number | null)[] | null => {
-  if (!pivotData.value || !pivotStore.showColumnTotals) return null
+  if (!pivotData.value || !pivotStore.showColumnTotals) return null;
 
-  const pData = pivotData.value
+  const pData = pivotData.value;
   const totals = pData.valueColumns.map((_col, colIdx) => {
-    let sum = 0
-    let count = 0
-    pData.rows.forEach(row => {
-      const val = row.dataValues[colIdx]
+    let sum = 0;
+    let count = 0;
+    pData.rows.forEach((row) => {
+      const val = row.dataValues[colIdx];
       if (typeof val === 'number') {
-        sum += val
-        count++
+        sum += val;
+        count++;
       }
-    })
-    return count > 0 ? sum : null
-  })
+    });
+    return count > 0 ? sum : null;
+  });
 
-  return totals
-})
+  return totals;
+});
 
 // Get cell background color based on value (conditional formatting)
 function getCellStyle(value: unknown, colIdx: number): Record<string, string> {
-  if (!pivotStore.showConditionalFormatting) return {}
+  if (!pivotStore.showConditionalFormatting) return {};
 
-  const stats = columnStats.value[colIdx]
-  if (!stats || typeof value !== 'number' || stats.range === 0) return {}
+  const stats = columnStats.value[colIdx];
+  if (!stats || typeof value !== 'number' || stats.range === 0) return {};
 
   // Calculate position in range (0 to 1)
-  const position = (value - stats.min) / stats.range
+  const position = (value - stats.min) / stats.range;
 
   // Color scale: light blue (low) to dark blue (high)
   // Using HSL for smooth gradients
-  const hue = 210 // Blue
-  const saturation = 70
-  const lightness = 95 - (position * 40) // 95% (light) to 55% (darker)
+  const hue = 210; // Blue
+  const saturation = 70;
+  const lightness = 95 - position * 40; // 95% (light) to 55% (darker)
 
   return {
-    backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`
-  }
+    backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
+  };
 }
 
 // Format cell value
 function formatValue(value: unknown, dtype: string | undefined): string {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined) return '—';
   if (typeof value === 'number') {
-    const decimals = pivotStore.decimalPlaces
+    const decimals = pivotStore.decimalPlaces;
     // Format based on dtype
     if (dtype === 'float' || dtype === 'decimal' || dtype === 'f64') {
       return value.toLocaleString(undefined, {
         minimumFractionDigits: 0,
-        maximumFractionDigits: decimals
-      })
+        maximumFractionDigits: decimals,
+      });
     }
     // Integers - no decimals unless value has them
     if (Number.isInteger(value)) {
-      return value.toLocaleString()
+      return value.toLocaleString();
     }
     // Non-integer without explicit float type
     return value.toLocaleString(undefined, {
       minimumFractionDigits: 0,
-      maximumFractionDigits: decimals
-    })
+      maximumFractionDigits: decimals,
+    });
   }
-  return String(value)
+  return String(value);
 }
 
 // Check if a value is numeric
 function isNumeric(dtype: string | undefined): boolean {
-  if (!dtype) return false
-  return ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype)
+  if (!dtype) return false;
+  return ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype);
 }
 </script>
 

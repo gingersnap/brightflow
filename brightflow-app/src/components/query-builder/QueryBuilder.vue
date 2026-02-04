@@ -1,32 +1,32 @@
 <script setup lang="ts">
-import { useQuery } from '@/composables/useQuery'
-import { useQueryStore } from '@/stores/query'
-import { useResultsStore } from '@/stores/results'
-import QuerySection from './QuerySection.vue'
-import FilterSection from './FilterSection.vue'
-import GroupBySection from './GroupBySection.vue'
-import SortSection from './SortSection.vue'
-import LimitSection from './LimitSection.vue'
+import { useQuery } from '@/composables/useQuery';
+import { useQueryStore } from '@/stores/query';
+import { useResultsStore } from '@/stores/results';
+import QuerySection from './QuerySection.vue';
+import FilterSection from './FilterSection.vue';
+import GroupBySection from './GroupBySection.vue';
+import SortSection from './SortSection.vue';
+import LimitSection from './LimitSection.vue';
 
-const queryStore = useQueryStore()
-const resultsStore = useResultsStore()
-const { execute, canExecute } = useQuery()
+const queryStore = useQueryStore();
+const resultsStore = useResultsStore();
+const { execute, canExecute } = useQuery();
 
 function handleRun() {
-  execute()
+  execute();
 }
 
 function handleReset() {
-  queryStore.reset()
-  resultsStore.clear()
+  queryStore.reset();
+  resultsStore.clear();
 }
 
 // Keyboard shortcut: Cmd/Ctrl + Enter to run
 function handleKeydown(event: KeyboardEvent): void {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault()
+    event.preventDefault();
     if (canExecute()) {
-      handleRun()
+      handleRun();
     }
   }
 }

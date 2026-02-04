@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
-import { Plus, X, ChevronRight, ChevronDown } from 'lucide-vue-next'
-import { useQueryStore } from '@/stores/query'
-import { useDatasetStore } from '@/stores/dataset'
-import { useUiStore } from '@/stores/ui'
-import { useConnectionStore } from '@/stores/connection'
-import { useOperators } from '@/composables/useOperators'
-import { useQuery } from '@/composables/useQuery'
-import type { Filter, Operator } from '@/types'
+import { computed, watch } from 'vue';
+import { Plus, X, ChevronRight, ChevronDown } from 'lucide-vue-next';
+import { useQueryStore } from '@/stores/query';
+import { useDatasetStore } from '@/stores/dataset';
+import { useUiStore } from '@/stores/ui';
+import { useConnectionStore } from '@/stores/connection';
+import { useOperators } from '@/composables/useOperators';
+import { useQuery } from '@/composables/useQuery';
+import type { Filter, Operator } from '@/types';
 
-const queryStore = useQueryStore()
-const datasetStore = useDatasetStore()
-const uiStore = useUiStore()
-const connectionStore = useConnectionStore()
-const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators()
-const { loadTableData } = useQuery()
+const queryStore = useQueryStore();
+const datasetStore = useDatasetStore();
+const uiStore = useUiStore();
+const connectionStore = useConnectionStore();
+const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators();
+const { loadTableData } = useQuery();
 
-const isCollapsed = computed(() => uiStore.filterCollapsed)
+const isCollapsed = computed(() => uiStore.filterCollapsed);
 
 // Limit options
 const limitOptions = [
@@ -24,75 +24,69 @@ const limitOptions = [
   { label: '500', value: 500 },
   { label: '1,000', value: 1000 },
   { label: '5,000', value: 5000 },
-  { label: 'All', value: 0 }
-]
+  { label: 'All', value: 0 },
+];
 
 // Re-query table data when filters or limit change
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
-  () => [
-    queryStore.filters.map(f => `${f.column}:${f.op}:${f.value}`),
-    queryStore.limit
-  ],
+  () => [queryStore.filters.map((f) => `${f.column}:${f.op}:${f.value}`), queryStore.limit],
   () => {
-    if (debounceTimer) clearTimeout(debounceTimer)
+    if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       if (connectionStore.isConnected && datasetStore.hasData) {
-        loadTableData()
+        loadTableData();
       }
-    }, 300)
+    }, 300);
   },
-  { deep: true }
-)
+  { deep: true },
+);
 
 // Column options for dropdown
 const columnOptions = computed(() => {
-  return datasetStore.columns.map(col => ({
+  return datasetStore.columns.map((col) => ({
     label: col.name,
     value: col.name,
-    dtype: col.dtype
-  }))
-})
+    dtype: col.dtype,
+  }));
+});
 
 // Get dtype for a column
 function getColumnDtype(columnName: string): string {
-  const col = datasetStore.columns.find(c => c.name === columnName)
-  return col?.dtype ?? 'string'
+  const col = datasetStore.columns.find((c) => c.name === columnName);
+  return col?.dtype ?? 'string';
 }
 
 // Get operators for a filter's column
 function getOperators(filter: Filter): Operator[] {
-  if (!filter.column) return []
-  const dtype = getColumnDtype(filter.column)
-  return getOperatorsForType(dtype)
+  if (!filter.column) return [];
+  const dtype = getColumnDtype(filter.column);
+  return getOperatorsForType(dtype);
 }
-
 
 // Handle column change
 function handleColumnChange(filterId: string, columnName: string): void {
-  const dtype = getColumnDtype(columnName)
-  const defaultOp = getDefaultOperator(dtype)
+  const dtype = getColumnDtype(columnName);
+  const defaultOp = getDefaultOperator(dtype);
   queryStore.updateFilter(filterId, {
     column: columnName,
     op: defaultOp,
-    value: null
-  })
+    value: null,
+  });
 }
 
 // Handle operator change
 function handleOperatorChange(filterId: string, op: string): void {
-  queryStore.updateFilter(filterId, { op, value: null })
+  queryStore.updateFilter(filterId, { op, value: null });
 }
 
 // Handle value change
 function handleValueChange(filterId: string, value: unknown): void {
-  queryStore.updateFilter(filterId, { value })
+  queryStore.updateFilter(filterId, { value });
 }
 
 // Check if filters are enabled (has active filters)
-const hasActiveFilters = computed(() =>
-  queryStore.filters.some(f => f.column && f.op)
-)
+const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column && f.op));
 </script>
 
 <template>

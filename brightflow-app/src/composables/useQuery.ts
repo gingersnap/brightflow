@@ -1,51 +1,51 @@
-import { useConnectionStore } from '@/stores/connection'
-import { useDatasetStore } from '@/stores/dataset'
-import { useQueryStore } from '@/stores/query'
-import { useResultsStore } from '@/stores/results'
-import { usePivotStore } from '@/stores/pivot'
-import { useUiStore } from '@/stores/ui'
-import type { QueryOperation, WsMessage, ErrorMessage } from '@/types'
+import { useConnectionStore } from '@/stores/connection';
+import { useDatasetStore } from '@/stores/dataset';
+import { useQueryStore } from '@/stores/query';
+import { useResultsStore } from '@/stores/results';
+import { usePivotStore } from '@/stores/pivot';
+import { useUiStore } from '@/stores/ui';
+import type { QueryOperation, WsMessage, ErrorMessage } from '@/types';
 
 /**
  * Query execution composable
  */
 export function useQuery() {
-  const connectionStore = useConnectionStore()
-  const datasetStore = useDatasetStore()
-  const queryStore = useQueryStore()
-  const resultsStore = useResultsStore()
-  const pivotStore = usePivotStore()
-  const uiStore = useUiStore()
+  const connectionStore = useConnectionStore();
+  const datasetStore = useDatasetStore();
+  const queryStore = useQueryStore();
+  const resultsStore = useResultsStore();
+  const pivotStore = usePivotStore();
+  const uiStore = useUiStore();
 
   /**
    * Build operations for table view (filters + limit)
    */
   function buildTableOperations(): QueryOperation[] {
-    const ops: QueryOperation[] = []
+    const ops: QueryOperation[] = [];
 
     // Add filters
     if (queryStore.filters.length > 0) {
-      queryStore.filters.forEach(filter => {
+      queryStore.filters.forEach((filter) => {
         if (filter.column && filter.op) {
           const op: QueryOperation = {
             type: 'filter',
             column: filter.column,
-            op: filter.op
-          }
+            op: filter.op,
+          };
           if (!['isNull', 'isNotNull'].includes(filter.op)) {
-            op.value = filter.value
+            op.value = filter.value;
           }
-          ops.push(op)
+          ops.push(op);
         }
-      })
+      });
     }
 
     // Add limit (0 means no limit)
     if (queryStore.limit > 0) {
-      ops.push({ type: 'limit', n: queryStore.limit })
+      ops.push({ type: 'limit', n: queryStore.limit });
     }
 
-    return ops
+    return ops;
   }
 
   /**
@@ -53,31 +53,31 @@ export function useQuery() {
    */
   function loadTableData(): void {
     if (!connectionStore.isConnected || !datasetStore.hasData) {
-      return
+      return;
     }
 
-    const operations = buildTableOperations()
+    const operations = buildTableOperations();
 
-    resultsStore.setLoading(true)
+    resultsStore.setLoading(true);
 
     const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
-      resultsStore.setTableResults(message)
-      unsubscribeResult()
-      unsubscribeError()
-    })
+      resultsStore.setTableResults(message);
+      unsubscribeResult();
+      unsubscribeError();
+    });
 
     const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
-      const errMsg = message as ErrorMessage
-      resultsStore.setError(errMsg.message)
-      unsubscribeResult()
-      unsubscribeError()
-    })
+      const errMsg = message as ErrorMessage;
+      resultsStore.setError(errMsg.message);
+      unsubscribeResult();
+      unsubscribeError();
+    });
 
     connectionStore.send({
       type: 'query',
       datasetId: datasetStore.id,
-      operations
-    })
+      operations,
+    });
   }
 
   /**
@@ -86,41 +86,44 @@ export function useQuery() {
   function buildOperations(): QueryOperation[] {
     // If pivot is configured, use pivot operation (regardless of view mode)
     if (pivotStore.isConfigured) {
-      const ops: QueryOperation[] = []
+      const ops: QueryOperation[] = [];
 
       // Add any filters from query store
       if (queryStore.sections.filter.enabled && queryStore.filters.length > 0) {
-        queryStore.filters.forEach(filter => {
+        queryStore.filters.forEach((filter) => {
           if (filter.column && filter.op) {
             const op: QueryOperation = {
               type: 'filter',
               column: filter.column,
-              op: filter.op
-            }
+              op: filter.op,
+            };
             if (!['isNull', 'isNotNull'].includes(filter.op)) {
-              op.value = filter.value
+              op.value = filter.value;
             }
-            ops.push(op)
+            ops.push(op);
           }
-        })
+        });
       }
 
       // Add pivot operation
       if (pivotStore.valueFields.length > 0) {
-        const valueField = pivotStore.valueFields[0]
-        if (!valueField) return ops
+        const valueField = pivotStore.valueFields[0];
+        if (!valueField) return ops;
 
-        const rowCols = pivotStore.rowFields.map(f => f.column)
-        const colField = pivotStore.columnFields.length > 0 ? pivotStore.columnFields[0]?.column ?? null : null
-        const aggFunc = valueField.aggregation ?? 'count'
+        const rowCols = pivotStore.rowFields.map((f) => f.column);
+        const colField =
+          pivotStore.columnFields.length > 0 ? (pivotStore.columnFields[0]?.column ?? null) : null;
+        const aggFunc = valueField.aggregation ?? 'count';
 
         // Determine the best operation based on configuration
         // Note: The UI watcher should auto-add rows when values exist but rows/columns are empty
         // So rowCols.length === 0 && !colField should not happen in normal operation
         if (rowCols.length === 0 && !colField) {
           // Invalid state - should be handled by UI watcher, skip operation
-          console.warn('[useQuery] Pivot has values but no rows/columns - waiting for UI to auto-add')
-          return ops
+          console.warn(
+            '[useQuery] Pivot has values but no rows/columns - waiting for UI to auto-add',
+          );
+          return ops;
         }
 
         if (!colField) {
@@ -128,16 +131,16 @@ export function useQuery() {
           ops.push({
             type: 'groupBy',
             by: rowCols,
-            aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }]
-          })
+            aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
+          });
         } else if (rowCols.length === 0) {
           // Only columns (no rows) - group by the column field
           // This shows one row per unique value in the column field
           ops.push({
             type: 'groupBy',
             by: [colField],
-            aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }]
-          })
+            aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
+          });
         } else {
           // Full pivot with both rows and columns
           ops.push({
@@ -145,12 +148,12 @@ export function useQuery() {
             index: rowCols,
             columns: colField,
             values: valueField.column,
-            agg: aggFunc
-          })
+            agg: aggFunc,
+          });
         }
 
-        const lastOp = ops[ops.length - 1]
-        console.log('[useQuery] Pivot/GroupBy operation:', lastOp)
+        const lastOp = ops[ops.length - 1];
+        console.log('[useQuery] Pivot/GroupBy operation:', lastOp);
       }
 
       // Add sort
@@ -158,20 +161,20 @@ export function useQuery() {
         ops.push({
           type: 'sort',
           by: queryStore.sortBy,
-          descending: queryStore.sortDescending
-        })
+          descending: queryStore.sortDescending,
+        });
       }
 
       // Add limit
       if (queryStore.sections.limit.enabled && queryStore.limit > 0) {
-        ops.push({ type: 'limit', n: queryStore.limit })
+        ops.push({ type: 'limit', n: queryStore.limit });
       }
 
-      return ops
+      return ops;
     }
 
     // Default: use query store operations
-    return queryStore.operations
+    return queryStore.operations;
   }
 
   /**
@@ -179,54 +182,54 @@ export function useQuery() {
    */
   function executePivot(): void {
     if (!connectionStore.isConnected) {
-      resultsStore.setError('Not connected to server')
-      return
+      resultsStore.setError('Not connected to server');
+      return;
     }
 
     if (!datasetStore.hasData) {
-      resultsStore.setError('No dataset loaded')
-      return
+      resultsStore.setError('No dataset loaded');
+      return;
     }
 
     if (!pivotStore.isConfigured) {
       // Don't execute if pivot isn't configured (needs values)
-      return
+      return;
     }
 
-    const operations = buildOperations()
+    const operations = buildOperations();
 
-    resultsStore.setLoading(true)
+    resultsStore.setLoading(true);
 
     // Register one-time handler for query result
     const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
-      resultsStore.setPivotResults(message)
+      resultsStore.setPivotResults(message);
 
       // Auto-switch to pivot view on first pivot results
-      uiStore.onPivotResults()
+      uiStore.onPivotResults();
 
-      unsubscribeResult()
-      unsubscribeError()
-    })
+      unsubscribeResult();
+      unsubscribeError();
+    });
 
     // Handle errors
     const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
-      const errMsg = message as ErrorMessage
-      resultsStore.setError(errMsg.message)
-      unsubscribeResult()
-      unsubscribeError()
-    })
+      const errMsg = message as ErrorMessage;
+      resultsStore.setError(errMsg.message);
+      unsubscribeResult();
+      unsubscribeError();
+    });
 
     // Send query
     connectionStore.send({
       type: 'query',
       datasetId: datasetStore.id,
-      operations
-    })
+      operations,
+    });
   }
 
   // Legacy alias
   function execute(): void {
-    executePivot()
+    executePivot();
   }
 
   /**
@@ -234,15 +237,15 @@ export function useQuery() {
    */
   function canExecute(): boolean {
     if (!connectionStore.isConnected || !datasetStore.hasData) {
-      return false
+      return false;
     }
 
     // If pivot is configured, it's executable
     if (pivotStore.isConfigured) {
-      return true
+      return true;
     }
 
-    return queryStore.isValid
+    return queryStore.isValid;
   }
 
   return {
@@ -251,6 +254,6 @@ export function useQuery() {
     executePivot,
     execute,
     canExecute,
-    buildOperations
-  }
+    buildOperations,
+  };
 }

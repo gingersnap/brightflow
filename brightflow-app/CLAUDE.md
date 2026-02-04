@@ -22,6 +22,13 @@ Strict TypeScript is enabled with all strict flags plus additional checks:
 
 Shared types in `src/types/index.ts`. Run `npm run type-check` to verify.
 
+## Linting & Formatting
+
+- **oxlint** - Fast Rust-based linter with strict categories (correctness, suspicious, pedantic, perf, style)
+- **Biome** - Fast Rust-based formatter (semicolons: always, trailing commas: all, single quotes)
+
+Run `npm run check` to verify all (types + lint + format). Run `npm run format` to auto-fix formatting.
+
 ## Architecture
 
 **Single dataset focus** - no workspace switching, one data source at a time.

@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useConnectionStore } from './stores/connection'
+import { onMounted } from 'vue';
+import { useConnectionStore } from './stores/connection';
 
-import AppHeader from './components/layout/AppHeader.vue'
-import FilterBar from './components/query/FilterBar.vue'
-import QueryBuilder from './components/query/QueryBuilder.vue'
-import ResultsPanel from './components/results/ResultsPanel.vue'
+import AppHeader from './components/layout/AppHeader.vue';
+import FilterBar from './components/query/FilterBar.vue';
+import QueryBuilder from './components/query/QueryBuilder.vue';
+import ResultsPanel from './components/results/ResultsPanel.vue';
 
-const connectionStore = useConnectionStore()
+const connectionStore = useConnectionStore();
 
 onMounted(() => {
-  console.log('[App] Mounting, connecting to WebSocket...')
-  connectionStore.connect()
-})
+  console.log('[App] Mounting, connecting to WebSocket...');
+  connectionStore.connect();
+});
 
 function handleUpload() {
   // TODO: Implement upload modal
-  console.log('Upload clicked')
+  console.log('Upload clicked');
 }
 </script>
 

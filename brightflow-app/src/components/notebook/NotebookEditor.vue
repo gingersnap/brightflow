@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Database, ChevronDown, ChevronUp } from 'lucide-vue-next'
-import { useDatasetStore } from '@/stores/dataset'
+import { ref, computed } from 'vue';
+import { Database, ChevronDown, ChevronUp } from 'lucide-vue-next';
+import { useDatasetStore } from '@/stores/dataset';
 
-const datasetStore = useDatasetStore()
-const collapsed = ref(false)
+const datasetStore = useDatasetStore();
+const collapsed = ref(false);
 
 // Step definitions - will be expanded later for full notebook editor
 const steps = computed(() => [
@@ -13,9 +13,9 @@ const steps = computed(() => [
     label: datasetStore.name || 'Select Data',
     icon: Database,
     active: true,
-    preview: datasetStore.name ? `${datasetStore.rowCount?.toLocaleString()} rows` : null
-  }
-])
+    preview: datasetStore.name ? `${datasetStore.rowCount?.toLocaleString()} rows` : null,
+  },
+]);
 </script>
 
 <template>

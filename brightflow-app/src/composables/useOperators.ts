@@ -1,9 +1,9 @@
 /**
  * Filter operators by column type
  */
-import type { OperatorDef, Operator } from '@/types'
+import type { OperatorDef, Operator } from '@/types';
 
-type NormalizedType = 'string' | 'int' | 'float' | 'boolean'
+type NormalizedType = 'string' | 'int' | 'float' | 'boolean';
 
 const OPERATORS: Record<string, OperatorDef> = {
   // Universal operators
@@ -22,31 +22,31 @@ const OPERATORS: Record<string, OperatorDef> = {
   lte: { label: 'less or equal', types: ['int', 'float'] },
 
   // Array operator
-  in: { label: 'in list', types: ['string', 'int', 'float'], isArray: true }
-}
+  in: { label: 'in list', types: ['string', 'int', 'float'], isArray: true },
+};
 
 /**
  * Normalize backend dtype to standard type
  */
 function normalizeType(dtype: string | null | undefined): NormalizedType {
-  if (!dtype) return 'string'
+  if (!dtype) return 'string';
 
-  const t = dtype.toLowerCase()
+  const t = dtype.toLowerCase();
 
   if (['int', 'integer', 'bigint', 'i64', 'i32'].includes(t)) {
-    return 'int'
+    return 'int';
   }
   if (['float', 'double', 'decimal', 'f64', 'f32'].includes(t)) {
-    return 'float'
+    return 'float';
   }
   if (['string', 'str', 'text', 'varchar', 'utf8'].includes(t)) {
-    return 'string'
+    return 'string';
   }
   if (['bool', 'boolean'].includes(t)) {
-    return 'boolean'
+    return 'boolean';
   }
 
-  return 'string'
+  return 'string';
 }
 
 export function useOperators() {
@@ -54,7 +54,7 @@ export function useOperators() {
    * Get available operators for a column type
    */
   function getOperatorsForType(dtype: string | null | undefined): Operator[] {
-    const normalizedType = normalizeType(dtype)
+    const normalizedType = normalizeType(dtype);
 
     return Object.entries(OPERATORS)
       .filter(([_key, op]) => op.types.includes(normalizedType))
@@ -62,49 +62,49 @@ export function useOperators() {
         value: key,
         label: op.label,
         noValue: op.noValue ?? false,
-        isArray: op.isArray ?? false
-      }))
+        isArray: op.isArray ?? false,
+      }));
   }
 
   /**
    * Get operator details
    */
   function getOperator(operatorKey: string): OperatorDef | null {
-    return OPERATORS[operatorKey] ?? null
+    return OPERATORS[operatorKey] ?? null;
   }
 
   /**
    * Check if operator requires a value input
    */
   function operatorNeedsValue(operatorKey: string): boolean {
-    const op = OPERATORS[operatorKey]
-    return op ? !op.noValue : true
+    const op = OPERATORS[operatorKey];
+    return op ? !op.noValue : true;
   }
 
   /**
    * Check if operator accepts array values
    */
   function operatorIsArray(operatorKey: string): boolean {
-    const op = OPERATORS[operatorKey]
-    return op?.isArray ?? false
+    const op = OPERATORS[operatorKey];
+    return op?.isArray ?? false;
   }
 
   /**
    * Get default operator for a type
    */
   function getDefaultOperator(dtype: string | null | undefined): string {
-    const normalizedType = normalizeType(dtype)
+    const normalizedType = normalizeType(dtype);
 
     switch (normalizedType) {
       case 'string':
-        return 'contains'
+        return 'contains';
       case 'int':
       case 'float':
-        return 'eq'
+        return 'eq';
       case 'boolean':
-        return 'eq'
+        return 'eq';
       default:
-        return 'eq'
+        return 'eq';
     }
   }
 
@@ -113,6 +113,6 @@ export function useOperators() {
     getOperator,
     operatorNeedsValue,
     operatorIsArray,
-    getDefaultOperator
-  }
+    getDefaultOperator,
+  };
 }
