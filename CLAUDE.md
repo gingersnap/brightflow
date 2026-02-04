@@ -4,12 +4,12 @@ Cargo workspace. Run `cargo check` from root to verify all crates compile.
 
 ## Crates
 
+- **brightflow** - Main binary (run-all, serve, schedule, insights subcommands)
 - **brightflow-core** - Shared types (TenantId, DatasetId, errors)
 - **brightflow-connect** - Avon integration for data connectors
 - **brightflow-store** - Delta Lake storage
-- **brightflow-insights** - Statistical analysis CLI
-- **brightflow-api** - HTTP API server (Axum + Polars)
-- **brightflow** - Main binary entry point
+- **brightflow-insights** - Statistical analysis engine (library)
+- **brightflow-api** - HTTP API server library (Axum + Polars)
 
 ## Frontend
 
