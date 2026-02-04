@@ -14,17 +14,17 @@ pub enum ReportType {
 impl ReportType {
     pub fn suffix(&self) -> &'static str {
         match self {
-            ReportType::Review => "review",
-            ReportType::Drivers => "drivers",
-            ReportType::Trends => "trends",
+            Self::Review => "review",
+            Self::Drivers => "drivers",
+            Self::Trends => "trends",
         }
     }
 
     pub fn title(&self) -> &'static str {
         match self {
-            ReportType::Review => "Review",
-            ReportType::Drivers => "Drivers",
-            ReportType::Trends => "Trends & Forecast",
+            Self::Review => "Review",
+            Self::Drivers => "Drivers",
+            Self::Trends => "Trends & Forecast",
         }
     }
 }
@@ -43,26 +43,22 @@ pub enum ReviewCadence {
 impl ReviewCadence {
     pub fn suffix(&self) -> &'static str {
         match self {
-            ReviewCadence::Daily => "daily",
-            ReviewCadence::Weekly => "weekly",
-            ReviewCadence::Monthly => "monthly",
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
         }
     }
 
     pub fn title(&self) -> &'static str {
         match self {
-            ReviewCadence::Daily => "Daily Review",
-            ReviewCadence::Weekly => "Weekly Review",
-            ReviewCadence::Monthly => "Monthly Review",
+            Self::Daily => "Daily Review",
+            Self::Weekly => "Weekly Review",
+            Self::Monthly => "Monthly Review",
         }
     }
 
-    pub fn all() -> &'static [ReviewCadence] {
-        &[
-            ReviewCadence::Daily,
-            ReviewCadence::Weekly,
-            ReviewCadence::Monthly,
-        ]
+    pub fn all() -> &'static [Self] {
+        &[Self::Daily, Self::Weekly, Self::Monthly]
     }
 }
 
@@ -99,12 +95,12 @@ impl AnalysisCategory {
     }
 
     /// Returns all categories in display order
-    pub fn all() -> &'static [AnalysisCategory] {
+    pub fn all() -> &'static [Self] {
         &[
-            AnalysisCategory::Performance,
-            AnalysisCategory::Trends,
-            AnalysisCategory::Drivers,
-            AnalysisCategory::RootCause,
+            Self::Performance,
+            Self::Trends,
+            Self::Drivers,
+            Self::RootCause,
         ]
     }
 }
@@ -236,19 +232,19 @@ fn humanize_period(period: &str) -> String {
     // Handle formats like "2023-03", "2023-W12", "2023-Q1", "2023"
     if period.contains("-W") {
         let parts: Vec<&str> = period.split("-W").collect();
-        if parts.len() == 2 {
-            return format!("week {} of {}", parts[1], parts[0]);
+        if let (Some(year), Some(week)) = (parts.first(), parts.get(1)) {
+            return format!("week {week} of {year}");
         }
     } else if period.contains("-Q") {
         let parts: Vec<&str> = period.split("-Q").collect();
-        if parts.len() == 2 {
-            return format!("Q{} {}", parts[1], parts[0]);
+        if let (Some(year), Some(quarter)) = (parts.first(), parts.get(1)) {
+            return format!("Q{quarter} {year}");
         }
     } else if period.len() == 7 && period.contains('-') {
         // "2023-03" format
         let parts: Vec<&str> = period.split('-').collect();
-        if parts.len() == 2 {
-            let month_name = match parts[1] {
+        if let (Some(year), Some(month_num)) = (parts.first(), parts.get(1)) {
+            let month_name = match *month_num {
                 "01" => "January",
                 "02" => "February",
                 "03" => "March",
@@ -261,9 +257,9 @@ fn humanize_period(period: &str) -> String {
                 "10" => "October",
                 "11" => "November",
                 "12" => "December",
-                _ => parts[1],
+                _ => month_num,
             };
-            return format!("{} {}", month_name, parts[0]);
+            return format!("{month_name} {year}");
         }
     }
     period.to_string()
@@ -293,15 +289,15 @@ impl AnalysisType {
     /// Generate a technical summary with statistical notation
     pub fn tech_summary(&self) -> String {
         match self {
-            AnalysisType::Anomaly {
+            Self::Anomaly {
                 column,
                 value,
                 z_score,
                 ..
             } => {
-                format!("{}: value={:.2}, z={:.2}", column, value, z_score)
+                format!("{column}: value={value:.2}, z={z_score:.2}")
             },
-            AnalysisType::Segment {
+            Self::Segment {
                 segment_column,
                 segment_value,
                 change_percent,
@@ -310,22 +306,18 @@ impl AnalysisType {
                 ..
             } => {
                 format!(
-                    "{}=\"{}\": Δ={:.1}%, contribution={:.1}%, p={:.4}",
-                    segment_column, segment_value, change_percent, contribution_pct, p_value
+                    "{segment_column}=\"{segment_value}\": Δ={change_percent:.1}%, contribution={contribution_pct:.1}%, p={p_value:.4}"
                 )
             },
-            AnalysisType::Correlation {
+            Self::Correlation {
                 column_a,
                 column_b,
                 r_value,
                 p_value,
             } => {
-                format!(
-                    "corr({}, {}): r={:.3}, p={:.4}",
-                    column_a, column_b, r_value, p_value
-                )
+                format!("corr({column_a}, {column_b}): r={r_value:.3}, p={p_value:.4}")
             },
-            AnalysisType::Trend {
+            Self::Trend {
                 column,
                 direction,
                 slope,
@@ -336,12 +328,9 @@ impl AnalysisType {
                     TrendDirection::Increasing => "↑",
                     TrendDirection::Decreasing => "↓",
                 };
-                format!(
-                    "{} {}: slope={:.4}, R²={:.3}, p={:.4}",
-                    column, dir, slope, r_squared, p_value
-                )
+                format!("{column} {dir}: slope={slope:.4}, R²={r_squared:.3}, p={p_value:.4}")
             },
-            AnalysisType::PeriodComparison {
+            Self::PeriodComparison {
                 column,
                 current_period,
                 previous_period,
@@ -350,42 +339,38 @@ impl AnalysisType {
                 ..
             } => {
                 format!(
-                    "{}: {} vs {} Δ={:.1}%, p={:.4}",
-                    column, current_period, previous_period, change_percent, p_value
+                    "{column}: {current_period} vs {previous_period} Δ={change_percent:.1}%, p={p_value:.4}"
                 )
             },
-            AnalysisType::PeriodAnomaly {
+            Self::PeriodAnomaly {
                 column,
                 period,
                 change_percent,
                 p_value,
                 ..
             } => {
-                format!(
-                    "{} [{}]: Δ={:.1}% vs mean, p={:.4}",
-                    column, period, change_percent, p_value
-                )
+                format!("{column} [{period}]: Δ={change_percent:.1}% vs mean, p={p_value:.4}")
             },
-            AnalysisType::Seasonality {
+            Self::Seasonality {
                 column,
                 period_name,
                 autocorrelation,
                 p_value,
             } => {
                 format!(
-                    "{}: {} seasonality, r={:.3}, p={:.4}",
-                    column, period_name, autocorrelation, p_value
+                    "{column}: {period_name} seasonality, r={autocorrelation:.3}, p={p_value:.4}"
                 )
             },
-            AnalysisType::OutlierCluster {
+            Self::OutlierCluster {
                 period,
                 columns,
                 direction,
                 ..
             } => {
-                format!("[{}] {} cluster: {}", period, direction, columns.join(", "))
+                let cols = columns.join(", ");
+                format!("[{period}] {direction} cluster: {cols}")
             },
-            AnalysisType::ForecastDeviation {
+            Self::ForecastDeviation {
                 column,
                 period,
                 actual,
@@ -394,8 +379,7 @@ impl AnalysisType {
                 p_value,
             } => {
                 format!(
-                    "{} [{}]: actual={:.2}, expected={:.2}, Δ={:.1}%, p={:.4}",
-                    column, period, actual, expected, deviation_percent, p_value
+                    "{column} [{period}]: actual={actual:.2}, expected={expected:.2}, Δ={deviation_percent:.1}%, p={p_value:.4}"
                 )
             },
         }
@@ -404,7 +388,7 @@ impl AnalysisType {
     /// Generate a natural language summary
     pub fn natural_summary(&self) -> String {
         match self {
-            AnalysisType::Anomaly {
+            Self::Anomaly {
                 column,
                 value,
                 mean,
@@ -417,12 +401,9 @@ impl AnalysisType {
                 } else {
                     "unusually low"
                 };
-                format!(
-                    "{} is {} at {:.2} (typically around {:.2})",
-                    col, direction, value, mean
-                )
+                format!("{col} is {direction} at {value:.2} (typically around {mean:.2})")
             },
-            AnalysisType::Segment {
+            Self::Segment {
                 target_column,
                 segment_column,
                 segment_value,
@@ -433,16 +414,12 @@ impl AnalysisType {
                 let target = humanize_column(target_column);
                 let segment = humanize_column(segment_column);
                 let direction = if *change_percent > 0.0 { "up" } else { "down" };
+                let change_abs = change_percent.abs();
+                let contrib_abs = contribution_pct.abs();
                 // Format: "Ship Mode = Second Class was up 142%, contributing 35% of total Sales change"
                 if contribution_pct.abs() > 0.1 {
                     format!(
-                        "{} = \"{}\" was {} {:.0}%, contributing {:.0}% of total {} change",
-                        segment,
-                        segment_value,
-                        direction,
-                        change_percent.abs(),
-                        contribution_pct.abs(),
-                        target
+                        "{segment} = \"{segment_value}\" was {direction} {change_abs:.0}%, contributing {contrib_abs:.0}% of total {target} change"
                     )
                 } else {
                     // Fallback for non-period attributions where contribution_pct isn't meaningful
@@ -451,17 +428,10 @@ impl AnalysisType {
                     } else {
                         "pulling down"
                     };
-                    format!(
-                        "{} = \"{}\" is {} {} by {:.1}%",
-                        segment,
-                        segment_value,
-                        dir_verb,
-                        target,
-                        change_percent.abs()
-                    )
+                    format!("{segment} = \"{segment_value}\" is {dir_verb} {target} by {change_abs:.1}%")
                 }
             },
-            AnalysisType::Correlation {
+            Self::Correlation {
                 column_a,
                 column_b,
                 r_value,
@@ -481,9 +451,9 @@ impl AnalysisType {
                 } else {
                     "negatively"
                 };
-                format!("{} and {} are {} {} correlated", a, b, strength, direction)
+                format!("{a} and {b} are {strength} {direction} correlated")
             },
-            AnalysisType::Trend {
+            Self::Trend {
                 column, direction, ..
             } => {
                 let col = humanize_column(column);
@@ -491,9 +461,9 @@ impl AnalysisType {
                     TrendDirection::Increasing => "increasing",
                     TrendDirection::Decreasing => "decreasing",
                 };
-                format!("{} is consistently {}", col, dir)
+                format!("{col} is consistently {dir}")
             },
-            AnalysisType::PeriodComparison {
+            Self::PeriodComparison {
                 column,
                 current_period,
                 previous_period,
@@ -510,18 +480,12 @@ impl AnalysisType {
                 } else {
                     "decreased"
                 };
+                let change_abs = change_percent.abs();
                 format!(
-                    "{} {} by {:.1}% ({:.1} → {:.1}) in {} compared to {}",
-                    col,
-                    direction,
-                    change_percent.abs(),
-                    previous_value,
-                    current_value,
-                    current,
-                    previous
+                    "{col} {direction} by {change_abs:.1}% ({previous_value:.1} → {current_value:.1}) in {current} compared to {previous}"
                 )
             },
-            AnalysisType::PeriodAnomaly {
+            Self::PeriodAnomaly {
                 column,
                 period,
                 period_value,
@@ -536,17 +500,10 @@ impl AnalysisType {
                 } else {
                     "lower"
                 };
-                format!(
-                    "{} was {:.1}% {} in {} ({:.1} vs avg {:.1})",
-                    col,
-                    change_percent.abs(),
-                    direction,
-                    p,
-                    period_value,
-                    other_periods_mean
-                )
+                let change_abs = change_percent.abs();
+                format!("{col} was {change_abs:.1}% {direction} in {p} ({period_value:.1} vs avg {other_periods_mean:.1})")
             },
-            AnalysisType::Seasonality {
+            Self::Seasonality {
                 column,
                 period_name,
                 autocorrelation,
@@ -560,12 +517,9 @@ impl AnalysisType {
                 } else {
                     "weak"
                 };
-                format!(
-                    "{} shows {} {} seasonality (r={:.2})",
-                    col, strength, period_name, autocorrelation
-                )
+                format!("{col} shows {strength} {period_name} seasonality (r={autocorrelation:.2})")
             },
-            AnalysisType::OutlierCluster {
+            Self::OutlierCluster {
                 period,
                 columns,
                 direction,
@@ -578,9 +532,9 @@ impl AnalysisType {
                     .collect::<Vec<_>>()
                     .join(", ");
                 let dir_word = if direction == "spike" { "Spike" } else { "Dip" };
-                format!("{}: {} cluster in {}", p, dir_word, cols)
+                format!("{p}: {dir_word} cluster in {cols}")
             },
-            AnalysisType::ForecastDeviation {
+            Self::ForecastDeviation {
                 column,
                 period,
                 actual,
@@ -592,8 +546,7 @@ impl AnalysisType {
                 let p = humanize_period(period);
                 let direction = if *deviation_percent > 0.0 { "+" } else { "" };
                 format!(
-                    "{} in {}: Actual {:.1} vs Expected {:.1} ({}{:.0}% deviation)",
-                    col, p, actual, expected, direction, deviation_percent
+                    "{col} in {p}: Actual {actual:.1} vs Expected {expected:.1} ({direction}{deviation_percent:.0}% deviation)"
                 )
             },
         }

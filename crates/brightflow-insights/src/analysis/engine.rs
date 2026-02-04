@@ -71,9 +71,8 @@ impl ColumnCache {
         period: &str,
         period_labels: &[Option<String>],
     ) -> (usize, usize) {
-        let segment_values = match self.dimension.get(segment_col) {
-            Some(v) => v,
-            None => return (0, 0),
+        let Some(segment_values) = self.dimension.get(segment_col) else {
+            return (0, 0);
         };
 
         let mut values_in_period: std::collections::HashSet<&str> =
@@ -262,56 +261,56 @@ impl AnalysisEngine {
         // Analyze KPIs first (higher priority), then metrics
         debug.subsection("Queuing Initial Tasks");
         for col in &schema.kpi_columns {
-            debug.task("queue", &format!("DetectAnomalies({})", col));
+            debug.task("queue", &format!("DetectAnomalies({col})"));
             queue.push_back(AnalysisTask::DetectAnomalies {
                 column: col.clone(),
             });
-            debug.task("queue", &format!("DetectTrend({})", col));
+            debug.task("queue", &format!("DetectTrend({col})"));
             queue.push_back(AnalysisTask::DetectTrend {
                 column: col.clone(),
             });
 
             // Add period-based analysis if time column exists
             if schema.time_column.is_some() {
-                debug.task("queue", &format!("ComparePeriods({})", col));
+                debug.task("queue", &format!("ComparePeriods({col})"));
                 queue.push_back(AnalysisTask::ComparePeriods {
                     column: col.clone(),
                 });
-                debug.task("queue", &format!("FindPeriodAnomaly({})", col));
+                debug.task("queue", &format!("FindPeriodAnomaly({col})"));
                 queue.push_back(AnalysisTask::FindPeriodAnomaly {
                     column: col.clone(),
                 });
-                debug.task("queue", &format!("DetectSeasonality({})", col));
+                debug.task("queue", &format!("DetectSeasonality({col})"));
                 queue.push_back(AnalysisTask::DetectSeasonality {
                     column: col.clone(),
                 });
-                debug.task("queue", &format!("DetectForecastDeviation({})", col));
+                debug.task("queue", &format!("DetectForecastDeviation({col})"));
                 queue.push_back(AnalysisTask::DetectForecastDeviation {
                     column: col.clone(),
                 });
             }
         }
         for col in &schema.metric_columns {
-            debug.task("queue", &format!("DetectAnomalies({})", col));
+            debug.task("queue", &format!("DetectAnomalies({col})"));
             queue.push_back(AnalysisTask::DetectAnomalies {
                 column: col.clone(),
             });
-            debug.task("queue", &format!("DetectTrend({})", col));
+            debug.task("queue", &format!("DetectTrend({col})"));
             queue.push_back(AnalysisTask::DetectTrend {
                 column: col.clone(),
             });
 
             // Add period-based analysis for metrics too
             if schema.time_column.is_some() {
-                debug.task("queue", &format!("ComparePeriods({})", col));
+                debug.task("queue", &format!("ComparePeriods({col})"));
                 queue.push_back(AnalysisTask::ComparePeriods {
                     column: col.clone(),
                 });
-                debug.task("queue", &format!("DetectSeasonality({})", col));
+                debug.task("queue", &format!("DetectSeasonality({col})"));
                 queue.push_back(AnalysisTask::DetectSeasonality {
                     column: col.clone(),
                 });
-                debug.task("queue", &format!("DetectForecastDeviation({})", col));
+                debug.task("queue", &format!("DetectForecastDeviation({col})"));
                 queue.push_back(AnalysisTask::DetectForecastDeviation {
                     column: col.clone(),
                 });
@@ -376,7 +375,7 @@ impl AnalysisEngine {
                             for cat_col in &schema.dimension_columns {
                                 debug.task(
                                     "spawn",
-                                    &format!("AttributeSegment({}, {})", column, cat_col),
+                                    &format!("AttributeSegment({column}, {cat_col})"),
                                 );
                                 queue.push_back(AnalysisTask::AttributeSegment {
                                     parent_id: node_id,
@@ -405,12 +404,9 @@ impl AnalysisEngine {
                 },
 
                 AnalysisTask::ComparePeriods { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => {
-                            debug.analysis("ComparePeriods", &column, AnalysisOutcome::NoData);
-                            continue;
-                        },
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        debug.analysis("ComparePeriods", &column, AnalysisOutcome::NoData);
+                        continue;
                     };
                     if let Some(comparison) =
                         compare_periods_cached(&column, metric_values, &period_labels)
@@ -442,7 +438,7 @@ impl AnalysisEngine {
                             ),
                             (
                                 "is_large_change",
-                                format!("{} (|change|>50%)", is_large_change),
+                                format!("{is_large_change} (|change|>50%)"),
                             ),
                         ];
 
@@ -541,12 +537,9 @@ impl AnalysisEngine {
                 },
 
                 AnalysisTask::FindPeriodAnomaly { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => {
-                            debug.analysis("FindPeriodAnomaly", &column, AnalysisOutcome::NoData);
-                            continue;
-                        },
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        debug.analysis("FindPeriodAnomaly", &column, AnalysisOutcome::NoData);
+                        continue;
                     };
                     if let Some(anomaly) =
                         find_anomalous_period_cached(&column, metric_values, &period_labels)
@@ -574,7 +567,7 @@ impl AnalysisEngine {
                             ),
                             (
                                 "is_large_change",
-                                format!("{} (|change|>50%)", is_large_change),
+                                format!("{is_large_change} (|change|>50%)"),
                             ),
                         ];
 
@@ -685,13 +678,11 @@ impl AnalysisEngine {
                         continue;
                     }
 
-                    let target_values = match cache.numeric.get(&target_col) {
-                        Some(v) => v,
-                        None => continue,
+                    let Some(target_values) = cache.numeric.get(&target_col) else {
+                        continue;
                     };
-                    let segment_values = match cache.dimension.get(&segment_col) {
-                        Some(v) => v,
-                        None => continue,
+                    let Some(segment_values) = cache.dimension.get(&segment_col) else {
+                        continue;
                     };
 
                     let segments = attribute_period_segments_cached(
@@ -819,7 +810,7 @@ impl AnalysisEngine {
                                 description,
                             );
 
-                            debug.task("spawn", &format!("SearchCorrelations({})", target_col));
+                            debug.task("spawn", &format!("SearchCorrelations({target_col})"));
                             queue.push_back(AnalysisTask::SearchCorrelations {
                                 parent_id: node_id,
                                 target_col: target_col.clone(),
@@ -868,7 +859,7 @@ impl AnalysisEngine {
                                 if corr.p_value < self.p_threshold && corr.r_value.abs() > 0.5 {
                                     debug.analysis(
                                         "Correlation",
-                                        &format!("{} vs {}", target_col, other_col),
+                                        &format!("{target_col} vs {other_col}"),
                                         AnalysisOutcome::triggered(
                                             values,
                                             format!("r={:.3}, p={:.4}", corr.r_value, corr.p_value),
@@ -894,7 +885,7 @@ impl AnalysisEngine {
                                 } else {
                                     debug.analysis(
                                         "Correlation",
-                                        &format!("{} vs {}", target_col, other_col),
+                                        &format!("{target_col} vs {other_col}"),
                                         AnalysisOutcome::below_threshold(
                                             values,
                                             if corr.r_value.abs() <= 0.5 {
@@ -977,12 +968,9 @@ impl AnalysisEngine {
                 },
 
                 AnalysisTask::DetectSeasonality { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => {
-                            debug.analysis("DetectSeasonality", &column, AnalysisOutcome::NoData);
-                            continue;
-                        },
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        debug.analysis("DetectSeasonality", &column, AnalysisOutcome::NoData);
+                        continue;
                     };
 
                     // Extract timestamps from time column using the period module's extract function
@@ -1054,16 +1042,9 @@ impl AnalysisEngine {
                 },
 
                 AnalysisTask::DetectForecastDeviation { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => {
-                            debug.analysis(
-                                "DetectForecastDeviation",
-                                &column,
-                                AnalysisOutcome::NoData,
-                            );
-                            continue;
-                        },
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        debug.analysis("DetectForecastDeviation", &column, AnalysisOutcome::NoData);
+                        continue;
                     };
 
                     // Aggregate values by period
@@ -1194,7 +1175,7 @@ impl AnalysisEngine {
                                     cluster
                                         .common_segments
                                         .iter()
-                                        .map(|(k, v)| format!("{}={}", k, v))
+                                        .map(|(k, v)| format!("{k}={v}"))
                                         .collect::<Vec<_>>()
                                         .join(", ")
                                 }
@@ -1227,7 +1208,10 @@ impl AnalysisEngine {
         );
         debug.kv(
             "Analysis time",
-            &format!("{:.2}ms", (total_time - setup_time).as_secs_f64() * 1000.0),
+            &format!(
+                "{:.2}ms",
+                total_time.saturating_sub(setup_time).as_secs_f64() * 1000.0
+            ),
         );
         debug.kv(
             "Total time",
@@ -1275,7 +1259,7 @@ impl AnalysisEngine {
         // Find unique periods and get the latest two
         let mut unique_periods: Vec<String> = period_labels
             .iter()
-            .filter_map(|p| p.clone())
+            .filter_map(Clone::clone)
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
@@ -1303,9 +1287,8 @@ impl AnalysisEngine {
             .iter()
             .chain(schema.metric_columns.iter())
         {
-            let metric_values = match cache.numeric.get(col) {
-                Some(v) => v,
-                None => continue,
+            let Some(metric_values) = cache.numeric.get(col) else {
+                continue;
             };
 
             // Calculate stats for current and previous periods
@@ -1402,13 +1385,11 @@ impl AnalysisEngine {
                     continue;
                 }
 
-                let target_values = match cache.numeric.get(&target_col) {
-                    Some(v) => v,
-                    None => continue,
+                let Some(target_values) = cache.numeric.get(&target_col) else {
+                    continue;
                 };
-                let segment_values = match cache.dimension.get(&segment_col) {
-                    Some(v) => v,
-                    None => continue,
+                let Some(segment_values) = cache.dimension.get(&segment_col) else {
+                    continue;
                 };
 
                 let segments = attribute_period_segments_cached(
@@ -1618,7 +1599,7 @@ impl AnalysisEngine {
         debug.flush();
 
         // Suppress unused variable warning
-        let _ = (cache, setup_time);
+        drop((cache, setup_time));
 
         Ok(tree)
     }
@@ -1699,9 +1680,8 @@ impl AnalysisEngine {
                     }
                 },
                 AnalysisTask::ComparePeriods { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => continue,
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        continue;
                     };
                     if let Some(comparison) =
                         compare_periods_cached(&column, metric_values, &period_labels)
@@ -1741,9 +1721,8 @@ impl AnalysisEngine {
                     }
                 },
                 AnalysisTask::FindPeriodAnomaly { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => continue,
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        continue;
                     };
                     if let Some(anomaly) =
                         find_anomalous_period_cached(&column, metric_values, &period_labels)
@@ -1781,9 +1760,8 @@ impl AnalysisEngine {
                     }
                 },
                 AnalysisTask::DetectSeasonality { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => continue,
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        continue;
                     };
                     let timestamps_sec: Vec<i64> = if let Some(time_col) = &schema.time_column {
                         if let Ok(col) = df.column(time_col) {
@@ -1821,9 +1799,8 @@ impl AnalysisEngine {
                     }
                 },
                 AnalysisTask::DetectForecastDeviation { column } => {
-                    let metric_values = match cache.numeric.get(&column) {
-                        Some(v) => v,
-                        None => continue,
+                    let Some(metric_values) = cache.numeric.get(&column) else {
+                        continue;
                     };
                     let mut period_sums: HashMap<String, (f64, usize)> = HashMap::new();
                     for (val, period_opt) in metric_values.iter().zip(period_labels.iter()) {
@@ -1876,7 +1853,7 @@ impl AnalysisEngine {
                                 cluster
                                     .common_segments
                                     .iter()
-                                    .map(|(k, v)| format!("{}={}", k, v))
+                                    .map(|(k, v)| format!("{k}={v}"))
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             }
@@ -1911,6 +1888,7 @@ impl AnalysisEngine {
     }
 
     /// Drivers report: composition and driver analysis (What is driving performance?)
+    #[allow(clippy::unnecessary_wraps, clippy::unused_self)] // Stub - will use self and may error when implemented
     fn run_drivers_impl(
         &self,
         _df: &DataFrame,

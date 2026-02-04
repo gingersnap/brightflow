@@ -179,7 +179,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     };
     if let Ok(json) = serde_json::to_string(&connected) {
         tracing::debug!("Sending connected message: {}", json);
-        if sender.send(Message::Text(json.into())).await.is_err() {
+        if sender.send(Message::Text(json)).await.is_err() {
             tracing::warn!("Failed to send connected message, client disconnected");
             return;
         }
@@ -214,7 +214,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             };
 
             tracing::debug!("Sending response: {} bytes", json.len());
-            if sender.send(Message::Text(json.into())).await.is_err() {
+            if sender.send(Message::Text(json)).await.is_err() {
                 tracing::warn!("Failed to send response, client disconnected");
                 break;
             }
@@ -251,14 +251,11 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
 async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
     let dataset_id = query.dataset_id.clone();
 
-    let dataset = match state.datasets.get_dataset(&dataset_id) {
-        Some(d) => d,
-        None => {
-            return WsServerMessage::Error {
-                code: "NOT_FOUND".into(),
-                message: format!("Dataset '{dataset_id}' not found"),
-            }
-        },
+    let Some(dataset) = state.datasets.get_dataset(&dataset_id) else {
+        return WsServerMessage::Error {
+            code: "NOT_FOUND".into(),
+            message: format!("Dataset '{dataset_id}' not found"),
+        };
     };
 
     let df = dataset.df.clone();

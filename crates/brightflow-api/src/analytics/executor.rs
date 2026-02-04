@@ -61,11 +61,11 @@ fn apply_operation(lf: LazyFrame, op: Operation) -> AppResult<LazyFrame> {
             Ok(lf.filter(expr))
         },
         Operation::Select { columns } => {
-            let cols: Vec<Expr> = columns.iter().map(|c| col(c)).collect();
+            let cols: Vec<Expr> = columns.iter().map(col).collect();
             Ok(lf.select(cols))
         },
         Operation::GroupBy { by, aggs } => {
-            let by_exprs: Vec<Expr> = by.iter().map(|c| col(c)).collect();
+            let by_exprs: Vec<Expr> = by.iter().map(col).collect();
             let agg_exprs: Vec<Expr> = aggs.iter().map(build_agg_expr).collect();
             Ok(lf.group_by(by_exprs).agg(agg_exprs))
         },
@@ -245,7 +245,7 @@ fn df_to_json_rows(df: &DataFrame) -> AppResult<Vec<Vec<serde_json::Value>>> {
 }
 
 /// Convert a Polars AnyValue to JSON
-fn anyvalue_to_json(val: &AnyValue) -> serde_json::Value {
+fn anyvalue_to_json(val: &AnyValue<'_>) -> serde_json::Value {
     match val {
         AnyValue::Null => serde_json::Value::Null,
         AnyValue::Boolean(b) => serde_json::Value::Bool(*b),
@@ -269,8 +269,14 @@ fn anyvalue_to_json(val: &AnyValue) -> serde_json::Value {
 fn dtype_to_string(dtype: &DataType) -> String {
     match dtype {
         DataType::Boolean => "bool",
-        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => "int",
-        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => "int",
+        DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::Int64
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64 => "int",
         DataType::Float32 | DataType::Float64 => "float",
         DataType::String => "string",
         DataType::Datetime(_, _) => "datetime",

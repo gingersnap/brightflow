@@ -30,18 +30,17 @@ pub fn correlate(df: &DataFrame, col_a: &str, col_b: &str) -> Result<Option<Corr
         .flatten()
         .collect();
 
-    let pairs: Vec<(f64, f64)> = a_values.into_iter().zip(b_values.into_iter()).collect();
+    let pairs: Vec<(f64, f64)> = a_values.into_iter().zip(b_values).collect();
 
     if pairs.len() < 3 {
         return Ok(None);
     }
 
-    let x: Vec<f64> = pairs.iter().map(|(a, _)| *a).collect();
-    let y: Vec<f64> = pairs.iter().map(|(_, b)| *b).collect();
+    let x: Vec<f64> = pairs.iter().map(|(val, _)| *val).collect();
+    let y: Vec<f64> = pairs.iter().map(|(_, val)| *val).collect();
 
-    let r = match pearson_correlation(&x, &y) {
-        Some(r) => r,
-        None => return Ok(None),
+    let Some(r) = pearson_correlation(&x, &y) else {
+        return Ok(None);
     };
 
     let p_value = p_value_for_correlation(r, pairs.len());

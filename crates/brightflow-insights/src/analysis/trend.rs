@@ -30,9 +30,8 @@ pub fn detect_trend(df: &DataFrame, column: &str) -> Result<Option<TrendResult>>
 
     let x: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
 
-    let (slope, _intercept, r_squared) = match linear_regression(&x, &values) {
-        Some(result) => result,
-        None => return Ok(None),
+    let Some((slope, _intercept, r_squared)) = linear_regression(&x, &values) else {
+        return Ok(None);
     };
 
     let r = r_squared.sqrt();

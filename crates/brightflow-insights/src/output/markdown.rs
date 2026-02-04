@@ -6,13 +6,13 @@ use std::path::Path;
 use crate::analysis::tree::{AnalysisCategory, AnalysisTree, AnalysisType, NodeId};
 
 pub fn write_markdown(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Result<()> {
-    let file =
-        File::create(path).with_context(|| format!("Failed to create markdown file {:?}", path))?;
+    let file = File::create(path)
+        .with_context(|| format!("Failed to create markdown file {}", path.display()))?;
     let mut writer = BufWriter::new(file);
 
     // Header
     let title = title.unwrap_or("Analysis Insights");
-    writeln!(writer, "# {}", title)?;
+    writeln!(writer, "# {title}")?;
     writeln!(writer)?;
 
     if tree.roots.is_empty() {
@@ -128,12 +128,12 @@ fn write_node_tree<W: Write>(
 
 /// Generate a compact tree visualization using ASCII art
 pub fn write_markdown_compact(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Result<()> {
-    let file =
-        File::create(path).with_context(|| format!("Failed to create markdown file {:?}", path))?;
+    let file = File::create(path)
+        .with_context(|| format!("Failed to create markdown file {}", path.display()))?;
     let mut writer = BufWriter::new(file);
 
     let title = title.unwrap_or("Analysis Insights");
-    writeln!(writer, "# {}", title)?;
+    writeln!(writer, "# {title}")?;
     writeln!(writer)?;
 
     if tree.roots.is_empty() {
@@ -229,11 +229,11 @@ fn write_ascii_tree<W: Write>(
 
     // Calculate prefix for children
     let child_prefix = if prefix.is_empty() {
-        "".to_string()
+        String::new()
     } else if is_last {
-        format!("{}    ", prefix)
+        format!("{prefix}    ")
     } else {
-        format!("{}│   ", prefix)
+        format!("{prefix}│   ")
     };
 
     // Write children, sorted by significance descending

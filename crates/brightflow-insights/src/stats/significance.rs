@@ -15,7 +15,7 @@ pub fn p_value_for_correlation(r: f64, n: usize) -> f64 {
     }
 
     let df = n as f64 - 2.0;
-    let t = r * (df / (1.0 - r * r)).sqrt();
+    let t = r * (df / r.mul_add(-r, 1.0)).sqrt();
 
     let Ok(t_dist) = StudentsT::new(0.0, 1.0, df) else {
         return 1.0;
@@ -96,6 +96,7 @@ pub fn std_dev(values: &[f64]) -> f64 {
 }
 
 /// Calculate Pearson correlation coefficient
+#[allow(clippy::suspicious_operation_groupings)] // sum_x * sum_x is correct (variance formula)
 pub fn pearson_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
     if x.len() != y.len() || x.len() < 3 {
         return None;
@@ -108,8 +109,11 @@ pub fn pearson_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
     let sum_x2: f64 = x.iter().map(|xi| xi * xi).sum();
     let sum_y2: f64 = y.iter().map(|yi| yi * yi).sum();
 
-    let numerator = n * sum_xy - sum_x * sum_y;
-    let denominator = ((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y)).sqrt();
+    let numerator = n.mul_add(sum_xy, -(sum_x * sum_y));
+    let sum_x_squared = sum_x * sum_x;
+    let sum_y_squared = sum_y * sum_y;
+    let denominator =
+        (n.mul_add(sum_x2, -sum_x_squared) * n.mul_add(sum_y2, -sum_y_squared)).sqrt();
 
     if denominator == 0.0 {
         return None;
@@ -119,6 +123,7 @@ pub fn pearson_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
 }
 
 /// Simple linear regression returning (slope, intercept, r_squared)
+#[allow(clippy::suspicious_operation_groupings)] // sum_x * sum_x is correct (variance formula)
 pub fn linear_regression(x: &[f64], y: &[f64]) -> Option<(f64, f64, f64)> {
     if x.len() != y.len() || x.len() < 3 {
         return None;
@@ -130,13 +135,14 @@ pub fn linear_regression(x: &[f64], y: &[f64]) -> Option<(f64, f64, f64)> {
     let sum_xy: f64 = x.iter().zip(y.iter()).map(|(xi, yi)| xi * yi).sum();
     let sum_x2: f64 = x.iter().map(|xi| xi * xi).sum();
 
-    let denominator = n * sum_x2 - sum_x * sum_x;
+    let sum_x_squared = sum_x * sum_x;
+    let denominator = n.mul_add(sum_x2, -sum_x_squared);
     if denominator == 0.0 {
         return None;
     }
 
-    let slope = (n * sum_xy - sum_x * sum_y) / denominator;
-    let intercept = (sum_y - slope * sum_x) / n;
+    let slope = n.mul_add(sum_xy, -(sum_x * sum_y)) / denominator;
+    let intercept = slope.mul_add(-sum_x, sum_y) / n;
 
     let y_mean = sum_y / n;
     let ss_tot: f64 = y.iter().map(|yi| (yi - y_mean).powi(2)).sum();
@@ -194,9 +200,10 @@ pub fn p_value_for_autocorrelation(r: f64, n: usize, lag: usize) -> f64 {
     p_value_from_z(z_stat)
 }
 
-/// Linear regression with prediction interval for extrapolation
-/// Returns (predicted_value, lower_bound, upper_bound, p_value)
-/// The p_value indicates whether the actual value falls outside the prediction interval
+/// Linear regression with prediction interval for extrapolation.
+///
+/// Returns (predicted_value, lower_bound, upper_bound, p_value).
+/// The p_value indicates whether the actual value falls outside the prediction interval.
 pub fn prediction_interval(
     x: &[f64],
     y: &[f64],
@@ -209,7 +216,7 @@ pub fn prediction_interval(
     }
 
     let (slope, intercept, _) = linear_regression(x, y)?;
-    let y_pred = slope * x_new + intercept;
+    let y_pred = slope.mul_add(x_new, intercept);
 
     let n = x.len() as f64;
     let x_mean = mean(x);
@@ -234,10 +241,9 @@ pub fn prediction_interval(
         if deviation < 1e-10 {
             // Actual matches prediction exactly
             return Some((y_pred, y_pred, y_pred, 1.0));
-        } else {
-            // Any deviation from perfect prediction is highly significant
-            return Some((y_pred, y_pred, y_pred, 0.0));
         }
+        // Any deviation from perfect prediction is highly significant
+        return Some((y_pred, y_pred, y_pred, 0.0));
     }
 
     // Sum of squared deviations of x from its mean
@@ -252,9 +258,8 @@ pub fn prediction_interval(
 
     // t-critical value for the given confidence level
     let df = n - 2.0;
-    let t_dist = match StudentsT::new(0.0, 1.0, df) {
-        Ok(d) => d,
-        Err(_) => return None,
+    let Ok(t_dist) = StudentsT::new(0.0, 1.0, df) else {
+        return None;
     };
 
     // For a two-tailed interval

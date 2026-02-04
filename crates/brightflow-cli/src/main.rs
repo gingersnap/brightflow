@@ -1,3 +1,9 @@
+// Allow certain pedantic lints that are too strict for CLI code:
+// - cognitive_complexity: CLI functions often have many branches
+// - ref_option: &Option<T> is idiomatic in argument parsing
+// - or_fun_call: unwrap_or with constant is more readable
+#![allow(clippy::cognitive_complexity, clippy::ref_option, clippy::or_fun_call)]
+
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
@@ -148,7 +154,7 @@ async fn main() -> Result<()> {
                 result = brightflow_api::serve(config) => {
                     result?;
                 }
-                _ = run_scheduler() => {}
+                () = run_scheduler() => {}
             }
         },
 
@@ -296,12 +302,12 @@ fn write_outputs(
         .unwrap_or("output");
     let input_dir = args.input.parent().unwrap_or(std::path::Path::new("."));
 
-    let json_path = input_dir.join(format!("{}_{}.json", input_stem, suffix));
-    let md_path = input_dir.join(format!("{}_{}.md", input_stem, suffix));
-    let html_path = input_dir.join(format!("{}_{}.html", input_stem, suffix));
+    let json_path = input_dir.join(format!("{input_stem}_{suffix}.json"));
+    let md_path = input_dir.join(format!("{input_stem}_{suffix}.md"));
+    let html_path = input_dir.join(format!("{input_stem}_{suffix}.html"));
 
     let title = match schema_name {
-        Some(name) => format!("{} - {}", name, type_title),
+        Some(name) => format!("{name} - {type_title}"),
         None => type_title.to_string(),
     };
 

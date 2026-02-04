@@ -68,9 +68,9 @@ pub struct SchemaConfig {
 impl SchemaConfig {
     pub fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read schema config from {:?}", path))?;
-        let config: SchemaConfig = serde_yaml::from_str(&content)
-            .with_context(|| format!("Failed to parse schema config from {:?}", path))?;
+            .with_context(|| format!("Failed to read schema config from {}", path.display()))?;
+        let config: Self = serde_yaml::from_str(&content)
+            .with_context(|| format!("Failed to parse schema config from {}", path.display()))?;
         Ok(config)
     }
 

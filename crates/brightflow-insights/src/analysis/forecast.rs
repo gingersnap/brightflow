@@ -11,6 +11,7 @@ pub struct ForecastDeviation {
 }
 
 /// Detect forecast deviation by comparing actual values to linear trend extrapolation.
+///
 /// Requires at least 4 historical periods.
 /// Returns a deviation if |deviation| > 20% and p < 0.05 (outside prediction interval).
 pub fn detect_forecast_deviation(

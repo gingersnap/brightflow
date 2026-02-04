@@ -184,7 +184,7 @@ fn enrich_with_common_segments(
 
             // If one value dominates (>50% of rows), consider it "common"
             for (val, count) in values_in_period {
-                if count as f64 / total_in_period as f64 > 0.5 {
+                if count as f64 / f64::from(total_in_period) > 0.5 {
                     common.push((dim_name.clone(), val));
                 }
             }

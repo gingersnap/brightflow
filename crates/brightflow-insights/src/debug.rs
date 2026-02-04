@@ -1,3 +1,6 @@
+// Allow ignoring write results in debug logging - this is intentional
+#![allow(let_underscore_drop)]
+
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -31,7 +34,7 @@ impl DebugLog {
         if let Some(ref writer) = self.writer {
             let Ok(mut w) = writer.lock() else { return };
             let _ = writeln!(w, "\n{}", "=".repeat(80));
-            let _ = writeln!(w, "  {}", title);
+            let _ = writeln!(w, "  {title}");
             let _ = writeln!(w, "{}\n", "=".repeat(80));
         }
     }
@@ -40,7 +43,7 @@ impl DebugLog {
     pub fn subsection(&self, title: &str) {
         if let Some(ref writer) = self.writer {
             let Ok(mut w) = writer.lock() else { return };
-            let _ = writeln!(w, "\n--- {} ---\n", title);
+            let _ = writeln!(w, "\n--- {title} ---\n");
         }
     }
 
@@ -48,7 +51,7 @@ impl DebugLog {
     pub fn kv(&self, key: &str, value: &str) {
         if let Some(ref writer) = self.writer {
             let Ok(mut w) = writer.lock() else { return };
-            let _ = writeln!(w, "  {}: {}", key, value);
+            let _ = writeln!(w, "  {key}: {value}");
         }
     }
 
@@ -62,26 +65,26 @@ impl DebugLog {
                 AnalysisOutcome::NoData => "[nodata]",
                 AnalysisOutcome::Error(_) => "[ERROR] ",
             };
-            let _ = writeln!(w, "{} {} on '{}'", icon, analysis_type, column);
+            let _ = writeln!(w, "{icon} {analysis_type} on '{column}'");
 
             match result {
                 AnalysisOutcome::Triggered { values, reason } => {
                     for (k, v) in values {
-                        let _ = writeln!(w, "         {} = {}", k, v);
+                        let _ = writeln!(w, "         {k} = {v}");
                     }
-                    let _ = writeln!(w, "         -> TRIGGERED: {}", reason);
+                    let _ = writeln!(w, "         -> TRIGGERED: {reason}");
                 },
                 AnalysisOutcome::BelowThreshold { values, reason } => {
                     for (k, v) in values {
-                        let _ = writeln!(w, "         {} = {}", k, v);
+                        let _ = writeln!(w, "         {k} = {v}");
                     }
-                    let _ = writeln!(w, "         -> skipped: {}", reason);
+                    let _ = writeln!(w, "         -> skipped: {reason}");
                 },
                 AnalysisOutcome::NoData => {
                     let _ = writeln!(w, "         -> no data available");
                 },
                 AnalysisOutcome::Error(msg) => {
-                    let _ = writeln!(w, "         -> error: {}", msg);
+                    let _ = writeln!(w, "         -> error: {msg}");
                 },
             }
             let _ = writeln!(w);
@@ -106,28 +109,27 @@ impl DebugLog {
             };
             let _ = writeln!(
                 w,
-                "{} Segment '{}' = '{}' for '{}'",
-                icon, segment_col, segment_val, target
+                "{icon} Segment '{segment_col}' = '{segment_val}' for '{target}'"
             );
 
             match result {
                 AnalysisOutcome::Triggered { values, reason } => {
                     for (k, v) in values {
-                        let _ = writeln!(w, "         {} = {}", k, v);
+                        let _ = writeln!(w, "         {k} = {v}");
                     }
-                    let _ = writeln!(w, "         -> TRIGGERED: {}", reason);
+                    let _ = writeln!(w, "         -> TRIGGERED: {reason}");
                 },
                 AnalysisOutcome::BelowThreshold { values, reason } => {
                     for (k, v) in values {
-                        let _ = writeln!(w, "         {} = {}", k, v);
+                        let _ = writeln!(w, "         {k} = {v}");
                     }
-                    let _ = writeln!(w, "         -> skipped: {}", reason);
+                    let _ = writeln!(w, "         -> skipped: {reason}");
                 },
                 AnalysisOutcome::NoData => {
                     let _ = writeln!(w, "         -> no data");
                 },
                 AnalysisOutcome::Error(msg) => {
-                    let _ = writeln!(w, "         -> error: {}", msg);
+                    let _ = writeln!(w, "         -> error: {msg}");
                 },
             }
             let _ = writeln!(w);
@@ -138,7 +140,7 @@ impl DebugLog {
     pub fn task(&self, action: &str, task_desc: &str) {
         if let Some(ref writer) = self.writer {
             let Ok(mut w) = writer.lock() else { return };
-            let _ = writeln!(w, "  [{}] {}", action, task_desc);
+            let _ = writeln!(w, "  [{action}] {task_desc}");
         }
     }
 
@@ -146,7 +148,7 @@ impl DebugLog {
     pub fn log(&self, msg: &str) {
         if let Some(ref writer) = self.writer {
             let Ok(mut w) = writer.lock() else { return };
-            let _ = writeln!(w, "{}", msg);
+            let _ = writeln!(w, "{msg}");
         }
     }
 

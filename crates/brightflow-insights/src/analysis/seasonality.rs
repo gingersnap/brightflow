@@ -52,7 +52,7 @@ pub fn detect_seasonality(
 
     for &(period_days, period_name) in SEASONALITY_LAGS {
         // Convert period from days to data points based on actual data spacing
-        let lag = (period_days as f64 / avg_spacing_days).round() as usize;
+        let lag = (f64::from(period_days) / avg_spacing_days).round() as usize;
 
         // Need at least 2 full cycles
         if values.len() < lag * 2 + 3 {
@@ -107,7 +107,7 @@ fn calculate_avg_spacing_days(timestamps: &[i64]) -> f64 {
     }
 
     // Convert from seconds to days
-    let avg_seconds = total_diff as f64 / count as f64;
+    let avg_seconds = total_diff as f64 / f64::from(count);
     avg_seconds / 86400.0
 }
 
@@ -129,7 +129,7 @@ mod tests {
             // 100 days of data
             let day_of_week = (i % 7) as f64;
             // Weekly pattern: peaks on day 3 (Wednesday)
-            let seasonal = 100.0 + 30.0 * (2.0 * PI * day_of_week / 7.0).sin();
+            let seasonal = 30.0f64.mul_add((2.0 * PI * day_of_week / 7.0).sin(), 100.0);
             values.push(seasonal);
             timestamps.push(start_ts + i * 86400);
         }
@@ -145,7 +145,7 @@ mod tests {
     fn test_no_seasonality_random() {
         // Random data should not show seasonality
         let values: Vec<f64> = (0..100)
-            .map(|i| 100.0 + ((i * 17) % 23) as f64 - 11.0)
+            .map(|i| 100.0 + f64::from((i * 17) % 23) - 11.0)
             .collect();
         let timestamps: Vec<i64> = (0..100).map(|i| 1609459200 + i * 86400).collect();
 

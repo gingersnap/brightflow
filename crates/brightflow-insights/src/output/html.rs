@@ -6,8 +6,8 @@ use std::path::Path;
 use crate::analysis::tree::{AnalysisCategory, AnalysisTree, AnalysisType, NodeId};
 
 pub fn write_html(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Result<()> {
-    let file =
-        File::create(path).with_context(|| format!("Failed to create HTML file {:?}", path))?;
+    let file = File::create(path)
+        .with_context(|| format!("Failed to create HTML file {}", path.display()))?;
     let mut writer = BufWriter::new(file);
 
     let title = title.unwrap_or("Analysis Insights");
@@ -20,7 +20,7 @@ pub fn write_html(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Resu
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{}</title>
+    <title>{title}</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -85,8 +85,7 @@ pub fn write_html(path: &Path, tree: &AnalysisTree, title: Option<&str>) -> Resu
     </style>
 </head>
 <body>
-    <h1>{}</h1>"#,
-        title, title
+    <h1>{title}</h1>"#
     )?;
 
     if tree.roots.is_empty() {

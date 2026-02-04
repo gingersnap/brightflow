@@ -1,3 +1,17 @@
+// Allow certain pedantic lints that are too strict for API code:
+// - cognitive_complexity: handler functions are naturally complex
+// - too_many_lines: handler functions may be verbose
+// - indexing_slicing: array access is bounds-checked at runtime
+// - shadow_reuse: variable shadowing with related values is common in handlers
+// - needless_pass_by_value: Axum extractors require owned values
+#![allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::indexing_slicing,
+    clippy::shadow_reuse,
+    clippy::needless_pass_by_value
+)]
+
 pub mod analytics;
 pub mod routes;
 pub mod shared;

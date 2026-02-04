@@ -36,34 +36,34 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
-            AppError::InvalidQuery(msg) => (
+            Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
+            Self::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
+            Self::InvalidQuery(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "INVALID_QUERY",
                 msg.clone(),
             ),
-            AppError::Internal(msg) => (
+            Self::Internal(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
                 msg.clone(),
             ),
-            AppError::Polars(e) => (
+            Self::Polars(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "POLARS_ERROR",
                 format!("Query execution failed: {e}"),
             ),
-            AppError::Io(e) => (
+            Self::Io(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "IO_ERROR",
                 format!("File operation failed: {e}"),
             ),
-            AppError::Json(e) => (
+            Self::Json(e) => (
                 StatusCode::BAD_REQUEST,
                 "JSON_ERROR",
                 format!("JSON parsing failed: {e}"),
             ),
-            AppError::Join(e) => (
+            Self::Join(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "TASK_ERROR",
                 format!("Task execution failed: {e}"),
@@ -84,14 +84,14 @@ impl IntoResponse for AppError {
 impl AppError {
     pub fn error_code(&self) -> &'static str {
         match self {
-            AppError::BadRequest(_) => "BAD_REQUEST",
-            AppError::NotFound(_) => "NOT_FOUND",
-            AppError::InvalidQuery(_) => "INVALID_QUERY",
-            AppError::Internal(_) => "INTERNAL_ERROR",
-            AppError::Polars(_) => "POLARS_ERROR",
-            AppError::Io(_) => "IO_ERROR",
-            AppError::Json(_) => "JSON_ERROR",
-            AppError::Join(_) => "TASK_ERROR",
+            Self::BadRequest(_) => "BAD_REQUEST",
+            Self::NotFound(_) => "NOT_FOUND",
+            Self::InvalidQuery(_) => "INVALID_QUERY",
+            Self::Internal(_) => "INTERNAL_ERROR",
+            Self::Polars(_) => "POLARS_ERROR",
+            Self::Io(_) => "IO_ERROR",
+            Self::Json(_) => "JSON_ERROR",
+            Self::Join(_) => "TASK_ERROR",
         }
     }
 }

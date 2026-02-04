@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook for Brightflow
+# Runs Rust and TypeScript checks before allowing a commit
+#
+# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Get the root directory of the repo
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR"
+
+echo -e "${BLUE}Running pre-commit checks...${NC}"
+echo ""
+
+FAILED=0
+
+# ============================================
+# Rust Checks
+# ============================================
+
+echo -e "${BLUE}[Rust]${NC} Checking formatting..."
+if ! cargo fmt --all -- --check 2>/dev/null; then
+    echo -e "${RED}✗ Rust formatting check failed${NC}"
+    echo "  Run 'cargo fmt' to fix"
+    FAILED=1
+else
+    echo -e "${GREEN}✓ Rust formatting${NC}"
+fi
+
+echo -e "${BLUE}[Rust]${NC} Running Clippy..."
+if ! cargo clippy --all-targets --all-features -- -D warnings 2>/dev/null; then
+    echo -e "${RED}✗ Clippy found issues${NC}"
+    FAILED=1
+else
+    echo -e "${GREEN}✓ Clippy${NC}"
+fi
+
+# cargo audit is optional (requires cargo-audit to be installed)
+if command -v cargo-audit &> /dev/null; then
+    echo -e "${BLUE}[Rust]${NC} Running security audit..."
+    if ! cargo audit --quiet 2>/dev/null; then
+        echo -e "${YELLOW}⚠ Security audit found vulnerabilities${NC}"
+        # Don't fail on audit - just warn
+    else
+        echo -e "${GREEN}✓ Security audit${NC}"
+    fi
+else
+    echo -e "${YELLOW}[Rust] Skipping audit (cargo-audit not installed)${NC}"
+fi
+
+# ============================================
+# TypeScript/Frontend Checks
+# ============================================
+
+if [ -d "$ROOT_DIR/brightflow-app" ]; then
+    cd "$ROOT_DIR/brightflow-app"
+
+    # Check if node_modules exists
+    if [ ! -d "node_modules" ]; then
+        echo -e "${YELLOW}[Frontend] node_modules not found, skipping checks${NC}"
+        echo "  Run 'npm install' in brightflow-app to enable"
+    else
+        echo -e "${BLUE}[Frontend]${NC} Type checking..."
+        if ! npm run type-check --silent 2>/dev/null; then
+            echo -e "${RED}✗ TypeScript type check failed${NC}"
+            FAILED=1
+        else
+            echo -e "${GREEN}✓ TypeScript types${NC}"
+        fi
+
+        echo -e "${BLUE}[Frontend]${NC} Linting..."
+        if ! npm run lint --silent 2>/dev/null; then
+            echo -e "${RED}✗ Lint check failed${NC}"
+            FAILED=1
+        else
+            echo -e "${GREEN}✓ Lint${NC}"
+        fi
+
+        echo -e "${BLUE}[Frontend]${NC} Checking formatting..."
+        if ! npm run format:check --silent 2>/dev/null; then
+            echo -e "${RED}✗ Format check failed${NC}"
+            echo "  Run 'npm run format' in brightflow-app to fix"
+            FAILED=1
+        else
+            echo -e "${GREEN}✓ Formatting${NC}"
+        fi
+    fi
+fi
+
+# ============================================
+# Summary
+# ============================================
+
+echo ""
+if [ $FAILED -eq 1 ]; then
+    echo -e "${RED}Pre-commit checks failed. Please fix the issues above.${NC}"
+    echo -e "To bypass (not recommended): git commit --no-verify"
+    exit 1
+else
+    echo -e "${GREEN}All pre-commit checks passed!${NC}"
+    exit 0
+fi

@@ -76,10 +76,10 @@ pub fn attribute_segment(
 
         let contribution =
             ((seg_mean - overall_mean) * seg_data.len() as f64) / target_values.len() as f64;
-        let change_percent = if other_mean != 0.0 {
-            ((seg_mean - other_mean) / other_mean) * 100.0
-        } else {
+        let change_percent = if other_mean == 0.0 {
             0.0
+        } else {
+            ((seg_mean - other_mean) / other_mean) * 100.0
         };
 
         let p_value = p_value_welch_t_test(

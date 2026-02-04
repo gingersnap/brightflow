@@ -253,10 +253,10 @@ pub fn find_anomalous_period_cached(
     let other_std = std_dev(&other_means);
 
     let change_absolute = anomalous.mean - other_mean;
-    let change_percent = if other_mean != 0.0 {
-        (change_absolute / other_mean) * 100.0
-    } else {
+    let change_percent = if other_mean == 0.0 {
         0.0
+    } else {
+        (change_absolute / other_mean) * 100.0
     };
 
     let p_value = p_value_welch_t_test(
@@ -314,9 +314,8 @@ pub fn find_anomalous_period(
         }
     }
 
-    let idx = match anomalous_idx {
-        Some(i) => i,
-        None => return Ok(None),
+    let Some(idx) = anomalous_idx else {
+        return Ok(None);
     };
     let anomalous = &stats[idx];
 
@@ -331,10 +330,10 @@ pub fn find_anomalous_period(
     let other_std = std_dev(&other_means);
 
     let change_absolute = anomalous.mean - other_mean;
-    let change_percent = if other_mean != 0.0 {
-        (change_absolute / other_mean) * 100.0
-    } else {
+    let change_percent = if other_mean == 0.0 {
         0.0
+    } else {
+        (change_absolute / other_mean) * 100.0
     };
 
     let p_value = p_value_welch_t_test(
