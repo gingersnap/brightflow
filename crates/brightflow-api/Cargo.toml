@@ -7,10 +7,6 @@ edition = "2021"
 name = "brightflow_api"
 path = "src/lib.rs"
 
-[[bin]]
-name = "brightflow-api"
-path = "src/main.rs"
-
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
 brightflow-store = { path = "../brightflow-store" }
@@ -37,6 +33,7 @@ chrono = { workspace = true }
 futures = "0.3"
 thiserror = { workspace = true }
 dotenvy = { workspace = true }
+anyhow = "1.0"
 
 # Logging
 tracing = { workspace = true }

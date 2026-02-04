@@ -801,11 +801,14 @@ dependencies = [
 name = "brightflow"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "brightflow-api",
  "brightflow-connect",
  "brightflow-core",
  "brightflow-insights",
  "brightflow-store",
+ "clap",
+ "dotenvy",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -815,6 +818,7 @@ dependencies = [
 name = "brightflow-api"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "brightflow-core",
  "brightflow-insights",

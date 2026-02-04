@@ -19,11 +19,17 @@ brightflow-app/       # Vue frontend
 ## Run
 
 ```bash
-# API server
-cargo run --bin brightflow-api
+# API + Scheduler together
+cargo run -- run-all
 
-# Insights CLI
-cargo run --bin brightflow-insights -- --help
+# API server only
+cargo run -- serve
+
+# Scheduler only (not yet implemented)
+cargo run -- schedule
+
+# Insights analysis
+cargo run -- insights review --input data.csv
 
 # Frontend
 cd brightflow-app && npm run dev
