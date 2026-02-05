@@ -15,6 +15,7 @@ declare module 'vue' {
     BigNumber: typeof import('./src/components/charts/BigNumber.vue')['default']
     BucketDropzone: typeof import('./src/components/pivot/BucketDropzone.vue')['default']
     ChartView: typeof import('./src/components/charts/ChartView.vue')['default']
+    DatasetSelector: typeof import('./src/components/layout/DatasetSelector.vue')['default']
     DataTable: typeof import('./src/components/results/DataTable.vue')['default']
     FilterBar: typeof import('./src/components/query/FilterBar.vue')['default']
     FilterRow: typeof import('./src/components/query-builder/FilterRow.vue')['default']

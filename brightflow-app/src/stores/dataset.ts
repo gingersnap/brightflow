@@ -4,10 +4,19 @@ import { useConnectionStore } from './connection';
 import { useUiStore } from './ui';
 import { useResultsStore } from './results';
 import { useQueryStore } from './query';
+import { datasetApi } from '@/services/api';
 import type { Column, MetadataMessage, ErrorMessage, WsMessage, LimitOperation } from '@/types';
 
+// Dataset summary from list endpoint
+export interface DatasetSummary {
+  id: string;
+  name: string;
+  rowCount?: number;
+  columnCount?: number;
+}
+
 export const useDatasetStore = defineStore('dataset', () => {
-  // State
+  // State - current dataset
   const id = ref('default');
   const name = ref<string | null>(null);
   const rowCount = ref<number | null>(null);
@@ -15,6 +24,10 @@ export const useDatasetStore = defineStore('dataset', () => {
   const columns = ref<Column[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+
+  // State - available datasets
+  const availableDatasets = ref<DatasetSummary[]>([]);
+  const loadingList = ref(false);
 
   // Computed
   const numericColumns = computed(() =>
@@ -109,6 +122,41 @@ export const useDatasetStore = defineStore('dataset', () => {
     error.value = null;
   }
 
+  // Fetch list of available datasets from REST API
+  async function fetchAvailableDatasets(): Promise<void> {
+    loadingList.value = true;
+    try {
+      const datasets = await datasetApi.list();
+      if (datasets) {
+        availableDatasets.value = datasets.map((d) => ({
+          id: d.id,
+          name: d.name,
+          rowCount: d.rowCount,
+          columnCount: d.columnCount,
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to fetch datasets:', e);
+    } finally {
+      loadingList.value = false;
+    }
+  }
+
+  // Switch to a different dataset
+  function switchDataset(datasetId: string): void {
+    if (datasetId === id.value) return;
+
+    // Reset query state when switching datasets
+    const queryStore = useQueryStore();
+    const resultsStore = useResultsStore();
+
+    queryStore.reset();
+    resultsStore.clear();
+
+    // Fetch metadata for the new dataset
+    fetchMetadata(datasetId);
+  }
+
   // Load initial table data after metadata is received
   function loadInitialData(): void {
     const connectionStore = useConnectionStore();
@@ -148,6 +196,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   }
 
   return {
+    // Current dataset state
     id,
     name,
     rowCount,
@@ -155,10 +204,17 @@ export const useDatasetStore = defineStore('dataset', () => {
     columns,
     loading,
     error,
+    // Available datasets
+    availableDatasets,
+    loadingList,
+    // Computed
     numericColumns,
     stringColumns,
     hasData,
+    // Actions
     fetchMetadata,
+    fetchAvailableDatasets,
+    switchDataset,
     getColumnByName,
     getColumnType,
     reset,

@@ -11,6 +11,13 @@ pub enum DatasetSource {
     Default,
     /// User-uploaded CSV file
     Upload { filename: String },
+    /// Loaded from Delta Lake table
+    DeltaTable {
+        /// Name of the Delta table
+        table_name: String,
+        /// Version of the table (-1 for latest)
+        version: i64,
+    },
 }
 
 /// A loaded dataset with metadata
@@ -94,6 +101,7 @@ impl DatasetManager {
         let id = match &source {
             DatasetSource::Default => "default".to_string(),
             DatasetSource::Upload { .. } => uuid::Uuid::new_v4().to_string(),
+            DatasetSource::DeltaTable { table_name, .. } => format!("delta:{table_name}"),
         };
 
         self.datasets

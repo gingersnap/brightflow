@@ -28,6 +28,10 @@ pub struct ServeConfig {
     pub host: [u8; 4],
     pub port: u16,
     pub default_dataset: Option<String>,
+    /// Path to Delta Lake store to auto-load tables from
+    pub delta_store_path: Option<String>,
+    /// Specific Delta tables to load (if None, loads all)
+    pub delta_tables: Option<Vec<String>>,
 }
 
 impl Default for ServeConfig {
@@ -36,6 +40,8 @@ impl Default for ServeConfig {
             host: [127, 0, 0, 1],
             port: 8080,
             default_dataset: None,
+            delta_store_path: None,
+            delta_tables: None,
         }
     }
 }
@@ -58,10 +64,18 @@ impl ServeConfig {
 
         let default_dataset = std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok();
 
+        let delta_store_path = std::env::var("BRIGHTFLOW_DELTA_STORE").ok();
+
+        let delta_tables = std::env::var("BRIGHTFLOW_DELTA_TABLES")
+            .ok()
+            .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+
         Self {
             host,
             port,
             default_dataset,
+            delta_store_path,
+            delta_tables,
         }
     }
 }
@@ -98,6 +112,49 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
         },
         None => AppState::new(),
     };
+
+    // Load Delta tables if configured
+    if let Some(store_path) = &config.delta_store_path {
+        tracing::info!("Loading Delta tables from: {store_path}");
+        let store = brightflow_store::DeltaStore::new(store_path);
+
+        if let Some(tables) = &config.delta_tables {
+            // Load specific tables
+            for table_name in tables {
+                match state.load_delta_table(&store, table_name, None).await {
+                    Ok(id) => {
+                        if let Some(dataset) = state.datasets.get_dataset(&id) {
+                            tracing::info!(
+                                "Loaded Delta table '{table_name}' as '{id}': {} rows",
+                                dataset.row_count()
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to load Delta table '{table_name}': {e}");
+                    },
+                }
+            }
+        } else {
+            // Load all tables from the store
+            let results = state.load_all_delta_tables(&store).await;
+            for (name, result) in results {
+                match result {
+                    Ok(id) => {
+                        if let Some(dataset) = state.datasets.get_dataset(&id) {
+                            tracing::info!(
+                                "Loaded Delta table '{name}' as '{id}': {} rows",
+                                dataset.row_count()
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to load Delta table '{name}': {e}");
+                    },
+                }
+            }
+        }
+    }
 
     // Configure CORS (permissive for single-user tool)
     let cors = CorsLayer::very_permissive();

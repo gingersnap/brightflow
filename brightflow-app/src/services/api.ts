@@ -57,9 +57,12 @@ export const api = {
     request<T>(endpoint, { method: 'DELETE', ...options }),
 };
 
-interface Dataset {
+interface DatasetInfo {
   id: string;
   name: string;
+  rowCount: number;
+  columnCount: number;
+  loadedAt: string;
 }
 
 interface UploadResponse {
@@ -77,8 +80,8 @@ interface QueryResponse {
 
 // Dataset-specific API methods
 export const datasetApi = {
-  list: (): Promise<Dataset[] | null> => api.get<Dataset[]>('/api/datasets'),
-  get: (id: string): Promise<Dataset | null> => api.get<Dataset>(`/api/datasets/${id}`),
+  list: (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
+  get: (id: string): Promise<DatasetInfo | null> => api.get<DatasetInfo>(`/api/datasets/${id}`),
   upload: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);

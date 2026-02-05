@@ -31,6 +31,9 @@ pub enum AppError {
 
     #[error("Join error: {0}")]
     Join(#[from] tokio::task::JoinError),
+
+    #[error("Store error: {0}")]
+    Store(#[from] brightflow_store::StoreError),
 }
 
 impl IntoResponse for AppError {
@@ -68,6 +71,11 @@ impl IntoResponse for AppError {
                 "TASK_ERROR",
                 format!("Task execution failed: {e}"),
             ),
+            Self::Store(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "STORE_ERROR",
+                format!("Delta store operation failed: {e}"),
+            ),
         };
 
         let body = Json(json!({
@@ -92,6 +100,7 @@ impl AppError {
             Self::Io(_) => "IO_ERROR",
             Self::Json(_) => "JSON_ERROR",
             Self::Join(_) => "TASK_ERROR",
+            Self::Store(_) => "STORE_ERROR",
         }
     }
 }

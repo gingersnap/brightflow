@@ -5,9 +5,20 @@ edition = "2021"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
-deltalake = "0.30"
+deltalake = { version = "0.30", features = ["datafusion"] }
 object_store = "0.12"
 tokio = { workspace = true }
+polars = { workspace = true, features = ["ipc_streaming"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+futures = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

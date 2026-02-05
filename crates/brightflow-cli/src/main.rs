@@ -2,14 +2,30 @@
 // - cognitive_complexity: CLI functions often have many branches
 // - ref_option: &Option<T> is idiomatic in argument parsing
 // - or_fun_call: unwrap_or with constant is more readable
-#![allow(clippy::cognitive_complexity, clippy::ref_option, clippy::or_fun_call)]
+// - print_stdout: CLI apps need to print output to users
+// - too_many_lines: CLI handler functions are naturally verbose
+// - case_sensitive_file_extension_comparisons: "lua" is always lowercase
+// - shadow_unrelated: variable shadowing for option resolution is idiomatic
+#![allow(
+    clippy::cognitive_complexity,
+    clippy::ref_option,
+    clippy::or_fun_call,
+    clippy::print_stdout,
+    clippy::too_many_lines,
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::shadow_unrelated
+)]
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
+use polars::prelude::SerWriter;
 use std::path::PathBuf;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use brightflow_api::ServeConfig;
+use brightflow_connect::{
+    get_builtin_connector_path, list_builtin_connectors, run_connector, RunOptions,
+};
 use brightflow_insights::analysis::engine::AnalysisEngine;
 use brightflow_insights::analysis::tree::{ReportType, ReviewCadence};
 use brightflow_insights::data::config::SchemaConfig;
@@ -19,6 +35,7 @@ use brightflow_insights::debug::DebugLog;
 use brightflow_insights::output::html::write_html;
 use brightflow_insights::output::json::write_output;
 use brightflow_insights::output::markdown::write_markdown;
+use brightflow_store::{DeltaStore, IngestMode, IngestOptions};
 
 #[derive(Parser, Debug)]
 #[command(name = "brightflow")]
@@ -44,6 +61,14 @@ enum Commands {
         /// Default dataset to load on startup
         #[arg(long)]
         dataset: Option<String>,
+
+        /// Path to Delta Lake store to auto-load tables from
+        #[arg(long)]
+        delta_store: Option<String>,
+
+        /// Specific Delta tables to load (comma-separated, loads all if not specified)
+        #[arg(long)]
+        delta_tables: Option<String>,
     },
 
     /// Start the API server only
@@ -59,6 +84,14 @@ enum Commands {
         /// Default dataset to load on startup
         #[arg(long)]
         dataset: Option<String>,
+
+        /// Path to Delta Lake store to auto-load tables from
+        #[arg(long)]
+        delta_store: Option<String>,
+
+        /// Specific Delta tables to load (comma-separated, loads all if not specified)
+        #[arg(long)]
+        delta_tables: Option<String>,
     },
 
     /// Start the scheduler daemon only (not yet implemented)
@@ -67,6 +100,14 @@ enum Commands {
     /// Run statistical analysis on data
     #[command(subcommand)]
     Insights(InsightsCommands),
+
+    /// Data connector operations
+    #[command(subcommand)]
+    Connect(ConnectCommands),
+
+    /// Delta Lake store operations
+    #[command(subcommand)]
+    Store(StoreCommands),
 }
 
 #[derive(Subcommand, Debug)]
@@ -103,6 +144,104 @@ enum CadenceArg {
     Weekly,
     Monthly,
     All,
+}
+
+#[derive(Subcommand, Debug)]
+enum ConnectCommands {
+    /// Run a data connector to sync data from an API
+    Run {
+        /// Connector name (e.g., "github") or path to Lua file
+        connector: String,
+
+        /// Path to config YAML file
+        #[arg(short, long)]
+        config: PathBuf,
+
+        /// Only sync specific endpoints (comma-separated)
+        #[arg(long)]
+        only: Option<String>,
+
+        /// Dry run - show what would be synced without fetching
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Ingest output into Delta Lake store
+        #[arg(long)]
+        ingest: bool,
+
+        /// Store path for Delta Lake ingestion (default: ./data/store)
+        #[arg(long, default_value = "./data/store")]
+        store_path: PathBuf,
+    },
+
+    /// List available built-in connectors
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+enum StoreCommands {
+    /// List all tables in the store
+    List {
+        /// Store path (default: ./data/store)
+        #[arg(short, long, default_value = "./data/store")]
+        path: PathBuf,
+    },
+
+    /// Show information about a table
+    Info {
+        /// Table name
+        name: String,
+
+        /// Store path (default: ./data/store)
+        #[arg(short, long, default_value = "./data/store")]
+        path: PathBuf,
+    },
+
+    /// Ingest a Parquet file into a Delta table
+    Ingest {
+        /// Table name to create/append to
+        table: String,
+
+        /// Path to Parquet file(s) to ingest
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Store path (default: ./data/store)
+        #[arg(short, long, default_value = "./data/store")]
+        path: PathBuf,
+
+        /// Overwrite existing data instead of appending
+        #[arg(long)]
+        overwrite: bool,
+    },
+
+    /// Export a Delta table to CSV
+    Export {
+        /// Table name to export
+        table: String,
+
+        /// Output CSV file path
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Store path (default: ./data/store)
+        #[arg(short, long, default_value = "./data/store")]
+        path: PathBuf,
+    },
+
+    /// Delete a table from the store
+    Delete {
+        /// Table name to delete
+        table: String,
+
+        /// Store path (default: ./data/store)
+        #[arg(short, long, default_value = "./data/store")]
+        path: PathBuf,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -144,10 +283,12 @@ async fn main() -> Result<()> {
             host,
             port,
             dataset,
+            delta_store,
+            delta_tables,
         } => {
             init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
-            let config = build_serve_config(&host, port, dataset);
+            let config = build_serve_config(&host, port, dataset, delta_store, delta_tables);
 
             // Run API and scheduler concurrently
             tokio::select! {
@@ -162,10 +303,12 @@ async fn main() -> Result<()> {
             host,
             port,
             dataset,
+            delta_store,
+            delta_tables,
         } => {
             init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
-            let config = build_serve_config(&host, port, dataset);
+            let config = build_serve_config(&host, port, dataset, delta_store, delta_tables);
             brightflow_api::serve(config).await?;
         },
 
@@ -195,6 +338,16 @@ async fn main() -> Result<()> {
                 run_report(&args, ReportType::Drivers)?;
             },
         },
+
+        Commands::Connect(connect_cmd) => {
+            init_tracing("brightflow=info");
+            handle_connect_command(connect_cmd).await?;
+        },
+
+        Commands::Store(store_cmd) => {
+            init_tracing("brightflow=info");
+            handle_store_command(store_cmd).await?;
+        },
     }
 
     Ok(())
@@ -210,14 +363,28 @@ fn init_tracing(default_filter: &str) {
         .init();
 }
 
-fn build_serve_config(host: &str, port: u16, dataset: Option<String>) -> ServeConfig {
+fn build_serve_config(
+    host: &str,
+    port: u16,
+    dataset: Option<String>,
+    delta_store: Option<String>,
+    delta_tables: Option<String>,
+) -> ServeConfig {
     let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
     let host_array: [u8; 4] = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
+
+    let delta_store_path = delta_store.or_else(|| std::env::var("BRIGHTFLOW_DELTA_STORE").ok());
+
+    let resolved_tables = delta_tables
+        .or_else(|| std::env::var("BRIGHTFLOW_DELTA_TABLES").ok())
+        .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
     ServeConfig {
         host: host_array,
         port,
         default_dataset: dataset.or_else(|| std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok()),
+        delta_store_path,
+        delta_tables: resolved_tables,
     }
 }
 
@@ -314,6 +481,213 @@ fn write_outputs(
     write_output(&json_path, tree, args.pretty)?;
     write_markdown(&md_path, tree, Some(&title))?;
     write_html(&html_path, tree, Some(&title))?;
+
+    Ok(())
+}
+
+async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
+    match cmd {
+        ConnectCommands::Run {
+            connector,
+            config,
+            only,
+            dry_run,
+            ingest,
+            store_path,
+        } => {
+            // Resolve connector path - check if it's a built-in name or a file path
+            let connector_path = if connector.ends_with(".lua") {
+                PathBuf::from(&connector)
+            } else {
+                get_builtin_connector_path(&connector).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Connector '{connector}' not found. Use 'brightflow connect list' to see available connectors."
+                    )
+                })?
+            };
+
+            if !connector_path.exists() {
+                anyhow::bail!("Connector file not found: {}", connector_path.display());
+            }
+
+            if !config.exists() {
+                anyhow::bail!("Config file not found: {}", config.display());
+            }
+
+            tracing::info!("Running connector: {}", connector);
+            tracing::info!("Config: {}", config.display());
+
+            let options = RunOptions { only, dry_run };
+            let result = run_connector(&connector_path, &config, &options).await?;
+
+            if result.dry_run {
+                tracing::info!("Dry run completed. Endpoints that would be synced:");
+                for endpoint in &result.endpoints_synced {
+                    tracing::info!("  - {}", endpoint);
+                }
+            } else {
+                tracing::info!("Sync completed successfully!");
+                tracing::info!("Endpoints synced: {:?}", result.endpoints_synced);
+                tracing::info!("Output path: {}", result.output_path);
+
+                // Ingest into Delta Lake if requested
+                if ingest {
+                    tracing::info!("Ingesting output into Delta Lake store...");
+                    let store = DeltaStore::new(&store_path);
+
+                    // Create store directory if it doesn't exist
+                    std::fs::create_dir_all(&store_path)?;
+
+                    // Find and ingest all parquet files from output
+                    let output_dir = PathBuf::from(&result.output_path);
+                    if output_dir.exists() && output_dir.is_dir() {
+                        for dir_entry in std::fs::read_dir(&output_dir)? {
+                            let path = dir_entry?.path();
+                            if path.extension().is_some_and(|ext| ext == "parquet") {
+                                let table_name = path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown");
+
+                                tracing::info!(
+                                    "Ingesting {} into table '{}'",
+                                    path.display(),
+                                    table_name
+                                );
+                                let info = store
+                                    .ingest_parquet(
+                                        table_name,
+                                        &path,
+                                        Some(IngestOptions::default()),
+                                    )
+                                    .await?;
+                                tracing::info!(
+                                    "  Table '{}' now at version {}, {} files",
+                                    info.name,
+                                    info.version,
+                                    info.num_files
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        ConnectCommands::List => {
+            let connectors = list_builtin_connectors()?;
+            if connectors.is_empty() {
+                println!("No built-in connectors found.");
+            } else {
+                println!("Available connectors:");
+                for name in connectors {
+                    println!("  - {name}");
+                }
+            }
+        },
+    }
+
+    Ok(())
+}
+
+async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
+    match cmd {
+        StoreCommands::List { path } => {
+            let store = DeltaStore::new(&path);
+            let tables = store.list_tables().await?;
+
+            if tables.is_empty() {
+                println!("No tables found in store at {}", path.display());
+            } else {
+                println!("Tables in {}:", path.display());
+                for table in tables {
+                    println!("  - {}", table.name);
+                }
+            }
+        },
+
+        StoreCommands::Info { name, path } => {
+            let store = DeltaStore::new(&path);
+            let info = store.table_info(&name).await?;
+
+            println!("Table: {}", info.name);
+            println!("Path: {}", info.path);
+            println!("Version: {}", info.version);
+            println!("Files: {}", info.num_files);
+            if let Some(rows) = info.num_rows {
+                println!("Rows: {rows}");
+            }
+            if let Some(created) = info.created_at {
+                println!("Created: {created}");
+            }
+            if let Some(schema) = &info.schema {
+                println!("Schema: {}", serde_json::to_string_pretty(schema)?);
+            }
+        },
+
+        StoreCommands::Ingest {
+            table,
+            input,
+            path,
+            overwrite,
+        } => {
+            if !input.exists() {
+                anyhow::bail!("Input file not found: {}", input.display());
+            }
+
+            let store = DeltaStore::new(&path);
+            std::fs::create_dir_all(&path)?;
+
+            let options = IngestOptions {
+                mode: if overwrite {
+                    IngestMode::Overwrite
+                } else {
+                    IngestMode::Append
+                },
+                ..Default::default()
+            };
+
+            tracing::info!("Ingesting {} into table '{}'", input.display(), table);
+            let info = store.ingest_parquet(&table, &input, Some(options)).await?;
+
+            println!("Ingested into table '{}'", info.name);
+            println!("Version: {}", info.version);
+            println!("Files: {}", info.num_files);
+        },
+
+        StoreCommands::Export {
+            table,
+            output,
+            path,
+        } => {
+            let store = DeltaStore::new(&path);
+            let df = store.read_table(&table).await?;
+
+            // Create output directory if needed
+            if let Some(parent) = output.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            // Write to CSV
+            let mut file = std::fs::File::create(&output)?;
+            polars::io::csv::write::CsvWriter::new(&mut file).finish(&mut df.clone())?;
+
+            println!("Exported table '{}' to {}", table, output.display());
+            println!("Rows: {}", df.height());
+        },
+
+        StoreCommands::Delete { table, path, force } => {
+            if !force {
+                println!("Are you sure you want to delete table '{table}'? This cannot be undone.");
+                println!("Run with --force to confirm.");
+                return Ok(());
+            }
+
+            let store = DeltaStore::new(&path);
+            store.delete_table(&table).await?;
+            println!("Deleted table '{table}'");
+        },
+    }
 
     Ok(())
 }
