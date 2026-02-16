@@ -7,13 +7,15 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use brightflow_store::TableInfo;
 use futures::{SinkExt, StreamExt};
 use polars::prelude::*;
 use std::io::Cursor;
 
 use crate::analytics::session::{DatasetInfo, DatasetSource};
 use crate::analytics::types::{
-    DatasetMetadataResponse, Query, QueryResponse, UploadResponse, WsClientMessage, WsServerMessage,
+    DatasetMetadataResponse, LoadTableResponse, Query, QueryResponse, UploadResponse,
+    WsClientMessage, WsServerMessage,
 };
 use crate::analytics::{executor, session};
 use crate::shared::{AppError, AppResult};
@@ -28,6 +30,41 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// List all loaded datasets
 pub async fn list_datasets(State(state): State<AppState>) -> Json<Vec<DatasetInfo>> {
     Json(state.datasets.list_datasets())
+}
+
+/// List available Delta tables (metadata only, no data loaded)
+pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<TableInfo>> {
+    Json(state.get_available_tables().await)
+}
+
+/// Load a specific Delta table into memory (unloads previously loaded tables)
+pub async fn load_table(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> AppResult<Json<LoadTableResponse>> {
+    // Check if table exists in index
+    if !state.table_exists(&name).await {
+        return Err(AppError::NotFound(format!(
+            "Table '{name}' not found in Delta store"
+        )));
+    }
+
+    // Load the table (this unloads any previously loaded delta tables)
+    let id = state.load_table(&name).await?;
+
+    // Get the loaded dataset info
+    let dataset = state
+        .datasets
+        .get_dataset(&id)
+        .ok_or_else(|| AppError::Internal("Failed to retrieve loaded dataset".into()))?;
+
+    Ok(Json(LoadTableResponse {
+        id,
+        name: dataset.name.clone(),
+        row_count: dataset.row_count(),
+        column_count: dataset.column_count(),
+        columns: dataset.columns(),
+    }))
 }
 
 /// Get metadata for a specific dataset

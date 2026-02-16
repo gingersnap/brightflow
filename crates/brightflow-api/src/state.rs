@@ -1,14 +1,20 @@
 use crate::analytics::session::{DatasetManager, DatasetSource};
 use crate::shared::AppResult;
-use brightflow_store::DeltaStore;
+use brightflow_store::{DeltaStore, TableInfo};
 use polars::prelude::*;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
     /// Thread-safe storage for loaded datasets
     pub datasets: DatasetManager,
+    /// Index of available Delta tables (metadata only, no data loaded)
+    pub table_index: Arc<RwLock<Vec<TableInfo>>>,
+    /// Reference to the Delta store for lazy loading
+    delta_store: Option<Arc<DeltaStore>>,
 }
 
 impl Default for AppState {
@@ -22,6 +28,32 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             datasets: DatasetManager::new(),
+            table_index: Arc::new(RwLock::new(Vec::new())),
+            delta_store: None,
+        }
+    }
+
+    /// Create AppState with a Delta store - loads metadata only, no data
+    pub async fn with_delta_store(store: DeltaStore) -> Self {
+        let tables = store.list_tables().await.unwrap_or_default();
+
+        // Load metadata for each table (does NOT load actual data)
+        let mut index = Vec::with_capacity(tables.len());
+        for table_ref in tables {
+            if let Ok(info) = store.table_info(&table_ref.name).await {
+                index.push(info);
+            }
+        }
+
+        tracing::info!(
+            "Indexed {} Delta tables (metadata only, no data loaded)",
+            index.len()
+        );
+
+        Self {
+            datasets: DatasetManager::new(),
+            table_index: Arc::new(RwLock::new(index)),
+            delta_store: Some(Arc::new(store)),
         }
     }
 
@@ -49,15 +81,103 @@ impl AppState {
         Ok(state)
     }
 
-    /// Load a Delta Lake table as a dataset
+    /// Create AppState with both a default CSV dataset and Delta store metadata
+    pub async fn with_default_and_delta_store(
+        csv_path: &str,
+        store: DeltaStore,
+    ) -> AppResult<Self> {
+        // First create with delta store (metadata only)
+        let state = Self::with_delta_store(store).await;
+
+        // Then load the default CSV dataset
+        let path = csv_path.to_string();
+        let df = tokio::task::spawn_blocking(move || -> Result<DataFrame, PolarsError> {
+            CsvReadOptions::default()
+                .with_infer_schema_length(Some(10000))
+                .try_into_reader_with_file_path(Some(Path::new(&path).into()))?
+                .finish()
+        })
+        .await??;
+
+        let name = Path::new(csv_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("default")
+            .to_string();
+
+        state.datasets.add_dataset(name, df, DatasetSource::Default);
+
+        Ok(state)
+    }
+
+    /// Get the list of available tables (metadata only)
+    pub async fn get_available_tables(&self) -> Vec<TableInfo> {
+        self.table_index.read().await.clone()
+    }
+
+    /// Load a specific Delta table on-demand
     ///
-    /// # Arguments
-    /// * `store` - The Delta store to read from
-    /// * `table_name` - Name of the Delta table
-    /// * `version` - Optional version (-1 or None for latest)
-    ///
-    /// # Returns
-    /// The dataset ID that was assigned
+    /// This unloads any previously loaded Delta tables first to keep memory usage low.
+    pub async fn load_table(&self, table_name: &str) -> AppResult<String> {
+        let store = self.delta_store.as_ref().ok_or_else(|| {
+            crate::shared::AppError::BadRequest("No Delta store configured".to_string())
+        })?;
+
+        // Unload any existing delta tables to free memory
+        self.unload_delta_tables();
+
+        tracing::info!("Loading Delta table '{}' into memory", table_name);
+
+        // Read the table data
+        let df = store.read_table(table_name).await?;
+        let row_count = df.height();
+
+        // Add to dataset manager
+        let source = DatasetSource::DeltaTable {
+            table_name: table_name.to_string(),
+            version: -1,
+        };
+
+        let id = self
+            .datasets
+            .add_dataset(table_name.to_string(), df, source);
+
+        tracing::info!(
+            "Loaded Delta table '{}' as '{}': {} rows",
+            table_name,
+            id,
+            row_count
+        );
+
+        Ok(id)
+    }
+
+    /// Unload all Delta tables from memory (keeps "default" and uploaded datasets)
+    pub fn unload_delta_tables(&self) {
+        let to_remove: Vec<_> = self
+            .datasets
+            .list_datasets()
+            .iter()
+            .filter(|d| d.id.starts_with("delta:"))
+            .map(|d| d.id.clone())
+            .collect();
+
+        for id in &to_remove {
+            self.datasets.delete_dataset(id);
+        }
+
+        if !to_remove.is_empty() {
+            tracing::info!("Unloaded {} Delta table(s) from memory", to_remove.len());
+        }
+    }
+
+    /// Check if a table exists in the index
+    pub async fn table_exists(&self, table_name: &str) -> bool {
+        let index = self.table_index.read().await;
+        index.iter().any(|t| t.name == table_name)
+    }
+
+    /// Legacy method: Load a Delta Lake table directly (for backwards compatibility)
     pub async fn load_delta_table(
         &self,
         store: &DeltaStore,
@@ -81,10 +201,7 @@ impl AppState {
         Ok(id)
     }
 
-    /// Load all Delta Lake tables from a store
-    ///
-    /// # Returns
-    /// Vector of (table_name, dataset_id) pairs
+    /// Legacy method: Load all Delta Lake tables from a store
     pub async fn load_all_delta_tables(
         &self,
         store: &DeltaStore,

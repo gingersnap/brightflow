@@ -66,7 +66,6 @@ export const useDatasetStore = defineStore('dataset', () => {
     // Register one-time handler for metadata response
     const unsubscribe = connectionStore.onMessage('metadata', (message: WsMessage) => {
       const metaMsg = message as MetadataMessage;
-      // Backend uses snake_case: dataset_id, row_count
       if (metaMsg.dataset_id === datasetId) {
         clearTimeout(timeout);
         id.value = metaMsg.dataset_id;
@@ -145,6 +144,9 @@ export const useDatasetStore = defineStore('dataset', () => {
   // Switch to a different dataset
   function switchDataset(datasetId: string): void {
     if (datasetId === id.value) return;
+
+    // Update id immediately for UI responsiveness
+    id.value = datasetId;
 
     // Reset query state when switching datasets
     const queryStore = useQueryStore();

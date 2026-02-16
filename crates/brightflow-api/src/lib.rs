@@ -82,11 +82,40 @@ impl ServeConfig {
 
 /// Start the API server with the given configuration
 pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
-    // Initialize AppState
-    let state = match &config.default_dataset {
-        Some(path) if std::path::Path::new(path).exists() => {
-            tracing::info!("Loading default dataset from: {}", path);
-            match AppState::with_default_dataset(path).await {
+    // Initialize AppState with lazy loading - metadata only, no data loaded
+    let state = match (&config.default_dataset, &config.delta_store_path) {
+        // Both default dataset and delta store
+        (Some(csv_path), Some(store_path)) if std::path::Path::new(csv_path).exists() => {
+            tracing::info!("Loading default dataset from: {}", csv_path);
+            tracing::info!("Indexing Delta tables from: {} (metadata only)", store_path);
+            let store = brightflow_store::DeltaStore::new(store_path);
+            match AppState::with_default_and_delta_store(csv_path, store).await {
+                Ok(s) => {
+                    if let Some(dataset) = s.datasets.get_dataset("default") {
+                        tracing::info!(
+                            "Default dataset loaded: {} rows, {} columns",
+                            dataset.row_count(),
+                            dataset.column_count()
+                        );
+                    }
+                    s
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to initialize: {}, starting empty", e);
+                    AppState::new()
+                },
+            }
+        },
+        // Only delta store - lazy load metadata only
+        (_, Some(store_path)) => {
+            tracing::info!("Indexing Delta tables from: {} (metadata only)", store_path);
+            let store = brightflow_store::DeltaStore::new(store_path);
+            AppState::with_delta_store(store).await
+        },
+        // Only default dataset
+        (Some(csv_path), None) if std::path::Path::new(csv_path).exists() => {
+            tracing::info!("Loading default dataset from: {}", csv_path);
+            match AppState::with_default_dataset(csv_path).await {
                 Ok(s) => {
                     if let Some(dataset) = s.datasets.get_dataset("default") {
                         tracing::info!(
@@ -103,58 +132,16 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
                 },
             }
         },
-        Some(path) => {
+        (Some(path), None) => {
             tracing::warn!(
                 "Default dataset not found at {}, starting with empty state",
                 path
             );
             AppState::new()
         },
-        None => AppState::new(),
+        // No data source configured
+        (None, None) => AppState::new(),
     };
-
-    // Load Delta tables if configured
-    if let Some(store_path) = &config.delta_store_path {
-        tracing::info!("Loading Delta tables from: {store_path}");
-        let store = brightflow_store::DeltaStore::new(store_path);
-
-        if let Some(tables) = &config.delta_tables {
-            // Load specific tables
-            for table_name in tables {
-                match state.load_delta_table(&store, table_name, None).await {
-                    Ok(id) => {
-                        if let Some(dataset) = state.datasets.get_dataset(&id) {
-                            tracing::info!(
-                                "Loaded Delta table '{table_name}' as '{id}': {} rows",
-                                dataset.row_count()
-                            );
-                        }
-                    },
-                    Err(e) => {
-                        tracing::warn!("Failed to load Delta table '{table_name}': {e}");
-                    },
-                }
-            }
-        } else {
-            // Load all tables from the store
-            let results = state.load_all_delta_tables(&store).await;
-            for (name, result) in results {
-                match result {
-                    Ok(id) => {
-                        if let Some(dataset) = state.datasets.get_dataset(&id) {
-                            tracing::info!(
-                                "Loaded Delta table '{name}' as '{id}': {} rows",
-                                dataset.row_count()
-                            );
-                        }
-                    },
-                    Err(e) => {
-                        tracing::warn!("Failed to load Delta table '{name}': {e}");
-                    },
-                }
-            }
-        }
-    }
 
     // Configure CORS (permissive for single-user tool)
     let cors = CorsLayer::very_permissive();

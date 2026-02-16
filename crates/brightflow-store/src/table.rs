@@ -121,6 +121,9 @@ pub async fn get_table_info(name: &str, path: &Path) -> StoreResult<TableInfo> {
     // Count parquet files in the table directory
     let num_files = count_parquet_files(path)?;
 
+    // Get row count from Delta log metadata
+    let num_rows = get_row_count_from_log(path);
+
     // Get created timestamp
     let created_at = metadata
         .created_time()
@@ -133,12 +136,60 @@ pub async fn get_table_info(name: &str, path: &Path) -> StoreResult<TableInfo> {
         name: name.to_string(),
         path: path.to_string_lossy().to_string(),
         version,
-        num_rows: None,
+        num_rows,
         num_files,
         schema: schema_json,
         created_at,
         updated_at: None,
     })
+}
+
+/// Extract row count from Delta log files by parsing the stats JSON
+fn get_row_count_from_log(path: &Path) -> Option<i64> {
+    let log_path = path.join("_delta_log");
+    if !log_path.exists() {
+        return None;
+    }
+
+    let mut total_rows: i64 = 0;
+    let mut found_any = false;
+
+    // Read all JSON log files and sum numRecords from add actions
+    if let Ok(entries) = std::fs::read_dir(&log_path) {
+        for entry in entries.flatten() {
+            let file_path = entry.path();
+            if file_path.extension().is_some_and(|ext| ext == "json") {
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    for line in content.lines() {
+                        if let Some(count) = extract_num_records_from_action(line) {
+                            total_rows += count;
+                            found_any = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if found_any {
+        Some(total_rows)
+    } else {
+        None
+    }
+}
+
+/// Extract numRecords from a Delta log action line
+fn extract_num_records_from_action(line: &str) -> Option<i64> {
+    // Parse the line as JSON
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    // Check if this is an "add" action with stats
+    let add = value.get("add")?;
+    let stats_str = add.get("stats")?.as_str()?;
+
+    // Parse the stats JSON string
+    let stats: serde_json::Value = serde_json::from_str(stats_str).ok()?;
+    stats.get("numRecords")?.as_i64()
 }
 
 /// Count parquet files in a directory

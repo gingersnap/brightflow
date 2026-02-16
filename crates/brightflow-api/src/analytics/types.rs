@@ -186,3 +186,14 @@ pub struct DatasetMetadataResponse {
     pub column_count: usize,
     pub columns: Vec<ColumnInfo>,
 }
+
+/// Response for loading a Delta table on-demand
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadTableResponse {
+    pub id: String,
+    pub name: String,
+    pub row_count: usize,
+    pub column_count: usize,
+    pub columns: Vec<ColumnInfo>,
+}

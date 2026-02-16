@@ -18,7 +18,10 @@ pub fn create_router() -> Router<AppState> {
 /// API routes under /api prefix
 fn api_routes() -> Router<AppState> {
     Router::new()
-        // Dataset management
+        // Available tables (metadata only, for lazy loading)
+        .route("/tables", get(handlers::list_available_tables))
+        .route("/tables/:name/load", post(handlers::load_table))
+        // Dataset management (loaded datasets)
         .route("/datasets", get(handlers::list_datasets))
         .route("/datasets/{id}", get(handlers::get_dataset))
         .route("/datasets/{id}", delete(handlers::delete_dataset))
