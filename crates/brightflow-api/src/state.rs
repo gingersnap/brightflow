@@ -1,6 +1,9 @@
 use crate::analytics::session::{DatasetManager, DatasetSource};
 use crate::shared::AppResult;
+use brightflow_insights::data::config::SchemaConfig;
+use brightflow_insights::data::schema::DataSchema;
 use brightflow_store::{DeltaStore, TableInfo};
+use dashmap::DashMap;
 use polars::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
@@ -15,6 +18,8 @@ pub struct AppState {
     pub table_index: Arc<RwLock<Vec<TableInfo>>>,
     /// Reference to the Delta store for lazy loading
     delta_store: Option<Arc<DeltaStore>>,
+    /// Global schema configs keyed by table name
+    pub schemas: Arc<DashMap<String, DataSchema>>,
 }
 
 impl Default for AppState {
@@ -30,7 +35,60 @@ impl AppState {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(Vec::new())),
             delta_store: None,
+            schemas: Arc::new(DashMap::new()),
         }
+    }
+
+    /// Load schema configs from YAML files in a directory
+    pub fn load_schemas_from_dir(&self, dir: &Path) {
+        if !dir.exists() || !dir.is_dir() {
+            tracing::debug!("Schema directory not found: {}", dir.display());
+            return;
+        }
+
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("Failed to read schema directory {}: {}", dir.display(), e);
+                return;
+            },
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            {
+                let table_name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_string();
+
+                match SchemaConfig::load(&path) {
+                    Ok(config) => {
+                        let schema = DataSchema::from_config(&config);
+                        tracing::info!(
+                            "Loaded schema for '{}': {} KPIs, {} metrics, {} dimensions",
+                            table_name,
+                            schema.kpi_columns.len(),
+                            schema.metric_columns.len(),
+                            schema.dimension_columns.len(),
+                        );
+                        self.schemas.insert(table_name, schema);
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to load schema from {}: {}", path.display(), e);
+                    },
+                }
+            }
+        }
+    }
+
+    /// Get schema for a table by name
+    pub fn get_schema(&self, table_name: &str) -> Option<DataSchema> {
+        self.schemas.get(table_name).map(|s| s.clone())
     }
 
     /// Create AppState with a Delta store - loads metadata only, no data
@@ -54,6 +112,7 @@ impl AppState {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(index)),
             delta_store: Some(Arc::new(store)),
+            schemas: Arc::new(DashMap::new()),
         }
     }
 

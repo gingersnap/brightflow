@@ -536,7 +536,28 @@ fn parse_date_string(s: &str) -> Option<NaiveDate> {
                         .map(|dt: NaiveDateTime| dt.date())
                 })
                 .or_else(|_| {
-                    // Handle timezone suffix
+                    // Handle ISO8601 with Z/timezone suffix
+                    // e.g., "2024-03-15T14:30:00Z", "2024-03-15T14:30:00+05:30"
+                    // Strip Z, then strip +/- timezone offset after T
+                    let s_stripped = s.trim_end_matches('Z');
+                    let s_clean = if let Some(t_pos) = s_stripped.find('T') {
+                        let time_part = &s_stripped[t_pos + 1..];
+                        // Strip timezone offset (+HH:MM or -HH:MM) from time portion
+                        if let Some(plus_pos) = time_part.rfind('+') {
+                            &s_stripped[..t_pos + 1 + plus_pos]
+                        } else if let Some(minus_pos) = time_part.rfind('-') {
+                            &s_stripped[..t_pos + 1 + minus_pos]
+                        } else {
+                            s_stripped
+                        }
+                    } else {
+                        s_stripped
+                    };
+                    NaiveDateTime::parse_from_str(s_clean, "%Y-%m-%dT%H:%M:%S")
+                        .map(|dt: NaiveDateTime| dt.date())
+                })
+                .or_else(|_| {
+                    // Handle space-separated datetime with timezone suffix
                     let s_clean = s.split('+').next().unwrap_or(s);
                     NaiveDateTime::parse_from_str(s_clean, "%Y-%m-%d %H:%M:%S")
                         .map(|dt: NaiveDateTime| dt.date())

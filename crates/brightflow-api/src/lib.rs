@@ -32,6 +32,8 @@ pub struct ServeConfig {
     pub delta_store_path: Option<String>,
     /// Specific Delta tables to load (if None, loads all)
     pub delta_tables: Option<Vec<String>>,
+    /// Path to directory containing schema YAML files
+    pub schema_dir: Option<String>,
 }
 
 impl Default for ServeConfig {
@@ -42,6 +44,7 @@ impl Default for ServeConfig {
             default_dataset: None,
             delta_store_path: None,
             delta_tables: None,
+            schema_dir: None,
         }
     }
 }
@@ -70,12 +73,15 @@ impl ServeConfig {
             .ok()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
+        let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
+
         Self {
             host,
             port,
             default_dataset,
             delta_store_path,
             delta_tables,
+            schema_dir,
         }
     }
 }
@@ -142,6 +148,14 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
         // No data source configured
         (None, None) => AppState::new(),
     };
+
+    // Load schema configs from YAML files
+    if let Some(schema_dir) = &config.schema_dir {
+        state.load_schemas_from_dir(std::path::Path::new(schema_dir));
+    } else {
+        // Default: look for schemas/ in the working directory
+        state.load_schemas_from_dir(std::path::Path::new("schemas"));
+    }
 
     // Configure CORS (permissive for single-user tool)
     let cors = CorsLayer::very_permissive();

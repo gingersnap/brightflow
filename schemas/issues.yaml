@@ -1,0 +1,62 @@
+name: "GitHub Issues"
+description: "Issues from the GitHub API including bugs, features, and discussions"
+
+settings:
+  time_granularity: week
+  comparison_periods: 4
+
+columns:
+  - name: created_at
+    type: time
+    label: "Created At"
+  - name: comments
+    type: kpi
+    label: "Comments"
+  - name: reactions_total
+    type: kpi
+    label: "Reactions"
+  - name: state
+    type: dimension
+    label: "State"
+  - name: author_association
+    type: dimension
+    label: "Author Association"
+  - name: user_login
+    type: dimension
+    label: "Author"
+  - name: label_names
+    type: dimension
+    label: "Labels"
+  - name: is_pull_request
+    type: dimension
+    label: "Is Pull Request"
+  - name: locked
+    type: dimension
+    label: "Locked"
+  - name: state_reason
+    type: dimension
+    label: "State Reason"
+  - name: id
+    type: ignored
+  - name: number
+    type: ignored
+  - name: title
+    type: ignored
+  - name: body
+    type: ignored
+  - name: html_url
+    type: ignored
+  - name: updated_at
+    type: ignored
+  - name: closed_at
+    type: ignored
+  - name: user_id
+    type: ignored
+  - name: assignee_logins
+    type: ignored
+  - name: milestone_number
+    type: ignored
+  - name: milestone_title
+    type: ignored
+  - name: active_lock_reason
+    type: ignored

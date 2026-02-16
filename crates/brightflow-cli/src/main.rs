@@ -379,12 +379,15 @@ fn build_serve_config(
         .or_else(|| std::env::var("BRIGHTFLOW_DELTA_TABLES").ok())
         .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
+    let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
+
     ServeConfig {
         host: host_array,
         port,
         default_dataset: dataset.or_else(|| std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok()),
         delta_store_path,
         delta_tables: resolved_tables,
+        schema_dir,
     }
 }
 
