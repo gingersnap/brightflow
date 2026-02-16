@@ -13,6 +13,7 @@
 )]
 
 pub mod analytics;
+pub mod insights;
 pub mod routes;
 pub mod shared;
 pub mod state;

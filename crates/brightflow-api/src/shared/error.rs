@@ -34,6 +34,9 @@ pub enum AppError {
 
     #[error("Store error: {0}")]
     Store(#[from] brightflow_store::StoreError),
+
+    #[error("Analysis error: {0}")]
+    Analysis(String),
 }
 
 impl IntoResponse for AppError {
@@ -76,6 +79,11 @@ impl IntoResponse for AppError {
                 "STORE_ERROR",
                 format!("Delta store operation failed: {e}"),
             ),
+            Self::Analysis(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "ANALYSIS_ERROR",
+                msg.clone(),
+            ),
         };
 
         let body = Json(json!({
@@ -101,7 +109,14 @@ impl AppError {
             Self::Json(_) => "JSON_ERROR",
             Self::Join(_) => "TASK_ERROR",
             Self::Store(_) => "STORE_ERROR",
+            Self::Analysis(_) => "ANALYSIS_ERROR",
         }
+    }
+}
+
+impl From<anyhow::Error> for AppError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Analysis(format!("Analysis failed: {err}"))
     }
 }
 

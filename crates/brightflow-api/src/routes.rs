@@ -4,6 +4,7 @@ use axum::{
 };
 
 use crate::analytics::handlers;
+use crate::insights::handlers as insights_handlers;
 use crate::state::AppState;
 
 /// Create the main application router
@@ -28,6 +29,9 @@ fn api_routes() -> Router<AppState> {
         .route("/datasets/upload", post(handlers::upload_dataset))
         // Query execution
         .route("/query", post(handlers::execute_query))
+        // Insights
+        .route("/insights/review", post(insights_handlers::run_review))
+        .route("/insights/trends", post(insights_handlers::run_trends))
         // WebSocket
         .route("/ws", get(handlers::ws_handler))
 }
