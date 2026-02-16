@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Upload, Settings, Database, ChevronDown } from 'lucide-vue-next';
+import { Upload, Settings, Database, ChevronDown, Search, Sparkles } from 'lucide-vue-next';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
+import { useUiStore, type AppMode } from '@/stores/ui';
 
 defineProps<{
   currentDataset: string | null;
@@ -9,11 +10,16 @@ defineProps<{
 
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
+const uiStore = useUiStore();
 
 const emit = defineEmits<{
   upload: [];
   'change-dataset': [];
 }>();
+
+function setMode(mode: AppMode): void {
+  uiStore.setAppMode(mode);
+}
 </script>
 
 <template>
@@ -35,6 +41,34 @@ const emit = defineEmits<{
         </span>
         <ChevronDown class="w-4 h-4 text-muted" />
       </button>
+
+      <!-- Mode switcher: Explore / Insights -->
+      <div v-if="currentDataset" class="flex items-center gap-1 bg-elevated rounded-lg p-0.5 ml-2">
+        <button
+          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          :class="
+            uiStore.appMode === 'explore'
+              ? 'bg-default text-highlighted shadow-sm'
+              : 'text-muted hover:text-highlighted'
+          "
+          @click="setMode('explore')"
+        >
+          <Search class="w-3.5 h-3.5" />
+          Explore
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          :class="
+            uiStore.appMode === 'insights'
+              ? 'bg-default text-highlighted shadow-sm'
+              : 'text-muted hover:text-highlighted'
+          "
+          @click="setMode('insights')"
+        >
+          <Sparkles class="w-3.5 h-3.5" />
+          Insights
+        </button>
+      </div>
     </div>
 
     <!-- Right: Actions and Status -->

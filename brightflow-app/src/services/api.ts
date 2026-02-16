@@ -105,6 +105,45 @@ export const tableApi = {
     api.post<LoadTableResponse>(`/api/tables/${encodeURIComponent(name)}/load`),
 };
 
+// Insights API response
+export interface InsightsResponse {
+  datasetId: string;
+  reportType: string;
+  tree: AnalysisTree;
+  nodeCount: number;
+  findingCount: number;
+  executionTimeMs: number;
+}
+
+export interface AnalysisTree {
+  nodes: AnalysisNode[];
+  roots: Array<{ '0': number }>;
+}
+
+export interface AnalysisNode {
+  id: { '0': number };
+  parent_id: { '0': number } | null;
+  analysis: AnalysisType;
+  significance: number;
+  description: string;
+  summary: string;
+  tech_summary: string;
+  children: Array<{ '0': number }>;
+}
+
+export type AnalysisType = {
+  type: string;
+  [key: string]: unknown;
+};
+
+// Insights API
+export const insightsApi = {
+  runReview: (datasetId: string, cadence: string = 'weekly'): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/review', { datasetId, cadence }),
+  runTrends: (datasetId: string): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
+};
+
 // Dataset-specific API methods (for loaded datasets)
 export const datasetApi = {
   list: (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),

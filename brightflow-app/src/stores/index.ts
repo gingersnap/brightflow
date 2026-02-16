@@ -6,6 +6,7 @@ import { useResultsStore } from './results';
 import { usePivotStore } from './pivot';
 import { useDatasetStore } from './dataset';
 import { useUiStore } from './ui';
+import { useInsightsStore } from './insights';
 
 /**
  * Reset all stores to initial state.
@@ -17,11 +18,13 @@ export function resetAllStores(): void {
   const pivotStore = usePivotStore();
   const datasetStore = useDatasetStore();
   const uiStore = useUiStore();
+  const insightsStore = useInsightsStore();
 
   queryStore.reset();
   resultsStore.clear();
   pivotStore.reset();
   datasetStore.reset();
+  insightsStore.reset();
   uiStore.resetForNewDataset();
 }
 
@@ -32,3 +35,4 @@ export { usePivotStore } from './pivot';
 export { useDatasetStore } from './dataset';
 export { useUiStore } from './ui';
 export { useConnectionStore } from './connection';
+export { useInsightsStore } from './insights';

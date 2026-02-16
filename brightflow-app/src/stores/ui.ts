@@ -2,9 +2,15 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import type { ViewMode, ChartType } from '@/types';
 
+export type AppMode = 'explore' | 'insights';
 type SectionName = 'filter' | 'summarize' | 'results';
 
 export const useUiStore = defineStore('ui', () => {
+  // App mode: top-level navigation between Explore and Insights
+  const appMode = ref<AppMode>(
+    (localStorage.getItem('brightflow-app-mode') as AppMode | null) ?? 'explore',
+  );
+
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
   const viewMode = ref<ViewMode>(
     (localStorage.getItem('brightflow-view-mode') as ViewMode | null) ?? 'table',
@@ -24,10 +30,15 @@ export const useUiStore = defineStore('ui', () => {
   const hasShownPivotResults = ref(false);
 
   // Persist preferences
+  watch(appMode, (val) => localStorage.setItem('brightflow-app-mode', val));
   watch(viewMode, (val) => localStorage.setItem('brightflow-view-mode', val));
   watch(chartType, (val) => localStorage.setItem('brightflow-chart-type', val));
 
   // Actions
+  function setAppMode(mode: AppMode): void {
+    appMode.value = mode;
+  }
+
   function setViewMode(mode: ViewMode): void {
     viewMode.value = mode;
   }
@@ -57,12 +68,14 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
+    appMode,
     viewMode,
     chartType,
     filterCollapsed,
     summarizeCollapsed,
     resultsCollapsed,
     hasShownPivotResults,
+    setAppMode,
     setViewMode,
     setChartType,
     toggleSection,

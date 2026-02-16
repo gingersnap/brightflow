@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { useConnectionStore } from './stores/connection';
 import { useDatasetStore } from './stores/dataset';
+import { useUiStore } from './stores/ui';
 import { resetAllStores } from './stores';
 import { tableApi, type TableInfo } from './services/api';
 
@@ -9,10 +10,12 @@ import AppHeader from './components/layout/AppHeader.vue';
 import FilterBar from './components/query/FilterBar.vue';
 import QueryBuilder from './components/query/QueryBuilder.vue';
 import ResultsPanel from './components/results/ResultsPanel.vue';
+import InsightsView from './components/insights/InsightsView.vue';
 import DatasetPickerModal from './components/layout/DatasetPickerModal.vue';
 
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
+const uiStore = useUiStore();
 
 // Modal controls the UI gate - user must choose a dataset first
 const showDatasetPicker = ref(true);
@@ -89,16 +92,21 @@ watch(
 
       <!-- Main content - only interactive after dataset is loaded -->
       <template v-if="currentDataset">
-        <!-- Filter Bar -->
-        <FilterBar />
+        <!-- Explore mode -->
+        <template v-if="uiStore.appMode === 'explore'">
+          <FilterBar />
+          <QueryBuilder />
+          <div class="flex-1 min-h-0 overflow-hidden">
+            <ResultsPanel />
+          </div>
+        </template>
 
-        <!-- Query Builder -->
-        <QueryBuilder />
-
-        <!-- Results Panel (fills remaining space) -->
-        <div class="flex-1 min-h-0 overflow-hidden">
-          <ResultsPanel />
-        </div>
+        <!-- Insights mode -->
+        <template v-else>
+          <div class="flex-1 min-h-0 overflow-hidden">
+            <InsightsView />
+          </div>
+        </template>
       </template>
 
       <!-- Placeholder when no dataset is loaded -->
