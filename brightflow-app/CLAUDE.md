@@ -45,6 +45,10 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run format` 
 - `composables/useOperators.ts` - Filter operators by column type
 - `services/websocket.ts` - WebSocket client with reconnection
 
+## Console Forwarding
+
+`vite-console-forward-plugin.ts` forwards browser `console.*` calls to the Vite dev terminal (prefixed `[browser]`). This means all frontend logs are visible in the terminal without browser DevTools. Dev-only, no production impact.
+
 ## Nuxt UI Notes
 
 Components use Nuxt UI 4 conventions:

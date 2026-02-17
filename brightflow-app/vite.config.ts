@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import ui from '@nuxt/ui/vite';
+import { consoleForwardPlugin } from './vite-console-forward-plugin';
 import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
@@ -15,6 +16,7 @@ export default defineConfig({
         },
       },
     }),
+    consoleForwardPlugin(),
   ],
   resolve: {
     alias: {
