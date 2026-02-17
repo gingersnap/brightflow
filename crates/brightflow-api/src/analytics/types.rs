@@ -125,7 +125,7 @@ pub enum WsClientMessage {
 
     /// Request dataset metadata
     GetMetadata {
-        #[serde(default = "default_dataset_id")]
+        #[serde(default = "default_dataset_id", rename = "datasetId")]
         dataset_id: String,
     },
 

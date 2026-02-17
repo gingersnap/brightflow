@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [
     vue(),
     ui({
+      colorMode: true,
       ui: {
         colors: {
           primary: 'purple',

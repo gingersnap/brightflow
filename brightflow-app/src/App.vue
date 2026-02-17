@@ -57,11 +57,6 @@ function handleChangeDataset(): void {
   showDatasetPicker.value = true;
 }
 
-function handleUpload(): void {
-  // TODO: Implement upload modal
-  console.log('Upload clicked');
-}
-
 // Wait for connection before allowing interaction
 watch(
   () => connectionStore.isConnected,
@@ -86,7 +81,6 @@ watch(
       <!-- Header with change dataset action -->
       <AppHeader
         :current-dataset="currentDataset"
-        @upload="handleUpload"
         @change-dataset="handleChangeDataset"
       />
 

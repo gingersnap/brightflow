@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { getWebSocketClient, type WebSocketClient } from '@/services/websocket';
-import { useDatasetStore } from './dataset';
 import type { ConnectionStatus, WsMessage, ConnectedMessage } from '@/types';
 
 type MessageHandler = (message: WsMessage) => void;
@@ -61,9 +60,6 @@ export const useConnectionStore = defineStore('connection', () => {
         const connectedMsg = message as ConnectedMessage;
         serverVersion.value = connectedMsg.serverVersion;
         status.value = 'connected';
-        // Fetch initial metadata
-        const datasetStore = useDatasetStore();
-        datasetStore.fetchMetadata();
         break;
       }
 

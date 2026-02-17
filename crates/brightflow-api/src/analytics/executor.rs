@@ -95,12 +95,12 @@ fn build_filter_expr(column: &str, op: FilterOp, value: serde_json::Value) -> Ap
         FilterOp::Lt => c.lt(json_to_lit(&value)?),
         FilterOp::Lte => c.lt_eq(json_to_lit(&value)?),
         FilterOp::Contains => {
-            // Simple string equality for now
-            // TODO: Enable "regex" feature for proper substring search
             let s = value
                 .as_str()
                 .ok_or_else(|| AppError::InvalidQuery("Contains requires string value".into()))?;
-            c.cast(DataType::String).eq(lit(s.to_string()))
+            c.cast(DataType::String)
+                .str()
+                .contains_literal(lit(s.to_string()))
         },
         FilterOp::In => {
             let arr = value

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Upload, Settings, Database, ChevronDown, Search, Sparkles } from 'lucide-vue-next';
+import { Database, ChevronDown, Search, Sparkles, Sun, Moon } from 'lucide-vue-next';
+import { useColorMode } from '@vueuse/core';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
 import { useUiStore, type AppMode } from '@/stores/ui';
@@ -11,14 +12,18 @@ defineProps<{
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
+const colorMode = useColorMode();
 
 const emit = defineEmits<{
-  upload: [];
   'change-dataset': [];
 }>();
 
 function setMode(mode: AppMode): void {
   uiStore.setAppMode(mode);
+}
+
+function toggleTheme(): void {
+  colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
 }
 </script>
 
@@ -73,23 +78,15 @@ function setMode(mode: AppMode): void {
 
     <!-- Right: Actions and Status -->
     <div class="flex items-center gap-3">
-      <!-- Upload Button -->
-      <UButton
-        variant="ghost"
-        size="sm"
-        @click="emit('upload')"
-      >
-        <Upload class="w-4 h-4 mr-1.5" />
-        Upload CSV
-      </UButton>
-
-      <!-- Settings (placeholder) -->
+      <!-- Theme toggle -->
       <UButton
         variant="ghost"
         size="sm"
         square
+        @click="toggleTheme"
       >
-        <Settings class="w-4 h-4" />
+        <Sun v-if="colorMode === 'dark'" class="w-4 h-4" />
+        <Moon v-else class="w-4 h-4" />
       </UButton>
 
       <!-- Connection Status -->
