@@ -11,6 +11,7 @@ import FilterBar from './components/query/FilterBar.vue';
 import QueryBuilder from './components/query/QueryBuilder.vue';
 import ResultsPanel from './components/results/ResultsPanel.vue';
 import InsightsView from './components/insights/InsightsView.vue';
+import ConnectView from './components/connect/ConnectView.vue';
 import DatasetPickerModal from './components/layout/DatasetPickerModal.vue';
 
 const connectionStore = useConnectionStore();
@@ -71,9 +72,9 @@ watch(
 
 <template>
   <UApp>
-    <!-- Dataset picker modal - acts as gate until dataset is chosen -->
+    <!-- Dataset picker modal - acts as gate until dataset is chosen (not in Connect mode) -->
     <DatasetPickerModal
-      :open="showDatasetPicker && connectionStore.isConnected"
+      :open="showDatasetPicker && connectionStore.isConnected && uiStore.appMode !== 'connect'"
       @select="handleDatasetSelect"
     />
 
@@ -84,8 +85,15 @@ watch(
         @change-dataset="handleChangeDataset"
       />
 
-      <!-- Main content - only interactive after dataset is loaded -->
-      <template v-if="currentDataset">
+      <!-- Connect mode - works without a dataset -->
+      <template v-if="uiStore.appMode === 'connect'">
+        <div class="flex-1 min-h-0 overflow-hidden">
+          <ConnectView />
+        </div>
+      </template>
+
+      <!-- Explore / Insights - require a loaded dataset -->
+      <template v-else-if="currentDataset">
         <!-- Explore mode -->
         <template v-if="uiStore.appMode === 'explore'">
           <FilterBar />

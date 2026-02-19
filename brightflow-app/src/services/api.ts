@@ -105,6 +105,44 @@ export const tableApi = {
     api.post<LoadTableResponse>(`/api/tables/${encodeURIComponent(name)}/load`),
 };
 
+// Connector types
+export interface ConnectorInfo {
+  name: string;
+  connector: string;
+  valid: boolean;
+}
+
+export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export interface ConnectorRun {
+  id: string;
+  connector: string;
+  config_name: string;
+  status: RunStatus;
+  started_at: string;
+  finished_at: string | null;
+  endpoints_synced: string[];
+  tables_ingested: string[];
+  error: string | null;
+}
+
+export interface RunResponse {
+  run_id: string;
+  connector: string;
+  status: RunStatus;
+}
+
+// Connector API
+export const connectApi = {
+  listConnectors: (): Promise<ConnectorInfo[] | null> =>
+    api.get<ConnectorInfo[]>('/api/connectors'),
+  runConnector: (name: string, only?: string): Promise<RunResponse | null> =>
+    api.post<RunResponse>(`/api/connectors/${encodeURIComponent(name)}/run`, only ? { only } : {}),
+  listRuns: (): Promise<ConnectorRun[] | null> => api.get<ConnectorRun[]>('/api/connectors/runs'),
+  getRun: (id: string): Promise<ConnectorRun | null> =>
+    api.get<ConnectorRun>(`/api/connectors/runs/${id}`),
+};
+
 // Insights API response
 export interface InsightsResponse {
   datasetId: string;

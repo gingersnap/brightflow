@@ -13,6 +13,7 @@
 )]
 
 pub mod analytics;
+pub mod connect;
 pub mod insights;
 pub mod routes;
 pub mod shared;
@@ -35,6 +36,8 @@ pub struct ServeConfig {
     pub delta_tables: Option<Vec<String>>,
     /// Path to directory containing schema YAML files
     pub schema_dir: Option<String>,
+    /// Path to directory containing connector config YAML files
+    pub connector_config_dir: Option<String>,
 }
 
 impl Default for ServeConfig {
@@ -46,6 +49,7 @@ impl Default for ServeConfig {
             delta_store_path: None,
             delta_tables: None,
             schema_dir: None,
+            connector_config_dir: None,
         }
     }
 }
@@ -75,6 +79,7 @@ impl ServeConfig {
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
         let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
+        let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS").ok();
 
         Self {
             host,
@@ -83,6 +88,7 @@ impl ServeConfig {
             delta_store_path,
             delta_tables,
             schema_dir,
+            connector_config_dir,
         }
     }
 }
@@ -90,7 +96,7 @@ impl ServeConfig {
 /// Start the API server with the given configuration
 pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
     // Initialize AppState with lazy loading - metadata only, no data loaded
-    let state = match (&config.default_dataset, &config.delta_store_path) {
+    let mut state = match (&config.default_dataset, &config.delta_store_path) {
         // Both default dataset and delta store
         (Some(csv_path), Some(store_path)) if std::path::Path::new(csv_path).exists() => {
             tracing::info!("Loading default dataset from: {}", csv_path);
@@ -156,6 +162,12 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
     } else {
         // Default: look for schemas/ in the working directory
         state.load_schemas_from_dir(std::path::Path::new("schemas"));
+    }
+
+    // Set connector config directory
+    if let Some(dir) = &config.connector_config_dir {
+        state.connector_config_dir = Some(std::path::PathBuf::from(dir));
+        tracing::info!("Connector configs directory: {}", dir);
     }
 
     // Configure CORS (permissive for single-user tool)

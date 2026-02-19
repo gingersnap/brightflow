@@ -1,4 +1,5 @@
 use crate::analytics::session::{DatasetManager, DatasetSource};
+use crate::connect::types::ConnectorRun;
 use crate::shared::AppResult;
 use brightflow_insights::data::config::SchemaConfig;
 use brightflow_insights::data::schema::DataSchema;
@@ -6,9 +7,10 @@ use brightflow_scheduler::Scheduler;
 use brightflow_store::{DeltaStore, TableInfo};
 use dashmap::DashMap;
 use polars::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 /// Shared application state
 #[derive(Clone)]
@@ -23,6 +25,10 @@ pub struct AppState {
     pub schemas: Arc<DashMap<String, DataSchema>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
+    /// Path to connector config YAML directory
+    pub connector_config_dir: Option<PathBuf>,
+    /// In-memory connector run tracker
+    pub connector_runs: Arc<DashMap<Uuid, ConnectorRun>>,
 }
 
 impl Default for AppState {
@@ -40,6 +46,8 @@ impl AppState {
             delta_store: None,
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
+            connector_config_dir: None,
+            connector_runs: Arc::new(DashMap::new()),
         }
     }
 
@@ -95,6 +103,26 @@ impl AppState {
         self.schemas.get(table_name).map(|s| s.clone())
     }
 
+    /// Get a reference to the Delta store
+    pub fn delta_store(&self) -> Option<&Arc<DeltaStore>> {
+        self.delta_store.as_ref()
+    }
+
+    /// Re-read table metadata from the Delta store and update the index
+    pub async fn refresh_table_index(&self) {
+        if let Some(store) = &self.delta_store {
+            let tables = store.list_tables().await.unwrap_or_default();
+            let mut index = Vec::with_capacity(tables.len());
+            for table_ref in tables {
+                if let Ok(info) = store.table_info(&table_ref.name).await {
+                    index.push(info);
+                }
+            }
+            tracing::info!("Refreshed table index: {} tables", index.len());
+            *self.table_index.write().await = index;
+        }
+    }
+
     /// Create AppState with a Delta store - loads metadata only, no data
     pub async fn with_delta_store(store: DeltaStore) -> Self {
         let tables = store.list_tables().await.unwrap_or_default();
@@ -118,6 +146,8 @@ impl AppState {
             delta_store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
+            connector_config_dir: None,
+            connector_runs: Arc::new(DashMap::new()),
         }
     }
 

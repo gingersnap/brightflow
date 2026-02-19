@@ -78,14 +78,7 @@ impl DatasetMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum StorageConfig {
-    Local {
-        path: String,
-    },
-    S3 {
-        endpoint: Option<String>,
-        bucket: String,
-        region: String,
-    },
+    Local { path: String },
 }
 
 /// Core error type for Brightflow

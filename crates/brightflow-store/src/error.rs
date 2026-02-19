@@ -20,10 +20,6 @@ pub enum StoreError {
     #[error("Invalid table name: {0}")]
     InvalidTableName(String),
 
-    /// Unsupported storage type
-    #[error("Unsupported storage: {0}")]
-    UnsupportedStorage(String),
-
     /// Schema mismatch during ingestion
     #[error("Schema mismatch: {0}")]
     SchemaMismatch(String),

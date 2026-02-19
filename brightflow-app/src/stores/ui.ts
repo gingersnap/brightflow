@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import type { ViewMode, ChartType } from '@/types';
 
-export type AppMode = 'explore' | 'insights';
+export type AppMode = 'explore' | 'insights' | 'connect';
 type SectionName = 'filter' | 'summarize' | 'results';
 
 export const useUiStore = defineStore('ui', () => {

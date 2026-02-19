@@ -827,6 +827,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "brightflow-connect",
  "brightflow-core",
  "brightflow-insights",
  "brightflow-scheduler",

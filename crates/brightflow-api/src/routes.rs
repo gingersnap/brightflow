@@ -4,6 +4,7 @@ use axum::{
 };
 
 use crate::analytics::handlers;
+use crate::connect::handlers as connect_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::state::AppState;
 
@@ -34,6 +35,14 @@ fn api_routes() -> Router<AppState> {
         .route("/insights/trends", post(insights_handlers::run_trends))
         // WebSocket
         .route("/ws", get(handlers::ws_handler))
+        // Connectors
+        .route("/connectors", get(connect_handlers::list_connectors))
+        .route(
+            "/connectors/:name/run",
+            post(connect_handlers::run_connector),
+        )
+        .route("/connectors/runs", get(connect_handlers::list_runs))
+        .route("/connectors/runs/:id", get(connect_handlers::get_run))
 }
 
 /// Health check endpoint

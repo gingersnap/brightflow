@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { Database, ChevronDown, Search, Sparkles, Sun, Moon } from 'lucide-vue-next';
+import { Database, ChevronDown, Search, Sparkles, Cable, Sun, Moon } from 'lucide-vue-next';
 import { useColorMode } from '@vueuse/core';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
 import { useUiStore, type AppMode } from '@/stores/ui';
 
-defineProps<{
-  currentDataset: string | null;
-}>();
-
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
 const colorMode = useColorMode();
+
+const props = defineProps<{
+  currentDataset: string | null;
+}>();
 
 const emit = defineEmits<{
   'change-dataset': [];
@@ -20,6 +20,10 @@ const emit = defineEmits<{
 
 function setMode(mode: AppMode): void {
   uiStore.setAppMode(mode);
+  // If switching to a mode that needs a dataset but none is loaded, open the picker
+  if (mode !== 'connect' && !props.currentDataset) {
+    emit('change-dataset');
+  }
 }
 
 function toggleTheme(): void {
@@ -47,8 +51,8 @@ function toggleTheme(): void {
         <ChevronDown class="w-4 h-4 text-muted" />
       </button>
 
-      <!-- Mode switcher: Explore / Insights -->
-      <div v-if="currentDataset" class="flex items-center gap-1 bg-elevated rounded-lg p-0.5 ml-2">
+      <!-- Mode switcher -->
+      <div class="flex items-center gap-1 bg-elevated rounded-lg p-0.5 ml-2">
         <button
           class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors"
           :class="
@@ -72,6 +76,18 @@ function toggleTheme(): void {
         >
           <Sparkles class="w-3.5 h-3.5" />
           Insights
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          :class="
+            uiStore.appMode === 'connect'
+              ? 'bg-default text-highlighted shadow-sm'
+              : 'text-muted hover:text-highlighted'
+          "
+          @click="setMode('connect')"
+        >
+          <Cable class="w-3.5 h-3.5" />
+          Connect
         </button>
       </div>
     </div>

@@ -61,9 +61,6 @@ impl DeltaStore {
     pub fn from_config(config: &StorageConfig) -> StoreResult<Self> {
         match config {
             StorageConfig::Local { path } => Ok(Self::new(path)),
-            StorageConfig::S3 { .. } => Err(StoreError::UnsupportedStorage(
-                "S3 storage not yet implemented".to_string(),
-            )),
         }
     }
 

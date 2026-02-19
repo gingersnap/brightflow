@@ -36,3 +36,4 @@ export { useDatasetStore } from './dataset';
 export { useUiStore } from './ui';
 export { useConnectionStore } from './connection';
 export { useInsightsStore } from './insights';
+export { useConnectStore } from './connect';

@@ -70,6 +70,10 @@ enum Commands {
         /// Specific Delta tables to load (comma-separated, loads all if not specified)
         #[arg(long)]
         delta_tables: Option<String>,
+
+        /// Path to connector config YAML directory
+        #[arg(long, default_value = "./configs")]
+        connector_configs: String,
     },
 
     /// Start the API server only
@@ -93,6 +97,10 @@ enum Commands {
         /// Specific Delta tables to load (comma-separated, loads all if not specified)
         #[arg(long)]
         delta_tables: Option<String>,
+
+        /// Path to connector config YAML directory
+        #[arg(long, default_value = "./configs")]
+        connector_configs: String,
     },
 
     /// Start the scheduler daemon only (not yet implemented)
@@ -286,10 +294,18 @@ async fn main() -> Result<()> {
             dataset,
             delta_store,
             delta_tables,
+            connector_configs,
         } => {
             init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
-            let config = build_serve_config(&host, port, dataset, delta_store, delta_tables);
+            let config = build_serve_config(
+                &host,
+                port,
+                dataset,
+                delta_store,
+                delta_tables,
+                &connector_configs,
+            );
 
             // Run API and scheduler concurrently
             let scheduler = Scheduler::new();
@@ -307,10 +323,18 @@ async fn main() -> Result<()> {
             dataset,
             delta_store,
             delta_tables,
+            connector_configs,
         } => {
             init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
-            let config = build_serve_config(&host, port, dataset, delta_store, delta_tables);
+            let config = build_serve_config(
+                &host,
+                port,
+                dataset,
+                delta_store,
+                delta_tables,
+                &connector_configs,
+            );
             brightflow_api::serve(config).await?;
         },
 
@@ -372,6 +396,7 @@ fn build_serve_config(
     dataset: Option<String>,
     delta_store: Option<String>,
     delta_tables: Option<String>,
+    connector_configs: &str,
 ) -> ServeConfig {
     let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
     let host_array: [u8; 4] = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
@@ -384,6 +409,10 @@ fn build_serve_config(
 
     let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
 
+    let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS")
+        .ok()
+        .unwrap_or_else(|| connector_configs.to_string());
+
     ServeConfig {
         host: host_array,
         port,
@@ -391,6 +420,7 @@ fn build_serve_config(
         delta_store_path,
         delta_tables: resolved_tables,
         schema_dir,
+        connector_config_dir: Some(connector_config_dir),
     }
 }
 

@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
 brightflow-store = { path = "../brightflow-store" }
+brightflow-connect = { path = "../brightflow-connect" }
 brightflow-insights = { path = "../brightflow-insights" }
 brightflow-scheduler = { path = "../brightflow-scheduler" }
 
