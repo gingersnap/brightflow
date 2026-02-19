@@ -11,6 +11,7 @@ path = "src/lib.rs"
 brightflow-core = { path = "../brightflow-core" }
 brightflow-store = { path = "../brightflow-store" }
 brightflow-insights = { path = "../brightflow-insights" }
+brightflow-scheduler = { path = "../brightflow-scheduler" }
 
 # Web framework
 axum = { workspace = true }

@@ -1,0 +1,16 @@
+[package]
+name = "brightflow-scheduler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+brightflow-core = { path = "../brightflow-core" }
+brightflow-connect = { path = "../brightflow-connect" }
+brightflow-insights = { path = "../brightflow-insights" }
+brightflow-store = { path = "../brightflow-store" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

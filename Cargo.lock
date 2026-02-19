@@ -688,24 +688,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
-name = "avon"
-version = "0.1.0"
-dependencies = [
- "arrow 54.3.1",
- "base64",
- "clap",
- "mlua",
- "parquet 54.3.1",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "axum"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -847,6 +829,7 @@ dependencies = [
  "axum",
  "brightflow-core",
  "brightflow-insights",
+ "brightflow-scheduler",
  "brightflow-store",
  "chrono",
  "dashmap",
@@ -872,6 +855,7 @@ dependencies = [
  "brightflow-connect",
  "brightflow-core",
  "brightflow-insights",
+ "brightflow-scheduler",
  "brightflow-store",
  "clap",
  "dotenvy",
@@ -886,8 +870,8 @@ dependencies = [
 name = "brightflow-connect"
 version = "0.1.0"
 dependencies = [
- "avon",
  "brightflow-core",
+ "longbow",
  "serde",
  "serde_yaml",
  "tokio",
@@ -911,13 +895,25 @@ dependencies = [
  "anyhow",
  "brightflow-core",
  "chrono",
- "clap",
  "polars",
  "serde",
  "serde_json",
  "serde_yaml",
  "statrs",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "brightflow-scheduler"
+version = "0.1.0"
+dependencies = [
+ "brightflow-connect",
+ "brightflow-core",
+ "brightflow-insights",
+ "brightflow-store",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3269,6 +3265,24 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+
+[[package]]
+name = "longbow"
+version = "0.1.0"
+dependencies = [
+ "arrow 54.3.1",
+ "base64",
+ "clap",
+ "mlua",
+ "parquet 54.3.1",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+]
 
 [[package]]
 name = "lru-slab"

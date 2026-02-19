@@ -2,6 +2,7 @@ use crate::analytics::session::{DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use brightflow_insights::data::config::SchemaConfig;
 use brightflow_insights::data::schema::DataSchema;
+use brightflow_scheduler::Scheduler;
 use brightflow_store::{DeltaStore, TableInfo};
 use dashmap::DashMap;
 use polars::prelude::*;
@@ -20,6 +21,8 @@ pub struct AppState {
     delta_store: Option<Arc<DeltaStore>>,
     /// Global schema configs keyed by table name
     pub schemas: Arc<DashMap<String, DataSchema>>,
+    /// Optional scheduler for background jobs
+    pub scheduler: Option<Arc<Scheduler>>,
 }
 
 impl Default for AppState {
@@ -36,6 +39,7 @@ impl AppState {
             table_index: Arc::new(RwLock::new(Vec::new())),
             delta_store: None,
             schemas: Arc::new(DashMap::new()),
+            scheduler: None,
         }
     }
 
@@ -113,6 +117,7 @@ impl AppState {
             table_index: Arc::new(RwLock::new(index)),
             delta_store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
+            scheduler: None,
         }
     }
 

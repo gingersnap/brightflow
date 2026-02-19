@@ -2,7 +2,7 @@
 name = "brightflow-insights"
 version = "0.1.0"
 edition = "2021"
-description = "A CLI tool that analyzes CSV data to find statistical insights"
+description = "Statistical analysis engine for Brightflow"
 
 [lib]
 name = "brightflow_insights"
@@ -10,7 +10,6 @@ path = "src/lib.rs"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
-clap = { version = "4.5", features = ["derive"] }
 polars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

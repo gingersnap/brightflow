@@ -90,3 +90,8 @@ many_single_char_names = "allow"
 unreadable_literal = "allow"
 doc_markdown = "allow"
 missing_const_for_fn = "allow"
+
+# Local development: override longbow to use local checkout
+# Remove or comment out before committing to CI
+[patch.crates-io]
+longbow = { path = "../avon" }

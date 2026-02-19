@@ -35,6 +35,7 @@ use brightflow_insights::debug::DebugLog;
 use brightflow_insights::output::html::write_html;
 use brightflow_insights::output::json::write_output;
 use brightflow_insights::output::markdown::write_markdown;
+use brightflow_scheduler::Scheduler;
 use brightflow_store::{DeltaStore, IngestMode, IngestOptions};
 
 #[derive(Parser, Debug)]
@@ -291,11 +292,12 @@ async fn main() -> Result<()> {
             let config = build_serve_config(&host, port, dataset, delta_store, delta_tables);
 
             // Run API and scheduler concurrently
+            let scheduler = Scheduler::new();
             tokio::select! {
                 result = brightflow_api::serve(config) => {
                     result?;
                 }
-                () = run_scheduler() => {}
+                () = scheduler.start() => {}
             }
         },
 
@@ -314,7 +316,8 @@ async fn main() -> Result<()> {
 
         Commands::Schedule => {
             init_tracing("brightflow=info");
-            run_scheduler().await;
+            let scheduler = Scheduler::new();
+            scheduler.start().await;
         },
 
         Commands::Insights(insights_cmd) => match insights_cmd {
@@ -388,15 +391,6 @@ fn build_serve_config(
         delta_store_path,
         delta_tables: resolved_tables,
         schema_dir,
-    }
-}
-
-async fn run_scheduler() {
-    tracing::info!("Starting scheduler (not yet implemented)");
-    // Placeholder: scheduler will loop here processing jobs
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-        tracing::debug!("Scheduler tick");
     }
 }
 

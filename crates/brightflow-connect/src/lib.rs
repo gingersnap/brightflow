@@ -1,11 +1,11 @@
-//! Brightflow Connect - Avon configuration and custom connectors
+//! Brightflow Connect - Longbow configuration and custom connectors
 //!
-//! This crate provides Brightflow's deployment of Avon, including:
+//! This crate provides Brightflow's deployment of Longbow, including:
 //! - Configuration for data source connectors
 //! - Custom Lua connectors specific to Brightflow
 //! - Connector runner utilities
 
-pub use avon;
+pub use longbow;
 
 use brightflow_core::{BrightflowError, Result};
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ pub struct RunOptions {
 
 /// Run a connector with the given configuration
 ///
-/// This executes the Avon pipeline defined in the Lua connector file.
+/// This executes the Longbow pipeline defined in the Lua connector file.
 pub async fn run_connector(
     connector_path: &Path,
     config_path: &Path,
@@ -47,18 +47,18 @@ pub async fn run_connector(
     let config_str = config_path
         .to_str()
         .ok_or_else(|| BrightflowError::Other("Invalid config path".to_string()))?;
-    let config = avon::config::load_config(config_str)
+    let config = longbow::config::load_config(config_str)
         .map_err(|e| BrightflowError::Other(format!("Failed to load config: {e}")))?;
 
     // Create the Lua runtime
-    let lua = avon::runtime::create_lua_runtime()
+    let lua = longbow::runtime::create_lua_runtime()
         .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
 
     // Load the connector
     let connector_str = connector_path
         .to_str()
         .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
-    let mut pipeline = avon::pipeline::load_connector(&lua, connector_str, config)
+    let mut pipeline = longbow::pipeline::load_connector(&lua, connector_str, config)
         .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
 
     // Filter endpoints if --only specified
@@ -85,8 +85,8 @@ pub async fn run_connector(
     }
 
     // Execute the pipeline
-    let http = avon::http::HttpClient::new();
-    avon::pipeline::execute(&pipeline, &lua, &http)
+    let http = longbow::http::HttpClient::new();
+    longbow::pipeline::execute(&pipeline, &lua, &http)
         .await
         .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
 
