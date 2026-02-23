@@ -2,14 +2,19 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import type { ViewMode, ChartType } from '@/types';
 
-export type AppMode = 'explore' | 'insights' | 'connect';
+export type AppMode = 'explore' | 'insights';
 type SectionName = 'filter' | 'summarize' | 'results';
 
 export const useUiStore = defineStore('ui', () => {
   // App mode: top-level navigation between Explore and Insights
+  const storedMode = localStorage.getItem('brightflow-app-mode');
+  const initialConnect = storedMode === 'connect';
   const appMode = ref<AppMode>(
-    (localStorage.getItem('brightflow-app-mode') as AppMode | null) ?? 'explore',
+    initialConnect ? 'explore' : ((storedMode as AppMode | null) ?? 'explore'),
   );
+
+  // Connect is separate from Explore/Insights
+  const showConnect = ref(initialConnect);
 
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
   const viewMode = ref<ViewMode>(
@@ -31,12 +36,22 @@ export const useUiStore = defineStore('ui', () => {
 
   // Persist preferences
   watch(appMode, (val) => localStorage.setItem('brightflow-app-mode', val));
+  watch(showConnect, (val) => {
+    if (val) {
+      localStorage.setItem('brightflow-app-mode', 'connect');
+    }
+  });
   watch(viewMode, (val) => localStorage.setItem('brightflow-view-mode', val));
   watch(chartType, (val) => localStorage.setItem('brightflow-chart-type', val));
 
   // Actions
   function setAppMode(mode: AppMode): void {
     appMode.value = mode;
+    showConnect.value = false;
+  }
+
+  function setShowConnect(val: boolean): void {
+    showConnect.value = val;
   }
 
   function setViewMode(mode: ViewMode): void {
@@ -69,6 +84,7 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     appMode,
+    showConnect,
     viewMode,
     chartType,
     filterCollapsed,
@@ -76,6 +92,7 @@ export const useUiStore = defineStore('ui', () => {
     resultsCollapsed,
     hasShownPivotResults,
     setAppMode,
+    setShowConnect,
     setViewMode,
     setChartType,
     toggleSection,

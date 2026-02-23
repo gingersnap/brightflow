@@ -5,18 +5,22 @@ import { tableApi, type TableInfo } from '@/services/api';
 
 const props = defineProps<{
   open: boolean;
+  loading: boolean;
 }>();
+
+const selectedTable = ref<string | null>(null);
 
 const emit = defineEmits<{
   select: [table: TableInfo];
+  close: [];
 }>();
 
 const tables = ref<TableInfo[]>([]);
-const loading = ref(false);
+const fetching = ref(false);
 const error = ref<string | null>(null);
 
 async function fetchTables(): Promise<void> {
-  loading.value = true;
+  fetching.value = true;
   error.value = null;
 
   try {
@@ -25,11 +29,13 @@ async function fetchTables(): Promise<void> {
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to fetch tables';
   } finally {
-    loading.value = false;
+    fetching.value = false;
   }
 }
 
 function handleSelect(table: TableInfo): void {
+  if (props.loading) return;
+  selectedTable.value = table.name;
   emit('select', table);
 }
 
@@ -38,12 +44,15 @@ function formatRowCount(count: number | null | undefined): string {
   return `${count.toLocaleString()} rows`;
 }
 
-// Fetch tables when modal opens
+// Fetch tables when modal opens, reset selection
 watch(
   () => props.open,
   (isOpen) => {
-    if (isOpen && tables.value.length === 0 && !loading.value) {
-      fetchTables();
+    if (isOpen) {
+      selectedTable.value = null;
+      if (tables.value.length === 0 && !fetching.value) {
+        fetchTables();
+      }
     }
   },
   { immediate: true },
@@ -53,9 +62,10 @@ watch(
 <template>
   <UModal
     :open="open"
-    :close-button="false"
-    :dismissible="false"
+    :close-button="!loading"
+    :dismissible="!loading"
     class="w-full max-w-lg"
+    @close="emit('close')"
   >
     <template #content>
       <div class="p-6">
@@ -69,8 +79,8 @@ watch(
           </div>
         </div>
 
-        <!-- Loading state -->
-        <div v-if="loading" class="flex items-center justify-center py-12">
+        <!-- Fetching tables state -->
+        <div v-if="fetching" class="flex items-center justify-center py-12">
           <Loader2 class="w-6 h-6 animate-spin text-muted" />
           <span class="ml-2 text-muted">Loading available tables...</span>
         </div>
@@ -103,12 +113,27 @@ watch(
           <button
             v-for="table in tables"
             :key="table.name"
-            class="w-full p-4 text-left rounded-lg border border-default hover:border-primary-500/50 hover:bg-elevated transition-colors group"
+            :disabled="loading"
+            class="w-full p-4 text-left rounded-lg border transition-colors group"
+            :class="
+              loading && selectedTable === table.name
+                ? 'border-primary-500/50 bg-elevated'
+                : loading
+                  ? 'border-default opacity-50 cursor-not-allowed'
+                  : 'border-default hover:border-primary-500/50 hover:bg-elevated'
+            "
             @click="handleSelect(table)"
           >
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-3">
-                <Table2 class="w-5 h-5 text-muted group-hover:text-primary-500 transition-colors" />
+                <Loader2
+                  v-if="loading && selectedTable === table.name"
+                  class="w-5 h-5 text-primary-500 animate-spin"
+                />
+                <Table2
+                  v-else
+                  class="w-5 h-5 text-muted group-hover:text-primary-500 transition-colors"
+                />
                 <div>
                   <div class="font-medium text-highlighted">{{ table.name }}</div>
                   <div class="text-xs text-muted mt-0.5">
@@ -120,7 +145,8 @@ watch(
                 </div>
               </div>
               <div class="text-xs text-muted">
-                v{{ table.version }}
+                <span v-if="loading && selectedTable === table.name">Loading...</span>
+                <span v-else>v{{ table.version }}</span>
               </div>
             </div>
           </button>

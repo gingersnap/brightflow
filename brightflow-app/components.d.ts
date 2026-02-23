@@ -43,5 +43,6 @@ declare module 'vue' {
     USelectMenu: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/SelectMenu.vue')['default']
     USwitch: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Switch.vue')['default']
     UTable: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Table.vue')['default']
+    WelcomeLanding: typeof import('./src/components/layout/WelcomeLanding.vue')['default']
   }
 }
