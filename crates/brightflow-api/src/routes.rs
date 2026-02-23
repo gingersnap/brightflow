@@ -1,9 +1,11 @@
 use axum::{
+    middleware,
     routing::{delete, get, post},
     Router,
 };
 
 use crate::analytics::handlers;
+use crate::auth::handlers as auth_handlers;
 use crate::connect::handlers as connect_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::state::AppState;
@@ -11,7 +13,7 @@ use crate::state::AppState;
 /// Create the main application router
 pub fn create_router() -> Router<AppState> {
     Router::new()
-        // Health check
+        // Health check (public)
         .route("/health", get(health_check))
         // API routes
         .nest("/api", api_routes())
@@ -19,7 +21,12 @@ pub fn create_router() -> Router<AppState> {
 
 /// API routes under /api prefix
 fn api_routes() -> Router<AppState> {
-    Router::new()
+    let public = Router::new()
+        .route("/auth/login", post(auth_handlers::login))
+        .route("/auth/logout", post(auth_handlers::logout))
+        .route("/auth/me", get(auth_handlers::me));
+
+    let protected = Router::new()
         // Available tables (metadata only, for lazy loading)
         .route("/tables", get(handlers::list_available_tables))
         .route("/tables/:name/load", post(handlers::load_table))
@@ -43,7 +50,26 @@ fn api_routes() -> Router<AppState> {
         )
         .route("/connectors/runs", get(connect_handlers::list_runs))
         .route("/connectors/runs/:id", get(connect_handlers::get_run))
+        .route_layer(middleware::from_fn(require_auth));
+
+    public.merge(protected)
 }
+
+/// Middleware that requires authentication
+async fn require_auth(
+    auth_session: brightflow_auth::AuthSession,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    if auth_session.user.is_some() {
+        next.run(request).await
+    } else {
+        crate::shared::AppError::Unauthorized.into_response()
+    }
+}
+
+/// Use IntoResponse for the error
+use axum::response::IntoResponse;
 
 /// Health check endpoint
 async fn health_check() -> &'static str {

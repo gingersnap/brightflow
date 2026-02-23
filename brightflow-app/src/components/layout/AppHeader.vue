@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { Database, ChevronDown, Search, Sparkles, Cable, Sun, Moon, Plus } from 'lucide-vue-next';
+import {
+  Database,
+  ChevronDown,
+  Search,
+  Sparkles,
+  Cable,
+  Sun,
+  Moon,
+  Plus,
+  LogOut,
+} from 'lucide-vue-next';
 import { useColorMode } from '@vueuse/core';
-import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
 import { useUiStore, type AppMode } from '@/stores/ui';
 
-const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
 const colorMode = useColorMode();
@@ -16,6 +24,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'change-dataset': [];
+  logout: [];
 }>();
 
 function setMode(mode: AppMode): void {
@@ -40,7 +49,7 @@ function toggleTheme(): void {
       <!-- Current dataset display with change button -->
       <button
         v-if="currentDataset"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-default hover:border-primary-500/50 hover:bg-elevated transition-colors"
+        class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-default hover:border-primary-500/50 hover:bg-elevated transition-colors cursor-pointer"
         @click="emit('change-dataset')"
       >
         <Database class="w-4 h-4 text-muted" />
@@ -54,7 +63,7 @@ function toggleTheme(): void {
       <!-- Select Dataset button when no dataset is loaded -->
       <button
         v-else
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-default text-muted hover:border-primary-500/50 hover:text-highlighted transition-colors"
+        class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-default text-muted hover:border-primary-500/50 hover:text-highlighted transition-colors cursor-pointer"
         @click="emit('change-dataset')"
       >
         <Plus class="w-4 h-4" />
@@ -67,7 +76,7 @@ function toggleTheme(): void {
         :class="{ 'opacity-40 pointer-events-none': !currentDataset }"
       >
         <button
-          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
           :class="
             uiStore.appMode === 'explore' && !uiStore.showConnect
               ? 'bg-default text-highlighted shadow-sm'
@@ -79,7 +88,7 @@ function toggleTheme(): void {
           Explore
         </button>
         <button
-          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
           :class="
             uiStore.appMode === 'insights' && !uiStore.showConnect
               ? 'bg-default text-highlighted shadow-sm'
@@ -97,7 +106,7 @@ function toggleTheme(): void {
     <div class="flex items-center gap-3">
       <!-- Connect button -->
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer"
         :class="
           uiStore.showConnect
             ? 'bg-primary-500/10 text-primary-500'
@@ -120,18 +129,28 @@ function toggleTheme(): void {
         <Moon v-else class="w-4 h-4" />
       </UButton>
 
-      <!-- Connection Status -->
+      <!-- Logout button -->
+      <UButton
+        variant="ghost"
+        size="sm"
+        square
+        @click="emit('logout')"
+      >
+        <LogOut class="w-4 h-4" />
+      </UButton>
+
+      <!-- Dataset Status Dot -->
       <div class="flex items-center gap-2 pl-3 border-l border-default">
         <span
           class="h-2 w-2 rounded-full"
           :class="{
-            'bg-green-500': connectionStore.isConnected,
-            'bg-yellow-500 animate-pulse': connectionStore.isConnecting,
-            'bg-red-500': connectionStore.isDisconnected
+            'bg-green-500': datasetStore.hasData,
+            'bg-yellow-500 animate-pulse': datasetStore.loading,
+            'bg-neutral-400': !datasetStore.hasData && !datasetStore.loading
           }"
         />
         <span class="text-xs text-muted">
-          {{ connectionStore.statusText }}
+          {{ datasetStore.hasData ? (datasetStore.name ?? 'Dataset loaded') : 'No dataset' }}
         </span>
       </div>
     </div>

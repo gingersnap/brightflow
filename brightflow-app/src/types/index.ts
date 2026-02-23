@@ -124,14 +124,6 @@ export interface ConnectedMessage extends WsMessage {
   serverVersion: string;
 }
 
-export interface MetadataMessage extends WsMessage {
-  type: 'metadata';
-  dataset_id: string;
-  name: string;
-  row_count: number;
-  columns: Column[];
-}
-
 export interface QueryResultMessage extends WsMessage {
   type: 'queryResult';
   columns: Column[];
@@ -144,14 +136,6 @@ export interface QueryResultMessage extends WsMessage {
 export interface ErrorMessage extends WsMessage {
   type: 'error';
   message: string;
-}
-
-export interface DatasetListMessage extends WsMessage {
-  type: 'datasetList';
-  datasets: Array<{
-    id: string;
-    name: string;
-  }>;
 }
 
 // Connection status

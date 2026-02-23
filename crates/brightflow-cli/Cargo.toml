@@ -13,10 +13,12 @@ brightflow-connect = { path = "../brightflow-connect" }
 brightflow-store = { path = "../brightflow-store" }
 brightflow-insights = { path = "../brightflow-insights" }
 brightflow-api = { path = "../brightflow-api" }
+brightflow-auth = { path = "../brightflow-auth" }
 brightflow-scheduler = { path = "../brightflow-scheduler" }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
+rpassword = "5"
 anyhow = "1.0"
 
 # Async runtime

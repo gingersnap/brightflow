@@ -1,6 +1,7 @@
 use crate::analytics::session::{DatasetManager, DatasetSource};
 use crate::connect::types::ConnectorRun;
 use crate::shared::AppResult;
+use brightflow_auth::AuthDb;
 use brightflow_insights::data::config::SchemaConfig;
 use brightflow_insights::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
@@ -29,6 +30,8 @@ pub struct AppState {
     pub connector_config_dir: Option<PathBuf>,
     /// In-memory connector run tracker
     pub connector_runs: Arc<DashMap<Uuid, ConnectorRun>>,
+    /// Authentication database
+    pub auth_db: Option<Arc<AuthDb>>,
 }
 
 impl Default for AppState {
@@ -48,6 +51,7 @@ impl AppState {
             scheduler: None,
             connector_config_dir: None,
             connector_runs: Arc::new(DashMap::new()),
+            auth_db: None,
         }
     }
 
@@ -148,6 +152,7 @@ impl AppState {
             scheduler: None,
             connector_config_dir: None,
             connector_runs: Arc::new(DashMap::new()),
+            auth_db: None,
         }
     }
 

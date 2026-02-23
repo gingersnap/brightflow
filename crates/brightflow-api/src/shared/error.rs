@@ -8,6 +8,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("Unauthorized")]
+    Unauthorized,
+
     #[error("Bad request: {0}")]
     BadRequest(String),
 
@@ -42,6 +45,11 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
+            Self::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "Unauthorized".to_string(),
+            ),
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
             Self::InvalidQuery(msg) => (
@@ -100,6 +108,7 @@ impl IntoResponse for AppError {
 impl AppError {
     pub fn error_code(&self) -> &'static str {
         match self {
+            Self::Unauthorized => "UNAUTHORIZED",
             Self::BadRequest(_) => "BAD_REQUEST",
             Self::NotFound(_) => "NOT_FOUND",
             Self::InvalidQuery(_) => "INVALID_QUERY",

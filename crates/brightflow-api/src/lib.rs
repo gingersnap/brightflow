@@ -13,6 +13,7 @@
 )]
 
 pub mod analytics;
+pub mod auth;
 pub mod connect;
 pub mod insights;
 pub mod routes;
@@ -20,6 +21,16 @@ pub mod shared;
 pub mod state;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::http::{self, HeaderValue};
+use brightflow_auth::axum_login;
+use brightflow_auth::tower_sessions::{
+    cookie::SameSite, ExpiredDeletion, Expiry, SessionManagerLayer,
+};
+use brightflow_auth::tower_sessions_sqlx_store::SqliteStore;
+use brightflow_auth::{AuthBackend, AuthDb};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::state::AppState;
@@ -38,6 +49,8 @@ pub struct ServeConfig {
     pub schema_dir: Option<String>,
     /// Path to directory containing connector config YAML files
     pub connector_config_dir: Option<String>,
+    /// SQLite database URL for auth/sessions
+    pub database_url: Option<String>,
 }
 
 impl Default for ServeConfig {
@@ -50,6 +63,7 @@ impl Default for ServeConfig {
             delta_tables: None,
             schema_dir: None,
             connector_config_dir: None,
+            database_url: None,
         }
     }
 }
@@ -80,6 +94,7 @@ impl ServeConfig {
 
         let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
         let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS").ok();
+        let database_url = std::env::var("BRIGHTFLOW_DATABASE_URL").ok();
 
         Self {
             host,
@@ -89,6 +104,7 @@ impl ServeConfig {
             delta_tables,
             schema_dir,
             connector_config_dir,
+            database_url,
         }
     }
 }
@@ -170,13 +186,67 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
         tracing::info!("Connector configs directory: {}", dir);
     }
 
-    // Configure CORS (permissive for single-user tool)
-    let cors = CorsLayer::very_permissive();
+    // Initialize auth database
+    let database_url = config
+        .database_url
+        .unwrap_or_else(|| "sqlite:data/brightflow.db?mode=rwc".to_string());
+
+    // Ensure data directory exists
+    if let Some(path) = database_url.strip_prefix("sqlite:") {
+        let db_path = path.split('?').next().unwrap_or(path);
+        if let Some(parent) = std::path::Path::new(db_path).parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+    }
+
+    let auth_db = AuthDb::new(&database_url).await?;
+    state.auth_db = Some(Arc::new(auth_db.clone()));
+
+    // Session store: SQLite with Moka in-memory cache
+    let session_store = SqliteStore::new(auth_db.pool().clone());
+    session_store.migrate().await?;
+
+    let deletion_task = tokio::task::spawn(
+        session_store
+            .clone()
+            .continuously_delete_expired(Duration::from_secs(3600)),
+    );
+
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_name("brightflow.sid")
+        .with_http_only(true)
+        .with_same_site(SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(time::Duration::hours(24)));
+
+    let auth_backend = AuthBackend::new(auth_db);
+    let auth_layer = axum_login::AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
+
+    // Configure CORS with credentials
+    let cors = CorsLayer::new()
+        .allow_origin(
+            "http://localhost:5173"
+                .parse::<HeaderValue>()
+                .unwrap_or_else(|_| HeaderValue::from_static("*")),
+        )
+        .allow_methods([
+            http::Method::GET,
+            http::Method::POST,
+            http::Method::PUT,
+            http::Method::DELETE,
+            http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            http::header::CONTENT_TYPE,
+            http::header::AUTHORIZATION,
+            http::header::ACCEPT,
+        ])
+        .allow_credentials(true);
 
     // Build router
     let app = routes::create_router()
         .layer(TraceLayer::new_for_http())
         .layer(cors)
+        .layer(auth_layer)
         .with_state(state);
 
     // Bind and serve
@@ -186,6 +256,8 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
     tracing::info!("Brightflow API server running on http://{}", addr);
 
     axum::serve(listener, app).await?;
+
+    deletion_task.abort();
 
     Ok(())
 }

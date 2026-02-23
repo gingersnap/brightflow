@@ -277,10 +277,6 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
     match msg {
         WsClientMessage::Query(query) => execute_ws_query(state, query).await,
         WsClientMessage::Ping => WsServerMessage::Pong,
-        WsClientMessage::GetMetadata { dataset_id } => get_ws_metadata(state, &dataset_id),
-        WsClientMessage::ListDatasets => WsServerMessage::DatasetList {
-            datasets: state.datasets.list_datasets(),
-        },
     }
 }
 
@@ -307,22 +303,6 @@ async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
         Err(e) => WsServerMessage::Error {
             code: "TASK_ERROR".into(),
             message: format!("Task execution failed: {e}"),
-        },
-    }
-}
-
-/// Get dataset metadata via WebSocket
-fn get_ws_metadata(state: &AppState, dataset_id: &str) -> WsServerMessage {
-    match state.datasets.get_dataset(dataset_id) {
-        Some(dataset) => WsServerMessage::Metadata {
-            dataset_id: dataset_id.to_string(),
-            name: dataset.name.clone(),
-            row_count: dataset.row_count(),
-            columns: dataset.columns(),
-        },
-        None => WsServerMessage::Error {
-            code: "NOT_FOUND".into(),
-            message: format!("Dataset '{dataset_id}' not found"),
         },
     }
 }

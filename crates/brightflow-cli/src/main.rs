@@ -5,7 +5,7 @@
 // - print_stdout: CLI apps need to print output to users
 // - too_many_lines: CLI handler functions are naturally verbose
 // - case_sensitive_file_extension_comparisons: "lua" is always lowercase
-// - shadow_unrelated: variable shadowing for option resolution is idiomatic
+// - shadow_unrelated/shadow_reuse: variable shadowing for option resolution is idiomatic
 #![allow(
     clippy::cognitive_complexity,
     clippy::ref_option,
@@ -13,7 +13,8 @@
     clippy::print_stdout,
     clippy::too_many_lines,
     clippy::case_sensitive_file_extension_comparisons,
-    clippy::shadow_unrelated
+    clippy::shadow_unrelated,
+    clippy::shadow_reuse
 )]
 
 use anyhow::Result;
@@ -74,6 +75,10 @@ enum Commands {
         /// Path to connector config YAML directory
         #[arg(long, default_value = "./configs")]
         connector_configs: String,
+
+        /// SQLite database URL for auth/sessions
+        #[arg(long)]
+        database_url: Option<String>,
     },
 
     /// Start the API server only
@@ -101,6 +106,10 @@ enum Commands {
         /// Path to connector config YAML directory
         #[arg(long, default_value = "./configs")]
         connector_configs: String,
+
+        /// SQLite database URL for auth/sessions
+        #[arg(long)]
+        database_url: Option<String>,
     },
 
     /// Start the scheduler daemon only (not yet implemented)
@@ -117,6 +126,21 @@ enum Commands {
     /// Delta Lake store operations
     #[command(subcommand)]
     Store(StoreCommands),
+
+    /// Create an admin user
+    CreateAdmin {
+        /// Admin email address
+        #[arg(long)]
+        email: String,
+
+        /// Admin display name
+        #[arg(long)]
+        name: String,
+
+        /// SQLite database URL
+        #[arg(long, default_value = "sqlite:data/brightflow.db?mode=rwc")]
+        database_url: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -295,6 +319,7 @@ async fn main() -> Result<()> {
             delta_store,
             delta_tables,
             connector_configs,
+            database_url,
         } => {
             init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
@@ -305,6 +330,7 @@ async fn main() -> Result<()> {
                 delta_store,
                 delta_tables,
                 &connector_configs,
+                database_url,
             );
 
             // Run API and scheduler concurrently
@@ -324,6 +350,7 @@ async fn main() -> Result<()> {
             delta_store,
             delta_tables,
             connector_configs,
+            database_url,
         } => {
             init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
@@ -334,6 +361,7 @@ async fn main() -> Result<()> {
                 delta_store,
                 delta_tables,
                 &connector_configs,
+                database_url,
             );
             brightflow_api::serve(config).await?;
         },
@@ -375,6 +403,14 @@ async fn main() -> Result<()> {
             init_tracing("brightflow=info");
             handle_store_command(store_cmd).await?;
         },
+
+        Commands::CreateAdmin {
+            email,
+            name,
+            database_url,
+        } => {
+            handle_create_admin(&email, &name, &database_url).await?;
+        },
     }
 
     Ok(())
@@ -397,6 +433,7 @@ fn build_serve_config(
     delta_store: Option<String>,
     delta_tables: Option<String>,
     connector_configs: &str,
+    database_url: Option<String>,
 ) -> ServeConfig {
     let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
     let host_array: [u8; 4] = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
@@ -413,6 +450,8 @@ fn build_serve_config(
         .ok()
         .unwrap_or_else(|| connector_configs.to_string());
 
+    let database_url = database_url.or_else(|| std::env::var("BRIGHTFLOW_DATABASE_URL").ok());
+
     ServeConfig {
         host: host_array,
         port,
@@ -421,6 +460,7 @@ fn build_serve_config(
         delta_tables: resolved_tables,
         schema_dir,
         connector_config_dir: Some(connector_config_dir),
+        database_url,
     }
 }
 
@@ -715,6 +755,43 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             println!("Deleted table '{table}'");
         },
     }
+
+    Ok(())
+}
+
+async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Result<()> {
+    // Ensure data directory exists
+    if let Some(path) = database_url.strip_prefix("sqlite:") {
+        let db_path = path.split('?').next().unwrap_or(path);
+        if let Some(parent) = std::path::Path::new(db_path).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    let db = brightflow_auth::AuthDb::new(database_url).await?;
+
+    // Check if user already exists
+    if let Some(_existing) = db.get_user_by_email(email).await? {
+        anyhow::bail!("User with email '{email}' already exists");
+    }
+
+    // Prompt for password
+    let password = rpassword::read_password_from_tty(Some("Password: "))?;
+    if password.is_empty() {
+        anyhow::bail!("Password cannot be empty");
+    }
+    let confirm = rpassword::read_password_from_tty(Some("Confirm password: "))?;
+    if password != confirm {
+        anyhow::bail!("Passwords do not match");
+    }
+
+    let hash = brightflow_auth::hash_password(&password)?;
+    let user = db.create_user(email, name, &hash, true).await?;
+
+    println!("Admin user created:");
+    println!("  ID:    {}", user.id);
+    println!("  Email: {}", user.email);
+    println!("  Name:  {}", user.display_name);
 
     Ok(())
 }

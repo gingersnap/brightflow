@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { useConnectionStore } from './connection';
 import { useUiStore } from './ui';
 import { useResultsStore } from './results';
 import { useQueryStore } from './query';
-import { datasetApi } from '@/services/api';
-import type { Column, MetadataMessage, ErrorMessage, WsMessage, LimitOperation } from '@/types';
+import { datasetApi, type LoadTableResponse } from '@/services/api';
+import type { Column } from '@/types';
 
 // Dataset summary from list endpoint
 export interface DatasetSummary {
@@ -40,67 +39,22 @@ export const useDatasetStore = defineStore('dataset', () => {
 
   const hasData = computed(() => columns.value.length > 0);
 
-  // Actions
-  function fetchMetadata(datasetId = 'default'): void {
-    const connectionStore = useConnectionStore();
-
-    if (!connectionStore.isConnected) {
-      error.value = 'Not connected';
-      loading.value = false;
-      return;
-    }
-
-    loading.value = true;
+  // Set state from a LoadTableResponse (REST-based, no WS needed)
+  function setFromLoadResponse(response: LoadTableResponse): void {
+    id.value = response.id;
+    name.value = response.name;
+    rowCount.value = response.rowCount;
+    columnCount.value = response.columnCount;
+    columns.value = response.columns;
+    loading.value = false;
     error.value = null;
 
-    // Timeout after 10 seconds
-    const timeout = setTimeout(() => {
-      if (loading.value) {
-        loading.value = false;
-        error.value = 'Request timed out';
-        unsubscribe();
-        unsubscribeError();
-      }
-    }, 10000);
+    // Reset UI state for new dataset
+    const uiStore = useUiStore();
+    uiStore.resetForNewDataset();
 
-    // Register one-time handler for metadata response
-    const unsubscribe = connectionStore.onMessage('metadata', (message: WsMessage) => {
-      const metaMsg = message as MetadataMessage;
-      if (metaMsg.dataset_id === datasetId) {
-        clearTimeout(timeout);
-        id.value = metaMsg.dataset_id;
-        name.value = metaMsg.name;
-        rowCount.value = metaMsg.row_count;
-        columnCount.value = metaMsg.columns?.length ?? 0;
-        columns.value = metaMsg.columns ?? [];
-        loading.value = false;
-        unsubscribe();
-        unsubscribeError();
-
-        // Reset UI state for new dataset
-        const uiStore = useUiStore();
-        uiStore.resetForNewDataset();
-
-        // Load raw table data
-        loadInitialData();
-      }
-    });
-
-    // Handle errors
-    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
-      const errMsg = message as ErrorMessage;
-      clearTimeout(timeout);
-      error.value = errMsg.message;
-      loading.value = false;
-      unsubscribe();
-      unsubscribeError();
-    });
-
-    // Send request
-    connectionStore.send({
-      type: 'getMetadata',
-      datasetId,
-    });
+    // Load initial table data via REST
+    loadInitialDataRest();
   }
 
   function getColumnByName(columnName: string): Column | undefined {
@@ -154,47 +108,32 @@ export const useDatasetStore = defineStore('dataset', () => {
 
     queryStore.reset();
     resultsStore.clear();
-
-    // Fetch metadata for the new dataset
-    fetchMetadata(datasetId);
   }
 
-  // Load initial table data after metadata is received
-  function loadInitialData(): void {
-    const connectionStore = useConnectionStore();
+  // Load initial table data via REST (LIMIT 100)
+  async function loadInitialDataRest(): Promise<void> {
     const resultsStore = useResultsStore();
     const queryStore = useQueryStore();
 
-    if (!connectionStore.isConnected || columns.value.length === 0) {
-      return;
-    }
+    if (columns.value.length === 0) return;
 
     resultsStore.setLoading(true);
 
-    const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
-      resultsStore.setTableResults(message);
-      unsubscribeResult();
-      unsubscribeError();
-    });
+    try {
+      const ops: Array<{ type: string; n?: number }> = [];
+      if (queryStore.limit > 0) {
+        ops.push({ type: 'limit', n: queryStore.limit });
+      }
 
-    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
-      const errMsg = message as ErrorMessage;
-      resultsStore.setError(errMsg.message);
-      unsubscribeResult();
-      unsubscribeError();
-    });
-
-    // Query with limit from query store (default 100)
-    const ops: LimitOperation[] = [];
-    if (queryStore.limit > 0) {
-      ops.push({ type: 'limit', n: queryStore.limit });
+      const result = await datasetApi.query(id.value, ops);
+      if (result) {
+        resultsStore.setTableResults(result as unknown as Record<string, unknown>);
+      }
+    } catch (e) {
+      console.error('[Dataset] Failed to load initial data:', e);
+      const msg = e instanceof Error ? e.message : 'Failed to load data';
+      resultsStore.setError(msg);
     }
-
-    connectionStore.send({
-      type: 'query',
-      datasetId: id.value,
-      operations: ops,
-    });
   }
 
   return {
@@ -214,7 +153,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     stringColumns,
     hasData,
     // Actions
-    fetchMetadata,
+    setFromLoadResponse,
     fetchAvailableDatasets,
     switchDataset,
     getColumnByName,

@@ -1,4 +1,4 @@
-use crate::analytics::session::{ColumnInfo, DatasetInfo};
+use crate::analytics::session::ColumnInfo;
 use serde::{Deserialize, Serialize};
 
 /// Main query structure - a chain of operations applied sequentially
@@ -122,15 +122,6 @@ pub enum WsClientMessage {
 
     /// Heartbeat ping
     Ping,
-
-    /// Request dataset metadata
-    GetMetadata {
-        #[serde(default = "default_dataset_id", rename = "datasetId")]
-        dataset_id: String,
-    },
-
-    /// List all available datasets
-    ListDatasets,
 }
 
 /// WebSocket message to client
@@ -145,17 +136,6 @@ pub enum WsServerMessage {
 
     /// Heartbeat response
     Pong,
-
-    /// Dataset metadata response
-    Metadata {
-        dataset_id: String,
-        name: String,
-        row_count: usize,
-        columns: Vec<ColumnInfo>,
-    },
-
-    /// List of datasets
-    DatasetList { datasets: Vec<DatasetInfo> },
 
     /// Connection established acknowledgment
     Connected { server_version: String },

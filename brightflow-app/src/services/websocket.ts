@@ -189,13 +189,7 @@ export class WebSocketClient {
   }
 }
 
-// Singleton instance
-let client: WebSocketClient | null = null;
-
-export function getWebSocketClient(): WebSocketClient {
-  if (!client) {
-    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/ws';
-    client = new WebSocketClient(wsUrl);
-  }
-  return client;
+export function createWebSocketClient(): WebSocketClient {
+  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/ws';
+  return new WebSocketClient(wsUrl);
 }

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { getWebSocketClient, type WebSocketClient } from '@/services/websocket';
+import { createWebSocketClient, type WebSocketClient } from '@/services/websocket';
 import type { ConnectionStatus, WsMessage, ConnectedMessage } from '@/types';
 
 type MessageHandler = (message: WsMessage) => void;
@@ -64,9 +64,7 @@ export const useConnectionStore = defineStore('connection', () => {
       }
 
       case 'queryResult':
-      case 'error':
-      case 'metadata':
-      case 'datasetList': {
+      case 'error': {
         // Route to registered handlers
         const handlers = messageHandlers.get(type) ?? [];
         console.log('[WS] Routing to', handlers.length, 'handlers');
@@ -86,7 +84,9 @@ export const useConnectionStore = defineStore('connection', () => {
     }
 
     status.value = 'connecting';
-    client = getWebSocketClient();
+
+    // Create fresh client instance to avoid stale state
+    client = createWebSocketClient();
 
     client.on('open', () => {
       status.value = 'connecting'; // Wait for 'connected' message
@@ -114,6 +114,7 @@ export const useConnectionStore = defineStore('connection', () => {
       client = null;
     }
     status.value = 'disconnected';
+    messageHandlers.clear();
   }
 
   function send(message: unknown): void {

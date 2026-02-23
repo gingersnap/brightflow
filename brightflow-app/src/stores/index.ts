@@ -11,6 +11,7 @@ import { useInsightsStore } from './insights';
 /**
  * Reset all stores to initial state.
  * Used when switching datasets to ensure clean slate.
+ * Note: Auth store is NOT reset here — it persists across dataset switches.
  */
 export function resetAllStores(): void {
   const queryStore = useQueryStore();
@@ -37,3 +38,4 @@ export { useUiStore } from './ui';
 export { useConnectionStore } from './connection';
 export { useInsightsStore } from './insights';
 export { useConnectStore } from './connect';
+export { useAuthStore } from './auth';

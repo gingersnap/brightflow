@@ -13,11 +13,13 @@ brightflow-store = { path = "../brightflow-store" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-insights = { path = "../brightflow-insights" }
 brightflow-scheduler = { path = "../brightflow-scheduler" }
+brightflow-auth = { path = "../brightflow-auth" }
 
 # Web framework
 axum = { workspace = true }
 tokio = { workspace = true }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+time = "0.3"
 
 # Data processing
 polars = { workspace = true }

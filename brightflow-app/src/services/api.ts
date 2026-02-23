@@ -27,6 +27,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
       'Content-Type': 'application/json',
       ...restOptions.headers,
     },
+    credentials: 'include',
     ...restOptions,
   };
 
@@ -37,6 +38,12 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const response = await fetch(url, config);
 
   if (!response.ok) {
+    // Handle 401 for non-auth endpoints: clear auth state
+    if (response.status === 401 && !endpoint.startsWith('/api/auth/')) {
+      const { useAuthStore } = await import('@/stores/auth');
+      const authStore = useAuthStore();
+      authStore.clearAuth();
+    }
     const data = (await response.json().catch(() => ({}))) as { message?: string };
     throw new ApiError(data.message ?? `Request failed: ${response.status}`, response.status, data);
   }
@@ -182,6 +189,22 @@ export const insightsApi = {
     api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
 };
 
+// Auth types
+interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  isAdmin: boolean;
+}
+
+// Auth API
+export const authApi = {
+  login: (email: string, password: string): Promise<AuthUser | null> =>
+    api.post<AuthUser>('/api/auth/login', { email, password }),
+  logout: (): Promise<unknown> => api.post('/api/auth/logout'),
+  me: (): Promise<AuthUser | null> => api.get<AuthUser>('/api/auth/me'),
+};
+
 // Dataset-specific API methods (for loaded datasets)
 export const datasetApi = {
   list: (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
@@ -193,6 +216,7 @@ export const datasetApi = {
     const response = await fetch(`${API_BASE}/api/datasets/upload`, {
       method: 'POST',
       body: formData,
+      credentials: 'include',
     });
 
     if (!response.ok) {
