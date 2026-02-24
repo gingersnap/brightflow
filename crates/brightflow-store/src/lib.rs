@@ -28,7 +28,7 @@ mod table;
 
 pub use brightflow_core::{DatasetId, DatasetMeta, StorageConfig, TenantId};
 pub use error::{StoreError, StoreResult};
-pub use ingest::{IngestMode, IngestOptions};
+pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use table::{TableInfo, TableRef};
 
 use std::path::{Path, PathBuf};
@@ -164,6 +164,24 @@ impl DeltaStore {
             return Err(StoreError::TableNotFound(name.to_string()));
         }
         table::get_parquet_paths(&path)
+    }
+
+    /// Merge (upsert) a Parquet file into a table by primary key.
+    /// Uses Delta MERGE to update existing rows and insert new ones.
+    pub async fn merge_parquet(
+        &self,
+        table_name: &str,
+        parquet_path: impl AsRef<Path>,
+        primary_keys: &[String],
+    ) -> StoreResult<MergeMetrics> {
+        let table_path = self.table_path(table_name);
+        info!(
+            "Merging parquet {:?} into table '{}' with PKs {:?}",
+            parquet_path.as_ref(),
+            table_name,
+            primary_keys
+        );
+        ingest::merge_parquet(&table_path, parquet_path.as_ref(), primary_keys).await
     }
 
     /// Delete a table

@@ -1,0 +1,136 @@
+name = "GitHub Pull Requests"
+description = "Pull requests with code change metrics and review activity"
+
+[settings]
+time_granularity = "week"
+comparison_periods = 4
+
+[[columns]]
+name = "created_at"
+type = "time"
+label = "Created At"
+
+[[columns]]
+name = "additions"
+type = "kpi"
+label = "Lines Added"
+
+[[columns]]
+name = "deletions"
+type = "kpi"
+label = "Lines Deleted"
+
+[[columns]]
+name = "changed_files"
+type = "kpi"
+label = "Files Changed"
+
+[[columns]]
+name = "commits"
+type = "metric"
+label = "Commits"
+
+[[columns]]
+name = "comments"
+type = "metric"
+label = "Comments"
+
+[[columns]]
+name = "review_comments"
+type = "metric"
+label = "Review Comments"
+
+[[columns]]
+name = "state"
+type = "dimension"
+label = "State"
+
+[[columns]]
+name = "draft"
+type = "dimension"
+label = "Draft"
+
+[[columns]]
+name = "author_association"
+type = "dimension"
+label = "Author Association"
+
+[[columns]]
+name = "user_login"
+type = "dimension"
+label = "Author"
+
+[[columns]]
+name = "base_ref"
+type = "dimension"
+label = "Base Branch"
+
+[[columns]]
+name = "merged_by_login"
+type = "dimension"
+label = "Merged By"
+
+[[columns]]
+name = "label_names"
+type = "dimension"
+label = "Labels"
+
+[[columns]]
+name = "id"
+type = "ignored"
+
+[[columns]]
+name = "number"
+type = "ignored"
+
+[[columns]]
+name = "title"
+type = "ignored"
+
+[[columns]]
+name = "body"
+type = "ignored"
+
+[[columns]]
+name = "html_url"
+type = "ignored"
+
+[[columns]]
+name = "updated_at"
+type = "ignored"
+
+[[columns]]
+name = "closed_at"
+type = "ignored"
+
+[[columns]]
+name = "merged_at"
+type = "ignored"
+
+[[columns]]
+name = "head_ref"
+type = "ignored"
+
+[[columns]]
+name = "head_sha"
+type = "ignored"
+
+[[columns]]
+name = "base_sha"
+type = "ignored"
+
+[[columns]]
+name = "merge_commit_sha"
+type = "ignored"
+
+[[columns]]
+name = "milestone_title"
+type = "ignored"
+
+[[columns]]
+name = "reviewer_logins"
+type = "ignored"
+
+[[columns]]
+name = "user_id"
+type = "ignored"

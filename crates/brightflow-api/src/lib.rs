@@ -17,6 +17,7 @@ pub mod auth;
 pub mod connect;
 pub mod insights;
 pub mod routes;
+pub mod scheduler;
 pub mod shared;
 pub mod state;
 
@@ -200,7 +201,22 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
     }
 
     let auth_db = AuthDb::new(&database_url).await?;
-    state.auth_db = Some(Arc::new(auth_db.clone()));
+    let auth_db_arc = Arc::new(auth_db.clone());
+    state.auth_db = Some(Arc::clone(&auth_db_arc));
+
+    // Initialize scheduler if delta store is available
+    if let Some(store) = state.delta_store() {
+        let scheduler =
+            brightflow_scheduler::Scheduler::new(Arc::clone(&auth_db_arc), Arc::clone(store));
+        let scheduler = Arc::new(scheduler);
+        state.scheduler = Some(Arc::clone(&scheduler));
+
+        // Start scheduler background loop
+        tokio::spawn(async move {
+            scheduler.start().await;
+        });
+        tracing::info!("Scheduler started with SQLite-backed jobs");
+    }
 
     // Session store: SQLite with Moka in-memory cache
     let session_store = SqliteStore::new(auth_db.pool().clone());

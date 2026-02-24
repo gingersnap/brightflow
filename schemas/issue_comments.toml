@@ -1,0 +1,50 @@
+name = "GitHub Issue Comments"
+description = "Comments on issues and pull requests with engagement metrics"
+
+[settings]
+time_granularity = "week"
+comparison_periods = 4
+
+[[columns]]
+name = "created_at"
+type = "time"
+label = "Created At"
+
+[[columns]]
+name = "reactions_total"
+type = "kpi"
+label = "Reactions"
+
+[[columns]]
+name = "author_association"
+type = "dimension"
+label = "Author Association"
+
+[[columns]]
+name = "user_login"
+type = "dimension"
+label = "Author"
+
+[[columns]]
+name = "id"
+type = "ignored"
+
+[[columns]]
+name = "issue_number"
+type = "ignored"
+
+[[columns]]
+name = "body"
+type = "ignored"
+
+[[columns]]
+name = "html_url"
+type = "ignored"
+
+[[columns]]
+name = "updated_at"
+type = "ignored"
+
+[[columns]]
+name = "user_id"
+type = "ignored"

@@ -3,6 +3,7 @@ import { onMounted } from 'vue';
 import { RefreshCw } from 'lucide-vue-next';
 import { useConnectStore } from '@/stores/connect';
 import ConnectorCard from './ConnectorCard.vue';
+import SchedulerPanel from './SchedulerPanel.vue';
 
 const connectStore = useConnectStore();
 
@@ -16,6 +17,16 @@ async function refresh(): Promise<void> {
 
 function handleRun(name: string): void {
   connectStore.runConnector(name);
+}
+
+async function handleSchedule(name: string, intervalSecs: number): Promise<void> {
+  const result = await connectStore.scheduleConnector(name, intervalSecs);
+  if (result) {
+    // Refresh the scheduler panel to show the new/updated job
+    const { useSchedulerStore } = await import('@/stores/scheduler');
+    const schedulerStore = useSchedulerStore();
+    await schedulerStore.fetchJobs();
+  }
 }
 </script>
 
@@ -52,7 +63,7 @@ function handleRun(name: string): void {
       >
         <p class="text-muted mb-2">No connector configs found</p>
         <p class="text-xs text-muted">
-          Place YAML config files in the <code class="px-1 py-0.5 bg-elevated rounded">configs/</code> directory
+          Place TOML config files in the <code class="px-1 py-0.5 bg-elevated rounded">configs/</code> directory
         </p>
       </div>
 
@@ -65,6 +76,7 @@ function handleRun(name: string): void {
           :running="connectStore.isRunning(connector.name)"
           :last-run="connectStore.latestRun(connector.name)"
           @run="handleRun(connector.name)"
+          @schedule="handleSchedule(connector.name, $event)"
         />
       </div>
 
@@ -97,6 +109,11 @@ function handleRun(name: string): void {
             </span>
           </div>
         </div>
+      </div>
+
+      <!-- Scheduler Panel -->
+      <div class="mt-8">
+        <SchedulerPanel />
       </div>
     </div>
   </div>

@@ -6,6 +6,9 @@ return function(p)
     local owner = p.config.owner
     local repo = p.config.repo
 
+    -- Cursor values for incremental sync (injected by Brightflow scheduler)
+    local cursors = p.config._cursors or {}
+
     p.base_url("https://api.github.com")
 
     -- Auth: GitHub expects "token xxx" not "Bearer xxx"
@@ -81,6 +84,7 @@ return function(p)
             per_page = 100,
             sort = "updated",
             direction = "desc",
+            since = cursors.issues,  -- nil if no cursor (fetches all)
         },
         map = function(r)
             -- Extract assignee logins
@@ -138,6 +142,7 @@ return function(p)
             per_page = 100,
             sort = "updated",
             direction = "desc",
+            since = cursors.pull_requests,  -- nil if no cursor (fetches all)
         },
         map = function(r)
             -- Extract requested reviewer logins
@@ -223,6 +228,7 @@ return function(p)
             per_page = 100,
             sort = "updated",
             direction = "desc",
+            since = cursors.issue_comments,  -- nil if no cursor (fetches all)
         },
         map = function(r)
             -- Extract issue number from issue_url

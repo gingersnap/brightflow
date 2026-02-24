@@ -51,3 +51,20 @@ pub struct RunRequest {
     /// Only sync specific endpoints (comma-separated)
     pub only: Option<String>,
 }
+
+/// Request body for POST /connectors/:name/schedule
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRequest {
+    pub interval_secs: i64,
+}
+
+/// Response for POST /connectors/:name/schedule
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleResponse {
+    pub job_id: String,
+    pub connector_config_id: String,
+    pub interval_secs: i64,
+    pub enabled: bool,
+}

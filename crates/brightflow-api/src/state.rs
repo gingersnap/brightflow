@@ -72,10 +72,7 @@ impl AppState {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path
-                .extension()
-                .is_some_and(|ext| ext == "yaml" || ext == "yml")
-            {
+            if path.extension().is_some_and(|ext| ext == "toml") {
                 let table_name = path
                     .file_stem()
                     .and_then(|s| s.to_str())

@@ -1,164 +1,269 @@
 //! Brightflow Scheduler - Background job scheduling for data pipelines
 //!
-//! Manages recurring connector syncs and insights report generation.
+//! Manages recurring connector syncs backed by SQLite job definitions.
 
-use std::collections::HashMap;
+#![allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::wildcard_imports
+)]
+
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
+
+use brightflow_auth::AuthDb;
+use brightflow_connect::RunOptions;
+use brightflow_store::DeltaStore;
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
+use tracing::{error, info, warn};
 
-/// Unique identifier for a scheduled job
-pub type JobId = uuid::Uuid;
-
-/// The scheduler manages background jobs
+/// The scheduler reads job definitions from SQLite and manages execution.
 #[derive(Clone)]
 pub struct Scheduler {
-    jobs: Arc<RwLock<HashMap<JobId, JobEntry>>>,
-}
-
-/// Internal entry combining definition and runtime status
-struct JobEntry {
-    definition: JobDefinition,
-    status: JobStatus,
-}
-
-/// What to run, when, and with what configuration
-#[derive(Debug, Clone)]
-pub struct JobDefinition {
-    /// Human-readable name for this job
-    pub name: String,
-    /// What kind of job to run
-    pub kind: JobKind,
-    /// Cron-like interval in seconds (simplified for v1)
-    pub interval_secs: u64,
-}
-
-/// The type of work a job performs
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum JobKind {
-    /// Run a Longbow connector sync
-    ConnectorSync {
-        connector: String,
-        config_path: String,
-    },
-    /// Generate an insights report
-    InsightsReport {
-        report_type: String,
-        dataset: String,
-    },
-}
-
-/// Runtime status of a scheduled job
-#[derive(Debug, Clone)]
-pub struct JobStatus {
-    /// Unique job identifier
-    pub id: JobId,
-    /// Current state
-    pub state: JobState,
-    /// When the job last ran (if ever)
-    pub last_run: Option<std::time::Instant>,
-    /// Result of the last run
-    pub last_result: Option<String>,
-}
-
-/// Possible states for a job
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum JobState {
-    /// Waiting for next scheduled run
-    Idle,
-    /// Currently executing
-    Running,
-    /// Disabled by user
-    Paused,
+    db: Arc<AuthDb>,
+    store: Arc<DeltaStore>,
+    running: Arc<RwLock<HashSet<String>>>,
 }
 
 impl Scheduler {
-    /// Create a new scheduler
+    /// Create a new scheduler backed by SQLite
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(db: Arc<AuthDb>, store: Arc<DeltaStore>) -> Self {
         Self {
-            jobs: Arc::new(RwLock::new(HashMap::new())),
+            db,
+            store,
+            running: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
-    /// Start the scheduler background loop
-    ///
-    /// This runs forever, ticking every second to check for jobs that need to run.
+    /// Start the scheduler background loop (ticks every 30 seconds)
     pub async fn start(&self) {
-        tracing::info!("Scheduler started");
+        info!("Scheduler started");
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-            self.tick().await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            if let Err(e) = self.tick().await {
+                error!("Scheduler tick error: {e}");
+            }
         }
     }
 
-    /// Add a new job to the scheduler
-    pub async fn add_job(&self, definition: JobDefinition) -> JobId {
-        let id = JobId::new_v4();
-        let entry = JobEntry {
-            definition,
-            status: JobStatus {
-                id,
-                state: JobState::Idle,
-                last_run: None,
-                last_result: None,
-            },
-        };
-        self.jobs.write().await.insert(id, entry);
-        tracing::info!("Added job {id}");
-        id
-    }
+    /// Check enabled jobs and spawn any that are due
+    async fn tick(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let jobs = self.db.list_enabled_scheduler_jobs().await?;
 
-    /// Remove a job from the scheduler
-    pub async fn remove_job(&self, id: JobId) {
-        self.jobs.write().await.remove(&id);
-        tracing::info!("Removed job {id}");
-    }
-
-    /// List all jobs and their current status
-    pub async fn list_jobs(&self) -> Vec<(JobDefinition, JobStatus)> {
-        self.jobs
-            .read()
-            .await
-            .values()
-            .map(|e| (e.definition.clone(), e.status.clone()))
-            .collect()
-    }
-
-    /// Trigger a job to run immediately (regardless of schedule)
-    pub async fn trigger_now(&self, id: JobId) {
-        tracing::info!("Manual trigger for job {id}");
-        // TODO: spawn the job execution
-        let mut jobs = self.jobs.write().await;
-        if let Some(entry) = jobs.get_mut(&id) {
-            entry.status.last_run = Some(std::time::Instant::now());
-            entry.status.last_result =
-                Some("triggered (execution not yet implemented)".to_string());
-        }
-    }
-
-    /// Internal tick — check if any jobs need to run
-    async fn tick(&self) {
-        let jobs = self.jobs.read().await;
-        for (id, entry) in jobs.iter() {
-            if entry.status.state != JobState::Idle {
+        for job in jobs {
+            // Skip if already running
+            if self.running.read().await.contains(&job.id) {
                 continue;
             }
-            let should_run = match entry.status.last_run {
+
+            // Check if job is due
+            let should_run = match self.db.get_latest_sync_run_for_job(&job.id).await? {
                 None => true,
-                Some(last) => last.elapsed().as_secs() >= entry.definition.interval_secs,
+                Some(last_run) => {
+                    if let Ok(started) = last_run.started_at.parse::<DateTime<Utc>>() {
+                        let elapsed = Utc::now().signed_duration_since(started).num_seconds();
+                        elapsed >= job.interval_secs
+                    } else {
+                        true
+                    }
+                },
             };
+
             if should_run {
-                tracing::debug!("Job {id} ({}) is due to run", entry.definition.name);
-                // TODO: spawn actual job execution
+                info!("Spawning scheduled job '{}' ({})", job.name, job.id);
+                self.spawn_job(&job.id, &job.connector_id, Some(&job.id))
+                    .await;
             }
         }
+
+        Ok(())
+    }
+
+    /// Trigger an immediate run for a job (ignoring schedule)
+    pub async fn trigger_job(&self, job_id: &str) -> Result<String, String> {
+        let job = self
+            .db
+            .get_scheduler_job(job_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Job not found: {job_id}"))?;
+
+        let run_id = self
+            .spawn_job(&job.id, &job.connector_id, Some(job_id))
+            .await;
+        Ok(run_id)
+    }
+
+    /// Trigger an immediate run for a connector (without a scheduler job)
+    pub async fn trigger_connector_run(&self, connector_id: &str) -> Result<String, String> {
+        let run_id = self.spawn_job("adhoc", connector_id, None).await;
+        Ok(run_id)
+    }
+
+    /// Spawn a job execution in a background task
+    async fn spawn_job(&self, _job_key: &str, connector_id: &str, job_id: Option<&str>) -> String {
+        let db = Arc::clone(&self.db);
+        let store = Arc::clone(&self.store);
+        let running = Arc::clone(&self.running);
+        let connector_id_owned = connector_id.to_string();
+        let job_id_owned = job_id.map(ToString::to_string);
+
+        // Create sync run record
+        let run = match db
+            .create_sync_run(job_id, &connector_id_owned, "running")
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to create sync run: {e}");
+                return String::new();
+            },
+        };
+
+        let run_id = run.id.clone();
+        let run_id_clone = run_id.clone();
+
+        // Mark as running
+        running.write().await.insert(
+            job_id_owned
+                .clone()
+                .unwrap_or_else(|| connector_id_owned.clone()),
+        );
+
+        tokio::spawn(async move {
+            let result = execute_sync(
+                &db,
+                &store,
+                &connector_id_owned,
+                &run.id,
+                job_id_owned.as_ref(),
+            )
+            .await;
+
+            // Remove from running set
+            let key = job_id_owned.unwrap_or(connector_id_owned);
+            running.write().await.remove(&key);
+
+            if let Err(e) = result {
+                error!("Sync run {} failed: {e}", run.id);
+            }
+        });
+
+        run_id_clone
     }
 }
 
-impl Default for Scheduler {
-    fn default() -> Self {
-        Self::new()
+/// Execute a full sync: load config, run connector, merge results, update state
+async fn execute_sync(
+    db: &AuthDb,
+    store: &DeltaStore,
+    connector_id: &str,
+    run_id: &str,
+    _job_id: Option<&String>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // 1. Load connector config
+    let config = db
+        .get_connector_config(connector_id)
+        .await?
+        .ok_or_else(|| format!("Connector config not found: {connector_id}"))?;
+
+    // 2. Load cursor values from sync_state
+    let sync_states = db.list_sync_states(connector_id).await?;
+    let cursor_values: HashMap<String, String> = sync_states
+        .iter()
+        .filter_map(|s| {
+            s.cursor_value
+                .as_ref()
+                .map(|v| (s.endpoint.clone(), v.clone()))
+        })
+        .collect();
+
+    // 3. Parse connector config JSON
+    let config_json: serde_json::Value = serde_json::from_str(&config.config_json)?;
+
+    // 4. Build run options with cursors
+    let options = RunOptions {
+        only: None,
+        dry_run: false,
+        cursor_values,
+    };
+
+    // 5. Resolve connector path
+    let connector_path = resolve_connector_path(&config.connector_path);
+
+    // 6. Run the connector
+    let result =
+        brightflow_connect::run_connector_with_config(&connector_path, config_json, &options)
+            .await
+            .map_err(|e| format!("Connector execution failed: {e}"))?;
+
+    // 7. For each output parquet, merge into Delta table
+    let output_dir = PathBuf::from(&result.output_path);
+    let mut total_rows: i64 = 0;
+
+    for endpoint in &result.endpoints_synced {
+        let parquet_file = output_dir.join(format!("{endpoint}.parquet"));
+        if !parquet_file.exists() {
+            warn!(
+                "Expected parquet file not found: {}",
+                parquet_file.display()
+            );
+            continue;
+        }
+
+        // Determine primary key for this endpoint
+        let primary_keys = primary_keys_for_endpoint(endpoint);
+
+        let metrics = store
+            .merge_parquet(endpoint, &parquet_file, &primary_keys)
+            .await
+            .map_err(|e| format!("Merge failed for {endpoint}: {e}"))?;
+
+        let rows = i64::try_from(metrics.rows_inserted + metrics.rows_updated).unwrap_or(i64::MAX);
+        total_rows += rows;
+
+        info!(
+            "Merged {endpoint}: {} inserted, {} updated",
+            metrics.rows_inserted, metrics.rows_updated
+        );
+
+        // 8. Update sync_state with new cursor value (updated_at from synced data)
+        let now = Utc::now().to_rfc3339();
+        db.upsert_sync_state(
+            connector_id,
+            endpoint,
+            Some("updated_at"),
+            Some(&now),
+            "success",
+            rows,
+        )
+        .await?;
     }
+
+    // 9. Update sync run as completed
+    let endpoints_json = serde_json::to_string(&result.endpoints_synced)?;
+    db.update_sync_run(run_id, "completed", Some(&endpoints_json), total_rows, None)
+        .await?;
+
+    info!("Sync run {run_id} completed: {total_rows} total rows");
+
+    Ok(())
+}
+
+/// Resolve connector path — try built-in first, then treat as absolute/relative path
+fn resolve_connector_path(connector_path: &str) -> PathBuf {
+    // Check if it's a built-in connector name (e.g., "github")
+    if let Some(builtin) = brightflow_connect::get_builtin_connector_path(connector_path) {
+        return builtin;
+    }
+    PathBuf::from(connector_path)
+}
+
+/// Return the primary keys for a given endpoint (for Delta MERGE upsert)
+fn primary_keys_for_endpoint(_endpoint: &str) -> Vec<String> {
+    // All known endpoints use "id" as primary key
+    vec!["id".to_string()]
 }

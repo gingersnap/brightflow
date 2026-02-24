@@ -1,0 +1,12 @@
+# GitHub Connector Configuration
+# Can also be set via GITHUB_TOKEN environment variable
+token = "${GITHUB_TOKEN}"
+
+# Repository owner (organization or username)
+owner = "anthropics"
+
+# Repository name
+repo = "claude-code"
+
+# Output path for Parquet files
+output_path = "./data/github"

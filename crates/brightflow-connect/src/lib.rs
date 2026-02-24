@@ -9,6 +9,7 @@ pub use longbow;
 
 use brightflow_core::{BrightflowError, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Configuration for a connector
@@ -20,10 +21,10 @@ pub struct ConnectorConfig {
     pub output_path: PathBuf,
 }
 
-/// Load connector configuration from a YAML file
+/// Load connector configuration from a TOML file
 pub fn load_config(path: &Path) -> Result<ConnectorConfig> {
     let content = std::fs::read_to_string(path)?;
-    serde_yaml::from_str(&content).map_err(|e| BrightflowError::Other(e.to_string()))
+    toml::from_str(&content).map_err(|e| BrightflowError::Other(e.to_string()))
 }
 
 /// Options for running a connector
@@ -33,72 +34,108 @@ pub struct RunOptions {
     pub only: Option<String>,
     /// Dry run mode - don't actually fetch data
     pub dry_run: bool,
+    /// Cursor values for incremental sync: endpoint -> cursor_value
+    pub cursor_values: HashMap<String, String>,
 }
 
-/// Run a connector with the given configuration
-///
-/// This executes the Longbow pipeline defined in the Lua connector file.
+/// Filter pipeline endpoints if --only is specified
+fn apply_endpoint_filter(pipeline: &mut longbow::pipeline::Pipeline, only: Option<&String>) {
+    if let Some(only_endpoints) = only {
+        let names: Vec<&str> = only_endpoints.split(',').map(str::trim).collect();
+        pipeline
+            .endpoints
+            .retain(|e| names.contains(&e.name.as_str()));
+    }
+}
+
+/// Extract result metadata from a pipeline
+fn build_result(pipeline: &longbow::pipeline::Pipeline, dry_run: bool) -> ConnectorResult {
+    ConnectorResult {
+        endpoints_synced: pipeline.endpoints.iter().map(|e| e.name.clone()).collect(),
+        dry_run,
+        output_path: pipeline
+            .output
+            .as_ref()
+            .map(|o| o.path.clone())
+            .unwrap_or_default(),
+    }
+}
+
+/// Run a connector with the given configuration (file-based config).
 pub async fn run_connector(
     connector_path: &Path,
     config_path: &Path,
     options: &RunOptions,
 ) -> Result<ConnectorResult> {
-    // Load the YAML config with environment variable substitution
     let config_str = config_path
         .to_str()
         .ok_or_else(|| BrightflowError::Other("Invalid config path".to_string()))?;
     let config = longbow::config::load_config(config_str)
         .map_err(|e| BrightflowError::Other(format!("Failed to load config: {e}")))?;
 
-    // Create the Lua runtime
     let lua = longbow::runtime::create_lua_runtime()
         .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
 
-    // Load the connector
     let connector_str = connector_path
         .to_str()
         .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
     let mut pipeline = longbow::pipeline::load_connector(&lua, connector_str, config)
         .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
 
-    // Filter endpoints if --only specified
-    if let Some(only_endpoints) = &options.only {
-        let names: Vec<&str> = only_endpoints.split(',').map(str::trim).collect();
-        pipeline
-            .endpoints
-            .retain(|e| names.contains(&e.name.as_str()));
-    }
-
-    // Get endpoint names for the result
-    let endpoint_names: Vec<String> = pipeline.endpoints.iter().map(|e| e.name.clone()).collect();
+    apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
     if options.dry_run {
-        return Ok(ConnectorResult {
-            endpoints_synced: endpoint_names,
-            dry_run: true,
-            output_path: pipeline
-                .output
-                .as_ref()
-                .map(|o| o.path.clone())
-                .unwrap_or_default(),
-        });
+        return Ok(build_result(&pipeline, true));
     }
 
-    // Execute the pipeline
     let http = longbow::http::HttpClient::new();
     longbow::pipeline::execute(&pipeline, &lua, &http)
         .await
         .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
 
-    Ok(ConnectorResult {
-        endpoints_synced: endpoint_names,
-        dry_run: false,
-        output_path: pipeline
-            .output
-            .as_ref()
-            .map(|o| o.path.clone())
-            .unwrap_or_default(),
-    })
+    Ok(build_result(&pipeline, false))
+}
+
+/// Run a connector with config passed directly as JSON (no file I/O).
+/// This is the primary API when Brightflow passes config from SQLite.
+pub async fn run_connector_with_config(
+    connector_path: &Path,
+    mut config: serde_json::Value,
+    options: &RunOptions,
+) -> Result<ConnectorResult> {
+    // Inject cursor values into the config
+    if !options.cursor_values.is_empty() {
+        if let Some(obj) = config.as_object_mut() {
+            let cursors = serde_json::to_value(&options.cursor_values)
+                .map_err(|e| BrightflowError::Other(e.to_string()))?;
+            obj.insert("_cursors".to_string(), cursors);
+        }
+    }
+
+    let processed_config = longbow::config::load_config_from_value(config)
+        .map_err(|e| BrightflowError::Other(format!("Failed to process config: {e}")))?;
+
+    let lua = longbow::runtime::create_lua_runtime()
+        .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
+
+    let connector_str = connector_path
+        .to_str()
+        .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
+    let mut pipeline = longbow::pipeline::load_connector(&lua, connector_str, processed_config)
+        .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
+
+    apply_endpoint_filter(&mut pipeline, options.only.as_ref());
+
+    if options.dry_run {
+        return Ok(build_result(&pipeline, true));
+    }
+
+    let http = longbow::http::HttpClient::new();
+    longbow::pipeline::execute(&pipeline, &lua, &http)
+        .await
+        .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
+
+    Ok(build_result(&pipeline, false))
 }
 
 /// Result of running a connector

@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use brightflow_connect::{get_builtin_connector_path, RunOptions};
-use brightflow_store::IngestOptions;
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -81,6 +81,7 @@ async fn execute_run(
     let options = RunOptions {
         only,
         dry_run: false,
+        cursor_values: HashMap::new(),
     };
 
     // Execute the connector
@@ -112,21 +113,16 @@ async fn execute_run(
                                     table_name
                                 );
 
-                                match store
-                                    .ingest_parquet(
-                                        &table_name,
-                                        &path,
-                                        Some(IngestOptions::default()),
-                                    )
-                                    .await
-                                {
-                                    Ok(info) => {
+                                // Use merge (upsert by id) instead of append
+                                let pks = vec!["id".to_string()];
+                                match store.merge_parquet(&table_name, &path, &pks).await {
+                                    Ok(metrics) => {
                                         tracing::info!(
-                                            "[{}] Table '{}' at version {}, {} files",
+                                            "[{}] Table '{}': {} inserted, {} updated",
                                             connector_name,
-                                            info.name,
-                                            info.version,
-                                            info.num_files
+                                            table_name,
+                                            metrics.rows_inserted,
+                                            metrics.rows_updated,
                                         );
                                         tables_ingested.push(table_name);
                                     },

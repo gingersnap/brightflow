@@ -8,6 +8,7 @@ use crate::analytics::handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::connect::handlers as connect_handlers;
 use crate::insights::handlers as insights_handlers;
+use crate::scheduler::handlers as scheduler_handlers;
 use crate::state::AppState;
 
 /// Create the main application router
@@ -47,14 +48,52 @@ fn api_routes() -> Router<AppState> {
             "/settings",
             get(auth_handlers::get_settings).put(auth_handlers::update_settings),
         )
-        // Connectors
+        // Connectors (file-based config listing + run)
         .route("/connectors", get(connect_handlers::list_connectors))
         .route(
             "/connectors/:name/run",
             post(connect_handlers::run_connector),
         )
+        .route(
+            "/connectors/:name/schedule",
+            post(connect_handlers::schedule_connector),
+        )
         .route("/connectors/runs", get(connect_handlers::list_runs))
         .route("/connectors/runs/:id", get(connect_handlers::get_run))
+        // Connector Config CRUD (DB-backed)
+        .route(
+            "/connector-configs",
+            get(scheduler_handlers::list_connector_configs)
+                .post(scheduler_handlers::create_connector_config),
+        )
+        .route(
+            "/connector-configs/{id}",
+            get(scheduler_handlers::get_connector_config)
+                .put(scheduler_handlers::update_connector_config)
+                .delete(scheduler_handlers::delete_connector_config),
+        )
+        // Scheduler Job CRUD
+        .route(
+            "/scheduler/jobs",
+            get(scheduler_handlers::list_jobs).post(scheduler_handlers::create_job),
+        )
+        .route(
+            "/scheduler/jobs/{id}",
+            get(scheduler_handlers::get_job)
+                .put(scheduler_handlers::update_job)
+                .delete(scheduler_handlers::delete_job),
+        )
+        .route(
+            "/scheduler/jobs/{id}/run",
+            post(scheduler_handlers::trigger_run),
+        )
+        // Sync Runs & State
+        .route("/sync/runs", get(scheduler_handlers::list_sync_runs))
+        .route("/sync/runs/{id}", get(scheduler_handlers::get_sync_run))
+        .route(
+            "/sync/state/{connector_id}",
+            get(scheduler_handlers::get_sync_state),
+        )
         .route_layer(middleware::from_fn(require_auth));
 
     public.merge(protected)

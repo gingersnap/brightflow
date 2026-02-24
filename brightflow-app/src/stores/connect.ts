@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref, onUnmounted } from 'vue';
-import { connectApi, type ConnectorInfo, type ConnectorRun } from '@/services/api';
+import {
+  connectApi,
+  type ConnectorInfo,
+  type ConnectorRun,
+  type ScheduleResponse,
+} from '@/services/api';
 
 export const useConnectStore = defineStore('connect', () => {
   const connectors = ref<ConnectorInfo[]>([]);
@@ -83,6 +88,19 @@ export const useConnectStore = defineStore('connect', () => {
     return runs.value.find((r) => r.connector === connectorName);
   }
 
+  async function scheduleConnector(
+    name: string,
+    intervalSecs: number,
+  ): Promise<ScheduleResponse | null> {
+    error.value = null;
+    try {
+      return await connectApi.scheduleConnector(name, intervalSecs);
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to schedule connector';
+      return null;
+    }
+  }
+
   onUnmounted(() => {
     stopPolling();
   });
@@ -98,6 +116,7 @@ export const useConnectStore = defineStore('connect', () => {
     runConnector,
     isRunning,
     latestRun,
+    scheduleConnector,
     stopPolling,
   };
 });

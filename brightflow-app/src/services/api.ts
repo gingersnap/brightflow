@@ -141,6 +141,13 @@ export interface RunResponse {
   status: RunStatus;
 }
 
+export interface ScheduleResponse {
+  jobId: string;
+  connectorConfigId: string;
+  intervalSecs: number;
+  enabled: boolean;
+}
+
 // Connector API
 export const connectApi = {
   listConnectors: (): Promise<ConnectorInfo[] | null> =>
@@ -150,6 +157,10 @@ export const connectApi = {
   listRuns: (): Promise<ConnectorRun[] | null> => api.get<ConnectorRun[]>('/api/connectors/runs'),
   getRun: (id: string): Promise<ConnectorRun | null> =>
     api.get<ConnectorRun>(`/api/connectors/runs/${id}`),
+  scheduleConnector: (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
+    api.post<ScheduleResponse>(`/api/connectors/${encodeURIComponent(name)}/schedule`, {
+      intervalSecs,
+    }),
 };
 
 // Insights API response

@@ -1,0 +1,104 @@
+name = "GitHub Issues"
+description = "Issues from the GitHub API including bugs, features, and discussions"
+
+[settings]
+time_granularity = "week"
+comparison_periods = 4
+
+[[columns]]
+name = "created_at"
+type = "time"
+label = "Created At"
+
+[[columns]]
+name = "comments"
+type = "kpi"
+label = "Comments"
+
+[[columns]]
+name = "reactions_total"
+type = "kpi"
+label = "Reactions"
+
+[[columns]]
+name = "state"
+type = "dimension"
+label = "State"
+
+[[columns]]
+name = "author_association"
+type = "dimension"
+label = "Author Association"
+
+[[columns]]
+name = "user_login"
+type = "dimension"
+label = "Author"
+
+[[columns]]
+name = "label_names"
+type = "dimension"
+label = "Labels"
+
+[[columns]]
+name = "is_pull_request"
+type = "dimension"
+label = "Is Pull Request"
+
+[[columns]]
+name = "locked"
+type = "dimension"
+label = "Locked"
+
+[[columns]]
+name = "state_reason"
+type = "dimension"
+label = "State Reason"
+
+[[columns]]
+name = "id"
+type = "ignored"
+
+[[columns]]
+name = "number"
+type = "ignored"
+
+[[columns]]
+name = "title"
+type = "ignored"
+
+[[columns]]
+name = "body"
+type = "ignored"
+
+[[columns]]
+name = "html_url"
+type = "ignored"
+
+[[columns]]
+name = "updated_at"
+type = "ignored"
+
+[[columns]]
+name = "closed_at"
+type = "ignored"
+
+[[columns]]
+name = "user_id"
+type = "ignored"
+
+[[columns]]
+name = "assignee_logins"
+type = "ignored"
+
+[[columns]]
+name = "milestone_number"
+type = "ignored"
+
+[[columns]]
+name = "milestone_title"
+type = "ignored"
+
+[[columns]]
+name = "active_lock_reason"
+type = "ignored"

@@ -8,7 +8,8 @@ brightflow-core = { path = "../brightflow-core" }
 longbow = "0.1"
 tokio = { workspace = true }
 serde = { workspace = true }
-serde_yaml = "0.9"
+serde_json = { workspace = true }
+toml = "0.8"
 
 [lints]
 workspace = true

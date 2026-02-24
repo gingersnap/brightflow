@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Play, CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-vue-next';
+import { Play, CheckCircle, XCircle, Clock, AlertTriangle, CalendarClock } from 'lucide-vue-next';
 import type { ConnectorInfo, ConnectorRun } from '@/services/api';
 
 defineProps<{
@@ -10,10 +10,25 @@ defineProps<{
 
 const emit = defineEmits<{
   run: [];
+  schedule: [intervalSecs: number];
 }>();
+
+const SCHEDULE_PRESETS = [
+  { label: 'No schedule', value: 0 },
+  { label: 'Every 1h', value: 3600 },
+  { label: 'Every 6h', value: 21600 },
+  { label: 'Every 12h', value: 43200 },
+  { label: 'Daily', value: 86400 },
+  { label: 'Weekly', value: 604800 },
+];
 
 function formatTime(dateStr: string): string {
   return new Date(dateStr).toLocaleString();
+}
+
+function handleScheduleChange(event: Event): void {
+  const value = Number((event.target as HTMLSelectElement).value);
+  emit('schedule', value);
 }
 </script>
 
@@ -34,15 +49,30 @@ function formatTime(dateStr: string): string {
         <p class="text-xs text-muted mt-0.5">{{ connector.connector }}</p>
       </div>
 
-      <UButton
-        size="sm"
-        :disabled="!connector.valid || running"
-        :loading="running"
-        @click="emit('run')"
+      <div class="flex items-center gap-2">
+        <UButton
+          size="sm"
+          :disabled="!connector.valid || running"
+          :loading="running"
+          @click="emit('run')"
+        >
+          <Play v-if="!running" class="w-3.5 h-3.5 mr-1" />
+          {{ running ? 'Running...' : 'Run' }}
+        </UButton>
+      </div>
+    </div>
+
+    <!-- Schedule selector -->
+    <div class="mt-3 pt-3 border-t border-default flex items-center gap-2">
+      <CalendarClock class="w-3.5 h-3.5 text-muted" />
+      <select
+        class="text-xs bg-elevated border border-default rounded px-2 py-1 text-muted cursor-pointer"
+        @change="handleScheduleChange"
       >
-        <Play v-if="!running" class="w-3.5 h-3.5 mr-1" />
-        {{ running ? 'Running...' : 'Run' }}
-      </UButton>
+        <option v-for="preset in SCHEDULE_PRESETS" :key="preset.value" :value="preset.value">
+          {{ preset.label }}
+        </option>
+      </select>
     </div>
 
     <!-- Last run status -->

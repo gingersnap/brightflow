@@ -17,6 +17,13 @@ use tracing::{debug, info};
 use crate::error::{StoreError, StoreResult};
 use crate::table::{path_to_url, table_exists};
 
+/// Metrics from a merge (upsert) operation
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MergeMetrics {
+    pub rows_updated: usize,
+    pub rows_inserted: usize,
+}
+
 /// Options for data ingestion
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IngestOptions {
@@ -123,6 +130,117 @@ fn df_to_arrow_batches(df: &DataFrame) -> StoreResult<Vec<RecordBatch>> {
 
     let batches: Vec<RecordBatch> = reader.collect::<Result<Vec<_>, _>>()?;
     Ok(batches)
+}
+
+/// Merge (upsert) a Parquet file into a Delta table by primary key.
+/// If the table doesn't exist yet, falls back to a plain ingest (create + write).
+pub async fn merge_parquet(
+    table_path: &Path,
+    parquet_path: &Path,
+    primary_keys: &[String],
+) -> StoreResult<MergeMetrics> {
+    use deltalake::datafusion::prelude::*;
+
+    if primary_keys.is_empty() {
+        return Err(StoreError::Other(
+            "merge_parquet requires at least one primary key".into(),
+        ));
+    }
+
+    if !parquet_path.exists() {
+        return Err(StoreError::FileNotFound(parquet_path.to_path_buf()));
+    }
+
+    // Read parquet file
+    let file = std::fs::File::open(parquet_path)?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
+    let arrow_schema = builder.schema().clone();
+    let reader = builder.build()?;
+
+    let batches: Vec<RecordBatch> = reader.collect::<Result<Vec<_>, _>>()?;
+    if batches.is_empty() {
+        debug!("Parquet file is empty, skipping merge");
+        return Ok(MergeMetrics::default());
+    }
+
+    let exists = table_exists(table_path).await?;
+
+    if !exists {
+        // First run: create table via normal ingest
+        let row_count: usize = batches.iter().map(RecordBatch::num_rows).sum();
+        let opts = IngestOptions::default();
+        write_batches_to_delta(table_path, &arrow_schema, batches, &opts).await?;
+        return Ok(MergeMetrics {
+            rows_updated: 0,
+            rows_inserted: row_count,
+        });
+    }
+
+    // Open existing table
+    let url = path_to_url(table_path)?;
+    let table = deltalake::open_table(url).await?;
+
+    // Build DataFusion DataFrame from batches
+    let ctx = SessionContext::new();
+    let mem_table =
+        deltalake::datafusion::datasource::MemTable::try_new(arrow_schema.clone(), vec![batches])
+            .map_err(|e| StoreError::Other(e.to_string()))?;
+    ctx.register_table("source_data", Arc::new(mem_table))
+        .map_err(|e| StoreError::Other(e.to_string()))?;
+    let source_df = ctx
+        .table("source_data")
+        .await
+        .map_err(|e| StoreError::Other(e.to_string()))?;
+
+    // Build predicate: source.pk1 = target.pk1 AND source.pk2 = target.pk2
+    let predicate = primary_keys
+        .iter()
+        .map(|pk| col(format!("source.{pk}")).eq(col(format!("target.{pk}"))))
+        .reduce(Expr::and)
+        .ok_or_else(|| StoreError::Other("Failed to build merge predicate".into()))?;
+
+    // Collect all column names from the schema
+    let all_columns: Vec<String> = arrow_schema
+        .fields()
+        .iter()
+        .map(|f| f.name().clone())
+        .collect();
+
+    let pk_set: std::collections::HashSet<&str> = primary_keys.iter().map(String::as_str).collect();
+
+    let (_, metrics) = table
+        .merge(source_df, predicate)
+        .with_source_alias("source")
+        .with_target_alias("target")
+        .when_matched_update(|mut update| {
+            // Update all non-PK columns from source
+            for col_name in &all_columns {
+                if !pk_set.contains(col_name.as_str()) {
+                    update = update.update(col_name.as_str(), col(format!("source.{col_name}")));
+                }
+            }
+            update
+        })
+        .map_err(|e| StoreError::Other(format!("merge when_matched_update: {e}")))?
+        .when_not_matched_insert(|mut insert| {
+            // Insert all columns from source
+            for col_name in &all_columns {
+                insert = insert.set(col_name.as_str(), col(format!("source.{col_name}")));
+            }
+            insert
+        })
+        .map_err(|e| StoreError::Other(format!("merge when_not_matched_insert: {e}")))?
+        .await?;
+
+    info!(
+        "Delta MERGE complete: {} updated, {} inserted",
+        metrics.num_target_rows_updated, metrics.num_target_rows_inserted
+    );
+
+    Ok(MergeMetrics {
+        rows_updated: metrics.num_target_rows_updated,
+        rows_inserted: metrics.num_target_rows_inserted,
+    })
 }
 
 /// Write Arrow batches to a Delta table

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import {
   Database,
   ChevronDown,
@@ -16,11 +17,27 @@ import { useColorMode } from '@vueuse/core';
 import { useDatasetStore } from '@/stores/dataset';
 import { useAuthStore, type DataMode } from '@/stores/auth';
 import { useUiStore, type AppMode } from '@/stores/ui';
+import { useSchedulerStore } from '@/stores/scheduler';
 
 const datasetStore = useDatasetStore();
 const authStore = useAuthStore();
 const uiStore = useUiStore();
+const schedulerStore = useSchedulerStore();
 const colorMode = useColorMode();
+
+const lastSyncTime = computed(() => {
+  const latestRun = schedulerStore.runs.find((r) => r.status === 'completed');
+  if (!latestRun?.finishedAt) return null;
+
+  const date = new Date(latestRun.finishedAt);
+  const now = Date.now();
+  const diff = now - date.getTime();
+
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.round(diff / 3600000)}h ago`;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+});
 
 defineProps<{
   currentDataset: string | null;
@@ -178,6 +195,9 @@ async function toggleDataMode(): Promise<void> {
           {{ datasetStore.hasData ? (datasetStore.name ?? 'Dataset loaded') : 'No dataset' }}
           <span v-if="datasetStore.hasData && datasetStore.dataMode" class="ml-1 opacity-70">
             [{{ datasetStore.dataMode }}]
+          </span>
+          <span v-if="lastSyncTime" class="ml-1 opacity-70">
+            · synced {{ lastSyncTime }}
           </span>
         </span>
       </div>

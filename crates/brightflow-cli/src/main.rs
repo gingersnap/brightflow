@@ -36,7 +36,7 @@ use brightflow_insights::debug::DebugLog;
 use brightflow_insights::output::html::write_html;
 use brightflow_insights::output::json::write_output;
 use brightflow_insights::output::markdown::write_markdown;
-use brightflow_scheduler::Scheduler;
+// Scheduler is now integrated into the API server
 use brightflow_store::{DeltaStore, IngestMode, IngestOptions};
 
 #[derive(Parser, Debug)]
@@ -333,14 +333,8 @@ async fn main() -> Result<()> {
                 database_url,
             );
 
-            // Run API and scheduler concurrently
-            let scheduler = Scheduler::new();
-            tokio::select! {
-                result = brightflow_api::serve(config) => {
-                    result?;
-                }
-                () = scheduler.start() => {}
-            }
+            // Scheduler is now integrated into the API server (started automatically)
+            brightflow_api::serve(config).await?;
         },
 
         Commands::Serve {
@@ -368,8 +362,8 @@ async fn main() -> Result<()> {
 
         Commands::Schedule => {
             init_tracing("brightflow=info");
-            let scheduler = Scheduler::new();
-            scheduler.start().await;
+            println!("Scheduler is now integrated into the API server.");
+            println!("Use `brightflow run-all` or `brightflow serve` to start with the scheduler enabled.");
         },
 
         Commands::Insights(insights_cmd) => match insights_cmd {
@@ -584,7 +578,11 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
             tracing::info!("Running connector: {}", connector);
             tracing::info!("Config: {}", config.display());
 
-            let options = RunOptions { only, dry_run };
+            let options = RunOptions {
+                only,
+                dry_run,
+                cursor_values: std::collections::HashMap::new(),
+            };
             let result = run_connector(&connector_path, &config, &options).await?;
 
             if result.dry_run {
