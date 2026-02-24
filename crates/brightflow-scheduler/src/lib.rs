@@ -40,6 +40,10 @@ impl Scheduler {
 
     /// Start the scheduler background loop (ticks every 30 seconds)
     pub async fn start(&self) {
+        // Clean up any stale "running" records from a previous crash/restart
+        if let Err(e) = self.cleanup_stale_runs().await {
+            error!("Failed to clean up stale runs: {e}");
+        }
         info!("Scheduler started");
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
@@ -47,6 +51,15 @@ impl Scheduler {
                 error!("Scheduler tick error: {e}");
             }
         }
+    }
+
+    /// Delete any stale sync runs from a previous crash/restart
+    async fn cleanup_stale_runs(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let deleted = self.db.delete_stale_sync_runs().await?;
+        if deleted > 0 {
+            info!("Deleted {deleted} stale sync run(s) from previous session");
+        }
+        Ok(())
     }
 
     /// Check enabled jobs and spawn any that are due
@@ -149,6 +162,13 @@ impl Scheduler {
 
             if let Err(e) = result {
                 error!("Sync run {} failed: {e}", run.id);
+                // Mark the sync run as failed in the database
+                if let Err(db_err) = db
+                    .update_sync_run(&run.id, "failed", None, 0, Some(&e.to_string()))
+                    .await
+                {
+                    error!("Failed to update sync run {} as failed: {db_err}", run.id);
+                }
             }
         });
 
@@ -181,8 +201,9 @@ async fn execute_sync(
         })
         .collect();
 
-    // 3. Parse connector config JSON
-    let config_json: serde_json::Value = serde_json::from_str(&config.config_json)?;
+    // 3. Parse connector config JSON and expand env vars (e.g. "${GITHUB_TOKEN}")
+    let raw_config: serde_json::Value = serde_json::from_str(&config.config_json)?;
+    let config_json = substitute_env_vars_in_json(raw_config);
 
     // 4. Build run options with cursors
     let options = RunOptions {
@@ -266,4 +287,48 @@ fn resolve_connector_path(connector_path: &str) -> PathBuf {
 fn primary_keys_for_endpoint(_endpoint: &str) -> Vec<String> {
     // All known endpoints use "id" as primary key
     vec!["id".to_string()]
+}
+
+/// Recursively expand `${ENV_VAR}` patterns in JSON string values
+fn substitute_env_vars_in_json(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(s) => {
+            if s.contains("${") {
+                let expanded = substitute_env_vars_str(&s);
+                serde_json::Value::String(expanded)
+            } else {
+                serde_json::Value::String(s)
+            }
+        },
+        serde_json::Value::Object(map) => {
+            let expanded = map
+                .into_iter()
+                .map(|(k, v)| (k, substitute_env_vars_in_json(v)))
+                .collect();
+            serde_json::Value::Object(expanded)
+        },
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(substitute_env_vars_in_json).collect())
+        },
+        other => other,
+    }
+}
+
+fn substitute_env_vars_str(s: &str) -> String {
+    let mut result = s.to_string();
+    while let Some(start) = result.find("${") {
+        if let Some(end) = result[start..].find('}') {
+            let var_name = &result[start + 2..start + end];
+            let replacement = std::env::var(var_name).unwrap_or_default();
+            result = format!(
+                "{}{}{}",
+                &result[..start],
+                replacement,
+                &result[start + end + 1..]
+            );
+        } else {
+            break;
+        }
+    }
+    result
 }

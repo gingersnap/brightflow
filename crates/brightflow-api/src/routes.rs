@@ -51,15 +51,21 @@ fn api_routes() -> Router<AppState> {
         // Connectors (file-based config listing + run)
         .route("/connectors", get(connect_handlers::list_connectors))
         .route(
+            "/connectors/unified",
+            get(connect_handlers::list_unified_connectors),
+        )
+        .route(
             "/connectors/:name/run",
             post(connect_handlers::run_connector),
+        )
+        .route(
+            "/connectors/:name/runs",
+            get(connect_handlers::list_connector_runs),
         )
         .route(
             "/connectors/:name/schedule",
             post(connect_handlers::schedule_connector),
         )
-        .route("/connectors/runs", get(connect_handlers::list_runs))
-        .route("/connectors/runs/:id", get(connect_handlers::get_run))
         // Connector Config CRUD (DB-backed)
         .route(
             "/connector-configs",

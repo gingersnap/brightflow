@@ -1,13 +1,12 @@
 use axum::extract::{Path, State};
 use axum::Json;
-use uuid::Uuid;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
-use super::runner::spawn_connector_run;
 use super::types::{
-    ConnectorInfo, ConnectorRun, RunRequest, RunResponse, ScheduleRequest, ScheduleResponse,
+    ConnectorInfo, RunRequest, RunTriggerResponse, ScheduleRequest, ScheduleResponse,
+    UnifiedConnector, UnifiedJob, UnifiedSyncRun,
 };
 
 /// GET /api/connectors — list configured connectors from config dir
@@ -46,55 +45,175 @@ pub async fn list_connectors(State(state): State<AppState>) -> AppResult<Json<Ve
     Ok(Json(connectors))
 }
 
-/// POST /api/connectors/:name/run — trigger a connector run
-pub async fn run_connector(
+/// GET /api/connectors/unified — unified view: config + schedule + last run per connector
+pub async fn list_unified_connectors(
     State(state): State<AppState>,
-    Path(name): Path<String>,
-    body: Option<Json<RunRequest>>,
-) -> AppResult<Json<RunResponse>> {
+) -> AppResult<Json<Vec<UnifiedConnector>>> {
     let config_dir = state.connector_config_dir.as_ref().ok_or_else(|| {
         AppError::BadRequest("No connector config directory configured".to_string())
     })?;
 
+    if !config_dir.exists() || !config_dir.is_dir() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let db = state
+        .auth_db
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+
+    let entries = std::fs::read_dir(config_dir)
+        .map_err(|e| AppError::Internal(format!("Failed to read config dir: {e}")))?;
+
+    // Load all jobs once for lookup
+    let all_jobs = db
+        .list_scheduler_jobs()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    let mut results = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "toml") {
+            continue;
+        }
+
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let valid = brightflow_connect::get_builtin_connector_path(&name).is_some();
+
+        // Look up DB connector config by name
+        let db_config = db
+            .get_connector_config_by_name(&name)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        let (job, last_run) = if let Some(config) = &db_config {
+            // Find scheduler job for this connector
+            let job = all_jobs
+                .iter()
+                .find(|j| j.connector_id == config.id)
+                .map(|j| UnifiedJob {
+                    id: j.id.clone(),
+                    interval_secs: j.interval_secs,
+                    enabled: j.enabled,
+                });
+
+            // Find latest sync run for this connector
+            let latest = db
+                .get_latest_sync_run_for_connector(&config.id)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+
+            let last_run = latest.map(|r| UnifiedSyncRun {
+                id: r.id,
+                status: r.status,
+                started_at: r.started_at,
+                finished_at: r.finished_at,
+                rows_synced: r.rows_synced,
+                error: r.error,
+            });
+
+            (job, last_run)
+        } else {
+            (None, None)
+        };
+
+        results.push(UnifiedConnector {
+            connector: name.clone(),
+            name,
+            valid,
+            job,
+            last_run,
+        });
+    }
+
+    Ok(Json(results))
+}
+
+/// GET /api/connectors/:name/runs — run history for a specific connector
+pub async fn list_connector_runs(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> AppResult<Json<Vec<brightflow_auth::SyncRun>>> {
+    let db = state
+        .auth_db
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+
+    // Find DB connector config by name
+    let config = db
+        .get_connector_config_by_name(&name)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound(format!("No sync history for connector '{name}'")))?;
+
+    let runs = db
+        .list_sync_runs_for_connector(&config.id, 50)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    Ok(Json(runs))
+}
+
+/// POST /api/connectors/:name/run — trigger a connector run via the scheduler
+pub async fn run_connector(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    _body: Option<Json<RunRequest>>,
+) -> AppResult<Json<RunTriggerResponse>> {
+    let db = state
+        .auth_db
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+
+    let config_dir = state.connector_config_dir.as_ref().ok_or_else(|| {
+        AppError::BadRequest("No connector config directory configured".to_string())
+    })?;
+
+    let scheduler = state
+        .scheduler
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Scheduler not configured".to_string()))?;
+
+    // Ensure config file exists
     let config_path = find_config_file(config_dir, &name)?;
 
-    let only = body.and_then(|b| b.0.only);
+    // Find or create DB connector config (same pattern as schedule_connector)
+    let connector_config = if let Some(existing) = db
+        .get_connector_config_by_name(&name)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+    {
+        existing
+    } else {
+        let config_content = std::fs::read_to_string(&config_path)
+            .map_err(|e| AppError::Internal(format!("Failed to read config: {e}")))?;
+        let config_value: serde_json::Value = toml::from_str(&config_content)
+            .map_err(|e| AppError::Internal(format!("Failed to parse config TOML: {e}")))?;
+        let config_json =
+            serde_json::to_string(&config_value).map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let run_id = spawn_connector_run(&state, &name, &config_path, only)?;
+        db.create_connector_config(&name, &name, &config_json)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+    };
 
-    Ok(Json(RunResponse {
+    // Trigger an ad-hoc run via the scheduler
+    let run_id = scheduler
+        .trigger_connector_run(&connector_config.id)
+        .await
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(RunTriggerResponse {
         run_id,
         connector: name,
-        status: super::types::RunStatus::Pending,
+        status: "running".to_string(),
     }))
-}
-
-/// GET /api/connectors/runs — list all runs
-pub async fn list_runs(State(state): State<AppState>) -> Json<Vec<ConnectorRun>> {
-    let mut runs: Vec<ConnectorRun> = state
-        .connector_runs
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    // Sort by started_at descending (newest first)
-    runs.sort_by(|a, b| b.started_at.cmp(&a.started_at));
-
-    Json(runs)
-}
-
-/// GET /api/connectors/runs/:id — get a specific run
-pub async fn get_run(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> AppResult<Json<ConnectorRun>> {
-    let run = state
-        .connector_runs
-        .get(&id)
-        .map(|entry| entry.value().clone())
-        .ok_or_else(|| AppError::NotFound(format!("Run {id} not found")))?;
-
-    Ok(Json(run))
 }
 
 /// POST /api/connectors/:name/schedule — create or update a schedule for a file-based connector

@@ -3,30 +3,19 @@ import { onMounted } from 'vue';
 import { RefreshCw } from 'lucide-vue-next';
 import { useConnectStore } from '@/stores/connect';
 import ConnectorCard from './ConnectorCard.vue';
-import SchedulerPanel from './SchedulerPanel.vue';
 
 const connectStore = useConnectStore();
 
 onMounted(async () => {
-  await Promise.all([connectStore.fetchConnectors(), connectStore.fetchRuns()]);
+  await connectStore.fetchConnectors();
 });
 
-async function refresh(): Promise<void> {
-  await Promise.all([connectStore.fetchConnectors(), connectStore.fetchRuns()]);
-}
-
 function handleRun(name: string): void {
-  connectStore.runConnector(name);
+  connectStore.syncNow(name);
 }
 
 async function handleSchedule(name: string, intervalSecs: number): Promise<void> {
-  const result = await connectStore.scheduleConnector(name, intervalSecs);
-  if (result) {
-    // Refresh the scheduler panel to show the new/updated job
-    const { useSchedulerStore } = await import('@/stores/scheduler');
-    const schedulerStore = useSchedulerStore();
-    await schedulerStore.fetchJobs();
-  }
+  await connectStore.updateSchedule(name, intervalSecs);
 }
 </script>
 
@@ -42,7 +31,7 @@ async function handleSchedule(name: string, intervalSecs: number): Promise<void>
         variant="ghost"
         size="sm"
         :loading="connectStore.loading"
-        @click="refresh"
+        @click="connectStore.fetchConnectors()"
       >
         <RefreshCw class="w-3.5 h-3.5 mr-1.5" />
         Refresh
@@ -67,53 +56,19 @@ async function handleSchedule(name: string, intervalSecs: number): Promise<void>
         </p>
       </div>
 
-      <!-- Connector grid -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- Connector cards -->
+      <div v-else class="space-y-3 max-w-3xl">
         <ConnectorCard
           v-for="connector in connectStore.connectors"
           :key="connector.name"
           :connector="connector"
           :running="connectStore.isRunning(connector.name)"
-          :last-run="connectStore.latestRun(connector.name)"
+          :expanded="connectStore.expandedConnector === connector.name"
+          :history="connectStore.runHistory.get(connector.name) ?? []"
           @run="handleRun(connector.name)"
           @schedule="handleSchedule(connector.name, $event)"
+          @toggle-history="connectStore.toggleHistory(connector.name)"
         />
-      </div>
-
-      <!-- Run history -->
-      <div v-if="connectStore.runs.length > 0" class="mt-8">
-        <h3 class="text-sm font-semibold text-highlighted mb-3">Run History</h3>
-        <div class="space-y-2">
-          <div
-            v-for="run in connectStore.runs"
-            :key="run.id"
-            class="flex items-center gap-3 px-3 py-2 rounded-lg border border-default bg-default text-sm"
-          >
-            <span
-              class="h-2 w-2 rounded-full shrink-0"
-              :class="{
-                'bg-green-500': run.status === 'completed',
-                'bg-red-500': run.status === 'failed',
-                'bg-blue-500 animate-pulse': run.status === 'running',
-                'bg-gray-400': run.status === 'pending',
-              }"
-            />
-            <span class="font-medium text-highlighted">{{ run.connector }}</span>
-            <span class="text-xs text-muted capitalize">{{ run.status }}</span>
-            <span v-if="run.tables_ingested.length > 0" class="text-xs text-muted">
-              {{ run.tables_ingested.length }} table{{ run.tables_ingested.length === 1 ? '' : 's' }}
-            </span>
-            <div class="flex-1" />
-            <span class="text-xs text-muted">
-              {{ new Date(run.started_at).toLocaleString() }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Scheduler Panel -->
-      <div class="mt-8">
-        <SchedulerPanel />
       </div>
     </div>
   </div>

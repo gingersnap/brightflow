@@ -1,18 +1,19 @@
 import { defineStore } from 'pinia';
-import { ref, onUnmounted } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
 import {
   connectApi,
-  type ConnectorInfo,
-  type ConnectorRun,
+  type UnifiedConnector,
+  type SyncRun,
   type ScheduleResponse,
 } from '@/services/api';
 
 export const useConnectStore = defineStore('connect', () => {
-  const connectors = ref<ConnectorInfo[]>([]);
-  const runs = ref<ConnectorRun[]>([]);
+  const connectors = ref<UnifiedConnector[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
-  const activeRunId = ref<string | null>(null);
+  const runHistory = ref<Map<string, SyncRun[]>>(new Map());
+  const expandedConnector = ref<string | null>(null);
+  const activeRuns = ref<Set<string>>(new Set());
 
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -21,8 +22,21 @@ export const useConnectStore = defineStore('connect', () => {
     error.value = null;
 
     try {
-      const result = await connectApi.listConnectors();
+      const result = await connectApi.listUnified();
       connectors.value = result ?? [];
+
+      // Track any currently running connectors
+      const running = new Set<string>();
+      for (const c of connectors.value) {
+        if (c.lastRun && (c.lastRun.status === 'running' || c.lastRun.status === 'pending')) {
+          running.add(c.name);
+        }
+      }
+      activeRuns.value = running;
+
+      if (running.size > 0) {
+        startPolling();
+      }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load connectors';
     } finally {
@@ -30,45 +44,76 @@ export const useConnectStore = defineStore('connect', () => {
     }
   }
 
-  async function fetchRuns(): Promise<void> {
-    try {
-      const result = await connectApi.listRuns();
-      runs.value = result ?? [];
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Failed to load runs';
-    }
-  }
-
-  async function runConnector(name: string, only?: string): Promise<void> {
+  async function syncNow(name: string): Promise<void> {
     error.value = null;
 
     try {
-      const result = await connectApi.runConnector(name, only);
+      const result = await connectApi.runConnector(name);
       if (result) {
-        activeRunId.value = result.run_id;
+        activeRuns.value = new Set([...activeRuns.value, name]);
         startPolling();
-        // Refresh runs list
-        await fetchRuns();
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to start connector';
     }
   }
 
-  function startPolling(): void {
-    stopPolling();
-    pollInterval = setInterval(async () => {
-      await fetchRuns();
+  async function updateSchedule(
+    name: string,
+    intervalSecs: number,
+  ): Promise<ScheduleResponse | null> {
+    error.value = null;
+    try {
+      const result = await connectApi.scheduleConnector(name, intervalSecs);
+      // Refresh to pick up new job info
+      await fetchConnectors();
+      return result;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to update schedule';
+      return null;
+    }
+  }
 
-      // Check if active run is done
-      if (activeRunId.value) {
-        const active = runs.value.find((r) => r.id === activeRunId.value);
-        if (active && (active.status === 'completed' || active.status === 'failed')) {
-          activeRunId.value = null;
-          stopPolling();
-        }
+  async function fetchRunHistory(name: string): Promise<void> {
+    try {
+      const result = await connectApi.listConnectorRuns(name);
+      const updated = new Map(runHistory.value);
+      updated.set(name, result ?? []);
+      runHistory.value = updated;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to load run history';
+    }
+  }
+
+  function toggleHistory(name: string): void {
+    if (expandedConnector.value === name) {
+      expandedConnector.value = null;
+    } else {
+      expandedConnector.value = name;
+      fetchRunHistory(name);
+    }
+  }
+
+  const hasActiveRuns = computed(() => activeRuns.value.size > 0);
+
+  function isRunning(name: string): boolean {
+    return activeRuns.value.has(name);
+  }
+
+  function startPolling(): void {
+    if (pollInterval) return;
+    pollInterval = setInterval(async () => {
+      await fetchConnectors();
+
+      // Refresh history for expanded connector if it was running
+      if (expandedConnector.value && activeRuns.value.has(expandedConnector.value)) {
+        await fetchRunHistory(expandedConnector.value);
       }
-    }, 2000);
+
+      if (!hasActiveRuns.value) {
+        stopPolling();
+      }
+    }, 3000);
   }
 
   function stopPolling(): void {
@@ -78,45 +123,23 @@ export const useConnectStore = defineStore('connect', () => {
     }
   }
 
-  function isRunning(connectorName: string): boolean {
-    return runs.value.some(
-      (r) => r.connector === connectorName && (r.status === 'pending' || r.status === 'running'),
-    );
-  }
-
-  function latestRun(connectorName: string): ConnectorRun | undefined {
-    return runs.value.find((r) => r.connector === connectorName);
-  }
-
-  async function scheduleConnector(
-    name: string,
-    intervalSecs: number,
-  ): Promise<ScheduleResponse | null> {
-    error.value = null;
-    try {
-      return await connectApi.scheduleConnector(name, intervalSecs);
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Failed to schedule connector';
-      return null;
-    }
-  }
-
   onUnmounted(() => {
     stopPolling();
   });
 
   return {
     connectors,
-    runs,
     loading,
     error,
-    activeRunId,
+    runHistory,
+    expandedConnector,
+    hasActiveRuns,
     fetchConnectors,
-    fetchRuns,
-    runConnector,
+    syncNow,
+    updateSchedule,
+    fetchRunHistory,
+    toggleHistory,
     isRunning,
-    latestRun,
-    scheduleConnector,
     stopPolling,
   };
 });

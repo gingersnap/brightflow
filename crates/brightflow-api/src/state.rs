@@ -1,5 +1,4 @@
 use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
-use crate::connect::types::ConnectorRun;
 use crate::shared::AppResult;
 use brightflow_auth::AuthDb;
 use brightflow_insights::data::config::SchemaConfig;
@@ -11,7 +10,6 @@ use polars::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 /// Shared application state
 #[derive(Clone)]
@@ -26,10 +24,8 @@ pub struct AppState {
     pub schemas: Arc<DashMap<String, DataSchema>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
-    /// Path to connector config YAML directory
+    /// Path to connector config directory
     pub connector_config_dir: Option<PathBuf>,
-    /// In-memory connector run tracker
-    pub connector_runs: Arc<DashMap<Uuid, ConnectorRun>>,
     /// Authentication database
     pub auth_db: Option<Arc<AuthDb>>,
 }
@@ -50,7 +46,6 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
             connector_config_dir: None,
-            connector_runs: Arc::new(DashMap::new()),
             auth_db: None,
         }
     }
@@ -148,7 +143,6 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
             connector_config_dir: None,
-            connector_runs: Arc::new(DashMap::new()),
             auth_db: None,
         }
     }

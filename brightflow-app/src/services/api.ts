@@ -115,30 +115,47 @@ export const tableApi = {
 };
 
 // Connector types
-export interface ConnectorInfo {
-  name: string;
-  connector: string;
-  valid: boolean;
-}
-
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
 
-export interface ConnectorRun {
+export interface UnifiedJob {
   id: string;
-  connector: string;
-  config_name: string;
+  intervalSecs: number;
+  enabled: boolean;
+}
+
+export interface UnifiedSyncRun {
+  id: string;
   status: RunStatus;
-  started_at: string;
-  finished_at: string | null;
-  endpoints_synced: string[];
-  tables_ingested: string[];
+  startedAt: string;
+  finishedAt: string | null;
+  rowsSynced: number;
   error: string | null;
 }
 
-export interface RunResponse {
-  run_id: string;
+export interface UnifiedConnector {
+  name: string;
   connector: string;
+  valid: boolean;
+  job: UnifiedJob | null;
+  lastRun: UnifiedSyncRun | null;
+}
+
+export interface SyncRun {
+  id: string;
+  jobId: string | null;
+  connectorId: string;
+  startedAt: string;
+  finishedAt: string | null;
   status: RunStatus;
+  endpointsSynced: string | null;
+  rowsSynced: number;
+  error: string | null;
+}
+
+export interface RunTriggerResponse {
+  runId: string;
+  connector: string;
+  status: string;
 }
 
 export interface ScheduleResponse {
@@ -150,17 +167,19 @@ export interface ScheduleResponse {
 
 // Connector API
 export const connectApi = {
-  listConnectors: (): Promise<ConnectorInfo[] | null> =>
-    api.get<ConnectorInfo[]>('/api/connectors'),
-  runConnector: (name: string, only?: string): Promise<RunResponse | null> =>
-    api.post<RunResponse>(`/api/connectors/${encodeURIComponent(name)}/run`, only ? { only } : {}),
-  listRuns: (): Promise<ConnectorRun[] | null> => api.get<ConnectorRun[]>('/api/connectors/runs'),
-  getRun: (id: string): Promise<ConnectorRun | null> =>
-    api.get<ConnectorRun>(`/api/connectors/runs/${id}`),
+  listUnified: (): Promise<UnifiedConnector[] | null> =>
+    api.get<UnifiedConnector[]>('/api/connectors/unified'),
+  runConnector: (name: string): Promise<RunTriggerResponse | null> =>
+    api.post<RunTriggerResponse>(`/api/connectors/${encodeURIComponent(name)}/run`),
+  listConnectorRuns: (name: string): Promise<SyncRun[] | null> =>
+    api.get<SyncRun[]>(`/api/connectors/${encodeURIComponent(name)}/runs`),
   scheduleConnector: (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
     api.post<ScheduleResponse>(`/api/connectors/${encodeURIComponent(name)}/schedule`, {
       intervalSecs,
     }),
+  updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
+    api.put(`/api/scheduler/jobs/${id}`, data),
+  deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
 };
 
 // Insights API response

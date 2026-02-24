@@ -343,14 +343,16 @@ impl AuthDb {
         status: &str,
     ) -> AuthResult<SyncRun> {
         let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
         let row = sqlx::query_as::<_, SyncRun>(
             r"INSERT INTO sync_runs (id, job_id, connector_id, started_at, status)
-              VALUES (?, ?, ?, datetime('now'), ?)
+              VALUES (?, ?, ?, ?, ?)
               RETURNING *",
         )
         .bind(&id)
         .bind(job_id)
         .bind(connector_id)
+        .bind(&now)
         .bind(status)
         .fetch_one(&self.pool)
         .await?;
@@ -365,14 +367,16 @@ impl AuthDb {
         rows_synced: i64,
         error: Option<&str>,
     ) -> AuthResult<Option<SyncRun>> {
+        let now = chrono::Utc::now().to_rfc3339();
         let row = sqlx::query_as::<_, SyncRun>(
             r"UPDATE sync_runs
-              SET status = ?, finished_at = datetime('now'),
+              SET status = ?, finished_at = ?,
                   endpoints_synced = ?, rows_synced = ?, error = ?
               WHERE id = ?
               RETURNING *",
         )
         .bind(status)
+        .bind(&now)
         .bind(endpoints_synced)
         .bind(rows_synced)
         .bind(error)
@@ -380,6 +384,23 @@ impl AuthDb {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)
+    }
+
+    pub async fn delete_sync_run(&self, id: &str) -> AuthResult<()> {
+        sqlx::query("DELETE FROM sync_runs WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_stale_sync_runs(&self) -> AuthResult<u64> {
+        let result = sqlx::query(
+            "DELETE FROM sync_runs WHERE status IN ('running', 'pending') OR error = 'Interrupted by server restart'",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
     }
 
     pub async fn get_sync_run(&self, id: &str) -> AuthResult<Option<SyncRun>> {
@@ -408,5 +429,33 @@ impl AuthDb {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)
+    }
+
+    pub async fn get_latest_sync_run_for_connector(
+        &self,
+        connector_id: &str,
+    ) -> AuthResult<Option<SyncRun>> {
+        let row = sqlx::query_as::<_, SyncRun>(
+            "SELECT * FROM sync_runs WHERE connector_id = ? ORDER BY started_at DESC LIMIT 1",
+        )
+        .bind(connector_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn list_sync_runs_for_connector(
+        &self,
+        connector_id: &str,
+        limit: i64,
+    ) -> AuthResult<Vec<SyncRun>> {
+        let rows = sqlx::query_as::<_, SyncRun>(
+            "SELECT * FROM sync_runs WHERE connector_id = ? ORDER BY started_at DESC LIMIT ?",
+        )
+        .bind(connector_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
     }
 }

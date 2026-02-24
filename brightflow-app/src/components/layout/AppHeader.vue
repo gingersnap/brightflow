@@ -17,19 +17,26 @@ import { useColorMode } from '@vueuse/core';
 import { useDatasetStore } from '@/stores/dataset';
 import { useAuthStore, type DataMode } from '@/stores/auth';
 import { useUiStore, type AppMode } from '@/stores/ui';
-import { useSchedulerStore } from '@/stores/scheduler';
+import { useConnectStore } from '@/stores/connect';
 
 const datasetStore = useDatasetStore();
 const authStore = useAuthStore();
 const uiStore = useUiStore();
-const schedulerStore = useSchedulerStore();
+const connectStore = useConnectStore();
 const colorMode = useColorMode();
 
 const lastSyncTime = computed(() => {
-  const latestRun = schedulerStore.runs.find((r) => r.status === 'completed');
-  if (!latestRun?.finishedAt) return null;
+  const latest = connectStore.connectors
+    .map((c) => c.lastRun)
+    .filter(
+      (r): r is NonNullable<typeof r> =>
+        r != null && r.status === 'completed' && r.finishedAt != null,
+    )
+    .sort((a, b) => new Date(b.finishedAt!).getTime() - new Date(a.finishedAt!).getTime())[0];
 
-  const date = new Date(latestRun.finishedAt);
+  if (!latest?.finishedAt) return null;
+
+  const date = new Date(latest.finishedAt);
   const now = Date.now();
   const diff = now - date.getTime();
 
