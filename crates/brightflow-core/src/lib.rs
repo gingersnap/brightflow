@@ -74,6 +74,38 @@ impl DatasetMeta {
     }
 }
 
+/// Data loading mode: eager (in-memory) vs lazy (scan on query)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DataMode {
+    #[default]
+    Memory,
+    Lazy,
+}
+
+impl std::fmt::Display for DataMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Memory => write!(f, "memory"),
+            Self::Lazy => write!(f, "lazy"),
+        }
+    }
+}
+
+impl std::str::FromStr for DataMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "memory" => Ok(Self::Memory),
+            "lazy" => Ok(Self::Lazy),
+            other => Err(format!(
+                "Invalid data mode: '{other}'. Must be 'memory' or 'lazy'."
+            )),
+        }
+    }
+}
+
 /// Storage configuration for data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]

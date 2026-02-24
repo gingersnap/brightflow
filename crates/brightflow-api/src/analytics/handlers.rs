@@ -12,7 +12,7 @@ use futures::{SinkExt, StreamExt};
 use polars::prelude::*;
 use std::io::Cursor;
 
-use crate::analytics::session::{DatasetInfo, DatasetSource};
+use crate::analytics::session::{DatasetData, DatasetInfo, DatasetSource};
 use crate::analytics::types::{
     DatasetMetadataResponse, LoadTableResponse, Query, QueryResponse, UploadResponse,
     WsClientMessage, WsServerMessage,
@@ -37,9 +37,10 @@ pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<Ta
     Json(state.get_available_tables().await)
 }
 
-/// Load a specific Delta table into memory (unloads previously loaded tables)
+/// Load a specific Delta table (unloads previously loaded tables)
 pub async fn load_table(
     State(state): State<AppState>,
+    auth_session: brightflow_auth::AuthSession,
     Path(name): Path<String>,
 ) -> AppResult<Json<LoadTableResponse>> {
     // Check if table exists in index
@@ -49,8 +50,25 @@ pub async fn load_table(
         )));
     }
 
+    // Determine data mode from user settings
+    let data_mode = if let Some(user) = &auth_session.user {
+        if let Some(auth_db) = &state.auth_db {
+            let mode_str = auth_db
+                .get_data_mode(&user.id)
+                .await
+                .unwrap_or_else(|_| "memory".to_string());
+            mode_str
+                .parse::<brightflow_core::DataMode>()
+                .unwrap_or_default()
+        } else {
+            brightflow_core::DataMode::default()
+        }
+    } else {
+        brightflow_core::DataMode::default()
+    };
+
     // Load the table (this unloads any previously loaded delta tables)
-    let id = state.load_table(&name).await?;
+    let id = state.load_table(&name, data_mode).await?;
 
     // Get the loaded dataset info
     let dataset = state
@@ -64,6 +82,7 @@ pub async fn load_table(
         row_count: dataset.row_count(),
         column_count: dataset.column_count(),
         columns: dataset.columns(),
+        data_mode: dataset.data_mode.to_string(),
     }))
 }
 
@@ -83,6 +102,7 @@ pub async fn get_dataset(
         row_count: dataset.row_count(),
         column_count: dataset.column_count(),
         columns: dataset.columns(),
+        data_mode: dataset.data_mode.to_string(),
     }))
 }
 
@@ -157,7 +177,8 @@ pub async fn upload_dataset(
 
     let id = state.datasets.add_dataset(
         name.clone(),
-        df,
+        DatasetData::Eager(df),
+        brightflow_core::DataMode::Memory,
         DatasetSource::Upload {
             filename: name.clone(),
         },
@@ -182,16 +203,13 @@ pub async fn execute_query(
 ) -> AppResult<Json<QueryResponse>> {
     let dataset_id = query.dataset_id.clone();
 
-    let dataset = state
+    let data = state
         .datasets
-        .get_dataset(&dataset_id)
+        .get_data(&dataset_id)
         .ok_or_else(|| AppError::NotFound(format!("Dataset '{dataset_id}' not found")))?;
 
-    let df = dataset.df.clone();
-    drop(dataset); // Release the lock before blocking
-
     let response =
-        tokio::task::spawn_blocking(move || executor::execute_query(&df, query)).await??;
+        tokio::task::spawn_blocking(move || executor::execute_query(&data, query)).await??;
 
     Ok(Json(response))
 }
@@ -284,17 +302,14 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
 async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
     let dataset_id = query.dataset_id.clone();
 
-    let Some(dataset) = state.datasets.get_dataset(&dataset_id) else {
+    let Some(data) = state.datasets.get_data(&dataset_id) else {
         return WsServerMessage::Error {
             code: "NOT_FOUND".into(),
             message: format!("Dataset '{dataset_id}' not found"),
         };
     };
 
-    let df = dataset.df.clone();
-    drop(dataset); // Release lock before blocking
-
-    match tokio::task::spawn_blocking(move || executor::execute_query(&df, query)).await {
+    match tokio::task::spawn_blocking(move || executor::execute_query(&data, query)).await {
         Ok(Ok(response)) => WsServerMessage::QueryResult(response),
         Ok(Err(e)) => WsServerMessage::Error {
             code: e.error_code().into(),

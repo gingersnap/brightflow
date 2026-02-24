@@ -6,6 +6,7 @@ use brightflow_insights::analysis::tree::ReviewCadence;
 use brightflow_insights::data::schema::DataSchema;
 use brightflow_insights::debug::DebugLog;
 
+use crate::analytics::session::DatasetData;
 use crate::insights::types::{InsightsResponse, ReviewRequest, TrendsRequest};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -16,13 +17,14 @@ pub async fn run_review(
     Json(req): Json<ReviewRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
     let cadence = parse_cadence(&req.cadence)?;
-    let (df, schema) = get_dataset_and_schema(&state, &req.dataset_id)?;
+    let (data, schema) = get_dataset_data_and_schema(&state, &req.dataset_id)?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
     let cadence_str = req.cadence.clone();
 
     let tree = tokio::task::spawn_blocking(move || {
+        let df = materialize_data(data)?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
         engine.run_review_with_cadence(&df, &schema, cadence, &DebugLog::disabled())
     })
@@ -50,12 +52,13 @@ pub async fn run_trends(
     State(state): State<AppState>,
     Json(req): Json<TrendsRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
-    let (df, schema) = get_dataset_and_schema(&state, &req.dataset_id)?;
+    let (data, schema) = get_dataset_data_and_schema(&state, &req.dataset_id)?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
 
     let tree = tokio::task::spawn_blocking(move || {
+        let df = materialize_data(data)?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
         engine.run_trends(&df, &schema)
     })
@@ -78,17 +81,17 @@ pub async fn run_trends(
     }))
 }
 
-/// Get DataFrame and schema for a dataset, returning appropriate errors
-fn get_dataset_and_schema(
+/// Get DatasetData and schema for a dataset, returning appropriate errors.
+fn get_dataset_data_and_schema(
     state: &AppState,
     dataset_id: &str,
-) -> AppResult<(polars::prelude::DataFrame, DataSchema)> {
+) -> AppResult<(DatasetData, DataSchema)> {
     let dataset = state
         .datasets
         .get_dataset(dataset_id)
         .ok_or_else(|| AppError::NotFound(format!("Dataset '{dataset_id}' not found")))?;
 
-    let df = dataset.df.clone();
+    let data = dataset.data.clone();
     let table_name = dataset.name.clone();
     drop(dataset);
 
@@ -99,7 +102,19 @@ fn get_dataset_and_schema(
         ))
     })?;
 
-    Ok((df, schema))
+    Ok((data, schema))
+}
+
+/// Materialize DatasetData into a DataFrame (safe to call from blocking context)
+fn materialize_data(data: DatasetData) -> AppResult<polars::prelude::DataFrame> {
+    Ok(match data {
+        DatasetData::Eager(df) => df,
+        DatasetData::Lazy { parquet_files } => polars::prelude::LazyFrame::scan_parquet_files(
+            parquet_files.into(),
+            polars::prelude::ScanArgsParquet::default(),
+        )?
+        .collect()?,
+    })
 }
 
 /// Parse cadence string to ReviewCadence enum

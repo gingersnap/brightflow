@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 use std::str::FromStr;
 
 use crate::error::AuthResult;
-use crate::models::User;
+use crate::models::{User, UserSettings};
 
 #[derive(Clone)]
 pub struct AuthDb {
@@ -76,5 +76,35 @@ impl AuthDb {
             .fetch_one(&self.pool)
             .await?;
         Ok(count.0)
+    }
+
+    pub async fn get_data_mode(&self, user_id: &str) -> AuthResult<String> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT data_mode FROM user_settings WHERE user_id = ?")
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map_or_else(|| "memory".to_string(), |r| r.0))
+    }
+
+    pub async fn upsert_user_settings(
+        &self,
+        user_id: &str,
+        data_mode: &str,
+    ) -> AuthResult<UserSettings> {
+        let settings = sqlx::query_as::<_, UserSettings>(
+            r"INSERT INTO user_settings (user_id, data_mode, updated_at)
+              VALUES (?, ?, datetime('now'))
+              ON CONFLICT(user_id) DO UPDATE SET
+                data_mode = excluded.data_mode,
+                updated_at = excluded.updated_at
+              RETURNING *",
+        )
+        .bind(user_id)
+        .bind(data_mode)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(settings)
     }
 }

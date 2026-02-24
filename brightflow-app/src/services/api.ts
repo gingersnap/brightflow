@@ -67,8 +67,9 @@ export const api = {
 interface DatasetInfo {
   id: string;
   name: string;
-  rowCount: number;
-  columnCount: number;
+  rowCount: number | null;
+  columnCount: number | null;
+  dataMode: string;
   loadedAt: string;
 }
 
@@ -85,9 +86,10 @@ export interface TableInfo {
 export interface LoadTableResponse {
   id: string;
   name: string;
-  rowCount: number;
-  columnCount: number;
+  rowCount: number | null;
+  columnCount: number | null;
   columns: Array<{ name: string; dtype: string }>;
+  dataMode: string;
 }
 
 interface UploadResponse {
@@ -187,6 +189,18 @@ export const insightsApi = {
     api.post<InsightsResponse>('/api/insights/review', { datasetId, cadence }),
   runTrends: (datasetId: string): Promise<InsightsResponse | null> =>
     api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
+};
+
+// Settings types
+export interface UserSettings {
+  dataMode: string;
+}
+
+// Settings API
+export const settingsApi = {
+  get: (): Promise<UserSettings | null> => api.get<UserSettings>('/api/settings'),
+  update: (settings: UserSettings): Promise<UserSettings | null> =>
+    api.put<UserSettings>('/api/settings', settings),
 };
 
 // Auth types

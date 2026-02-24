@@ -9,16 +9,20 @@ import {
   Moon,
   Plus,
   LogOut,
+  Zap,
+  HardDrive,
 } from 'lucide-vue-next';
 import { useColorMode } from '@vueuse/core';
 import { useDatasetStore } from '@/stores/dataset';
+import { useAuthStore, type DataMode } from '@/stores/auth';
 import { useUiStore, type AppMode } from '@/stores/ui';
 
 const datasetStore = useDatasetStore();
+const authStore = useAuthStore();
 const uiStore = useUiStore();
 const colorMode = useColorMode();
 
-const props = defineProps<{
+defineProps<{
   currentDataset: string | null;
 }>();
 
@@ -37,6 +41,11 @@ function toggleConnect(): void {
 
 function toggleTheme(): void {
   colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
+}
+
+async function toggleDataMode(): Promise<void> {
+  const newMode: DataMode = authStore.dataMode === 'memory' ? 'lazy' : 'memory';
+  await authStore.setDataMode(newMode);
 }
 </script>
 
@@ -118,6 +127,22 @@ function toggleTheme(): void {
         Connect
       </button>
 
+      <!-- Data mode toggle -->
+      <button
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+        :class="
+          authStore.dataMode === 'lazy'
+            ? 'bg-primary-500/10 text-primary-500'
+            : 'text-muted hover:text-highlighted hover:bg-elevated'
+        "
+        :title="authStore.dataMode === 'memory' ? 'Mode: In-Memory (click for Lazy)' : 'Mode: Lazy Scan (click for In-Memory)'"
+        @click="toggleDataMode"
+      >
+        <Zap v-if="authStore.dataMode === 'lazy'" class="w-3.5 h-3.5" />
+        <HardDrive v-else class="w-3.5 h-3.5" />
+        {{ authStore.dataMode === 'lazy' ? 'Lazy' : 'Memory' }}
+      </button>
+
       <!-- Theme toggle -->
       <UButton
         variant="ghost"
@@ -151,6 +176,9 @@ function toggleTheme(): void {
         />
         <span class="text-xs text-muted">
           {{ datasetStore.hasData ? (datasetStore.name ?? 'Dataset loaded') : 'No dataset' }}
+          <span v-if="datasetStore.hasData && datasetStore.dataMode" class="ml-1 opacity-70">
+            [{{ datasetStore.dataMode }}]
+          </span>
         </span>
       </div>
     </div>

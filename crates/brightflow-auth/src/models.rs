@@ -12,6 +12,14 @@ pub struct User {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSettings {
+    pub user_id: String,
+    pub data_mode: String,
+    pub updated_at: String,
+}
+
 impl axum_login::AuthUser for User {
     type Id = String;
 

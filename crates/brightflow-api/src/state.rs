@@ -1,4 +1,4 @@
-use crate::analytics::session::{DatasetManager, DatasetSource};
+use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::connect::types::ConnectorRun;
 use crate::shared::AppResult;
 use brightflow_auth::AuthDb;
@@ -175,7 +175,12 @@ impl AppState {
             .unwrap_or("default")
             .to_string();
 
-        state.datasets.add_dataset(name, df, DatasetSource::Default);
+        state.datasets.add_dataset(
+            name,
+            DatasetData::Eager(df),
+            brightflow_core::DataMode::Memory,
+            DatasetSource::Default,
+        );
 
         Ok(state)
     }
@@ -204,7 +209,12 @@ impl AppState {
             .unwrap_or("default")
             .to_string();
 
-        state.datasets.add_dataset(name, df, DatasetSource::Default);
+        state.datasets.add_dataset(
+            name,
+            DatasetData::Eager(df),
+            brightflow_core::DataMode::Memory,
+            DatasetSource::Default,
+        );
 
         Ok(state)
     }
@@ -214,10 +224,14 @@ impl AppState {
         self.table_index.read().await.clone()
     }
 
-    /// Load a specific Delta table on-demand
+    /// Load a specific Delta table on-demand with the given data mode
     ///
     /// This unloads any previously loaded Delta tables first to keep memory usage low.
-    pub async fn load_table(&self, table_name: &str) -> AppResult<String> {
+    pub async fn load_table(
+        &self,
+        table_name: &str,
+        data_mode: brightflow_core::DataMode,
+    ) -> AppResult<String> {
         let store = self.delta_store.as_ref().ok_or_else(|| {
             crate::shared::AppError::BadRequest("No Delta store configured".to_string())
         })?;
@@ -225,29 +239,48 @@ impl AppState {
         // Unload any existing delta tables to free memory
         self.unload_delta_tables();
 
-        tracing::info!("Loading Delta table '{}' into memory", table_name);
-
-        // Read the table data
-        let df = store.read_table(table_name).await?;
-        let row_count = df.height();
-
-        // Add to dataset manager
         let source = DatasetSource::DeltaTable {
             table_name: table_name.to_string(),
             version: -1,
         };
 
-        let id = self
-            .datasets
-            .add_dataset(table_name.to_string(), df, source);
+        let (data, id) = match data_mode {
+            brightflow_core::DataMode::Memory => {
+                tracing::info!("Loading Delta table '{}' into memory (eager)", table_name);
+                let df = store.read_table(table_name).await?;
+                tracing::info!("Loaded Delta table '{}': {} rows", table_name, df.height());
+                let data = DatasetData::Eager(df);
+                let id = self.datasets.add_dataset(
+                    table_name.to_string(),
+                    data.clone(),
+                    data_mode,
+                    source,
+                );
+                (data, id)
+            },
+            brightflow_core::DataMode::Lazy => {
+                tracing::info!(
+                    "Loading Delta table '{}' in lazy mode (parquet scan)",
+                    table_name
+                );
+                let parquet_files = store.get_table_parquet_paths(table_name).await?;
+                tracing::info!(
+                    "Registered {} parquet file(s) for lazy scan of '{}'",
+                    parquet_files.len(),
+                    table_name
+                );
+                let data = DatasetData::Lazy { parquet_files };
+                let id = self.datasets.add_dataset(
+                    table_name.to_string(),
+                    data.clone(),
+                    data_mode,
+                    source,
+                );
+                (data, id)
+            },
+        };
 
-        tracing::info!(
-            "Loaded Delta table '{}' as '{}': {} rows",
-            table_name,
-            id,
-            row_count
-        );
-
+        drop(data);
         Ok(id)
     }
 
@@ -294,9 +327,12 @@ impl AppState {
             version,
         };
 
-        let id = self
-            .datasets
-            .add_dataset(table_name.to_string(), df, source);
+        let id = self.datasets.add_dataset(
+            table_name.to_string(),
+            DatasetData::Eager(df),
+            brightflow_core::DataMode::Memory,
+            source,
+        );
         Ok(id)
     }
 

@@ -1,15 +1,20 @@
-use crate::analytics::session::ColumnInfo;
+use crate::analytics::session::{ColumnInfo, DatasetData};
 use crate::analytics::types::{AggSpec, Aggregation, FilterOp, Operation, Query, QueryResponse};
 use crate::shared::{AppError, AppResult};
 use polars::prelude::*;
 use std::time::Instant;
 
-/// Execute a query against a DataFrame
-pub fn execute_query(df: &DataFrame, query: Query) -> AppResult<QueryResponse> {
+/// Execute a query against dataset data (eager DataFrame or lazy parquet scan)
+pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryResponse> {
     let start = Instant::now();
 
-    // Start with lazy frame for optimization
-    let mut lf = df.clone().lazy();
+    // Build LazyFrame from the data source
+    let mut lf = match data {
+        DatasetData::Eager(df) => df.clone().lazy(),
+        DatasetData::Lazy { parquet_files } => {
+            LazyFrame::scan_parquet_files(parquet_files.clone().into(), ScanArgsParquet::default())?
+        },
+    };
 
     // Separate Limit from other operations to get correct total_rows
     let mut limit_op: Option<u32> = None;

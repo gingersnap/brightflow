@@ -122,7 +122,7 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
                 Ok(s) => {
                     if let Some(dataset) = s.datasets.get_dataset("default") {
                         tracing::info!(
-                            "Default dataset loaded: {} rows, {} columns",
+                            "Default dataset loaded: {:?} rows, {:?} columns",
                             dataset.row_count(),
                             dataset.column_count()
                         );
@@ -148,7 +148,7 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
                 Ok(s) => {
                     if let Some(dataset) = s.datasets.get_dataset("default") {
                         tracing::info!(
-                            "Default dataset loaded: {} rows, {} columns",
+                            "Default dataset loaded: {:?} rows, {:?} columns",
                             dataset.row_count(),
                             dataset.column_count()
                         );

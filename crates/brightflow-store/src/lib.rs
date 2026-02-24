@@ -2,17 +2,11 @@
 //!
 //! This crate provides Brightflow's lakehouse implementation using Delta Lake.
 
-// Allow certain pedantic lints that are too strict for data processing code:
-// - cognitive_complexity: data conversion functions are naturally complex
-// - too_many_lines: arrow/polars conversion requires many type cases
+// Allow certain lints for store code:
 // - similar_names: entry/dir_entry patterns are common in fs code
-// - indexing_slicing: bounds checks done at higher level
-// - cast_sign_loss: intentional when converting arrow types
-// - match_same_arms: explicit arms are clearer for type conversions
 // - arc_with_non_send_sync: follows upstream delta-rs patterns
-// - clone_on_ref_ptr: Arc::clone pattern is common but not always cleaner
 // - shadow_unrelated: variable shadowing for Result unwrapping is idiomatic
-// - wildcard_imports: prelude imports are standard for polars/arrow
+// - wildcard_imports: prelude imports are standard for polars
 // - unused_async: async kept for future compatibility with async file I/O
 #![allow(
     clippy::cognitive_complexity,
@@ -161,6 +155,15 @@ impl DeltaStore {
 
         ingest::ingest_dataframe(&table_path, df, &ingest_options).await?;
         self.table_info(table_name).await
+    }
+
+    /// Get the parquet file paths for a table (for lazy scan mode)
+    pub async fn get_table_parquet_paths(&self, name: &str) -> StoreResult<Vec<PathBuf>> {
+        let path = self.table_path(name);
+        if !table::table_exists(&path).await? {
+            return Err(StoreError::TableNotFound(name.to_string()));
+        }
+        table::get_parquet_paths(&path)
     }
 
     /// Delete a table

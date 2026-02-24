@@ -42,6 +42,11 @@ fn api_routes() -> Router<AppState> {
         .route("/insights/trends", post(insights_handlers::run_trends))
         // WebSocket
         .route("/ws", get(handlers::ws_handler))
+        // User settings
+        .route(
+            "/settings",
+            get(auth_handlers::get_settings).put(auth_handlers::update_settings),
+        )
         // Connectors
         .route("/connectors", get(connect_handlers::list_connectors))
         .route(

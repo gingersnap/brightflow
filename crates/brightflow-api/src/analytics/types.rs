@@ -162,9 +162,10 @@ pub struct UploadResponse {
 pub struct DatasetMetadataResponse {
     pub id: String,
     pub name: String,
-    pub row_count: usize,
-    pub column_count: usize,
+    pub row_count: Option<usize>,
+    pub column_count: Option<usize>,
     pub columns: Vec<ColumnInfo>,
+    pub data_mode: String,
 }
 
 /// Response for loading a Delta table on-demand
@@ -173,7 +174,8 @@ pub struct DatasetMetadataResponse {
 pub struct LoadTableResponse {
     pub id: String,
     pub name: String,
-    pub row_count: usize,
-    pub column_count: usize,
+    pub row_count: Option<usize>,
+    pub column_count: Option<usize>,
     pub columns: Vec<ColumnInfo>,
+    pub data_mode: String,
 }
