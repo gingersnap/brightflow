@@ -33,15 +33,36 @@ pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryRespons
         lf = apply_operation(lf, op)?;
     }
 
-    // Collect to get total_rows (after filters, before limit)
-    let filtered_df = lf.collect()?;
-    let total_rows = filtered_df.height();
-
-    // Apply limit if specified
-    let result_df = if let Some(n) = limit_op {
-        filtered_df.head(Some(n as usize))
+    // Collect results, optimizing for lazy mode when a limit is present
+    let (result_df, total_rows) = if let Some(n) = limit_op {
+        match data {
+            DatasetData::Lazy { .. } => {
+                // Lazy mode: two lightweight passes avoid full materialization
+                // 1) Count rows (Polars optimizes to metadata scan when unfiltered)
+                let total_rows = lf
+                    .clone()
+                    .select([len()])
+                    .collect()?
+                    .column("len")?
+                    .u32()?
+                    .get(0)
+                    .unwrap_or(0) as usize;
+                // 2) Only materialize the limited rows from parquet
+                let result_df = lf.limit(n).collect()?;
+                (result_df, total_rows)
+            },
+            DatasetData::Eager(_) => {
+                // Eager mode: data already in memory, single pass is optimal
+                let filtered_df = lf.collect()?;
+                let total_rows = filtered_df.height();
+                let result_df = filtered_df.head(Some(n as usize));
+                (result_df, total_rows)
+            },
+        }
     } else {
-        filtered_df
+        let filtered_df = lf.collect()?;
+        let total_rows = filtered_df.height();
+        (filtered_df, total_rows)
     };
 
     // Convert to response

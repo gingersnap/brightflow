@@ -235,19 +235,17 @@ impl AppState {
             version: -1,
         };
 
-        let (data, id) = match data_mode {
+        let id = match data_mode {
             brightflow_core::DataMode::Memory => {
                 tracing::info!("Loading Delta table '{}' into memory (eager)", table_name);
                 let df = store.read_table(table_name).await?;
                 tracing::info!("Loaded Delta table '{}': {} rows", table_name, df.height());
-                let data = DatasetData::Eager(df);
-                let id = self.datasets.add_dataset(
+                self.datasets.add_dataset(
                     table_name.to_string(),
-                    data.clone(),
+                    DatasetData::Eager(df),
                     data_mode,
                     source,
-                );
-                (data, id)
+                )
             },
             brightflow_core::DataMode::Lazy => {
                 tracing::info!(
@@ -260,18 +258,15 @@ impl AppState {
                     parquet_files.len(),
                     table_name
                 );
-                let data = DatasetData::Lazy { parquet_files };
-                let id = self.datasets.add_dataset(
+                self.datasets.add_dataset(
                     table_name.to_string(),
-                    data.clone(),
+                    DatasetData::Lazy { parquet_files },
                     data_mode,
                     source,
-                );
-                (data, id)
+                )
             },
         };
 
-        drop(data);
         Ok(id)
     }
 

@@ -17,6 +17,27 @@
     clippy::shadow_reuse
 )]
 
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+/// Configure jemalloc to return freed memory to the OS immediately.
+///
+/// By default jemalloc holds dirty pages for ~10s before returning them (dirty_decay_ms).
+/// With tokio's async workload and frequent dataset switches, this causes RSS to grow
+/// because freed pages from the old dataset haven't been returned before the new one loads.
+/// Setting decay to 0 forces immediate return on every deallocation.
+#[cfg(not(target_env = "msvc"))]
+#[allow(unsafe_code)]
+fn tune_jemalloc() {
+    // SAFETY: mallctl write with correct key names and value type (ssize_t = isize).
+    // These are documented jemalloc configuration knobs, not arbitrary memory operations.
+    unsafe {
+        let _ = tikv_jemalloc_ctl::raw::write(b"arenas.dirty_decay_ms\0", 0_isize);
+        let _ = tikv_jemalloc_ctl::raw::write(b"arenas.muzzy_decay_ms\0", 0_isize);
+    }
+}
+
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use polars::prelude::SerWriter;
@@ -306,6 +327,10 @@ struct AnalyzeArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Configure jemalloc for aggressive memory return before any allocations
+    #[cfg(not(target_env = "msvc"))]
+    tune_jemalloc();
+
     // Load .env file if present
     dotenvy::dotenv().ok();
 
