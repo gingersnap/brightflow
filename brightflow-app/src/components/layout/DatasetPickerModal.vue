@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { Database, Loader2, AlertCircle, Table2 } from 'lucide-vue-next';
+import { Database, Loader2, AlertCircle, Table2, X } from 'lucide-vue-next';
 import { tableApi, type TableInfo } from '@/services/api';
 
 const props = defineProps<{
@@ -62,10 +62,10 @@ watch(
 <template>
   <UModal
     :open="open"
-    :close-button="!loading"
     :dismissible="!loading"
+    :ui="{ overlay: 'z-50', content: 'z-50' }"
     class="w-full max-w-lg"
-    @close="emit('close')"
+    @update:open="(val: boolean) => { if (!val) emit('close'); }"
   >
     <template #content>
       <div class="p-6">
@@ -73,10 +73,17 @@ watch(
           <div class="p-2 rounded-lg bg-primary-500/10">
             <Database class="w-6 h-6 text-primary-500" />
           </div>
-          <div>
+          <div class="flex-1">
             <h2 class="text-lg font-semibold text-highlighted">Choose a Dataset</h2>
             <p class="text-sm text-muted">Select a table to load and explore</p>
           </div>
+          <button
+            v-if="!loading"
+            class="p-1 rounded-md text-muted hover:text-default hover:bg-muted/50 transition-colors"
+            @click="emit('close')"
+          >
+            <X class="w-5 h-5" />
+          </button>
         </div>
 
         <!-- Fetching tables state -->

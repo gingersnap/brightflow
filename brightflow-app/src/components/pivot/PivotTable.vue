@@ -332,7 +332,7 @@ function isNumeric(dtype: string | undefined): boolean {
     <div v-if="pivotData" class="flex-1 overflow-auto">
     <table class="w-full border-collapse text-sm">
       <!-- Header -->
-      <thead class="sticky top-0 z-10 bg-muted/50 backdrop-blur">
+      <thead class="sticky top-0 z-1 bg-muted/50 backdrop-blur">
         <tr>
           <!-- Index column headers -->
           <th

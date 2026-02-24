@@ -66,7 +66,7 @@ function formatCell(value: unknown, dtype: string): string {
 :deep(th) {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 1;
 }
 
 :deep(td) {
