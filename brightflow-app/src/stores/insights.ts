@@ -15,6 +15,8 @@ export const useInsightsStore = defineStore('insights', () => {
   const executionTimeMs = ref<number | null>(null);
   const nodeCount = ref(0);
   const findingCount = ref(0);
+  const firstLevelCount = ref(0);
+  const deeperCount = ref(0);
 
   async function runReview(selectedCadence: Cadence = cadence.value): Promise<void> {
     const datasetStore = useDatasetStore();
@@ -32,6 +34,8 @@ export const useInsightsStore = defineStore('insights', () => {
         executionTimeMs.value = result.executionTimeMs;
         nodeCount.value = result.nodeCount;
         findingCount.value = result.findingCount;
+        firstLevelCount.value = result.firstLevelCount;
+        deeperCount.value = result.deeperCount;
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Analysis failed';
@@ -56,6 +60,8 @@ export const useInsightsStore = defineStore('insights', () => {
         executionTimeMs.value = result.executionTimeMs;
         nodeCount.value = result.nodeCount;
         findingCount.value = result.findingCount;
+        firstLevelCount.value = result.firstLevelCount;
+        deeperCount.value = result.deeperCount;
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Analysis failed';
@@ -71,6 +77,8 @@ export const useInsightsStore = defineStore('insights', () => {
     executionTimeMs.value = null;
     nodeCount.value = 0;
     findingCount.value = 0;
+    firstLevelCount.value = 0;
+    deeperCount.value = 0;
     loading.value = false;
   }
 
@@ -83,6 +91,8 @@ export const useInsightsStore = defineStore('insights', () => {
     executionTimeMs,
     nodeCount,
     findingCount,
+    firstLevelCount,
+    deeperCount,
     runReview,
     runTrends,
     reset,

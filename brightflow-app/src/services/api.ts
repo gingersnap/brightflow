@@ -189,6 +189,8 @@ export interface InsightsResponse {
   tree: AnalysisTree;
   nodeCount: number;
   findingCount: number;
+  firstLevelCount: number;
+  deeperCount: number;
   executionTimeMs: number;
 }
 

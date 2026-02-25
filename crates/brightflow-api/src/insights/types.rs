@@ -30,5 +30,7 @@ pub struct InsightsResponse {
     pub tree: serde_json::Value,
     pub node_count: usize,
     pub finding_count: usize,
+    pub first_level_count: usize,
+    pub deeper_count: usize,
     pub execution_time_ms: f64,
 }

@@ -23,7 +23,7 @@ pub async fn run_review(
     let dataset_id = req.dataset_id.clone();
     let cadence_str = req.cadence.clone();
 
-    let tree = tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let df = materialize_data(data)?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
         engine.run_review_with_cadence(&df, &schema, cadence, &DebugLog::disabled())
@@ -31,10 +31,10 @@ pub async fn run_review(
     .await??;
 
     let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let node_count = tree.nodes.len();
-    let finding_count = tree.roots.len();
+    let node_count = result.tree.nodes.len();
+    let finding_count = result.tree.roots.len();
 
-    let tree_json = serde_json::to_value(&tree)
+    let tree_json = serde_json::to_value(&result.tree)
         .map_err(|e| AppError::Internal(format!("Failed to serialize analysis tree: {e}")))?;
 
     Ok(Json(InsightsResponse {
@@ -43,6 +43,8 @@ pub async fn run_review(
         tree: tree_json,
         node_count,
         finding_count,
+        first_level_count: result.first_level_count,
+        deeper_count: result.deeper_count,
         execution_time_ms,
     }))
 }
@@ -57,7 +59,7 @@ pub async fn run_trends(
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
 
-    let tree = tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         let df = materialize_data(data)?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
         engine.run_trends(&df, &schema)
@@ -65,10 +67,10 @@ pub async fn run_trends(
     .await??;
 
     let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let node_count = tree.nodes.len();
-    let finding_count = tree.roots.len();
+    let node_count = result.tree.nodes.len();
+    let finding_count = result.tree.roots.len();
 
-    let tree_json = serde_json::to_value(&tree)
+    let tree_json = serde_json::to_value(&result.tree)
         .map_err(|e| AppError::Internal(format!("Failed to serialize analysis tree: {e}")))?;
 
     Ok(Json(InsightsResponse {
@@ -77,6 +79,8 @@ pub async fn run_trends(
         tree: tree_json,
         node_count,
         finding_count,
+        first_level_count: result.first_level_count,
+        deeper_count: result.deeper_count,
         execution_time_ms,
     }))
 }

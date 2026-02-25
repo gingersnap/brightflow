@@ -498,7 +498,9 @@ fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
     tracing::info!("[{}] Running...", suffix);
 
     let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth);
-    let tree = engine.run_review_with_cadence(&df, &data_schema, cadence, &DebugLog::disabled())?;
+    let result =
+        engine.run_review_with_cadence(&df, &data_schema, cadence, &DebugLog::disabled())?;
+    let tree = result.tree;
 
     write_outputs(args, &tree, &suffix, &schema_name, cadence.title())?;
 
@@ -527,7 +529,8 @@ fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
     tracing::info!("[{}] Running...", suffix);
 
     let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth);
-    let tree = engine.run_report(&df, &data_schema, report_type, &DebugLog::disabled())?;
+    let result = engine.run_report(&df, &data_schema, report_type, &DebugLog::disabled())?;
+    let tree = result.tree;
 
     write_outputs(args, &tree, suffix, &schema_name, report_type.title())?;
 

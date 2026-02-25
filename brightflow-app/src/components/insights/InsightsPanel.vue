@@ -54,7 +54,13 @@ const rootNodes = computed(() => {
     <div v-else class="p-4 space-y-3">
       <!-- Summary bar -->
       <div class="flex items-center justify-between text-xs text-muted pb-2 border-b border-default">
-        <span>{{ rootNodes.length }} finding{{ rootNodes.length === 1 ? '' : 's' }}</span>
+        <span>
+          {{ insightsStore.firstLevelCount + insightsStore.deeperCount }} analyses
+          <template v-if="insightsStore.deeperCount > 0">
+            ({{ insightsStore.firstLevelCount }} first-level, {{ insightsStore.deeperCount }} deeper)
+          </template>
+          &rarr; {{ rootNodes.length }} finding{{ rootNodes.length === 1 ? '' : 's' }}
+        </span>
         <span v-if="insightsStore.executionTimeMs !== null">
           {{ insightsStore.executionTimeMs.toFixed(0) }}ms
         </span>

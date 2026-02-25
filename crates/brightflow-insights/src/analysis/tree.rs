@@ -616,3 +616,10 @@ impl Default for AnalysisTree {
         Self::new()
     }
 }
+
+/// Wraps an analysis tree with execution statistics
+pub struct AnalysisResult {
+    pub tree: AnalysisTree,
+    pub first_level_count: usize,
+    pub deeper_count: usize,
+}

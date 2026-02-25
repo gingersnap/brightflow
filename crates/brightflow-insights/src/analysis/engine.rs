@@ -13,7 +13,9 @@ use crate::analysis::period::{
 };
 use crate::analysis::seasonality::detect_seasonality;
 use crate::analysis::segment::{attribute_period_segments_cached, attribute_segment};
-use crate::analysis::tree::{AnalysisTree, AnalysisType, NodeId, ReportType, ReviewCadence};
+use crate::analysis::tree::{
+    AnalysisResult, AnalysisTree, AnalysisType, NodeId, ReportType, ReviewCadence,
+};
 use crate::analysis::trend::detect_trend;
 use crate::data::config::TimeGranularity;
 use crate::data::schema::DataSchema;
@@ -150,7 +152,7 @@ impl AnalysisEngine {
     }
 
     /// Run review report: anomaly detection with attribution
-    pub fn run_review(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisTree> {
+    pub fn run_review(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisResult> {
         self.run_review_with_cadence(df, schema, ReviewCadence::Daily, &DebugLog::disabled())
     }
 
@@ -161,17 +163,17 @@ impl AnalysisEngine {
         schema: &DataSchema,
         cadence: ReviewCadence,
         debug: &DebugLog,
-    ) -> Result<AnalysisTree> {
+    ) -> Result<AnalysisResult> {
         self.run_review_cadence_impl(df, schema, cadence, debug)
     }
 
     /// Run trends report: time-based patterns and forecasting
-    pub fn run_trends(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisTree> {
+    pub fn run_trends(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisResult> {
         self.run_report(df, schema, ReportType::Trends, &DebugLog::disabled())
     }
 
     /// Run drivers report: composition and driver analysis
-    pub fn run_drivers(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisTree> {
+    pub fn run_drivers(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisResult> {
         self.run_report(df, schema, ReportType::Drivers, &DebugLog::disabled())
     }
 
@@ -182,7 +184,7 @@ impl AnalysisEngine {
         schema: &DataSchema,
         report_type: ReportType,
         debug: &DebugLog,
-    ) -> Result<AnalysisTree> {
+    ) -> Result<AnalysisResult> {
         match report_type {
             ReportType::Review => self.run_review_impl(df, schema, debug),
             ReportType::Trends => self.run_trends_impl(df, schema, debug),
@@ -206,10 +208,12 @@ impl AnalysisEngine {
         schema: &DataSchema,
         cadence: ReviewCadence,
         debug: &DebugLog,
-    ) -> Result<AnalysisTree> {
+    ) -> Result<AnalysisResult> {
         let start_time = Instant::now();
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
         let mut tree = AnalysisTree::new();
+        let mut first_level_count: usize = 0;
+        let mut deeper_count: usize = 0;
 
         debug.section(&format!("{} REVIEW", cadence.title().to_uppercase()));
 
@@ -235,15 +239,27 @@ impl AnalysisEngine {
 
         if unique_periods.len() < 2 {
             debug.log("Not enough periods for comparison");
-            return Ok(tree);
+            return Ok(AnalysisResult {
+                tree,
+                first_level_count: 0,
+                deeper_count: 0,
+            });
         }
 
         // Safe: we checked len >= 2 above
         let Some(current_period) = unique_periods.last().cloned() else {
-            return Ok(tree);
+            return Ok(AnalysisResult {
+                tree,
+                first_level_count: 0,
+                deeper_count: 0,
+            });
         };
         let Some(previous_period) = unique_periods.get(unique_periods.len() - 2).cloned() else {
-            return Ok(tree);
+            return Ok(AnalysisResult {
+                tree,
+                first_level_count: 0,
+                deeper_count: 0,
+            });
         };
 
         debug.kv("Current period", &current_period);
@@ -286,6 +302,7 @@ impl AnalysisEngine {
                 continue;
             }
 
+            first_level_count += 1;
             let change_percent = ((current_mean - previous_mean) / previous_mean) * 100.0;
             let p_value = crate::stats::significance::p_value_welch_t_test(
                 current_mean,
@@ -353,6 +370,8 @@ impl AnalysisEngine {
                     continue;
                 }
 
+                deeper_count += 1;
+
                 let Some(target_values) = cache.numeric.get(&target_col) else {
                     continue;
                 };
@@ -410,7 +429,11 @@ impl AnalysisEngine {
         );
         debug.flush();
 
-        Ok(tree)
+        Ok(AnalysisResult {
+            tree,
+            first_level_count,
+            deeper_count,
+        })
     }
 
     /// Review report: anomaly detection with attribution (How are we doing? What happened? Why?)
@@ -420,10 +443,12 @@ impl AnalysisEngine {
         df: &DataFrame,
         schema: &DataSchema,
         debug: &DebugLog,
-    ) -> Result<AnalysisTree> {
+    ) -> Result<AnalysisResult> {
         let start_time = Instant::now();
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
         let mut tree = AnalysisTree::new();
+        let mut first_level_count: usize = 0;
+        let mut deeper_count: usize = 0;
 
         debug.section("REVIEW REPORT");
         debug.subsection("Configuration");
@@ -447,6 +472,7 @@ impl AnalysisEngine {
         while let Some(task) = queue.pop_front() {
             match task {
                 AnalysisTask::DetectAnomalies { column } => {
+                    first_level_count += 1;
                     if let Some(anomaly) = detect_anomaly(df, &column)? {
                         if anomaly.z_score.abs() > self.z_threshold {
                             let description = format!(
@@ -488,6 +514,7 @@ impl AnalysisEngine {
                     if depth >= self.max_depth {
                         continue;
                     }
+                    deeper_count += 1;
                     if let Some(attr) = attribute_segment(df, &target_col, &segment_col)? {
                         if attr.p_value < self.p_threshold {
                             let description = format!(
@@ -528,6 +555,7 @@ impl AnalysisEngine {
                     if depth >= self.max_depth {
                         continue;
                     }
+                    deeper_count += 1;
                     for other_col in &schema.analyzable_columns() {
                         if other_col != &target_col {
                             if let Some(corr) = correlate(df, &target_col, other_col)? {
@@ -569,7 +597,11 @@ impl AnalysisEngine {
         // Suppress unused variable warning
         drop((cache, setup_time));
 
-        Ok(tree)
+        Ok(AnalysisResult {
+            tree,
+            first_level_count,
+            deeper_count,
+        })
     }
 
     /// Trends report: time-based patterns and forecasting (What's changing over time?)
@@ -578,10 +610,11 @@ impl AnalysisEngine {
         df: &DataFrame,
         schema: &DataSchema,
         debug: &DebugLog,
-    ) -> Result<AnalysisTree> {
+    ) -> Result<AnalysisResult> {
         let start_time = Instant::now();
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
         let mut tree = AnalysisTree::new();
+        let mut first_level_count: usize = 0;
 
         debug.section("TRENDS REPORT");
 
@@ -621,6 +654,7 @@ impl AnalysisEngine {
         }
 
         while let Some(task) = queue.pop_front() {
+            first_level_count += 1;
             match task {
                 AnalysisTask::DetectTrend { column } => {
                     if let Some(trend) = detect_trend(df, &column)? {
@@ -852,7 +886,11 @@ impl AnalysisEngine {
         );
         debug.flush();
 
-        Ok(tree)
+        Ok(AnalysisResult {
+            tree,
+            first_level_count,
+            deeper_count: 0,
+        })
     }
 
     /// Drivers report: composition and driver analysis (What is driving performance?)
@@ -862,7 +900,7 @@ impl AnalysisEngine {
         _df: &DataFrame,
         _schema: &DataSchema,
         debug: &DebugLog,
-    ) -> Result<AnalysisTree> {
+    ) -> Result<AnalysisResult> {
         let tree = AnalysisTree::new();
 
         debug.section("DRIVERS REPORT");
@@ -870,6 +908,10 @@ impl AnalysisEngine {
         debug.flush();
 
         // TODO: Implement composition analysis, pareto, etc.
-        Ok(tree)
+        Ok(AnalysisResult {
+            tree,
+            first_level_count: 0,
+            deeper_count: 0,
+        })
     }
 }
