@@ -16,6 +16,9 @@ export const useUiStore = defineStore('ui', () => {
   // Connect is separate from Explore/Insights
   const showConnect = ref(initialConnect);
 
+  // System observability view
+  const showSystem = ref(storedMode === 'system');
+
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
   const viewMode = ref<ViewMode>(
     (localStorage.getItem('brightflow-view-mode') as ViewMode | null) ?? 'table',
@@ -41,6 +44,11 @@ export const useUiStore = defineStore('ui', () => {
       localStorage.setItem('brightflow-app-mode', 'connect');
     }
   });
+  watch(showSystem, (val) => {
+    if (val) {
+      localStorage.setItem('brightflow-app-mode', 'system');
+    }
+  });
   watch(viewMode, (val) => localStorage.setItem('brightflow-view-mode', val));
   watch(chartType, (val) => localStorage.setItem('brightflow-chart-type', val));
 
@@ -48,10 +56,17 @@ export const useUiStore = defineStore('ui', () => {
   function setAppMode(mode: AppMode): void {
     appMode.value = mode;
     showConnect.value = false;
+    showSystem.value = false;
   }
 
   function setShowConnect(val: boolean): void {
     showConnect.value = val;
+    if (val) showSystem.value = false;
+  }
+
+  function setShowSystem(val: boolean): void {
+    showSystem.value = val;
+    if (val) showConnect.value = false;
   }
 
   function setViewMode(mode: ViewMode): void {
@@ -85,6 +100,7 @@ export const useUiStore = defineStore('ui', () => {
   return {
     appMode,
     showConnect,
+    showSystem,
     viewMode,
     chartType,
     filterCollapsed,
@@ -93,6 +109,7 @@ export const useUiStore = defineStore('ui', () => {
     hasShownPivotResults,
     setAppMode,
     setShowConnect,
+    setShowSystem,
     setViewMode,
     setChartType,
     toggleSection,

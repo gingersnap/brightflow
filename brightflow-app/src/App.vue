@@ -4,6 +4,7 @@ import { useAuthStore } from './stores/auth';
 import { useConnectionStore } from './stores/connection';
 import { useDatasetStore } from './stores/dataset';
 import { useUiStore } from './stores/ui';
+import { useSystemStore } from './stores/system';
 import { resetAllStores } from './stores';
 import { tableApi, type TableInfo } from './services/api';
 
@@ -13,6 +14,7 @@ import QueryBuilder from './components/query/QueryBuilder.vue';
 import ResultsPanel from './components/results/ResultsPanel.vue';
 import InsightsView from './components/insights/InsightsView.vue';
 import ConnectView from './components/connect/ConnectView.vue';
+import SystemView from './components/system/SystemView.vue';
 import DatasetPickerModal from './components/layout/DatasetPickerModal.vue';
 import WelcomeLanding from './components/layout/WelcomeLanding.vue';
 import LoginPage from './components/auth/LoginPage.vue';
@@ -21,6 +23,7 @@ const authStore = useAuthStore();
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
+const systemStore = useSystemStore();
 
 const showDatasetPicker = ref(false);
 const currentDataset = ref<string | null>(null);
@@ -30,6 +33,18 @@ onMounted(() => {
   console.log('[App] Mounting, checking auth...');
   authStore.checkAuth();
 });
+
+// Connect/disconnect system WS when toggling system view
+watch(
+  () => uiStore.showSystem,
+  (show) => {
+    if (show) {
+      systemStore.connect();
+    } else {
+      systemStore.disconnect();
+    }
+  },
+);
 
 // Connect WS when dataset is loaded, disconnect when cleared
 watch(currentDataset, (newVal) => {
@@ -77,6 +92,7 @@ function handleOpenConnect(): void {
 
 async function handleLogout(): Promise<void> {
   connectionStore.disconnect();
+  systemStore.disconnect();
   currentDataset.value = null;
   resetAllStores();
   await authStore.logout();
@@ -113,8 +129,15 @@ async function handleLogout(): Promise<void> {
           @logout="handleLogout"
         />
 
+        <!-- System mode - works without a dataset -->
+        <template v-if="uiStore.showSystem">
+          <div class="flex-1 min-h-0 overflow-hidden relative">
+            <SystemView />
+          </div>
+        </template>
+
         <!-- Connect mode - works without a dataset -->
-        <template v-if="uiStore.showConnect">
+        <template v-else-if="uiStore.showConnect">
           <div class="flex-1 min-h-0 overflow-hidden">
             <ConnectView />
           </div>

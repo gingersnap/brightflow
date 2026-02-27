@@ -32,6 +32,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     SchedulerPanel: typeof import('./src/components/connect/SchedulerPanel.vue')['default']
     SyncStatusBadge: typeof import('./src/components/connect/SyncStatusBadge.vue')['default']
+    SystemView: typeof import('./src/components/system/SystemView.vue')['default']
     UApp: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/App.vue')['default']
     UButton: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Button.vue')['default']
     UFormField: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/FormField.vue')['default']

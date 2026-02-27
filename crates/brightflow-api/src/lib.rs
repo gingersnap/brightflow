@@ -20,6 +20,7 @@ pub mod routes;
 pub mod scheduler;
 pub mod shared;
 pub mod state;
+pub mod system;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -110,8 +111,14 @@ impl ServeConfig {
     }
 }
 
-/// Start the API server with the given configuration
-pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
+/// Start the API server with the given configuration.
+///
+/// Accepts an optional `log_sender` from `init_tracing()` for broadcasting log events
+/// to the system observability WebSocket.
+pub async fn serve(
+    config: ServeConfig,
+    log_sender: Option<tokio::sync::broadcast::Sender<system::log_layer::LogEntry>>,
+) -> anyhow::Result<()> {
     // Initialize AppState with lazy loading - metadata only, no data loaded
     let mut state = match (&config.default_dataset, &config.delta_store_path) {
         // Both default dataset and delta store
@@ -172,6 +179,16 @@ pub async fn serve(config: ServeConfig) -> anyhow::Result<()> {
         // No data source configured
         (None, None) => AppState::new(),
     };
+
+    // Replace log_sender if one was provided from init_tracing
+    if let Some(sender) = log_sender {
+        state.log_sender = sender;
+    }
+
+    // Spawn system metrics sampler
+    let sampler_metrics = Arc::clone(&state.system_metrics);
+    let sampler_start = state.start_time;
+    tokio::spawn(system::sampler::run_sampler(sampler_metrics, sampler_start));
 
     // Load schema configs from YAML files
     if let Some(schema_dir) = &config.schema_dir {

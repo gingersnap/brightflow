@@ -10,8 +10,10 @@ use crate::analytics::session::DatasetData;
 use crate::insights::types::{InsightsResponse, ReviewRequest, TrendsRequest};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
+use tracing::instrument;
 
 /// Run a review analysis on a dataset
+#[instrument(skip(state, req))]
 pub async fn run_review(
     State(state): State<AppState>,
     Json(req): Json<ReviewRequest>,
@@ -50,6 +52,7 @@ pub async fn run_review(
 }
 
 /// Run a trends analysis on a dataset
+#[instrument(skip(state, req))]
 pub async fn run_trends(
     State(state): State<AppState>,
     Json(req): Json<TrendsRequest>,

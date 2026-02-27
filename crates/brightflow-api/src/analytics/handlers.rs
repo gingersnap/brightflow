@@ -20,6 +20,7 @@ use crate::analytics::types::{
 use crate::analytics::{executor, session};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
+use tracing::instrument;
 
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -38,6 +39,7 @@ pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<Ta
 }
 
 /// Load a specific Delta table (unloads previously loaded tables)
+#[instrument(skip(state, auth_session))]
 pub async fn load_table(
     State(state): State<AppState>,
     auth_session: brightflow_auth::AuthSession,
@@ -197,6 +199,7 @@ pub async fn upload_dataset(
 }
 
 /// Execute a query via REST (HTTP fallback)
+#[instrument(skip(state, query))]
 pub async fn execute_query(
     State(state): State<AppState>,
     Json(query): Json<Query>,
@@ -299,6 +302,7 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
 }
 
 /// Execute a query via WebSocket
+#[instrument(skip(state, query))]
 async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
     let dataset_id = query.dataset_id.clone();
 

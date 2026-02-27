@@ -1,5 +1,7 @@
 use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
+use crate::system::log_layer::LogEntry;
+use crate::system::sampler::SystemSnapshot;
 use brightflow_auth::AuthDb;
 use brightflow_insights::data::config::SchemaConfig;
 use brightflow_insights::data::schema::DataSchema;
@@ -9,7 +11,8 @@ use dashmap::DashMap;
 use polars::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::time::Instant;
+use tokio::sync::{broadcast, RwLock};
 
 /// Shared application state
 #[derive(Clone)]
@@ -28,6 +31,12 @@ pub struct AppState {
     pub connector_config_dir: Option<PathBuf>,
     /// Authentication database
     pub auth_db: Option<Arc<AuthDb>>,
+    /// Live system metrics snapshot (updated by background sampler)
+    pub system_metrics: Arc<RwLock<SystemSnapshot>>,
+    /// Broadcast sender for log entries (from custom tracing Layer)
+    pub log_sender: broadcast::Sender<LogEntry>,
+    /// Server start time (for uptime calculation)
+    pub start_time: Instant,
 }
 
 impl Default for AppState {
@@ -39,6 +48,7 @@ impl Default for AppState {
 impl AppState {
     /// Create new AppState with empty dataset manager
     pub fn new() -> Self {
+        let (log_sender, _) = broadcast::channel(1000);
         Self {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(Vec::new())),
@@ -47,6 +57,25 @@ impl AppState {
             scheduler: None,
             connector_config_dir: None,
             auth_db: None,
+            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
+            log_sender,
+            start_time: Instant::now(),
+        }
+    }
+
+    /// Create new AppState with an existing log broadcast sender (from init_tracing).
+    pub fn with_log_sender(log_sender: broadcast::Sender<LogEntry>) -> Self {
+        Self {
+            datasets: DatasetManager::new(),
+            table_index: Arc::new(RwLock::new(Vec::new())),
+            delta_store: None,
+            schemas: Arc::new(DashMap::new()),
+            scheduler: None,
+            connector_config_dir: None,
+            auth_db: None,
+            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
+            log_sender,
+            start_time: Instant::now(),
         }
     }
 
@@ -136,6 +165,7 @@ impl AppState {
             index.len()
         );
 
+        let (log_sender, _) = broadcast::channel(1000);
         Self {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(index)),
@@ -144,6 +174,42 @@ impl AppState {
             scheduler: None,
             connector_config_dir: None,
             auth_db: None,
+            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
+            log_sender,
+            start_time: Instant::now(),
+        }
+    }
+
+    /// Create AppState with a Delta store and an existing log broadcast sender.
+    pub async fn with_delta_store_and_log_sender(
+        store: DeltaStore,
+        log_sender: broadcast::Sender<LogEntry>,
+    ) -> Self {
+        let tables = store.list_tables().await.unwrap_or_default();
+
+        let mut index = Vec::with_capacity(tables.len());
+        for table_ref in tables {
+            if let Ok(info) = store.table_info(&table_ref.name).await {
+                index.push(info);
+            }
+        }
+
+        tracing::info!(
+            "Indexed {} Delta tables (metadata only, no data loaded)",
+            index.len()
+        );
+
+        Self {
+            datasets: DatasetManager::new(),
+            table_index: Arc::new(RwLock::new(index)),
+            delta_store: Some(Arc::new(store)),
+            schemas: Arc::new(DashMap::new()),
+            scheduler: None,
+            connector_config_dir: None,
+            auth_db: None,
+            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
+            log_sender,
+            start_time: Instant::now(),
         }
     }
 

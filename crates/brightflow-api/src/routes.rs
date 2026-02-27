@@ -1,7 +1,8 @@
 use axum::{
+    extract::State,
     middleware,
     routing::{delete, get, post},
-    Router,
+    Json, Router,
 };
 
 use crate::analytics::handlers;
@@ -10,6 +11,7 @@ use crate::connect::handlers as connect_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::scheduler::handlers as scheduler_handlers;
 use crate::state::AppState;
+use crate::system::handlers as system_handlers;
 
 /// Create the main application router
 pub fn create_router() -> Router<AppState> {
@@ -100,6 +102,8 @@ fn api_routes() -> Router<AppState> {
             "/sync/state/{connector_id}",
             get(scheduler_handlers::get_sync_state),
         )
+        // System observability
+        .route("/system/ws", get(system_handlers::system_ws_handler))
         .route_layer(middleware::from_fn(require_auth));
 
     public.merge(protected)
@@ -122,6 +126,9 @@ async fn require_auth(
 use axum::response::IntoResponse;
 
 /// Health check endpoint
-async fn health_check() -> &'static str {
-    "OK"
+async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "uptime_secs": state.start_time.elapsed().as_secs(),
+    }))
 }

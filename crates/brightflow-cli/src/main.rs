@@ -42,8 +42,10 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use polars::prelude::SerWriter;
 use std::path::PathBuf;
+use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use brightflow_api::system::log_layer::{LogBroadcastLayer, LogEntry};
 use brightflow_api::ServeConfig;
 use brightflow_connect::{
     get_builtin_connector_path, list_builtin_connectors, run_connector, RunOptions,
@@ -346,7 +348,7 @@ async fn main() -> Result<()> {
             connector_configs,
             database_url,
         } => {
-            init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
+            let log_sender = init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
             let config = build_serve_config(
                 &host,
@@ -359,7 +361,7 @@ async fn main() -> Result<()> {
             );
 
             // Scheduler is now integrated into the API server (started automatically)
-            brightflow_api::serve(config).await?;
+            brightflow_api::serve(config, Some(log_sender)).await?;
         },
 
         Commands::Serve {
@@ -371,7 +373,7 @@ async fn main() -> Result<()> {
             connector_configs,
             database_url,
         } => {
-            init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
+            let log_sender = init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
             let config = build_serve_config(
                 &host,
@@ -382,11 +384,11 @@ async fn main() -> Result<()> {
                 &connector_configs,
                 database_url,
             );
-            brightflow_api::serve(config).await?;
+            brightflow_api::serve(config, Some(log_sender)).await?;
         },
 
         Commands::Schedule => {
-            init_tracing("brightflow=info");
+            init_tracing_simple("brightflow=info");
             println!("Scheduler is now integrated into the API server.");
             println!("Use `brightflow run-all` or `brightflow serve` to start with the scheduler enabled.");
         },
@@ -414,12 +416,12 @@ async fn main() -> Result<()> {
         },
 
         Commands::Connect(connect_cmd) => {
-            init_tracing("brightflow=info");
+            init_tracing_simple("brightflow=info");
             handle_connect_command(connect_cmd).await?;
         },
 
         Commands::Store(store_cmd) => {
-            init_tracing("brightflow=info");
+            init_tracing_simple("brightflow=info");
             handle_store_command(store_cmd).await?;
         },
 
@@ -435,7 +437,23 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn init_tracing(default_filter: &str) {
+fn init_tracing(default_filter: &str) -> broadcast::Sender<LogEntry> {
+    let (log_sender, _) = broadcast::channel(1000);
+    let log_layer = LogBroadcastLayer::new(log_sender.clone());
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| default_filter.into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .with(log_layer)
+        .init();
+
+    log_sender
+}
+
+fn init_tracing_simple(default_filter: &str) {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()

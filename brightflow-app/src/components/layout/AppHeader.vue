@@ -6,6 +6,7 @@ import {
   Search,
   Sparkles,
   Cable,
+  Activity,
   Sun,
   Moon,
   Plus,
@@ -63,6 +64,10 @@ function toggleConnect(): void {
   uiStore.setShowConnect(!uiStore.showConnect);
 }
 
+function toggleSystem(): void {
+  uiStore.setShowSystem(!uiStore.showSystem);
+}
+
 function toggleTheme(): void {
   colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
 }
@@ -111,7 +116,7 @@ async function toggleDataMode(): Promise<void> {
         <button
           class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
           :class="
-            uiStore.appMode === 'explore' && !uiStore.showConnect
+            uiStore.appMode === 'explore' && !uiStore.showConnect && !uiStore.showSystem
               ? 'bg-default text-highlighted shadow-sm'
               : 'text-muted hover:text-highlighted'
           "
@@ -123,7 +128,7 @@ async function toggleDataMode(): Promise<void> {
         <button
           class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
           :class="
-            uiStore.appMode === 'insights' && !uiStore.showConnect
+            uiStore.appMode === 'insights' && !uiStore.showConnect && !uiStore.showSystem
               ? 'bg-default text-highlighted shadow-sm'
               : 'text-muted hover:text-highlighted'
           "
@@ -149,6 +154,20 @@ async function toggleDataMode(): Promise<void> {
       >
         <Cable class="w-3.5 h-3.5" />
         Connect
+      </button>
+
+      <!-- System button -->
+      <button
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+        :class="
+          uiStore.showSystem
+            ? 'bg-primary-500/10 text-primary-500'
+            : 'text-muted hover:text-highlighted hover:bg-elevated'
+        "
+        @click="toggleSystem"
+      >
+        <Activity class="w-3.5 h-3.5" />
+        System
       </button>
 
       <!-- Data mode toggle -->
