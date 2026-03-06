@@ -2,11 +2,10 @@ use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
-use brightflow_auth::AuthDb;
 use brightflow_insights::data::config::SchemaConfig;
 use brightflow_insights::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
-use brightflow_store::{DeltaStore, TableInfo};
+use brightflow_store::{ParquetStore, TableInfo};
 use dashmap::DashMap;
 use polars::prelude::*;
 use std::path::{Path, PathBuf};
@@ -21,8 +20,8 @@ pub struct AppState {
     pub datasets: DatasetManager,
     /// Index of available Delta tables (metadata only, no data loaded)
     pub table_index: Arc<RwLock<Vec<TableInfo>>>,
-    /// Reference to the Delta store for lazy loading
-    delta_store: Option<Arc<DeltaStore>>,
+    /// Reference to the Parquet store for lazy loading
+    store: Option<Arc<ParquetStore>>,
     /// Global schema configs keyed by table name
     pub schemas: Arc<DashMap<String, DataSchema>>,
     /// Optional scheduler for background jobs
@@ -30,7 +29,9 @@ pub struct AppState {
     /// Path to connector config directory
     pub connector_config_dir: Option<PathBuf>,
     /// Authentication database
-    pub auth_db: Option<Arc<AuthDb>>,
+    pub auth_db: Option<Arc<crate::auth::AuthDb>>,
+    /// Scheduler database
+    pub scheduler_db: Option<Arc<brightflow_scheduler::SchedulerDb>>,
     /// Live system metrics snapshot (updated by background sampler)
     pub system_metrics: Arc<RwLock<SystemSnapshot>>,
     /// Broadcast sender for log entries (from custom tracing Layer)
@@ -52,11 +53,12 @@ impl AppState {
         Self {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(Vec::new())),
-            delta_store: None,
+            store: None,
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
             connector_config_dir: None,
             auth_db: None,
+            scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
@@ -68,11 +70,12 @@ impl AppState {
         Self {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(Vec::new())),
-            delta_store: None,
+            store: None,
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
             connector_config_dir: None,
             auth_db: None,
+            scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
@@ -128,14 +131,14 @@ impl AppState {
         self.schemas.get(table_name).map(|s| s.clone())
     }
 
-    /// Get a reference to the Delta store
-    pub fn delta_store(&self) -> Option<&Arc<DeltaStore>> {
-        self.delta_store.as_ref()
+    /// Get a reference to the Parquet store
+    pub fn store(&self) -> Option<&Arc<ParquetStore>> {
+        self.store.as_ref()
     }
 
-    /// Re-read table metadata from the Delta store and update the index
+    /// Re-read table metadata from the store and update the index
     pub async fn refresh_table_index(&self) {
-        if let Some(store) = &self.delta_store {
+        if let Some(store) = &self.store {
             let tables = store.list_tables().await.unwrap_or_default();
             let mut index = Vec::with_capacity(tables.len());
             for table_ref in tables {
@@ -148,8 +151,8 @@ impl AppState {
         }
     }
 
-    /// Create AppState with a Delta store - loads metadata only, no data
-    pub async fn with_delta_store(store: DeltaStore) -> Self {
+    /// Create AppState with a Parquet store - loads metadata only, no data
+    pub async fn with_store(store: ParquetStore) -> Self {
         let tables = store.list_tables().await.unwrap_or_default();
 
         // Load metadata for each table (does NOT load actual data)
@@ -161,7 +164,7 @@ impl AppState {
         }
 
         tracing::info!(
-            "Indexed {} Delta tables (metadata only, no data loaded)",
+            "Indexed {} tables (metadata only, no data loaded)",
             index.len()
         );
 
@@ -169,20 +172,21 @@ impl AppState {
         Self {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(index)),
-            delta_store: Some(Arc::new(store)),
+            store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
             connector_config_dir: None,
             auth_db: None,
+            scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
         }
     }
 
-    /// Create AppState with a Delta store and an existing log broadcast sender.
-    pub async fn with_delta_store_and_log_sender(
-        store: DeltaStore,
+    /// Create AppState with a Parquet store and an existing log broadcast sender.
+    pub async fn with_store_and_log_sender(
+        store: ParquetStore,
         log_sender: broadcast::Sender<LogEntry>,
     ) -> Self {
         let tables = store.list_tables().await.unwrap_or_default();
@@ -195,18 +199,19 @@ impl AppState {
         }
 
         tracing::info!(
-            "Indexed {} Delta tables (metadata only, no data loaded)",
+            "Indexed {} tables (metadata only, no data loaded)",
             index.len()
         );
 
         Self {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(index)),
-            delta_store: Some(Arc::new(store)),
+            store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
             connector_config_dir: None,
             auth_db: None,
+            scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
@@ -242,13 +247,10 @@ impl AppState {
         Ok(state)
     }
 
-    /// Create AppState with both a default CSV dataset and Delta store metadata
-    pub async fn with_default_and_delta_store(
-        csv_path: &str,
-        store: DeltaStore,
-    ) -> AppResult<Self> {
-        // First create with delta store (metadata only)
-        let state = Self::with_delta_store(store).await;
+    /// Create AppState with both a default CSV dataset and store metadata
+    pub async fn with_default_and_store(csv_path: &str, store: ParquetStore) -> AppResult<Self> {
+        // First create with store (metadata only)
+        let state = Self::with_store(store).await;
 
         // Then load the default CSV dataset
         let path = csv_path.to_string();
@@ -281,20 +283,20 @@ impl AppState {
         self.table_index.read().await.clone()
     }
 
-    /// Load a specific Delta table on-demand with the given data mode
+    /// Load a specific table on-demand with the given data mode
     ///
-    /// This unloads any previously loaded Delta tables first to keep memory usage low.
+    /// This unloads any previously loaded tables first to keep memory usage low.
     pub async fn load_table(
         &self,
         table_name: &str,
         data_mode: brightflow_core::DataMode,
     ) -> AppResult<String> {
-        let store = self.delta_store.as_ref().ok_or_else(|| {
-            crate::shared::AppError::BadRequest("No Delta store configured".to_string())
+        let store = self.store.as_ref().ok_or_else(|| {
+            crate::shared::AppError::BadRequest("No store configured".to_string())
         })?;
 
-        // Unload any existing delta tables to free memory
-        self.unload_delta_tables();
+        // Unload any existing store tables to free memory
+        self.unload_store_tables();
 
         let source = DatasetSource::DeltaTable {
             table_name: table_name.to_string(),
@@ -303,9 +305,9 @@ impl AppState {
 
         let id = match data_mode {
             brightflow_core::DataMode::Memory => {
-                tracing::info!("Loading Delta table '{}' into memory (eager)", table_name);
+                tracing::info!("Loading table '{}' into memory (eager)", table_name);
                 let df = store.read_table(table_name).await?;
-                tracing::info!("Loaded Delta table '{}': {} rows", table_name, df.height());
+                tracing::info!("Loaded table '{}': {} rows", table_name, df.height());
                 self.datasets.add_dataset(
                     table_name.to_string(),
                     DatasetData::Eager(df),
@@ -314,10 +316,7 @@ impl AppState {
                 )
             },
             brightflow_core::DataMode::Lazy => {
-                tracing::info!(
-                    "Loading Delta table '{}' in lazy mode (parquet scan)",
-                    table_name
-                );
+                tracing::info!("Loading table '{}' in lazy mode (parquet scan)", table_name);
                 let parquet_files = store.get_table_parquet_paths(table_name).await?;
                 tracing::info!(
                     "Registered {} parquet file(s) for lazy scan of '{}'",
@@ -336,8 +335,8 @@ impl AppState {
         Ok(id)
     }
 
-    /// Unload all Delta tables from memory (keeps "default" and uploaded datasets)
-    pub fn unload_delta_tables(&self) {
+    /// Unload all store tables from memory (keeps "default" and uploaded datasets)
+    pub fn unload_store_tables(&self) {
         let to_remove: Vec<_> = self
             .datasets
             .list_datasets()
@@ -351,7 +350,7 @@ impl AppState {
         }
 
         if !to_remove.is_empty() {
-            tracing::info!("Unloaded {} Delta table(s) from memory", to_remove.len());
+            tracing::info!("Unloaded {} table(s) from memory", to_remove.len());
         }
     }
 
@@ -361,22 +360,17 @@ impl AppState {
         index.iter().any(|t| t.name == table_name)
     }
 
-    /// Legacy method: Load a Delta Lake table directly (for backwards compatibility)
-    pub async fn load_delta_table(
+    /// Load a table directly from a store
+    pub async fn load_store_table(
         &self,
-        store: &DeltaStore,
+        store: &ParquetStore,
         table_name: &str,
-        version: Option<i64>,
     ) -> AppResult<String> {
-        let df = match version {
-            Some(v) if v >= 0 => store.read_table_version(table_name, v).await?,
-            _ => store.read_table(table_name).await?,
-        };
+        let df = store.read_table(table_name).await?;
 
-        let version = version.unwrap_or(-1);
         let source = DatasetSource::DeltaTable {
             table_name: table_name.to_string(),
-            version,
+            version: -1,
         };
 
         let id = self.datasets.add_dataset(
@@ -388,10 +382,10 @@ impl AppState {
         Ok(id)
     }
 
-    /// Legacy method: Load all Delta Lake tables from a store
-    pub async fn load_all_delta_tables(
+    /// Load all tables from a store
+    pub async fn load_all_store_tables(
         &self,
-        store: &DeltaStore,
+        store: &ParquetStore,
     ) -> Vec<(String, Result<String, String>)> {
         let tables = match store.list_tables().await {
             Ok(t) => t,
@@ -400,7 +394,7 @@ impl AppState {
 
         let mut results = Vec::with_capacity(tables.len());
         for table_ref in tables {
-            let result = match self.load_delta_table(store, &table_ref.name, None).await {
+            let result = match self.load_store_table(store, &table_ref.name).await {
                 Ok(id) => Ok(id),
                 Err(e) => Err(e.to_string()),
             };

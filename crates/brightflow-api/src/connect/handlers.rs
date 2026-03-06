@@ -58,9 +58,9 @@ pub async fn list_unified_connectors(
     }
 
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let entries = std::fs::read_dir(config_dir)
         .map_err(|e| AppError::Internal(format!("Failed to read config dir: {e}")))?;
@@ -139,11 +139,11 @@ pub async fn list_unified_connectors(
 pub async fn list_connector_runs(
     State(state): State<AppState>,
     Path(name): Path<String>,
-) -> AppResult<Json<Vec<brightflow_auth::SyncRun>>> {
+) -> AppResult<Json<Vec<brightflow_scheduler::SyncRun>>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     // Find DB connector config by name
     let config = db
@@ -167,9 +167,9 @@ pub async fn run_connector(
     _body: Option<Json<RunRequest>>,
 ) -> AppResult<Json<RunTriggerResponse>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let config_dir = state.connector_config_dir.as_ref().ok_or_else(|| {
         AppError::BadRequest("No connector config directory configured".to_string())
@@ -223,9 +223,9 @@ pub async fn schedule_connector(
     Json(body): Json<ScheduleRequest>,
 ) -> AppResult<Json<ScheduleResponse>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let config_dir = state.connector_config_dir.as_ref().ok_or_else(|| {
         AppError::BadRequest("No connector config directory configured".to_string())

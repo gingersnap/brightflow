@@ -42,13 +42,13 @@ pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<Ta
 #[instrument(skip(state, auth_session))]
 pub async fn load_table(
     State(state): State<AppState>,
-    auth_session: brightflow_auth::AuthSession,
+    auth_session: crate::auth::AuthSession,
     Path(name): Path<String>,
 ) -> AppResult<Json<LoadTableResponse>> {
     // Check if table exists in index
     if !state.table_exists(&name).await {
         return Err(AppError::NotFound(format!(
-            "Table '{name}' not found in Delta store"
+            "Table '{name}' not found in store"
         )));
     }
 

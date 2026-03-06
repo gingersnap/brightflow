@@ -1,5 +1,5 @@
+use crate::auth::{AuthSession, Credentials, User};
 use axum::{extract::State, http::StatusCode, Json};
-use brightflow_auth::{AuthSession, Credentials, User};
 use serde::{Deserialize, Serialize};
 
 use crate::shared::AppError;

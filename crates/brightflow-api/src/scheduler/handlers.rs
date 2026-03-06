@@ -54,11 +54,11 @@ pub struct TriggerRunResponse {
 pub async fn create_connector_config(
     State(state): State<AppState>,
     Json(body): Json<CreateConnectorConfigRequest>,
-) -> AppResult<Json<brightflow_auth::ConnectorConfig>> {
+) -> AppResult<Json<brightflow_scheduler::ConnectorConfig>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let config_json = serde_json::to_string(&body.config_json)
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -74,11 +74,11 @@ pub async fn create_connector_config(
 /// GET /api/connectors — list connector configs (from DB)
 pub async fn list_connector_configs(
     State(state): State<AppState>,
-) -> AppResult<Json<Vec<brightflow_auth::ConnectorConfig>>> {
+) -> AppResult<Json<Vec<brightflow_scheduler::ConnectorConfig>>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let configs = db
         .list_connector_configs()
@@ -92,11 +92,11 @@ pub async fn list_connector_configs(
 pub async fn get_connector_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> AppResult<Json<brightflow_auth::ConnectorConfig>> {
+) -> AppResult<Json<brightflow_scheduler::ConnectorConfig>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let config = db
         .get_connector_config(&id)
@@ -112,11 +112,11 @@ pub async fn update_connector_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateConnectorConfigRequest>,
-) -> AppResult<Json<brightflow_auth::ConnectorConfig>> {
+) -> AppResult<Json<brightflow_scheduler::ConnectorConfig>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let config_json = serde_json::to_string(&body.config_json)
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -136,9 +136,9 @@ pub async fn delete_connector_config(
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let deleted = db
         .delete_connector_config(&id)
@@ -162,11 +162,11 @@ pub async fn delete_connector_config(
 pub async fn create_job(
     State(state): State<AppState>,
     Json(body): Json<CreateJobRequest>,
-) -> AppResult<Json<brightflow_auth::SchedulerJob>> {
+) -> AppResult<Json<brightflow_scheduler::SchedulerJob>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let job = db
         .create_scheduler_job(&body.name, &body.connector_id, body.interval_secs)
@@ -179,11 +179,11 @@ pub async fn create_job(
 /// GET /api/scheduler/jobs — list jobs
 pub async fn list_jobs(
     State(state): State<AppState>,
-) -> AppResult<Json<Vec<brightflow_auth::SchedulerJob>>> {
+) -> AppResult<Json<Vec<brightflow_scheduler::SchedulerJob>>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let jobs = db
         .list_scheduler_jobs()
@@ -197,11 +197,11 @@ pub async fn list_jobs(
 pub async fn get_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> AppResult<Json<brightflow_auth::SchedulerJob>> {
+) -> AppResult<Json<brightflow_scheduler::SchedulerJob>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let job = db
         .get_scheduler_job(&id)
@@ -217,11 +217,11 @@ pub async fn update_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateJobRequest>,
-) -> AppResult<Json<brightflow_auth::SchedulerJob>> {
+) -> AppResult<Json<brightflow_scheduler::SchedulerJob>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let job = db
         .update_scheduler_job(&id, body.interval_secs, body.enabled)
@@ -238,9 +238,9 @@ pub async fn delete_job(
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let deleted = db
         .delete_scheduler_job(&id)
@@ -279,11 +279,11 @@ pub async fn trigger_run(
 /// GET /api/sync/runs — list recent runs
 pub async fn list_sync_runs(
     State(state): State<AppState>,
-) -> AppResult<Json<Vec<brightflow_auth::SyncRun>>> {
+) -> AppResult<Json<Vec<brightflow_scheduler::SyncRun>>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let runs = db
         .list_sync_runs(100)
@@ -297,11 +297,11 @@ pub async fn list_sync_runs(
 pub async fn get_sync_run(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> AppResult<Json<brightflow_auth::SyncRun>> {
+) -> AppResult<Json<brightflow_scheduler::SyncRun>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let run = db
         .get_sync_run(&id)
@@ -316,11 +316,11 @@ pub async fn get_sync_run(
 pub async fn get_sync_state(
     State(state): State<AppState>,
     Path(connector_id): Path<String>,
-) -> AppResult<Json<Vec<brightflow_auth::SyncState>>> {
+) -> AppResult<Json<Vec<brightflow_scheduler::SyncState>>> {
     let db = state
-        .auth_db
+        .scheduler_db
         .as_ref()
-        .ok_or_else(|| AppError::Internal("No database configured".to_string()))?;
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
 
     let states = db
         .list_sync_states(&connector_id)

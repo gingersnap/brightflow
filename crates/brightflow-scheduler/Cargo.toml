@@ -5,15 +5,20 @@ edition = "2021"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
-brightflow-auth = { path = "../brightflow-auth" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-insights = { path = "../brightflow-insights" }
 brightflow-store = { path = "../brightflow-store" }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

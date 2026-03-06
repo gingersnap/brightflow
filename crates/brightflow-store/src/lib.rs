@@ -1,13 +1,13 @@
-//! Brightflow Store - Delta Lake storage abstraction
+//! Brightflow Store - Manifest-based Parquet storage
 //!
-//! This crate provides Brightflow's lakehouse implementation using Delta Lake.
+//! This crate provides Brightflow's lakehouse implementation using
+//! a JSON manifest + Parquet files (replacing Delta Lake).
 
 // Allow certain lints for store code:
 // - similar_names: entry/dir_entry patterns are common in fs code
-// - arc_with_non_send_sync: follows upstream delta-rs patterns
 // - shadow_unrelated: variable shadowing for Result unwrapping is idiomatic
 // - wildcard_imports: prelude imports are standard for polars
-// - unused_async: async kept for future compatibility with async file I/O
+// - unused_async: async kept for API compatibility
 #![allow(
     clippy::cognitive_complexity,
     clippy::too_many_lines,
@@ -15,15 +15,16 @@
     clippy::indexing_slicing,
     clippy::cast_sign_loss,
     clippy::match_same_arms,
-    clippy::arc_with_non_send_sync,
     clippy::clone_on_ref_ptr,
     clippy::shadow_unrelated,
+    clippy::shadow_reuse,
     clippy::wildcard_imports,
     clippy::unused_async
 )]
 
 mod error;
 mod ingest;
+mod manifest;
 mod table;
 
 pub use brightflow_core::{DatasetId, DatasetMeta, StorageConfig, TenantId};
@@ -33,25 +34,24 @@ pub use table::{TableInfo, TableRef};
 
 use std::path::{Path, PathBuf};
 
-use deltalake::DeltaTable;
 use polars::prelude::*;
 use tracing::info;
 
-/// Delta Lake store for managing tables
-pub struct DeltaStore {
+/// Parquet store for managing tables
+pub struct ParquetStore {
     /// Root path for all tables
     root_path: PathBuf,
 }
 
-impl DeltaStore {
-    /// Create a new `DeltaStore` with the given root path
+impl ParquetStore {
+    /// Create a new `ParquetStore` with the given root path
     pub fn new(root_path: impl Into<PathBuf>) -> Self {
         Self {
             root_path: root_path.into(),
         }
     }
 
-    /// Create a `DeltaStore` from a `StorageConfig`
+    /// Create a `ParquetStore` from a `StorageConfig`
     pub fn from_config(config: &StorageConfig) -> StoreResult<Self> {
         match config {
             StorageConfig::Local { path } => Ok(Self::new(path)),
@@ -93,20 +93,13 @@ impl DeltaStore {
         table::read_table(&path).await
     }
 
-    /// Read a specific version of a table as a Polars DataFrame
-    pub async fn read_table_version(&self, name: &str, version: i64) -> StoreResult<DataFrame> {
+    /// Get the parquet file paths for a table (for lazy scan mode)
+    pub async fn get_table_parquet_paths(&self, name: &str) -> StoreResult<Vec<PathBuf>> {
         let path = self.table_path(name);
-        info!(
-            "Reading table '{}' version {} from {:?}",
-            name, version, path
-        );
-        table::read_table_version(&path, version).await
-    }
-
-    /// Open a Delta table (low-level access)
-    pub async fn open_table(&self, name: &str) -> StoreResult<DeltaTable> {
-        let path = self.table_path(name);
-        table::open_table(&path).await
+        if !table::table_exists(&path).await? {
+            return Err(StoreError::TableNotFound(name.to_string()));
+        }
+        table::get_parquet_paths(&path)
     }
 
     /// Ingest a Parquet file into a table
@@ -133,41 +126,8 @@ impl DeltaStore {
         self.table_info(table_name).await
     }
 
-    /// Ingest a Polars DataFrame into a table
-    ///
-    /// If the table doesn't exist, it will be created with the DataFrame's schema.
-    /// If it exists, data will be appended.
-    pub async fn ingest_dataframe(
-        &self,
-        table_name: &str,
-        df: DataFrame,
-        options: Option<IngestOptions>,
-    ) -> StoreResult<TableInfo> {
-        let table_path = self.table_path(table_name);
-        let ingest_options = options.unwrap_or_default();
-
-        info!(
-            "Ingesting DataFrame ({} rows) into table '{}' at {:?}",
-            df.height(),
-            table_name,
-            table_path
-        );
-
-        ingest::ingest_dataframe(&table_path, df, &ingest_options).await?;
-        self.table_info(table_name).await
-    }
-
-    /// Get the parquet file paths for a table (for lazy scan mode)
-    pub async fn get_table_parquet_paths(&self, name: &str) -> StoreResult<Vec<PathBuf>> {
-        let path = self.table_path(name);
-        if !table::table_exists(&path).await? {
-            return Err(StoreError::TableNotFound(name.to_string()));
-        }
-        table::get_parquet_paths(&path)
-    }
-
     /// Merge (upsert) a Parquet file into a table by primary key.
-    /// Uses Delta MERGE to update existing rows and insert new ones.
+    /// Uses Polars join operations to update existing rows and insert new ones.
     pub async fn merge_parquet(
         &self,
         table_name: &str,
@@ -201,14 +161,14 @@ mod tests {
     #[tokio::test]
     async fn test_create_store() {
         let tmp = TempDir::new().expect("failed to create temp dir");
-        let store = DeltaStore::new(tmp.path());
+        let store = ParquetStore::new(tmp.path());
         assert_eq!(store.root_path(), tmp.path());
     }
 
     #[tokio::test]
     async fn test_list_empty_store() {
         let tmp = TempDir::new().expect("failed to create temp dir");
-        let store = DeltaStore::new(tmp.path());
+        let store = ParquetStore::new(tmp.path());
         let tables = store.list_tables().await.expect("failed to list tables");
         assert!(tables.is_empty());
     }

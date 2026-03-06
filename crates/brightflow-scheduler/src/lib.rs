@@ -8,13 +8,20 @@
     clippy::wildcard_imports
 )]
 
+pub mod db;
+pub mod error;
+pub mod models;
+
+pub use db::SchedulerDb;
+pub use error::{SchedulerError, SchedulerResult};
+pub use models::{ConnectorConfig, SchedulerJob, SyncRun, SyncState};
+
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use brightflow_auth::AuthDb;
 use brightflow_connect::RunOptions;
-use brightflow_store::DeltaStore;
+use brightflow_store::ParquetStore;
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -22,15 +29,15 @@ use tracing::{error, info, warn};
 /// The scheduler reads job definitions from SQLite and manages execution.
 #[derive(Clone)]
 pub struct Scheduler {
-    db: Arc<AuthDb>,
-    store: Arc<DeltaStore>,
+    db: Arc<SchedulerDb>,
+    store: Arc<ParquetStore>,
     running: Arc<RwLock<HashSet<String>>>,
 }
 
 impl Scheduler {
     /// Create a new scheduler backed by SQLite
     #[must_use]
-    pub fn new(db: Arc<AuthDb>, store: Arc<DeltaStore>) -> Self {
+    pub fn new(db: Arc<SchedulerDb>, store: Arc<ParquetStore>) -> Self {
         Self {
             db,
             store,
@@ -178,8 +185,8 @@ impl Scheduler {
 
 /// Execute a full sync: load config, run connector, merge results, update state
 async fn execute_sync(
-    db: &AuthDb,
-    store: &DeltaStore,
+    db: &SchedulerDb,
+    store: &ParquetStore,
     connector_id: &str,
     run_id: &str,
     _job_id: Option<&String>,
@@ -221,7 +228,7 @@ async fn execute_sync(
             .await
             .map_err(|e| format!("Connector execution failed: {e}"))?;
 
-    // 7. For each output parquet, merge into Delta table
+    // 7. For each output parquet, merge into table
     let output_dir = PathBuf::from(&result.output_path);
     let mut total_rows: i64 = 0;
 
@@ -283,7 +290,7 @@ fn resolve_connector_path(connector_path: &str) -> PathBuf {
     PathBuf::from(connector_path)
 }
 
-/// Return the primary keys for a given endpoint (for Delta MERGE upsert)
+/// Return the primary keys for a given endpoint (for merge upsert)
 fn primary_keys_for_endpoint(_endpoint: &str) -> Vec<String> {
     // All known endpoints use "id" as primary key
     vec!["id".to_string()]

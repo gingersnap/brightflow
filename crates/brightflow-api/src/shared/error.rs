@@ -85,7 +85,7 @@ impl IntoResponse for AppError {
             Self::Store(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "STORE_ERROR",
-                format!("Delta store operation failed: {e}"),
+                format!("Store operation failed: {e}"),
             ),
             Self::Analysis(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

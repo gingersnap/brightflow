@@ -60,7 +60,7 @@ use brightflow_insights::output::html::write_html;
 use brightflow_insights::output::json::write_output;
 use brightflow_insights::output::markdown::write_markdown;
 // Scheduler is now integrated into the API server
-use brightflow_store::{DeltaStore, IngestMode, IngestOptions};
+use brightflow_store::{IngestMode, IngestOptions, ParquetStore};
 
 #[derive(Parser, Debug)]
 #[command(name = "brightflow")]
@@ -87,13 +87,13 @@ enum Commands {
         #[arg(long)]
         dataset: Option<String>,
 
-        /// Path to Delta Lake store to auto-load tables from
-        #[arg(long)]
-        delta_store: Option<String>,
+        /// Path to Parquet store to auto-load tables from
+        #[arg(long, alias = "delta-store")]
+        store: Option<String>,
 
-        /// Specific Delta tables to load (comma-separated, loads all if not specified)
-        #[arg(long)]
-        delta_tables: Option<String>,
+        /// Specific tables to load (comma-separated, loads all if not specified)
+        #[arg(long, alias = "delta-tables")]
+        tables: Option<String>,
 
         /// Path to connector config YAML directory
         #[arg(long, default_value = "./configs")]
@@ -118,13 +118,13 @@ enum Commands {
         #[arg(long)]
         dataset: Option<String>,
 
-        /// Path to Delta Lake store to auto-load tables from
-        #[arg(long)]
-        delta_store: Option<String>,
+        /// Path to Parquet store to auto-load tables from
+        #[arg(long, alias = "delta-store")]
+        store: Option<String>,
 
-        /// Specific Delta tables to load (comma-separated, loads all if not specified)
-        #[arg(long)]
-        delta_tables: Option<String>,
+        /// Specific tables to load (comma-separated, loads all if not specified)
+        #[arg(long, alias = "delta-tables")]
+        tables: Option<String>,
 
         /// Path to connector config YAML directory
         #[arg(long, default_value = "./configs")]
@@ -146,7 +146,7 @@ enum Commands {
     #[command(subcommand)]
     Connect(ConnectCommands),
 
-    /// Delta Lake store operations
+    /// Parquet store operations
     #[command(subcommand)]
     Store(StoreCommands),
 
@@ -160,8 +160,8 @@ enum Commands {
         #[arg(long)]
         name: String,
 
-        /// SQLite database URL
-        #[arg(long, default_value = "sqlite:data/brightflow.db?mode=rwc")]
+        /// SQLite database URL for auth
+        #[arg(long, default_value = "sqlite:data/auth.db?mode=rwc")]
         database_url: String,
     },
 }
@@ -221,11 +221,11 @@ enum ConnectCommands {
         #[arg(long)]
         dry_run: bool,
 
-        /// Ingest output into Delta Lake store
+        /// Ingest output into Parquet store
         #[arg(long)]
         ingest: bool,
 
-        /// Store path for Delta Lake ingestion (default: ./data/store)
+        /// Store path for ingestion (default: ./data/store)
         #[arg(long, default_value = "./data/store")]
         store_path: PathBuf,
     },
@@ -253,7 +253,7 @@ enum StoreCommands {
         path: PathBuf,
     },
 
-    /// Ingest a Parquet file into a Delta table
+    /// Ingest a Parquet file into a table
     Ingest {
         /// Table name to create/append to
         table: String,
@@ -271,7 +271,7 @@ enum StoreCommands {
         overwrite: bool,
     },
 
-    /// Export a Delta table to CSV
+    /// Export a table to CSV
     Export {
         /// Table name to export
         table: String,
@@ -343,8 +343,8 @@ async fn main() -> Result<()> {
             host,
             port,
             dataset,
-            delta_store,
-            delta_tables,
+            store,
+            tables,
             connector_configs,
             database_url,
         } => {
@@ -354,8 +354,8 @@ async fn main() -> Result<()> {
                 &host,
                 port,
                 dataset,
-                delta_store,
-                delta_tables,
+                store,
+                tables,
                 &connector_configs,
                 database_url,
             );
@@ -368,8 +368,8 @@ async fn main() -> Result<()> {
             host,
             port,
             dataset,
-            delta_store,
-            delta_tables,
+            store,
+            tables,
             connector_configs,
             database_url,
         } => {
@@ -379,8 +379,8 @@ async fn main() -> Result<()> {
                 &host,
                 port,
                 dataset,
-                delta_store,
-                delta_tables,
+                store,
+                tables,
                 &connector_configs,
                 database_url,
             );
@@ -467,17 +467,20 @@ fn build_serve_config(
     host: &str,
     port: u16,
     dataset: Option<String>,
-    delta_store: Option<String>,
-    delta_tables: Option<String>,
+    store: Option<String>,
+    tables: Option<String>,
     connector_configs: &str,
     database_url: Option<String>,
 ) -> ServeConfig {
     let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
     let host_array: [u8; 4] = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
 
-    let delta_store_path = delta_store.or_else(|| std::env::var("BRIGHTFLOW_DELTA_STORE").ok());
+    let store_path = store
+        .or_else(|| std::env::var("BRIGHTFLOW_STORE").ok())
+        .or_else(|| std::env::var("BRIGHTFLOW_DELTA_STORE").ok());
 
-    let resolved_tables = delta_tables
+    let resolved_tables = tables
+        .or_else(|| std::env::var("BRIGHTFLOW_TABLES").ok())
         .or_else(|| std::env::var("BRIGHTFLOW_DELTA_TABLES").ok())
         .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
@@ -493,8 +496,8 @@ fn build_serve_config(
         host: host_array,
         port,
         default_dataset: dataset.or_else(|| std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok()),
-        delta_store_path,
-        delta_tables: resolved_tables,
+        store_path,
+        tables: resolved_tables,
         schema_dir,
         connector_config_dir: Some(connector_config_dir),
         database_url,
@@ -641,10 +644,10 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
                 tracing::info!("Endpoints synced: {:?}", result.endpoints_synced);
                 tracing::info!("Output path: {}", result.output_path);
 
-                // Ingest into Delta Lake if requested
+                // Ingest into store if requested
                 if ingest {
-                    tracing::info!("Ingesting output into Delta Lake store...");
-                    let store = DeltaStore::new(&store_path);
+                    tracing::info!("Ingesting output into Parquet store...");
+                    let store = ParquetStore::new(&store_path);
 
                     // Create store directory if it doesn't exist
                     std::fs::create_dir_all(&store_path)?;
@@ -704,7 +707,7 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
 async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
     match cmd {
         StoreCommands::List { path } => {
-            let store = DeltaStore::new(&path);
+            let store = ParquetStore::new(&path);
             let tables = store.list_tables().await?;
 
             if tables.is_empty() {
@@ -718,7 +721,7 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
         },
 
         StoreCommands::Info { name, path } => {
-            let store = DeltaStore::new(&path);
+            let store = ParquetStore::new(&path);
             let info = store.table_info(&name).await?;
 
             println!("Table: {}", info.name);
@@ -746,7 +749,7 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 anyhow::bail!("Input file not found: {}", input.display());
             }
 
-            let store = DeltaStore::new(&path);
+            let store = ParquetStore::new(&path);
             std::fs::create_dir_all(&path)?;
 
             let options = IngestOptions {
@@ -771,7 +774,7 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             output,
             path,
         } => {
-            let store = DeltaStore::new(&path);
+            let store = ParquetStore::new(&path);
             let df = store.read_table(&table).await?;
 
             // Create output directory if needed
@@ -794,7 +797,7 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 return Ok(());
             }
 
-            let store = DeltaStore::new(&path);
+            let store = ParquetStore::new(&path);
             store.delete_table(&table).await?;
             println!("Deleted table '{table}'");
         },
@@ -812,7 +815,7 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
         }
     }
 
-    let db = brightflow_auth::AuthDb::new(database_url).await?;
+    let db = brightflow_api::auth::AuthDb::new(database_url).await?;
 
     // Check if user already exists
     if let Some(_existing) = db.get_user_by_email(email).await? {
@@ -829,7 +832,7 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
         anyhow::bail!("Passwords do not match");
     }
 
-    let hash = brightflow_auth::hash_password(&password)?;
+    let hash = brightflow_api::auth::hash_password(&password)?;
     let user = db.create_user(email, name, &hash, true).await?;
 
     println!("Admin user created:");

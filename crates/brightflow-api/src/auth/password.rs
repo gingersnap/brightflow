@@ -3,7 +3,7 @@ use argon2::{
     Argon2, PasswordHash, PasswordVerifier,
 };
 
-use crate::error::{AuthError, AuthResult};
+use crate::auth::error::{AuthError, AuthResult};
 
 pub fn hash_password(plain: &str) -> AuthResult<String> {
     let salt = SaltString::generate(&mut OsRng);

@@ -27,13 +27,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::{self, HeaderValue};
-use brightflow_auth::axum_login;
-use brightflow_auth::tower_sessions::{
-    cookie::SameSite, ExpiredDeletion, Expiry, SessionManagerLayer,
-};
-use brightflow_auth::tower_sessions_sqlx_store::SqliteStore;
-use brightflow_auth::{AuthBackend, AuthDb};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_sessions::{cookie::SameSite, ExpiredDeletion, Expiry, SessionManagerLayer};
+use tower_sessions_sqlx_store::SqliteStore;
+
+use crate::auth::{AuthBackend, AuthDb};
 
 use crate::state::AppState;
 
@@ -43,10 +41,10 @@ pub struct ServeConfig {
     pub host: [u8; 4],
     pub port: u16,
     pub default_dataset: Option<String>,
-    /// Path to Delta Lake store to auto-load tables from
-    pub delta_store_path: Option<String>,
-    /// Specific Delta tables to load (if None, loads all)
-    pub delta_tables: Option<Vec<String>>,
+    /// Path to Parquet store to auto-load tables from
+    pub store_path: Option<String>,
+    /// Specific tables to load (if None, loads all)
+    pub tables: Option<Vec<String>>,
     /// Path to directory containing schema YAML files
     pub schema_dir: Option<String>,
     /// Path to directory containing connector config YAML files
@@ -61,8 +59,8 @@ impl Default for ServeConfig {
             host: [127, 0, 0, 1],
             port: 8080,
             default_dataset: None,
-            delta_store_path: None,
-            delta_tables: None,
+            store_path: None,
+            tables: None,
             schema_dir: None,
             connector_config_dir: None,
             database_url: None,
@@ -88,9 +86,12 @@ impl ServeConfig {
 
         let default_dataset = std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok();
 
-        let delta_store_path = std::env::var("BRIGHTFLOW_DELTA_STORE").ok();
+        let store_path = std::env::var("BRIGHTFLOW_STORE")
+            .or_else(|_| std::env::var("BRIGHTFLOW_DELTA_STORE"))
+            .ok();
 
-        let delta_tables = std::env::var("BRIGHTFLOW_DELTA_TABLES")
+        let tables = std::env::var("BRIGHTFLOW_TABLES")
+            .or_else(|_| std::env::var("BRIGHTFLOW_DELTA_TABLES"))
             .ok()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
@@ -102,8 +103,8 @@ impl ServeConfig {
             host,
             port,
             default_dataset,
-            delta_store_path,
-            delta_tables,
+            store_path,
+            tables,
             schema_dir,
             connector_config_dir,
             database_url,
@@ -120,13 +121,13 @@ pub async fn serve(
     log_sender: Option<tokio::sync::broadcast::Sender<system::log_layer::LogEntry>>,
 ) -> anyhow::Result<()> {
     // Initialize AppState with lazy loading - metadata only, no data loaded
-    let mut state = match (&config.default_dataset, &config.delta_store_path) {
-        // Both default dataset and delta store
+    let mut state = match (&config.default_dataset, &config.store_path) {
+        // Both default dataset and store
         (Some(csv_path), Some(store_path)) if std::path::Path::new(csv_path).exists() => {
             tracing::info!("Loading default dataset from: {}", csv_path);
-            tracing::info!("Indexing Delta tables from: {} (metadata only)", store_path);
-            let store = brightflow_store::DeltaStore::new(store_path);
-            match AppState::with_default_and_delta_store(csv_path, store).await {
+            tracing::info!("Indexing tables from: {} (metadata only)", store_path);
+            let store = brightflow_store::ParquetStore::new(store_path);
+            match AppState::with_default_and_store(csv_path, store).await {
                 Ok(s) => {
                     if let Some(dataset) = s.datasets.get_dataset("default") {
                         tracing::info!(
@@ -143,11 +144,11 @@ pub async fn serve(
                 },
             }
         },
-        // Only delta store - lazy load metadata only
+        // Only store - lazy load metadata only
         (_, Some(store_path)) => {
-            tracing::info!("Indexing Delta tables from: {} (metadata only)", store_path);
-            let store = brightflow_store::DeltaStore::new(store_path);
-            AppState::with_delta_store(store).await
+            tracing::info!("Indexing tables from: {} (metadata only)", store_path);
+            let store = brightflow_store::ParquetStore::new(store_path);
+            AppState::with_store(store).await
         },
         // Only default dataset
         (Some(csv_path), None) if std::path::Path::new(csv_path).exists() => {
@@ -205,28 +206,38 @@ pub async fn serve(
     }
 
     // Initialize auth database
-    let database_url = config
+    let auth_db_url = config
         .database_url
-        .unwrap_or_else(|| "sqlite:data/brightflow.db?mode=rwc".to_string());
+        .clone()
+        .unwrap_or_else(|| "sqlite:data/auth.db?mode=rwc".to_string());
 
     // Ensure data directory exists
-    if let Some(path) = database_url.strip_prefix("sqlite:") {
+    if let Some(path) = auth_db_url.strip_prefix("sqlite:") {
         let db_path = path.split('?').next().unwrap_or(path);
         if let Some(parent) = std::path::Path::new(db_path).parent() {
             std::fs::create_dir_all(parent).ok();
         }
     }
 
-    let auth_db = AuthDb::new(&database_url).await?;
+    let auth_db = AuthDb::new(&auth_db_url).await?;
     let auth_db_arc = Arc::new(auth_db.clone());
     state.auth_db = Some(Arc::clone(&auth_db_arc));
 
-    // Initialize scheduler if delta store is available
-    if let Some(store) = state.delta_store() {
+    // Initialize scheduler if store is available
+    if let Some(store) = state.store() {
+        let scheduler_db_url = "sqlite:data/scheduler.db?mode=rwc".to_string();
+        // Ensure data dir exists for scheduler db too
+        std::fs::create_dir_all("data").ok();
+        let scheduler_db = brightflow_scheduler::SchedulerDb::new(&scheduler_db_url)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize scheduler database: {e}"))?;
+        let scheduler_db = Arc::new(scheduler_db);
+
         let scheduler =
-            brightflow_scheduler::Scheduler::new(Arc::clone(&auth_db_arc), Arc::clone(store));
+            brightflow_scheduler::Scheduler::new(Arc::clone(&scheduler_db), Arc::clone(store));
         let scheduler = Arc::new(scheduler);
         state.scheduler = Some(Arc::clone(&scheduler));
+        state.scheduler_db = Some(scheduler_db);
 
         // Start scheduler background loop
         tokio::spawn(async move {

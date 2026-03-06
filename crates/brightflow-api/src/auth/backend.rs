@@ -1,10 +1,10 @@
 use axum_login::{AuthnBackend, UserId};
 use serde::Deserialize;
 
-use crate::db::AuthDb;
-use crate::error::AuthError;
-use crate::models::User;
-use crate::password::verify_password;
+use crate::auth::db::AuthDb;
+use crate::auth::error::AuthError;
+use crate::auth::models::User;
+use crate::auth::password::verify_password;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Credentials {

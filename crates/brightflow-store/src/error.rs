@@ -28,17 +28,9 @@ pub enum StoreError {
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
 
-    /// Delta Lake error
-    #[error("Delta Lake error: {0}")]
-    DeltaLake(#[from] deltalake::DeltaTableError),
-
-    /// Parquet error
-    #[error("Parquet error: {0}")]
-    Parquet(#[from] deltalake::parquet::errors::ParquetError),
-
-    /// Arrow error
-    #[error("Arrow error: {0}")]
-    Arrow(#[from] deltalake::arrow::error::ArrowError),
+    /// Manifest parse/serialize error
+    #[error("Manifest error: {0}")]
+    ManifestParse(String),
 
     /// Polars error
     #[error("Polars error: {0}")]
@@ -47,14 +39,6 @@ pub enum StoreError {
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-
-    /// URL parse error
-    #[error("URL parse error: {0}")]
-    UrlParse(#[from] url::ParseError),
-
-    /// Delta kernel error
-    #[error("Delta kernel error: {0}")]
-    DeltaKernel(#[from] deltalake::kernel::Error),
 
     /// Other error
     #[error("{0}")]

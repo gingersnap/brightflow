@@ -111,7 +111,7 @@ fn api_routes() -> Router<AppState> {
 
 /// Middleware that requires authentication
 async fn require_auth(
-    auth_session: brightflow_auth::AuthSession,
+    auth_session: crate::auth::AuthSession,
     request: axum::extract::Request,
     next: middleware::Next,
 ) -> axum::response::Response {
