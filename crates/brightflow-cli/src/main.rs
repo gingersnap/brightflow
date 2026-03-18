@@ -76,12 +76,12 @@ enum Commands {
     /// Start both API server and scheduler
     RunAll {
         /// Host address to bind to
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
+        #[arg(long)]
+        host: Option<String>,
 
         /// Port to listen on
-        #[arg(long, default_value = "8080")]
-        port: u16,
+        #[arg(long)]
+        port: Option<u16>,
 
         /// Default dataset to load on startup
         #[arg(long)]
@@ -96,8 +96,8 @@ enum Commands {
         tables: Option<String>,
 
         /// Path to connector config YAML directory
-        #[arg(long, default_value = "./configs")]
-        connector_configs: String,
+        #[arg(long)]
+        connector_configs: Option<String>,
 
         /// SQLite database URL for auth/sessions
         #[arg(long)]
@@ -107,12 +107,12 @@ enum Commands {
     /// Start the API server only
     Serve {
         /// Host address to bind to
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
+        #[arg(long)]
+        host: Option<String>,
 
         /// Port to listen on
-        #[arg(long, default_value = "8080")]
-        port: u16,
+        #[arg(long)]
+        port: Option<u16>,
 
         /// Default dataset to load on startup
         #[arg(long)]
@@ -127,8 +127,8 @@ enum Commands {
         tables: Option<String>,
 
         /// Path to connector config YAML directory
-        #[arg(long, default_value = "./configs")]
-        connector_configs: String,
+        #[arg(long)]
+        connector_configs: Option<String>,
 
         /// SQLite database URL for auth/sessions
         #[arg(long)]
@@ -160,9 +160,9 @@ enum Commands {
         #[arg(long)]
         name: String,
 
-        /// SQLite database URL for auth
-        #[arg(long, default_value = "sqlite:data/auth.db?mode=rwc")]
-        database_url: String,
+        /// SQLite database URL for auth (auto-derived from BRIGHTFLOW_DATA_DIR if not set)
+        #[arg(long)]
+        database_url: Option<String>,
     },
 }
 
@@ -351,12 +351,12 @@ async fn main() -> Result<()> {
             let log_sender = init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
             let config = build_serve_config(
-                &host,
+                host.as_deref(),
                 port,
                 dataset,
                 store,
                 tables,
-                &connector_configs,
+                connector_configs.as_deref(),
                 database_url,
             );
 
@@ -376,12 +376,12 @@ async fn main() -> Result<()> {
             let log_sender = init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
 
             let config = build_serve_config(
-                &host,
+                host.as_deref(),
                 port,
                 dataset,
                 store,
                 tables,
-                &connector_configs,
+                connector_configs.as_deref(),
                 database_url,
             );
             brightflow_api::serve(config, Some(log_sender)).await?;
@@ -430,6 +430,14 @@ async fn main() -> Result<()> {
             name,
             database_url,
         } => {
+            let database_url = database_url
+                .or_else(|| std::env::var("BRIGHTFLOW_DATABASE_URL").ok())
+                .or_else(|| {
+                    std::env::var("BRIGHTFLOW_DATA_DIR")
+                        .ok()
+                        .map(|d| format!("sqlite:{d}/workspaces/default/auth.db?mode=rwc"))
+                })
+                .unwrap_or_else(|| "sqlite:data/auth.db?mode=rwc".to_string());
             handle_create_admin(&email, &name, &database_url).await?;
         },
     }
@@ -464,44 +472,41 @@ fn init_tracing_simple(default_filter: &str) {
 }
 
 fn build_serve_config(
-    host: &str,
-    port: u16,
+    host: Option<&str>,
+    port: Option<u16>,
     dataset: Option<String>,
     store: Option<String>,
     tables: Option<String>,
-    connector_configs: &str,
+    connector_configs: Option<&str>,
     database_url: Option<String>,
 ) -> ServeConfig {
-    let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
-    let host_array: [u8; 4] = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
+    // Start from env-based config, then override with CLI args
+    let mut config = ServeConfig::from_env();
 
-    let store_path = store
-        .or_else(|| std::env::var("BRIGHTFLOW_STORE").ok())
-        .or_else(|| std::env::var("BRIGHTFLOW_DELTA_STORE").ok());
-
-    let resolved_tables = tables
-        .or_else(|| std::env::var("BRIGHTFLOW_TABLES").ok())
-        .or_else(|| std::env::var("BRIGHTFLOW_DELTA_TABLES").ok())
-        .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
-
-    let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
-
-    let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS")
-        .ok()
-        .unwrap_or_else(|| connector_configs.to_string());
-
-    let database_url = database_url.or_else(|| std::env::var("BRIGHTFLOW_DATABASE_URL").ok());
-
-    ServeConfig {
-        host: host_array,
-        port,
-        default_dataset: dataset.or_else(|| std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok()),
-        store_path,
-        tables: resolved_tables,
-        schema_dir,
-        connector_config_dir: Some(connector_config_dir),
-        database_url,
+    if let Some(host) = host {
+        let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
+        config.host = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
     }
+    if let Some(port) = port {
+        config.port = port;
+    }
+    if dataset.is_some() {
+        config.default_dataset = dataset;
+    }
+    if let Some(store) = store {
+        config.store_path = Some(store);
+    }
+    if let Some(tables) = tables {
+        config.tables = Some(tables.split(',').map(|t| t.trim().to_string()).collect());
+    }
+    if let Some(configs) = connector_configs {
+        config.connector_config_dir = Some(configs.to_string());
+    }
+    if database_url.is_some() {
+        config.database_url = database_url;
+    }
+
+    config
 }
 
 fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {

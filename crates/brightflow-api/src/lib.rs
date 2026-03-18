@@ -41,6 +41,8 @@ pub struct ServeConfig {
     pub host: [u8; 4],
     pub port: u16,
     pub default_dataset: Option<String>,
+    /// Root data directory (derives workspace paths)
+    pub data_dir: Option<String>,
     /// Path to Parquet store to auto-load tables from
     pub store_path: Option<String>,
     /// Specific tables to load (if None, loads all)
@@ -51,6 +53,10 @@ pub struct ServeConfig {
     pub connector_config_dir: Option<String>,
     /// SQLite database URL for auth/sessions
     pub database_url: Option<String>,
+    /// SQLite database URL for scheduler
+    pub scheduler_database_url: Option<String>,
+    /// CORS origin (None = auto-detect based on APP_ENV)
+    pub cors_origin: Option<String>,
 }
 
 impl Default for ServeConfig {
@@ -59,17 +65,23 @@ impl Default for ServeConfig {
             host: [127, 0, 0, 1],
             port: 8080,
             default_dataset: None,
+            data_dir: None,
             store_path: None,
             tables: None,
             schema_dir: None,
             connector_config_dir: None,
             database_url: None,
+            scheduler_database_url: None,
+            cors_origin: None,
         }
     }
 }
 
 impl ServeConfig {
-    /// Create config from environment variables
+    /// Create config from environment variables.
+    ///
+    /// If `BRIGHTFLOW_DATA_DIR` is set, workspace paths are derived from
+    /// `{data_dir}/workspaces/default/`. Individual env vars still override.
     pub fn from_env() -> Self {
         let host = std::env::var("BRIGHTFLOW_API_HOST")
             .ok()
@@ -84,30 +96,50 @@ impl ServeConfig {
             .and_then(|p| p.parse().ok())
             .unwrap_or(8080);
 
+        let data_dir = std::env::var("BRIGHTFLOW_DATA_DIR").ok();
+        let ws = data_dir.as_ref().map(|d| format!("{d}/workspaces/default"));
+
         let default_dataset = std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok();
 
         let store_path = std::env::var("BRIGHTFLOW_STORE")
             .or_else(|_| std::env::var("BRIGHTFLOW_DELTA_STORE"))
-            .ok();
+            .ok()
+            .or_else(|| ws.as_ref().map(|w| format!("{w}/store")));
 
         let tables = std::env::var("BRIGHTFLOW_TABLES")
             .or_else(|_| std::env::var("BRIGHTFLOW_DELTA_TABLES"))
             .ok()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
-        let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR").ok();
-        let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS").ok();
-        let database_url = std::env::var("BRIGHTFLOW_DATABASE_URL").ok();
+        let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR")
+            .ok()
+            .or_else(|| ws.as_ref().map(|w| format!("{w}/schemas")));
+        let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS")
+            .ok()
+            .or_else(|| ws.as_ref().map(|w| format!("{w}/connector-configs")));
+        let database_url = std::env::var("BRIGHTFLOW_DATABASE_URL")
+            .ok()
+            .or_else(|| ws.as_ref().map(|w| format!("sqlite:{w}/auth.db?mode=rwc")));
+        let scheduler_database_url = std::env::var("BRIGHTFLOW_SCHEDULER_DATABASE_URL")
+            .ok()
+            .or_else(|| {
+                ws.as_ref()
+                    .map(|w| format!("sqlite:{w}/scheduler.db?mode=rwc"))
+            });
+        let cors_origin = std::env::var("BRIGHTFLOW_CORS_ORIGIN").ok();
 
         Self {
             host,
             port,
             default_dataset,
+            data_dir,
             store_path,
             tables,
             schema_dir,
             connector_config_dir,
             database_url,
+            scheduler_database_url,
+            cors_origin,
         }
     }
 }
@@ -120,6 +152,14 @@ pub async fn serve(
     config: ServeConfig,
     log_sender: Option<tokio::sync::broadcast::Sender<system::log_layer::LogEntry>>,
 ) -> anyhow::Result<()> {
+    // Auto-create workspace directories if data_dir is set
+    if let Some(ref data_dir) = config.data_dir {
+        let ws_dir = format!("{data_dir}/workspaces/default");
+        for sub in ["store", "schemas", "connector-configs"] {
+            std::fs::create_dir_all(format!("{ws_dir}/{sub}")).ok();
+        }
+    }
+
     // Initialize AppState with lazy loading - metadata only, no data loaded
     let mut state = match (&config.default_dataset, &config.store_path) {
         // Both default dataset and store
@@ -223,11 +263,34 @@ pub async fn serve(
     let auth_db_arc = Arc::new(auth_db.clone());
     state.auth_db = Some(Arc::clone(&auth_db_arc));
 
+    // Auto-seed admin user when database is empty
+    if let (Ok(email), Ok(password)) = (
+        std::env::var("BRIGHTFLOW_ADMIN_EMAIL"),
+        std::env::var("BRIGHTFLOW_ADMIN_PASSWORD"),
+    ) {
+        if auth_db_arc.user_count().await.unwrap_or(1) == 0 {
+            let hash = auth::hash_password(&password)
+                .map_err(|e| anyhow::anyhow!("Failed to hash admin password: {e}"))?;
+            auth_db_arc
+                .create_user(&email, "Admin", &hash, true)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to seed admin user: {e}"))?;
+            tracing::info!("Seeded admin user: {}", email);
+        }
+    }
+
     // Initialize scheduler if store is available
     if let Some(store) = state.store() {
-        let scheduler_db_url = "sqlite:data/scheduler.db?mode=rwc".to_string();
-        // Ensure data dir exists for scheduler db too
-        std::fs::create_dir_all("data").ok();
+        let scheduler_db_url = config
+            .scheduler_database_url
+            .clone()
+            .unwrap_or_else(|| "sqlite:data/scheduler.db?mode=rwc".to_string());
+        if let Some(path) = scheduler_db_url.strip_prefix("sqlite:") {
+            let db_path = path.split('?').next().unwrap_or(path);
+            if let Some(parent) = std::path::Path::new(db_path).parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+        }
         let scheduler_db = brightflow_scheduler::SchedulerDb::new(&scheduler_db_url)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to initialize scheduler database: {e}"))?;
@@ -265,26 +328,52 @@ pub async fn serve(
     let auth_backend = AuthBackend::new(auth_db);
     let auth_layer = axum_login::AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
 
-    // Configure CORS with credentials
-    let cors = CorsLayer::new()
-        .allow_origin(
-            "http://localhost:5173"
-                .parse::<HeaderValue>()
-                .unwrap_or_else(|_| HeaderValue::from_static("*")),
-        )
-        .allow_methods([
-            http::Method::GET,
-            http::Method::POST,
-            http::Method::PUT,
-            http::Method::DELETE,
-            http::Method::OPTIONS,
-        ])
-        .allow_headers([
-            http::header::CONTENT_TYPE,
-            http::header::AUTHORIZATION,
-            http::header::ACCEPT,
-        ])
-        .allow_credentials(true);
+    // Configure CORS
+    let cors = if let Some(ref origin) = config.cors_origin {
+        CorsLayer::new()
+            .allow_origin(
+                origin
+                    .parse::<HeaderValue>()
+                    .unwrap_or_else(|_| HeaderValue::from_static("*")),
+            )
+            .allow_methods([
+                http::Method::GET,
+                http::Method::POST,
+                http::Method::PUT,
+                http::Method::DELETE,
+                http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                http::header::CONTENT_TYPE,
+                http::header::AUTHORIZATION,
+                http::header::ACCEPT,
+            ])
+            .allow_credentials(true)
+    } else if std::env::var("APP_ENV").as_deref() == Ok("production") {
+        // Behind reverse proxy on same origin — CORS not needed
+        CorsLayer::permissive()
+    } else {
+        // Dev default
+        CorsLayer::new()
+            .allow_origin(
+                "http://localhost:5173"
+                    .parse::<HeaderValue>()
+                    .unwrap_or_else(|_| HeaderValue::from_static("*")),
+            )
+            .allow_methods([
+                http::Method::GET,
+                http::Method::POST,
+                http::Method::PUT,
+                http::Method::DELETE,
+                http::Method::OPTIONS,
+            ])
+            .allow_headers([
+                http::header::CONTENT_TYPE,
+                http::header::AUTHORIZATION,
+                http::header::ACCEPT,
+            ])
+            .allow_credentials(true)
+    };
 
     // Build router
     let app = routes::create_router()

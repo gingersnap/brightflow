@@ -33,7 +33,9 @@ export const useSystemStore = defineStore('system', () => {
   let reconnectCount = 0;
 
   function getWsUrl(): string {
-    const base = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/ws';
+    const base =
+      import.meta.env.VITE_WS_URL ||
+      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
     // Replace /api/ws with /api/system/ws
     return base.replace(/\/api\/ws$/, '/api/system/ws');
   }
