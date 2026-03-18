@@ -658,6 +658,7 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]
@@ -670,6 +671,7 @@ dependencies = [
  "longbow",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "toml",
 ]

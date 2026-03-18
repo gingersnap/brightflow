@@ -6,7 +6,7 @@ use crate::state::AppState;
 
 use super::types::{
     ConnectorInfo, RunRequest, RunTriggerResponse, ScheduleRequest, ScheduleResponse,
-    UnifiedConnector, UnifiedJob, UnifiedSyncRun,
+    UnifiedConnector, UnifiedJob, UnifiedSyncRun, UpdateTokenRequest,
 };
 
 /// GET /api/connectors — list configured connectors from config dir
@@ -32,7 +32,7 @@ pub async fn list_connectors(State(state): State<AppState>) -> AppResult<Json<Ve
                 .unwrap_or_default()
                 .to_string();
 
-            let valid = brightflow_connect::get_builtin_connector_path(&name).is_some();
+            let valid = brightflow_connect::get_builtin_connector_source(&name).is_some();
 
             connectors.push(ConnectorInfo {
                 connector: name.clone(),
@@ -84,13 +84,20 @@ pub async fn list_unified_connectors(
             .unwrap_or_default()
             .to_string();
 
-        let valid = brightflow_connect::get_builtin_connector_path(&name).is_some();
+        let valid = brightflow_connect::get_builtin_connector_source(&name).is_some();
 
         // Look up DB connector config by name
         let db_config = db
             .get_connector_config_by_name(&name)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
+
+        // Check if a token is set in the DB config
+        let has_token = db_config
+            .as_ref()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c.config_json).ok())
+            .and_then(|v| v.get("token")?.as_str().map(|s| !s.is_empty()))
+            .unwrap_or(false);
 
         let (job, last_run) = if let Some(config) = &db_config {
             // Find scheduler job for this connector
@@ -127,6 +134,7 @@ pub async fn list_unified_connectors(
             connector: name.clone(),
             name,
             valid,
+            has_token,
             job,
             last_run,
         });
@@ -283,6 +291,65 @@ pub async fn schedule_connector(
         interval_secs: job.interval_secs,
         enabled: job.enabled,
     }))
+}
+
+/// PUT /api/connectors/:name/token — update the auth token for a connector
+pub async fn update_connector_token(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(body): Json<UpdateTokenRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    let db = state
+        .scheduler_db
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+
+    let config_dir = state.connector_config_dir.as_ref().ok_or_else(|| {
+        AppError::BadRequest("No connector config directory configured".to_string())
+    })?;
+
+    // Find or create DB connector config
+    let connector_config = if let Some(existing) = db
+        .get_connector_config_by_name(&name)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+    {
+        existing
+    } else {
+        // Bootstrap from TOML if it exists
+        let config_path = find_config_file(config_dir, &name)?;
+        let config_content = std::fs::read_to_string(&config_path)
+            .map_err(|e| AppError::Internal(format!("Failed to read config: {e}")))?;
+        let config_value: serde_json::Value = toml::from_str(&config_content)
+            .map_err(|e| AppError::Internal(format!("Failed to parse config TOML: {e}")))?;
+        let config_json =
+            serde_json::to_string(&config_value).map_err(|e| AppError::Internal(e.to_string()))?;
+
+        db.create_connector_config(&name, &name, &config_json)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+    };
+
+    // Parse existing config, set token, save back
+    let mut config_value: serde_json::Value =
+        serde_json::from_str(&connector_config.config_json)
+            .map_err(|e| AppError::Internal(format!("Failed to parse config JSON: {e}")))?;
+
+    config_value["token"] = serde_json::Value::String(body.token);
+
+    let updated_json =
+        serde_json::to_string(&config_value).map_err(|e| AppError::Internal(e.to_string()))?;
+
+    db.update_connector_config(
+        &connector_config.id,
+        &connector_config.name,
+        &connector_config.connector_path,
+        &updated_json,
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 /// Find a TOML config file in the config directory by connector name

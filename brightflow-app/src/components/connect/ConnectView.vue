@@ -17,6 +17,10 @@ function handleRun(name: string): void {
 async function handleSchedule(name: string, intervalSecs: number): Promise<void> {
   await connectStore.updateSchedule(name, intervalSecs);
 }
+
+function handleUpdateToken(name: string, token: string): void {
+  connectStore.updateToken(name, token);
+}
 </script>
 
 <template>
@@ -67,6 +71,7 @@ async function handleSchedule(name: string, intervalSecs: number): Promise<void>
           :history="connectStore.runHistory.get(connector.name) ?? []"
           @run="handleRun(connector.name)"
           @schedule="handleSchedule(connector.name, $event)"
+          @update-token="handleUpdateToken(connector.name, $event)"
           @toggle-history="connectStore.toggleHistory(connector.name)"
         />
       </div>

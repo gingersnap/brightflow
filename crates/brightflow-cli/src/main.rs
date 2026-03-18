@@ -48,7 +48,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use brightflow_api::system::log_layer::{LogBroadcastLayer, LogEntry};
 use brightflow_api::ServeConfig;
 use brightflow_connect::{
-    get_builtin_connector_path, list_builtin_connectors, run_connector, RunOptions,
+    get_builtin_connector_source, list_builtin_connectors, run_connector, RunOptions,
 };
 use brightflow_insights::analysis::engine::AnalysisEngine;
 use brightflow_insights::analysis::tree::{ReportType, ReviewCadence};
@@ -610,21 +610,6 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
             ingest,
             store_path,
         } => {
-            // Resolve connector path - check if it's a built-in name or a file path
-            let connector_path = if connector.ends_with(".lua") {
-                PathBuf::from(&connector)
-            } else {
-                get_builtin_connector_path(&connector).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Connector '{connector}' not found. Use 'brightflow connect list' to see available connectors."
-                    )
-                })?
-            };
-
-            if !connector_path.exists() {
-                anyhow::bail!("Connector file not found: {}", connector_path.display());
-            }
-
             if !config.exists() {
                 anyhow::bail!("Config file not found: {}", config.display());
             }
@@ -637,7 +622,20 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
                 dry_run,
                 cursor_values: std::collections::HashMap::new(),
             };
-            let result = run_connector(&connector_path, &config, &options).await?;
+
+            // Use embedded source for builtins, filesystem path for .lua files
+            let result = if let Some(lua_source) = get_builtin_connector_source(&connector) {
+                let config_content = std::fs::read_to_string(&config)?;
+                let config_value: serde_json::Value = toml::from_str(&config_content)?;
+                brightflow_connect::run_connector_from_source(lua_source, config_value, &options)
+                    .await?
+            } else {
+                let connector_path = PathBuf::from(&connector);
+                if !connector_path.exists() {
+                    anyhow::bail!("Connector file not found: {}", connector_path.display());
+                }
+                run_connector(&connector_path, &config, &options).await?
+            };
 
             if result.dry_run {
                 tracing::info!("Dry run completed. Endpoints that would be synced:");
@@ -694,7 +692,7 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
         },
 
         ConnectCommands::List => {
-            let connectors = list_builtin_connectors()?;
+            let connectors = list_builtin_connectors();
             if connectors.is_empty() {
                 println!("No built-in connectors found.");
             } else {

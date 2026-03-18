@@ -44,6 +44,12 @@ pub struct RunTriggerResponse {
     pub status: String,
 }
 
+/// Request body for PUT /connectors/:name/token
+#[derive(Debug, Deserialize)]
+pub struct UpdateTokenRequest {
+    pub token: String,
+}
+
 /// Unified connector view — combines file config + DB schedule + latest run
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +57,7 @@ pub struct UnifiedConnector {
     pub name: String,
     pub connector: String,
     pub valid: bool,
+    pub has_token: bool,
     pub job: Option<UnifiedJob>,
     pub last_run: Option<UnifiedSyncRun>,
 }

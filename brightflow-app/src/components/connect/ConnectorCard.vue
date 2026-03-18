@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Play, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { Play, AlertTriangle, ChevronRight, ChevronDown, Key } from 'lucide-vue-next';
 import type { UnifiedConnector, SyncRun } from '@/services/api';
 import SyncStatusBadge from './SyncStatusBadge.vue';
 
@@ -15,7 +15,26 @@ const emit = defineEmits<{
   run: [];
   schedule: [intervalSecs: number];
   toggleHistory: [];
+  updateToken: [token: string];
 }>();
+
+const showTokenInput = ref(false);
+const tokenValue = ref('');
+const savingToken = ref(false);
+
+function toggleTokenInput(): void {
+  showTokenInput.value = !showTokenInput.value;
+  tokenValue.value = '';
+}
+
+async function saveToken(): Promise<void> {
+  if (!tokenValue.value.trim()) return;
+  savingToken.value = true;
+  emit('updateToken', tokenValue.value.trim());
+  savingToken.value = false;
+  showTokenInput.value = false;
+  tokenValue.value = '';
+}
 
 const SCHEDULE_PRESETS = [
   { label: 'Manual', value: 0 },
@@ -80,6 +99,19 @@ function duration(startedAt: string, finishedAt: string): string {
         </div>
       </div>
 
+      <!-- Token status -->
+      <button
+        class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+        :class="connector.hasToken
+          ? 'text-green-500 hover:text-green-400'
+          : 'text-amber-500 hover:text-amber-400'"
+        :title="connector.hasToken ? 'Token configured — click to update' : 'No token set — click to add'"
+        @click="toggleTokenInput"
+      >
+        <Key class="w-3 h-3" />
+        {{ connector.hasToken ? 'Token set' : 'No token' }}
+      </button>
+
       <div class="flex-1" />
 
       <!-- Schedule dropdown -->
@@ -102,6 +134,24 @@ function duration(startedAt: string, finishedAt: string): string {
       >
         <Play v-if="!running" class="w-3.5 h-3.5 mr-1" />
         {{ running ? 'Syncing...' : 'Sync Now' }}
+      </UButton>
+    </div>
+
+    <!-- Token input -->
+    <div v-if="showTokenInput" class="px-4 pb-2 flex items-center gap-2">
+      <input
+        v-model="tokenValue"
+        type="password"
+        placeholder="Paste API token..."
+        class="flex-1 text-xs bg-elevated border border-default rounded px-2 py-1.5 text-highlighted
+               placeholder-muted focus:outline-none focus:border-blue-500"
+        @keyup.enter="saveToken"
+      >
+      <UButton size="xs" :loading="savingToken" :disabled="!tokenValue.trim()" @click="saveToken">
+        Save
+      </UButton>
+      <UButton size="xs" variant="ghost" @click="toggleTokenInput">
+        Cancel
       </UButton>
     </div>
 

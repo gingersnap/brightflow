@@ -1,6 +1,5 @@
 # GitHub Connector Configuration
-# Can also be set via GITHUB_TOKEN environment variable
-token = "${GITHUB_TOKEN}"
+# Token is set via the UI (Connect page)
 
 # Repository owner (organization or username)
 owner = "anthropics"

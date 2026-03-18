@@ -219,14 +219,19 @@ async fn execute_sync(
         cursor_values,
     };
 
-    // 5. Resolve connector path
-    let connector_path = resolve_connector_path(&config.connector_path);
-
-    // 6. Run the connector
-    let result =
+    // 5. Run the connector — use embedded source for builtins, filesystem path otherwise
+    let result = if let Some(lua_source) =
+        brightflow_connect::get_builtin_connector_source(&config.connector_path)
+    {
+        brightflow_connect::run_connector_from_source(lua_source, config_json, &options)
+            .await
+            .map_err(|e| format!("Connector execution failed: {e}"))?
+    } else {
+        let connector_path = PathBuf::from(&config.connector_path);
         brightflow_connect::run_connector_with_config(&connector_path, config_json, &options)
             .await
-            .map_err(|e| format!("Connector execution failed: {e}"))?;
+            .map_err(|e| format!("Connector execution failed: {e}"))?
+    };
 
     // 7. For each output parquet, merge into table
     let output_dir = PathBuf::from(&result.output_path);
@@ -279,15 +284,6 @@ async fn execute_sync(
     info!("Sync run {run_id} completed: {total_rows} total rows");
 
     Ok(())
-}
-
-/// Resolve connector path — try built-in first, then treat as absolute/relative path
-fn resolve_connector_path(connector_path: &str) -> PathBuf {
-    // Check if it's a built-in connector name (e.g., "github")
-    if let Some(builtin) = brightflow_connect::get_builtin_connector_path(connector_path) {
-        return builtin;
-    }
-    PathBuf::from(connector_path)
 }
 
 /// Return the primary keys for a given endpoint (for merge upsert)

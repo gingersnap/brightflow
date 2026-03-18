@@ -136,6 +136,7 @@ export interface UnifiedConnector {
   name: string;
   connector: string;
   valid: boolean;
+  hasToken: boolean;
   job: UnifiedJob | null;
   lastRun: UnifiedSyncRun | null;
 }
@@ -177,6 +178,8 @@ export const connectApi = {
     api.post<ScheduleResponse>(`/api/connectors/${encodeURIComponent(name)}/schedule`, {
       intervalSecs,
     }),
+  updateToken: (name: string, token: string): Promise<unknown> =>
+    api.put(`/api/connectors/${encodeURIComponent(name)}/token`, { token }),
   updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
     api.put(`/api/scheduler/jobs/${id}`, data),
   deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),

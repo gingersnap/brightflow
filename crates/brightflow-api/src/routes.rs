@@ -1,7 +1,7 @@
 use axum::{
     extract::State,
     middleware,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 
@@ -67,6 +67,10 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/connectors/:name/schedule",
             post(connect_handlers::schedule_connector),
+        )
+        .route(
+            "/connectors/:name/token",
+            put(connect_handlers::update_connector_token),
         )
         // Connector Config CRUD (DB-backed)
         .route(

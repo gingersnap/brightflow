@@ -11,6 +11,14 @@ use brightflow_core::{BrightflowError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+/// Built-in connector Lua sources, embedded at compile time.
+static BUILTIN_CONNECTORS: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert("github", include_str!("../connectors/github.lua"));
+    m
+});
 
 /// Configuration for a connector
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +108,30 @@ pub async fn run_connector(
 /// This is the primary API when Brightflow passes config from SQLite.
 pub async fn run_connector_with_config(
     connector_path: &Path,
+    config: serde_json::Value,
+    options: &RunOptions,
+) -> Result<ConnectorResult> {
+    run_connector_impl(ConnectorSource::Path(connector_path), config, options).await
+}
+
+/// Run a connector from embedded Lua source with config passed as JSON.
+pub async fn run_connector_from_source(
+    lua_source: &str,
+    config: serde_json::Value,
+    options: &RunOptions,
+) -> Result<ConnectorResult> {
+    run_connector_impl(ConnectorSource::Source(lua_source), config, options).await
+}
+
+/// Internal: either a filesystem path or inline Lua source.
+enum ConnectorSource<'a> {
+    Path(&'a Path),
+    Source(&'a str),
+}
+
+/// Shared implementation for running a connector with JSON config.
+async fn run_connector_impl(
+    source: ConnectorSource<'_>,
     mut config: serde_json::Value,
     options: &RunOptions,
 ) -> Result<ConnectorResult> {
@@ -118,10 +150,33 @@ pub async fn run_connector_with_config(
     let lua = longbow::runtime::create_lua_runtime()
         .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
 
-    let connector_str = connector_path
-        .to_str()
-        .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
-    let mut pipeline = longbow::pipeline::load_connector(&lua, connector_str, processed_config)
+    // Resolve the connector path — for embedded source, write to a temp file
+    // because Longbow's load_connector reads from disk.
+    let _temp_file; // keep alive for the duration of load_connector
+    let connector_str = match source {
+        ConnectorSource::Path(path) => path
+            .to_str()
+            .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?
+            .to_string(),
+        ConnectorSource::Source(lua_src) => {
+            use std::io::Write;
+            let mut tmp = tempfile::Builder::new()
+                .suffix(".lua")
+                .tempfile()
+                .map_err(|e| BrightflowError::Other(format!("Failed to create temp file: {e}")))?;
+            tmp.write_all(lua_src.as_bytes())
+                .map_err(|e| BrightflowError::Other(format!("Failed to write temp file: {e}")))?;
+            let path_str = tmp
+                .path()
+                .to_str()
+                .ok_or_else(|| BrightflowError::Other("Invalid temp path".to_string()))?
+                .to_string();
+            _temp_file = tmp;
+            path_str
+        },
+    };
+
+    let mut pipeline = longbow::pipeline::load_connector(&lua, &connector_str, processed_config)
         .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
 
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
@@ -149,38 +204,15 @@ pub struct ConnectorResult {
     pub output_path: String,
 }
 
-/// Get the path to the built-in connectors directory
-pub fn builtin_connectors_dir() -> PathBuf {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(manifest_dir).join("connectors")
+/// List available built-in connectors (embedded at compile time).
+pub fn list_builtin_connectors() -> Vec<String> {
+    BUILTIN_CONNECTORS
+        .keys()
+        .map(|k| (*k).to_string())
+        .collect()
 }
 
-/// List available built-in connectors
-pub fn list_builtin_connectors() -> Result<Vec<String>> {
-    let dir = builtin_connectors_dir();
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut connectors = Vec::new();
-    for dir_entry in std::fs::read_dir(&dir)? {
-        let path = dir_entry?.path();
-        if path.extension().is_some_and(|ext| ext == "lua") {
-            if let Some(name) = path.file_stem() {
-                connectors.push(name.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    Ok(connectors)
-}
-
-/// Get the path to a built-in connector by name
-pub fn get_builtin_connector_path(name: &str) -> Option<PathBuf> {
-    let path = builtin_connectors_dir().join(format!("{name}.lua"));
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
+/// Get the embedded Lua source for a built-in connector by name.
+pub fn get_builtin_connector_source(name: &str) -> Option<&'static str> {
+    BUILTIN_CONNECTORS.get(name).copied()
 }

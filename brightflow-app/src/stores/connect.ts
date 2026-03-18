@@ -74,6 +74,16 @@ export const useConnectStore = defineStore('connect', () => {
     }
   }
 
+  async function updateToken(name: string, token: string): Promise<void> {
+    error.value = null;
+    try {
+      await connectApi.updateToken(name, token);
+      await fetchConnectors();
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to update token';
+    }
+  }
+
   async function fetchRunHistory(name: string): Promise<void> {
     try {
       const result = await connectApi.listConnectorRuns(name);
@@ -136,6 +146,7 @@ export const useConnectStore = defineStore('connect', () => {
     hasActiveRuns,
     fetchConnectors,
     syncNow,
+    updateToken,
     updateSchedule,
     fetchRunHistory,
     toggleHistory,
