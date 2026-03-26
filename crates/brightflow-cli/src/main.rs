@@ -650,7 +650,8 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
                 // Ingest into store if requested
                 if ingest {
                     tracing::info!("Ingesting output into Parquet store...");
-                    let store = ParquetStore::new(&store_path);
+                    let litehouse_url = litehouse_url_from_path(&store_path);
+                    let store = ParquetStore::new(&store_path, &litehouse_url).await?;
 
                     // Create store directory if it doesn't exist
                     std::fs::create_dir_all(&store_path)?;
@@ -707,10 +708,22 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
     Ok(())
 }
 
+/// Derive the Litehouse database URL from a store path
+fn litehouse_url_from_path(store_path: &std::path::Path) -> String {
+    std::env::var("BRIGHTFLOW_LITEHOUSE_URL").unwrap_or_else(|_| {
+        let db_path = store_path
+            .parent()
+            .unwrap_or(store_path)
+            .join("litehouse.db");
+        format!("sqlite:{}?mode=rwc", db_path.display())
+    })
+}
+
 async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
     match cmd {
         StoreCommands::List { path } => {
-            let store = ParquetStore::new(&path);
+            let litehouse_url = litehouse_url_from_path(&path);
+            let store = ParquetStore::new(&path, &litehouse_url).await?;
             let tables = store.list_tables().await?;
 
             if tables.is_empty() {
@@ -724,7 +737,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
         },
 
         StoreCommands::Info { name, path } => {
-            let store = ParquetStore::new(&path);
+            let litehouse_url = litehouse_url_from_path(&path);
+            let store = ParquetStore::new(&path, &litehouse_url).await?;
             let info = store.table_info(&name).await?;
 
             println!("Table: {}", info.name);
@@ -752,7 +766,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 anyhow::bail!("Input file not found: {}", input.display());
             }
 
-            let store = ParquetStore::new(&path);
+            let litehouse_url = litehouse_url_from_path(&path);
+            let store = ParquetStore::new(&path, &litehouse_url).await?;
             std::fs::create_dir_all(&path)?;
 
             let options = IngestOptions {
@@ -777,7 +792,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             output,
             path,
         } => {
-            let store = ParquetStore::new(&path);
+            let litehouse_url = litehouse_url_from_path(&path);
+            let store = ParquetStore::new(&path, &litehouse_url).await?;
             let df = store.read_table(&table).await?;
 
             // Create output directory if needed
@@ -800,7 +816,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 return Ok(());
             }
 
-            let store = ParquetStore::new(&path);
+            let litehouse_url = litehouse_url_from_path(&path);
+            let store = ParquetStore::new(&path, &litehouse_url).await?;
             store.delete_table(&table).await?;
             println!("Deleted table '{table}'");
         },

@@ -1,7 +1,7 @@
-//! Brightflow Store - Manifest-based Parquet storage
+//! Brightflow Store - SQLite-backed Parquet storage (Litehouse)
 //!
 //! This crate provides Brightflow's lakehouse implementation using
-//! a JSON manifest + Parquet files (replacing Delta Lake).
+//! SQLite metadata + Parquet data files.
 
 // Allow certain lints for store code:
 // - similar_names: entry/dir_entry patterns are common in fs code
@@ -22,9 +22,12 @@
     clippy::unused_async
 )]
 
+pub mod db;
 mod error;
 mod ingest;
-mod manifest;
+mod migrate;
+mod models;
+mod stats;
 mod table;
 
 pub use brightflow_core::{DatasetId, DatasetMeta, StorageConfig, TenantId};
@@ -34,6 +37,7 @@ pub use table::{TableInfo, TableRef};
 
 use std::path::{Path, PathBuf};
 
+use db::StoreDb;
 use polars::prelude::*;
 use tracing::info;
 
@@ -41,20 +45,29 @@ use tracing::info;
 pub struct ParquetStore {
     /// Root path for all tables
     root_path: PathBuf,
+    /// SQLite metadata database
+    db: StoreDb,
 }
 
 impl ParquetStore {
-    /// Create a new `ParquetStore` with the given root path
-    pub fn new(root_path: impl Into<PathBuf>) -> Self {
-        Self {
-            root_path: root_path.into(),
-        }
+    /// Create a new `ParquetStore` with the given root path and database URL
+    pub async fn new(root_path: impl Into<PathBuf>, database_url: &str) -> StoreResult<Self> {
+        let db = StoreDb::new(database_url).await?;
+        let root = root_path.into();
+
+        // One-time migration from legacy manifest.json files
+        migrate::migrate_manifests(&db, &root).await?;
+
+        Ok(Self {
+            root_path: root,
+            db,
+        })
     }
 
-    /// Create a `ParquetStore` from a `StorageConfig`
-    pub fn from_config(config: &StorageConfig) -> StoreResult<Self> {
+    /// Create a `ParquetStore` from a `StorageConfig` and database URL
+    pub async fn from_config(config: &StorageConfig, database_url: &str) -> StoreResult<Self> {
         match config {
-            StorageConfig::Local { path } => Ok(Self::new(path)),
+            StorageConfig::Local { path } => Self::new(path, database_url).await,
         }
     }
 
@@ -64,42 +77,30 @@ impl ParquetStore {
         &self.root_path
     }
 
-    /// Get the path for a specific table
-    fn table_path(&self, name: &str) -> PathBuf {
-        self.root_path.join(name)
-    }
-
     /// List all tables in the store
     pub async fn list_tables(&self) -> StoreResult<Vec<TableRef>> {
-        table::list_tables(&self.root_path).await
+        table::list_tables(&self.db, &self.root_path).await
     }
 
     /// Check if a table exists
     pub async fn table_exists(&self, name: &str) -> StoreResult<bool> {
-        let path = self.table_path(name);
-        table::table_exists(&path).await
+        table::table_exists(&self.db, name).await
     }
 
     /// Get information about a table
     pub async fn table_info(&self, name: &str) -> StoreResult<TableInfo> {
-        let path = self.table_path(name);
-        table::get_table_info(name, &path).await
+        table::get_table_info(&self.db, name, &self.root_path).await
     }
 
     /// Read a table as a Polars DataFrame
     pub async fn read_table(&self, name: &str) -> StoreResult<DataFrame> {
-        let path = self.table_path(name);
-        info!("Reading table '{}' from {:?}", name, path);
-        table::read_table(&path).await
+        info!("Reading table '{}'", name);
+        table::read_table(&self.db, name, &self.root_path).await
     }
 
     /// Get the parquet file paths for a table (for lazy scan mode)
     pub async fn get_table_parquet_paths(&self, name: &str) -> StoreResult<Vec<PathBuf>> {
-        let path = self.table_path(name);
-        if !table::table_exists(&path).await? {
-            return Err(StoreError::TableNotFound(name.to_string()));
-        }
-        table::get_parquet_paths(&path)
+        table::get_parquet_paths(&self.db, name, &self.root_path).await
     }
 
     /// Ingest a Parquet file into a table
@@ -112,17 +113,22 @@ impl ParquetStore {
         parquet_path: impl AsRef<Path>,
         options: Option<IngestOptions>,
     ) -> StoreResult<TableInfo> {
-        let table_path = self.table_path(table_name);
         let ingest_options = options.unwrap_or_default();
 
         info!(
-            "Ingesting parquet {:?} into table '{}' at {:?}",
+            "Ingesting parquet {:?} into table '{}'",
             parquet_path.as_ref(),
             table_name,
-            table_path
         );
 
-        ingest::ingest_parquet(&table_path, parquet_path.as_ref(), &ingest_options).await?;
+        ingest::ingest_parquet(
+            &self.db,
+            &self.root_path,
+            table_name,
+            parquet_path.as_ref(),
+            &ingest_options,
+        )
+        .await?;
         self.table_info(table_name).await
     }
 
@@ -134,21 +140,26 @@ impl ParquetStore {
         parquet_path: impl AsRef<Path>,
         primary_keys: &[String],
     ) -> StoreResult<MergeMetrics> {
-        let table_path = self.table_path(table_name);
         info!(
             "Merging parquet {:?} into table '{}' with PKs {:?}",
             parquet_path.as_ref(),
             table_name,
             primary_keys
         );
-        ingest::merge_parquet(&table_path, parquet_path.as_ref(), primary_keys).await
+        ingest::merge_parquet(
+            &self.db,
+            &self.root_path,
+            table_name,
+            parquet_path.as_ref(),
+            primary_keys,
+        )
+        .await
     }
 
     /// Delete a table
     pub async fn delete_table(&self, name: &str) -> StoreResult<()> {
-        let path = self.table_path(name);
-        info!("Deleting table '{}' at {:?}", name, path);
-        table::delete_table(&path).await
+        info!("Deleting table '{}'", name);
+        table::delete_table(&self.db, name, &self.root_path).await
     }
 }
 
@@ -161,14 +172,26 @@ mod tests {
     #[tokio::test]
     async fn test_create_store() {
         let tmp = TempDir::new().expect("failed to create temp dir");
-        let store = ParquetStore::new(tmp.path());
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        let store = ParquetStore::new(tmp.path(), &db_url)
+            .await
+            .expect("failed to create store");
         assert_eq!(store.root_path(), tmp.path());
     }
 
     #[tokio::test]
     async fn test_list_empty_store() {
         let tmp = TempDir::new().expect("failed to create temp dir");
-        let store = ParquetStore::new(tmp.path());
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        let store = ParquetStore::new(tmp.path(), &db_url)
+            .await
+            .expect("failed to create store");
         let tables = store.list_tables().await.expect("failed to list tables");
         assert!(tables.is_empty());
     }

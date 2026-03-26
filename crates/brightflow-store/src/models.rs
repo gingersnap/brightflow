@@ -1,0 +1,37 @@
+//! SQLite row types for Litehouse metadata
+
+use serde::{Deserialize, Serialize};
+
+/// A table row from the `tables` SQLite table
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct TableRow {
+    pub id: String,
+    pub name: String,
+    pub version: i64,
+    pub schema_json: Option<String>,
+    pub primary_keys: Option<String>,
+    pub total_rows: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A file entry row from the `table_files` SQLite table
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct TableFileRow {
+    pub id: String,
+    pub table_id: String,
+    pub path: String,
+    pub num_rows: i64,
+    pub size_bytes: i64,
+    pub added_at: String,
+}
+
+/// Column-level statistics from the `table_column_stats` SQLite table
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ColumnStatRow {
+    pub table_id: String,
+    pub column_name: String,
+    pub min_value: Option<String>,
+    pub max_value: Option<String>,
+    pub null_count: Option<i64>,
+}

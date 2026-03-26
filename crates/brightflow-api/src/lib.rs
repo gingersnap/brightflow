@@ -55,6 +55,8 @@ pub struct ServeConfig {
     pub database_url: Option<String>,
     /// SQLite database URL for scheduler
     pub scheduler_database_url: Option<String>,
+    /// SQLite database URL for Litehouse (store metadata)
+    pub litehouse_database_url: Option<String>,
     /// CORS origin (None = auto-detect based on APP_ENV)
     pub cors_origin: Option<String>,
 }
@@ -72,6 +74,7 @@ impl Default for ServeConfig {
             connector_config_dir: None,
             database_url: None,
             scheduler_database_url: None,
+            litehouse_database_url: None,
             cors_origin: None,
         }
     }
@@ -102,12 +105,10 @@ impl ServeConfig {
         let default_dataset = std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok();
 
         let store_path = std::env::var("BRIGHTFLOW_STORE")
-            .or_else(|_| std::env::var("BRIGHTFLOW_DELTA_STORE"))
             .ok()
             .or_else(|| ws.as_ref().map(|w| format!("{w}/store")));
 
         let tables = std::env::var("BRIGHTFLOW_TABLES")
-            .or_else(|_| std::env::var("BRIGHTFLOW_DELTA_TABLES"))
             .ok()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
@@ -126,6 +127,10 @@ impl ServeConfig {
                 ws.as_ref()
                     .map(|w| format!("sqlite:{w}/scheduler.db?mode=rwc"))
             });
+        let litehouse_database_url = std::env::var("BRIGHTFLOW_LITEHOUSE_URL").ok().or_else(|| {
+            ws.as_ref()
+                .map(|w| format!("sqlite:{w}/litehouse.db?mode=rwc"))
+        });
         let cors_origin = std::env::var("BRIGHTFLOW_CORS_ORIGIN").ok();
 
         Self {
@@ -139,6 +144,7 @@ impl ServeConfig {
             connector_config_dir,
             database_url,
             scheduler_database_url,
+            litehouse_database_url,
             cors_origin,
         }
     }
@@ -160,13 +166,22 @@ pub async fn serve(
         }
     }
 
+    // Derive litehouse database URL from config or store path
+    let litehouse_url_for_store = |store_path: &str| -> String {
+        config
+            .litehouse_database_url
+            .clone()
+            .unwrap_or_else(|| format!("sqlite:{store_path}/../litehouse.db?mode=rwc"))
+    };
+
     // Initialize AppState with lazy loading - metadata only, no data loaded
     let mut state = match (&config.default_dataset, &config.store_path) {
         // Both default dataset and store
         (Some(csv_path), Some(store_path)) if std::path::Path::new(csv_path).exists() => {
             tracing::info!("Loading default dataset from: {}", csv_path);
             tracing::info!("Indexing tables from: {} (metadata only)", store_path);
-            let store = brightflow_store::ParquetStore::new(store_path);
+            let litehouse_url = litehouse_url_for_store(store_path);
+            let store = brightflow_store::ParquetStore::new(store_path, &litehouse_url).await?;
             match AppState::with_default_and_store(csv_path, store).await {
                 Ok(s) => {
                     if let Some(dataset) = s.datasets.get_dataset("default") {
@@ -187,7 +202,8 @@ pub async fn serve(
         // Only store - lazy load metadata only
         (_, Some(store_path)) => {
             tracing::info!("Indexing tables from: {} (metadata only)", store_path);
-            let store = brightflow_store::ParquetStore::new(store_path);
+            let litehouse_url = litehouse_url_for_store(store_path);
+            let store = brightflow_store::ParquetStore::new(store_path, &litehouse_url).await?;
             AppState::with_store(store).await
         },
         // Only default dataset

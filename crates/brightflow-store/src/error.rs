@@ -28,9 +28,13 @@ pub enum StoreError {
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
 
-    /// Manifest parse/serialize error
-    #[error("Manifest error: {0}")]
-    ManifestParse(String),
+    /// Database error
+    #[error("Database error: {0}")]
+    Db(#[from] sqlx::Error),
+
+    /// Migration error
+    #[error("Migration error: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
 
     /// Polars error
     #[error("Polars error: {0}")]

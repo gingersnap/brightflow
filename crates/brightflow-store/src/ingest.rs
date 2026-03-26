@@ -1,15 +1,14 @@
-//! Data ingestion into manifest-based Parquet tables
+//! Data ingestion into SQLite-backed Parquet tables
 
 use std::path::Path;
 
-use chrono::Utc;
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
+use crate::db::StoreDb;
 use crate::error::{StoreError, StoreResult};
-use crate::manifest::{FileEntry, Manifest};
-use crate::table::table_exists;
+use crate::stats;
 
 /// Metrics from a merge (upsert) operation
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -48,9 +47,17 @@ pub enum IngestMode {
     Ignore,
 }
 
+/// Generate a new Parquet filename using UUIDv7
+fn new_parquet_path(table_name: &str) -> String {
+    let id = uuid::Uuid::now_v7();
+    format!("{table_name}/{id}.parquet")
+}
+
 /// Ingest a Parquet file into a table
 pub async fn ingest_parquet(
-    table_path: &Path,
+    db: &StoreDb,
+    root: &Path,
+    table_name: &str,
     parquet_path: &Path,
     options: &IngestOptions,
 ) -> StoreResult<()> {
@@ -58,58 +65,42 @@ pub async fn ingest_parquet(
         return Err(StoreError::FileNotFound(parquet_path.to_path_buf()));
     }
 
-    let exists = table_exists(table_path).await?;
+    let existing = db.get_table_by_name(table_name).await?;
 
-    if exists {
+    if let Some(ref row) = existing {
         match options.mode {
             IngestMode::ErrorIfExists => {
-                return Err(StoreError::TableAlreadyExists(
-                    table_path.to_string_lossy().to_string(),
-                ));
+                return Err(StoreError::TableAlreadyExists(table_name.to_string()));
             },
             IngestMode::Ignore => {
                 debug!("Table exists and mode is Ignore, skipping");
                 return Ok(());
             },
             IngestMode::Overwrite => {
-                // Load manifest, clear files, delete old parquet files
-                let mut manifest = Manifest::load(table_path)?;
-                for file_entry in &manifest.files {
-                    let old_path = table_path.join(&file_entry.path);
+                // Delete old files from disk
+                let files = db.list_table_files(&row.id).await?;
+                for file_row in &files {
+                    let old_path = root.join(&file_row.path);
                     if old_path.exists() {
                         std::fs::remove_file(&old_path)?;
                     }
                 }
-                manifest.set_files(Vec::new());
-                manifest.save(table_path)?;
+                db.delete_table_files(&row.id).await?;
             },
             IngestMode::Append => {},
         }
     }
 
-    // Create table directory and data subdir if needed
-    std::fs::create_dir_all(table_path)?;
-    Manifest::ensure_data_dir(table_path)?;
+    // Ensure table directory exists
+    let table_dir = root.join(table_name);
+    std::fs::create_dir_all(&table_dir)?;
 
-    let mut manifest = if exists && options.mode != IngestMode::Overwrite {
-        Manifest::load(table_path)?
-    } else {
-        let table_name = table_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        Manifest::new(table_name)
-    };
-
-    // Generate destination filename
-    let dest_relative = manifest.next_filename();
-    let dest_path = table_path.join(&dest_relative);
-
-    // Copy source parquet to data directory
+    // Generate UUIDv7 filename and copy file
+    let relative_path = new_parquet_path(table_name);
+    let dest_path = root.join(&relative_path);
     std::fs::copy(parquet_path, &dest_path)?;
 
-    // Read parquet metadata
+    // Read metadata from the copied file
     let file = std::fs::File::open(&dest_path)?;
     let df = ParquetReader::new(file).finish()?;
     let num_rows = i64::try_from(df.height()).unwrap_or(0);
@@ -120,19 +111,37 @@ pub async fn ingest_parquet(
         return Ok(());
     }
 
-    // Extract schema from the parquet file
     let schema_json = schema_to_json(df.schema().as_ref());
+    let schema_str =
+        serde_json::to_string(&schema_json).map_err(|e| StoreError::Other(e.to_string()))?;
+    let file_size = i64::try_from(std::fs::metadata(&dest_path)?.len()).unwrap_or(0);
 
-    let file_size = std::fs::metadata(&dest_path)?.len();
+    // Create or update table record
+    let table_row = if let Some(row) = existing {
+        if options.mode == IngestMode::Overwrite {
+            db.update_table_meta(&row.id, Some(&schema_str), None, num_rows)
+                .await?
+                .ok_or_else(|| StoreError::Other("Failed to update table".into()))?
+        } else {
+            let new_total = row.total_rows + num_rows;
+            db.update_table_meta(&row.id, Some(&schema_str), None, new_total)
+                .await?
+                .ok_or_else(|| StoreError::Other("Failed to update table".into()))?
+        }
+    } else {
+        let row = db.create_table(table_name).await?;
+        db.update_table_meta(&row.id, Some(&schema_str), None, num_rows)
+            .await?
+            .ok_or_else(|| StoreError::Other("Failed to update table".into()))?
+    };
 
-    manifest.schema = Some(schema_json);
-    manifest.add_file(FileEntry {
-        path: dest_relative,
-        num_rows,
-        size_bytes: file_size,
-        added_at: Utc::now(),
-    });
-    manifest.save(table_path)?;
+    // Register the file
+    db.add_table_file(&table_row.id, &relative_path, num_rows, file_size)
+        .await?;
+
+    // Extract and store column-level statistics
+    let column_stats = stats::extract_column_stats(&df, &table_row.id);
+    db.upsert_column_stats(&table_row.id, &column_stats).await?;
 
     Ok(())
 }
@@ -140,7 +149,9 @@ pub async fn ingest_parquet(
 /// Merge (upsert) a Parquet file into a table by primary keys.
 /// Uses Polars anti_join/semi_join for the merge logic.
 pub async fn merge_parquet(
-    table_path: &Path,
+    db: &StoreDb,
+    root: &Path,
+    table_name: &str,
     parquet_path: &Path,
     primary_keys: &[String],
 ) -> StoreResult<MergeMetrics> {
@@ -154,163 +165,155 @@ pub async fn merge_parquet(
         return Err(StoreError::FileNotFound(parquet_path.to_path_buf()));
     }
 
-    // Read source parquet
+    // Get or create table record
+    let table_row = if let Some(row) = db.get_table_by_name(table_name).await? {
+        row
+    } else {
+        let row = db.create_table(table_name).await?;
+        let pks_json =
+            serde_json::to_string(primary_keys).map_err(|e| StoreError::Other(e.to_string()))?;
+        db.update_table_meta(&row.id, None, Some(&pks_json), 0)
+            .await?
+            .ok_or_else(|| StoreError::Other("Failed to update table".into()))?
+    };
+
+    let table_id = table_row.id.clone();
+
+    // Gather existing file paths from db (before spawn_blocking)
+    let existing_files = db.list_table_files(&table_id).await?;
+    let existing_file_paths: Vec<std::path::PathBuf> =
+        existing_files.iter().map(|f| root.join(&f.path)).collect();
+    let old_relative_paths: Vec<String> = existing_files.iter().map(|f| f.path.clone()).collect();
+
     let source_path = parquet_path.to_path_buf();
     let pks: Vec<String> = primary_keys.to_vec();
-    let table_path_buf = table_path.to_path_buf();
 
-    let metrics = tokio::task::spawn_blocking(move || -> StoreResult<MergeMetrics> {
-        let source_file = std::fs::File::open(&source_path)?;
-        let source = ParquetReader::new(source_file).finish()?;
+    // CPU-heavy Polars work in spawn_blocking
+    let (result_df, metrics) =
+        tokio::task::spawn_blocking(move || -> StoreResult<(DataFrame, MergeMetrics)> {
+            let source_file = std::fs::File::open(&source_path)?;
+            let source = ParquetReader::new(source_file).finish()?;
 
-        if source.is_empty() {
-            debug!("Parquet file is empty, skipping merge");
-            return Ok(MergeMetrics::default());
-        }
+            if source.is_empty() {
+                debug!("Parquet file is empty, skipping merge");
+                return Ok((DataFrame::empty(), MergeMetrics::default()));
+            }
 
-        let source_height = source.height();
-        let exists = Manifest::exists(&table_path_buf);
+            let source_height = source.height();
 
-        if !exists {
-            // First run: create table from source
-            std::fs::create_dir_all(&table_path_buf)?;
-            Manifest::ensure_data_dir(&table_path_buf)?;
+            if existing_file_paths.is_empty() {
+                // No existing data — just write source
+                return Ok((
+                    source,
+                    MergeMetrics {
+                        rows_updated: 0,
+                        rows_inserted: source_height,
+                    },
+                ));
+            }
 
-            let table_name = table_path_buf
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let mut manifest = Manifest::new(table_name);
-            manifest.primary_keys = pks;
+            // Read existing data
+            let mut frames = Vec::new();
+            for file_path in &existing_file_paths {
+                let file = std::fs::File::open(file_path)?;
+                let df = ParquetReader::new(file).finish()?;
+                frames.push(df);
+            }
+            let existing = concat_df(&frames)?;
 
-            let schema_json = schema_to_json(source.schema().as_ref());
-            manifest.schema = Some(schema_json);
+            if existing.is_empty() {
+                return Ok((
+                    source,
+                    MergeMetrics {
+                        rows_updated: 0,
+                        rows_inserted: source_height,
+                    },
+                ));
+            }
 
-            let dest_relative = manifest.next_filename();
-            let dest_path = table_path_buf.join(&dest_relative);
+            // Polars upsert via join:
+            // matched = existing rows that have matching PKs in source
+            let matched_count = existing
+                .join(
+                    &source,
+                    pks.as_slice(),
+                    pks.as_slice(),
+                    JoinArgs::new(JoinType::Semi),
+                    None,
+                )?
+                .height();
 
-            write_parquet(&source, &dest_path)?;
-
-            let file_size = std::fs::metadata(&dest_path)?.len();
-            manifest.add_file(FileEntry {
-                path: dest_relative,
-                num_rows: i64::try_from(source_height).unwrap_or(0),
-                size_bytes: file_size,
-                added_at: Utc::now(),
-            });
-            manifest.save(&table_path_buf)?;
-
-            return Ok(MergeMetrics {
-                rows_updated: 0,
-                rows_inserted: source_height,
-            });
-        }
-
-        // Load existing data
-        let manifest = Manifest::load(&table_path_buf)?;
-        let mut existing: Option<DataFrame> = None;
-        for file_entry in &manifest.files {
-            let file_path = table_path_buf.join(&file_entry.path);
-            let file = std::fs::File::open(&file_path)?;
-            let df = ParquetReader::new(file).finish()?;
-            existing = Some(match existing {
-                Some(mut e) => {
-                    e.vstack_mut(&df)?;
-                    e
-                },
-                None => df,
-            });
-        }
-
-        let Some(existing) = existing else {
-            // No existing data, treat as first run
-            let mut manifest = manifest;
-            let dest_relative = manifest.next_filename();
-            let dest_path = table_path_buf.join(&dest_relative);
-            write_parquet(&source, &dest_path)?;
-
-            let file_size = std::fs::metadata(&dest_path)?.len();
-            manifest.schema = Some(schema_to_json(source.schema().as_ref()));
-            manifest.add_file(FileEntry {
-                path: dest_relative,
-                num_rows: i64::try_from(source_height).unwrap_or(0),
-                size_bytes: file_size,
-                added_at: Utc::now(),
-            });
-            manifest.save(&table_path_buf)?;
-
-            return Ok(MergeMetrics {
-                rows_updated: 0,
-                rows_inserted: source_height,
-            });
-        };
-
-        // Polars upsert via join:
-        // matched = existing rows that have matching PKs in source (these get updated)
-        let matched_count = existing
-            .join(
+            // unchanged = existing rows NOT in source
+            let unchanged = existing.join(
                 &source,
                 pks.as_slice(),
                 pks.as_slice(),
-                JoinArgs::new(JoinType::Semi),
+                JoinArgs::new(JoinType::Anti),
                 None,
-            )?
-            .height();
+            )?;
 
-        // unchanged = existing rows NOT in source (keep as-is)
-        let unchanged = existing.join(
-            &source,
-            pks.as_slice(),
-            pks.as_slice(),
-            JoinArgs::new(JoinType::Anti),
-            None,
-        )?;
+            // result = source rows (new + updated) + unchanged
+            let mut result = concat_df(&[source, unchanged])?;
+            result.rechunk_mut();
 
-        // result = source rows (new + updated) + unchanged existing rows
-        let mut result = concat_df(&[source, unchanged])?;
-        result.rechunk_mut();
+            let rows_inserted = source_height.saturating_sub(matched_count);
 
-        let rows_inserted = source_height.saturating_sub(matched_count);
+            info!(
+                "Merge complete: {} updated, {} inserted",
+                matched_count, rows_inserted
+            );
 
-        // Write result to new parquet file
-        let mut manifest = manifest;
-        let dest_relative = manifest.next_filename();
-        let dest_path = table_path_buf.join(&dest_relative);
-        write_parquet(&result, &dest_path)?;
-
-        let file_size = std::fs::metadata(&dest_path)?.len();
-
-        // Delete old parquet files
-        let old_files: Vec<String> = manifest.files.iter().map(|f| f.path.clone()).collect();
-        for old_file in &old_files {
-            let old_path = table_path_buf.join(old_file);
-            if old_path.exists() {
-                std::fs::remove_file(&old_path)?;
-            }
-        }
-
-        manifest.schema = Some(schema_to_json(result.schema().as_ref()));
-        manifest.set_files(vec![FileEntry {
-            path: dest_relative,
-            num_rows: i64::try_from(result.height()).unwrap_or(0),
-            size_bytes: file_size,
-            added_at: Utc::now(),
-        }]);
-        manifest.save(&table_path_buf)?;
-
-        info!(
-            "Merge complete: {} updated, {} inserted",
-            matched_count, rows_inserted
-        );
-
-        Ok(MergeMetrics {
-            rows_updated: matched_count,
-            rows_inserted,
+            Ok((
+                result,
+                MergeMetrics {
+                    rows_updated: matched_count,
+                    rows_inserted,
+                },
+            ))
         })
-    })
-    .await
-    .map_err(|e| StoreError::Other(format!("Task join error: {e}")))??;
+        .await
+        .map_err(|e| StoreError::Other(format!("Task join error: {e}")))??;
+
+    // If the merge produced nothing, return early
+    if result_df.is_empty() && metrics.rows_inserted == 0 && metrics.rows_updated == 0 {
+        return Ok(metrics);
+    }
+
+    // Ensure table directory exists
+    let table_dir = root.join(table_name);
+    std::fs::create_dir_all(&table_dir)?;
+
+    // Write merged result to new UUIDv7 file
+    let relative_path = new_parquet_path(table_name);
+    let dest_path = root.join(&relative_path);
+    write_parquet(&result_df, &dest_path)?;
+
+    let file_size = i64::try_from(std::fs::metadata(&dest_path)?.len()).unwrap_or(0);
+    let num_rows = i64::try_from(result_df.height()).unwrap_or(0);
+
+    // Update db: replace files in a transaction
+    let schema_json = schema_to_json(result_df.schema().as_ref());
+    let schema_str =
+        serde_json::to_string(&schema_json).map_err(|e| StoreError::Other(e.to_string()))?;
+    let pks_json =
+        serde_json::to_string(primary_keys).map_err(|e| StoreError::Other(e.to_string()))?;
+
+    db.replace_table_files(&table_id, &[(relative_path, num_rows, file_size)])
+        .await?;
+    db.update_table_meta(&table_id, Some(&schema_str), Some(&pks_json), num_rows)
+        .await?;
+
+    // Delete old parquet files from disk
+    for old_path in &old_relative_paths {
+        let full_path = root.join(old_path);
+        if full_path.exists() {
+            std::fs::remove_file(&full_path)?;
+        }
+    }
+
+    // Extract and store column-level statistics
+    let column_stats = stats::extract_column_stats(&result_df, &table_id);
+    db.upsert_column_stats(&table_id, &column_stats).await?;
 
     Ok(metrics)
 }
@@ -322,8 +325,8 @@ fn write_parquet(df: &DataFrame, path: &Path) -> StoreResult<()> {
     Ok(())
 }
 
-/// Convert a Polars Schema to a JSON value for storage in the manifest
-fn schema_to_json(schema: &Schema) -> serde_json::Value {
+/// Convert a Polars Schema to a JSON value for storage
+pub(crate) fn schema_to_json(schema: &Schema) -> serde_json::Value {
     let fields: Vec<serde_json::Value> = schema
         .iter_fields()
         .map(|field| {

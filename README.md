@@ -7,8 +7,8 @@ Analytics platform.
 ```
 crates/
 ├── brightflow-core/      # Shared types and errors
-├── brightflow-connect/   # Data connectors (Avon integration)
-├── brightflow-store/     # Delta Lake storage
+├── brightflow-connect/   # Data connectors (Longbow integration)
+├── brightflow-store/     # SQLite-backed Parquet storage (Litehouse)
 ├── brightflow-insights/  # Statistical analysis engine
 ├── brightflow-api/       # HTTP API server
 └── brightflow-cli/       # Main binary

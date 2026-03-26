@@ -6,7 +6,7 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 
 ## Tech Stack
 
-- **Backend**: Rust, Axum, Polars, Delta Lake
+- **Backend**: Rust, Axum, Polars, SQLite (Litehouse)
 - **Frontend**: Vite 7, Vue 3, TypeScript, Nuxt UI 4, Tailwind CSS 4, Pinia
 
 ## Project Structure
@@ -14,7 +14,7 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 - `crates/brightflow-cli` - Binary (run-all, serve, schedule, insights)
 - `crates/brightflow-core` - Shared types (TenantId, DatasetId, errors)
 - `crates/brightflow-connect` - Data connectors
-- `crates/brightflow-store` - Delta Lake storage
+- `crates/brightflow-store` - SQLite-backed Parquet storage (Litehouse)
 - `crates/brightflow-insights` - Statistical analysis engine
 - `crates/brightflow-api` - HTTP API server (Axum + Polars)
 - `brightflow-app/` - Vue 3 frontend (see its CLAUDE.md for detailed style rules and conventions)

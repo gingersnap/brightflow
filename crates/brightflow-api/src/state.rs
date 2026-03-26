@@ -298,7 +298,7 @@ impl AppState {
         // Unload any existing store tables to free memory
         self.unload_store_tables();
 
-        let source = DatasetSource::DeltaTable {
+        let source = DatasetSource::StoreTable {
             table_name: table_name.to_string(),
             version: -1,
         };
@@ -368,7 +368,7 @@ impl AppState {
     ) -> AppResult<String> {
         let df = store.read_table(table_name).await?;
 
-        let source = DatasetSource::DeltaTable {
+        let source = DatasetSource::StoreTable {
             table_name: table_name.to_string(),
             version: -1,
         };

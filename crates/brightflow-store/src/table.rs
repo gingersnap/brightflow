@@ -1,4 +1,4 @@
-//! Table operations for manifest-based Parquet store
+//! Table operations for SQLite-backed Parquet store
 
 use std::path::{Path, PathBuf};
 
@@ -7,9 +7,9 @@ use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+use crate::db::StoreDb;
 use crate::error::{StoreError, StoreResult};
 use crate::ingest::concat_df;
-use crate::manifest::{migrate_from_delta_if_needed, Manifest};
 
 /// Reference to a table in the store
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +18,15 @@ pub struct TableRef {
     pub name: String,
     /// Path to the table
     pub path: String,
+}
+
+/// Column-level statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnStat {
+    pub column_name: String,
+    pub min_value: Option<String>,
+    pub max_value: Option<String>,
+    pub null_count: Option<i64>,
 }
 
 /// Information about a table
@@ -29,101 +38,102 @@ pub struct TableInfo {
     pub path: String,
     /// Current version
     pub version: i64,
-    /// Number of rows (from manifest)
+    /// Number of rows
     pub num_rows: Option<i64>,
     /// Number of files
     pub num_files: usize,
     /// Schema as JSON
     pub schema: Option<serde_json::Value>,
+    /// Column-level statistics (min/max/null_count)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub column_stats: Vec<ColumnStat>,
     /// Created timestamp
     pub created_at: Option<DateTime<Utc>>,
     /// Last modified timestamp
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-/// Check if a directory is a manifest-based table
-pub async fn table_exists(path: &Path) -> StoreResult<bool> {
-    // Auto-migrate Delta tables if found
-    migrate_from_delta_if_needed(path)?;
-    Ok(Manifest::exists(path))
+/// Check if a table exists in the database
+pub async fn table_exists(db: &StoreDb, name: &str) -> StoreResult<bool> {
+    Ok(db.get_table_by_name(name).await?.is_some())
 }
 
-/// List all tables in a directory
-pub async fn list_tables(root: &Path) -> StoreResult<Vec<TableRef>> {
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut tables = Vec::new();
-    let entries = std::fs::read_dir(root)?;
-
-    for entry_result in entries {
-        let entry = entry_result?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            // Auto-migrate Delta tables if found
-            migrate_from_delta_if_needed(&path)?;
-
-            if Manifest::exists(&path) {
-                let name = entry.file_name().to_str().unwrap_or_default().to_string();
-                tables.push(TableRef {
-                    name,
-                    path: path.to_string_lossy().to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(tables)
+/// List all tables from the database
+pub async fn list_tables(db: &StoreDb, root: &Path) -> StoreResult<Vec<TableRef>> {
+    let rows = db.list_tables().await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| TableRef {
+            path: root.join(&row.name).to_string_lossy().to_string(),
+            name: row.name,
+        })
+        .collect())
 }
 
 /// Get information about a table
-pub async fn get_table_info(name: &str, path: &Path) -> StoreResult<TableInfo> {
-    migrate_from_delta_if_needed(path)?;
+pub async fn get_table_info(db: &StoreDb, name: &str, root: &Path) -> StoreResult<TableInfo> {
+    let row = db
+        .get_table_by_name(name)
+        .await?
+        .ok_or_else(|| StoreError::TableNotFound(name.to_string()))?;
 
-    let manifest = Manifest::load(path)?;
+    let files = db.list_table_files(&row.id).await?;
+    let stat_rows = db.get_column_stats(&row.id).await?;
+
+    let schema: Option<serde_json::Value> = row
+        .schema_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+
+    let created_at = row.created_at.parse::<DateTime<Utc>>().ok();
+    let updated_at = row.updated_at.parse::<DateTime<Utc>>().ok();
+
+    let column_stats = stat_rows
+        .into_iter()
+        .map(|s| ColumnStat {
+            column_name: s.column_name,
+            min_value: s.min_value,
+            max_value: s.max_value,
+            null_count: s.null_count,
+        })
+        .collect();
 
     Ok(TableInfo {
-        name: name.to_string(),
-        path: path.to_string_lossy().to_string(),
-        version: i64::try_from(manifest.version).unwrap_or(0),
-        num_rows: Some(manifest.total_rows),
-        num_files: manifest.files.len(),
-        schema: manifest.schema,
-        created_at: Some(manifest.created_at),
-        updated_at: Some(manifest.updated_at),
+        name: row.name.clone(),
+        path: root.join(&row.name).to_string_lossy().to_string(),
+        version: row.version,
+        num_rows: Some(row.total_rows),
+        num_files: files.len(),
+        schema,
+        column_stats,
+        created_at,
+        updated_at,
     })
 }
 
-/// Get paths to all parquet files listed in the manifest
-pub fn get_parquet_paths(path: &Path) -> StoreResult<Vec<PathBuf>> {
-    let manifest = Manifest::load(path)?;
-    let paths = manifest.files.iter().map(|f| path.join(&f.path)).collect();
-    Ok(paths)
+/// Get paths to all parquet files for a table
+pub async fn get_parquet_paths(db: &StoreDb, name: &str, root: &Path) -> StoreResult<Vec<PathBuf>> {
+    let row = db
+        .get_table_by_name(name)
+        .await?
+        .ok_or_else(|| StoreError::TableNotFound(name.to_string()))?;
+
+    let files = db.list_table_files(&row.id).await?;
+    Ok(files.iter().map(|f| root.join(&f.path)).collect())
 }
 
 /// Read a table as a Polars DataFrame
-pub async fn read_table(path: &Path) -> StoreResult<DataFrame> {
-    migrate_from_delta_if_needed(path)?;
+pub async fn read_table(db: &StoreDb, name: &str, root: &Path) -> StoreResult<DataFrame> {
+    let file_paths = get_parquet_paths(db, name, root).await?;
 
-    let manifest = Manifest::load(path)?;
-
-    if manifest.files.is_empty() {
+    if file_paths.is_empty() {
         return Ok(DataFrame::empty());
     }
 
-    let base_path = path.to_path_buf();
-    let file_paths: Vec<PathBuf> = manifest
-        .files
-        .iter()
-        .map(|f| base_path.join(&f.path))
-        .collect();
-
     debug!(
-        "Reading {} parquet file(s) from {}",
+        "Reading {} parquet file(s) for table '{}'",
         file_paths.len(),
-        base_path.display()
+        name
     );
 
     let df = tokio::task::spawn_blocking(move || -> StoreResult<DataFrame> {
@@ -142,29 +152,17 @@ pub async fn read_table(path: &Path) -> StoreResult<DataFrame> {
     Ok(df)
 }
 
-/// Delete a table
-pub async fn delete_table(path: &Path) -> StoreResult<()> {
-    if !table_exists(path).await? {
-        return Err(StoreError::TableNotFound(
-            path.to_string_lossy().to_string(),
-        ));
+/// Delete a table (db record + files on disk)
+pub async fn delete_table(db: &StoreDb, name: &str, root: &Path) -> StoreResult<()> {
+    let existed = db.delete_table(name).await?;
+    if !existed {
+        return Err(StoreError::TableNotFound(name.to_string()));
     }
 
-    std::fs::remove_dir_all(path)?;
+    let table_dir = root.join(name);
+    if table_dir.exists() {
+        std::fs::remove_dir_all(&table_dir)?;
+    }
+
     Ok(())
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_table_not_exists() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let result = table_exists(&tmp.path().join("nonexistent")).await;
-        assert!(result.is_ok());
-        assert!(!result.expect("table_exists failed"));
-    }
 }
