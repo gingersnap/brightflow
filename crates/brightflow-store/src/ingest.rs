@@ -337,13 +337,66 @@ fn schema_to_json(schema: &Schema) -> serde_json::Value {
     serde_json::json!({ "fields": fields })
 }
 
-/// Helper to concatenate DataFrames
-fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
+/// Helper to concatenate DataFrames with schema alignment.
+///
+/// Computes the union of all column names across DataFrames, fills missing
+/// columns with nulls (using the dtype from whichever DataFrame has the column),
+/// and reorders columns consistently before vstacking.
+pub(crate) fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
     if dfs.is_empty() {
         return Ok(DataFrame::empty());
     }
-    let mut result = dfs[0].clone();
-    for df in &dfs[1..] {
+    if dfs.len() == 1 {
+        return Ok(dfs[0].clone());
+    }
+
+    // Collect the union of all column names, preserving insertion order
+    let mut all_columns: Vec<PlSmallStr> = Vec::new();
+    let mut seen = PlHashSet::new();
+    for df in dfs {
+        for name in df.get_column_names() {
+            if seen.insert(name.clone()) {
+                all_columns.push(name.clone());
+            }
+        }
+    }
+
+    // Build a dtype map: first DataFrame that has the column wins
+    let mut dtype_map = PlHashMap::new();
+    for col_name in &all_columns {
+        for df in dfs {
+            if let Ok(col) = df.column(col_name.as_str()) {
+                dtype_map.insert(col_name.clone(), col.dtype().clone());
+                break;
+            }
+        }
+    }
+
+    // Align each DataFrame to the union schema
+    let aligned: Vec<DataFrame> = dfs
+        .iter()
+        .map(|df| -> PolarsResult<DataFrame> {
+            let columns: Vec<Column> = all_columns
+                .iter()
+                .map(|col_name| {
+                    if let Ok(col) = df.column(col_name.as_str()) {
+                        col.clone()
+                    } else {
+                        let dtype = dtype_map.get(col_name).cloned().unwrap_or(DataType::Null);
+                        Column::new_scalar(
+                            col_name.clone(),
+                            Scalar::new(dtype, AnyValue::Null),
+                            df.height(),
+                        )
+                    }
+                })
+                .collect();
+            DataFrame::new(columns)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+
+    let mut result = aligned[0].clone();
+    for df in &aligned[1..] {
         result.vstack_mut(df)?;
     }
     Ok(result)

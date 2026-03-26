@@ -96,4 +96,4 @@ missing_const_for_fn = "allow"
 # Local development: override longbow to use local checkout
 # Remove or comment out before committing to CI
 [patch.crates-io]
-longbow = { path = "../avon" }
+longbow = { path = "../longbow" }

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 use crate::error::{StoreError, StoreResult};
+use crate::ingest::concat_df;
 use crate::manifest::{migrate_from_delta_if_needed, Manifest};
 
 /// Reference to a table in the store
@@ -126,20 +127,14 @@ pub async fn read_table(path: &Path) -> StoreResult<DataFrame> {
     );
 
     let df = tokio::task::spawn_blocking(move || -> StoreResult<DataFrame> {
-        let mut combined: Option<DataFrame> = None;
+        let mut frames = Vec::new();
         for file_path in &file_paths {
             debug!("Reading parquet file: {}", file_path.display());
             let file = std::fs::File::open(file_path)?;
             let df = ParquetReader::new(file).finish()?;
-            combined = Some(match combined {
-                Some(mut existing) => {
-                    existing.vstack_mut(&df)?;
-                    existing
-                },
-                None => df,
-            });
+            frames.push(df);
         }
-        Ok(combined.unwrap_or_else(DataFrame::empty))
+        concat_df(&frames)
     })
     .await
     .map_err(|e| StoreError::Other(format!("Task join error: {e}")))??;
