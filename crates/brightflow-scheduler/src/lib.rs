@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use brightflow_connect::RunOptions;
+use brightflow_core::WorkspacePaths;
 use brightflow_store::ParquetStore;
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
@@ -31,16 +32,19 @@ use tracing::{error, info, warn};
 pub struct Scheduler {
     db: Arc<SchedulerDb>,
     store: Arc<ParquetStore>,
+    #[allow(dead_code)]
+    paths: WorkspacePaths,
     running: Arc<RwLock<HashSet<String>>>,
 }
 
 impl Scheduler {
     /// Create a new scheduler backed by SQLite
     #[must_use]
-    pub fn new(db: Arc<SchedulerDb>, store: Arc<ParquetStore>) -> Self {
+    pub fn new(db: Arc<SchedulerDb>, store: Arc<ParquetStore>, paths: WorkspacePaths) -> Self {
         Self {
             db,
             store,
+            paths,
             running: Arc::new(RwLock::new(HashSet::new())),
         }
     }

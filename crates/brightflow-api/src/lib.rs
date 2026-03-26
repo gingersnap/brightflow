@@ -41,24 +41,12 @@ pub struct ServeConfig {
     pub host: [u8; 4],
     pub port: u16,
     pub default_dataset: Option<String>,
-    /// Root data directory (derives workspace paths)
-    pub data_dir: Option<String>,
-    /// Path to Parquet store to auto-load tables from
-    pub store_path: Option<String>,
     /// Specific tables to load (if None, loads all)
     pub tables: Option<Vec<String>>,
-    /// Path to directory containing schema YAML files
-    pub schema_dir: Option<String>,
-    /// Path to directory containing connector config YAML files
-    pub connector_config_dir: Option<String>,
-    /// SQLite database URL for auth/sessions
-    pub database_url: Option<String>,
-    /// SQLite database URL for scheduler
-    pub scheduler_database_url: Option<String>,
-    /// SQLite database URL for Litehouse (store metadata)
-    pub litehouse_database_url: Option<String>,
     /// CORS origin (None = auto-detect based on APP_ENV)
     pub cors_origin: Option<String>,
+    /// Workspace paths — single source of truth for all data locations
+    pub paths: brightflow_core::WorkspacePaths,
 }
 
 impl Default for ServeConfig {
@@ -67,15 +55,9 @@ impl Default for ServeConfig {
             host: [127, 0, 0, 1],
             port: 8080,
             default_dataset: None,
-            data_dir: None,
-            store_path: None,
             tables: None,
-            schema_dir: None,
-            connector_config_dir: None,
-            database_url: None,
-            scheduler_database_url: None,
-            litehouse_database_url: None,
             cors_origin: None,
+            paths: brightflow_core::WorkspacePaths::from_env(),
         }
     }
 }
@@ -83,8 +65,7 @@ impl Default for ServeConfig {
 impl ServeConfig {
     /// Create config from environment variables.
     ///
-    /// If `BRIGHTFLOW_DATA_DIR` is set, workspace paths are derived from
-    /// `{data_dir}/workspaces/default/`. Individual env vars still override.
+    /// All data paths are resolved by `WorkspacePaths` from `BRIGHTFLOW_DATA_DIR`.
     pub fn from_env() -> Self {
         let host = std::env::var("BRIGHTFLOW_API_HOST")
             .ok()
@@ -99,53 +80,21 @@ impl ServeConfig {
             .and_then(|p| p.parse().ok())
             .unwrap_or(8080);
 
-        let data_dir = std::env::var("BRIGHTFLOW_DATA_DIR").ok();
-        let ws = data_dir.as_ref().map(|d| format!("{d}/workspaces/default"));
-
         let default_dataset = std::env::var("BRIGHTFLOW_DEFAULT_DATASET").ok();
-
-        let store_path = std::env::var("BRIGHTFLOW_STORE")
-            .ok()
-            .or_else(|| ws.as_ref().map(|w| format!("{w}/store")));
 
         let tables = std::env::var("BRIGHTFLOW_TABLES")
             .ok()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
-        let schema_dir = std::env::var("BRIGHTFLOW_SCHEMA_DIR")
-            .ok()
-            .or_else(|| ws.as_ref().map(|w| format!("{w}/schemas")));
-        let connector_config_dir = std::env::var("BRIGHTFLOW_CONNECTOR_CONFIGS")
-            .ok()
-            .or_else(|| ws.as_ref().map(|w| format!("{w}/connector-configs")));
-        let database_url = std::env::var("BRIGHTFLOW_DATABASE_URL")
-            .ok()
-            .or_else(|| ws.as_ref().map(|w| format!("sqlite:{w}/auth.db?mode=rwc")));
-        let scheduler_database_url = std::env::var("BRIGHTFLOW_SCHEDULER_DATABASE_URL")
-            .ok()
-            .or_else(|| {
-                ws.as_ref()
-                    .map(|w| format!("sqlite:{w}/scheduler.db?mode=rwc"))
-            });
-        let litehouse_database_url = std::env::var("BRIGHTFLOW_LITEHOUSE_URL").ok().or_else(|| {
-            ws.as_ref()
-                .map(|w| format!("sqlite:{w}/litehouse.db?mode=rwc"))
-        });
         let cors_origin = std::env::var("BRIGHTFLOW_CORS_ORIGIN").ok();
 
         Self {
             host,
             port,
             default_dataset,
-            data_dir,
-            store_path,
             tables,
-            schema_dir,
-            connector_config_dir,
-            database_url,
-            scheduler_database_url,
-            litehouse_database_url,
             cors_origin,
+            paths: brightflow_core::WorkspacePaths::from_env(),
         }
     }
 }
@@ -158,30 +107,25 @@ pub async fn serve(
     config: ServeConfig,
     log_sender: Option<tokio::sync::broadcast::Sender<system::log_layer::LogEntry>>,
 ) -> anyhow::Result<()> {
-    // Auto-create workspace directories if data_dir is set
-    if let Some(ref data_dir) = config.data_dir {
-        let ws_dir = format!("{data_dir}/workspaces/default");
-        for sub in ["store", "schemas", "connector-configs"] {
-            std::fs::create_dir_all(format!("{ws_dir}/{sub}")).ok();
-        }
-    }
+    let paths = &config.paths;
 
-    // Derive litehouse database URL from config or store path
-    let litehouse_url_for_store = |store_path: &str| -> String {
-        config
-            .litehouse_database_url
-            .clone()
-            .unwrap_or_else(|| format!("sqlite:{store_path}/../litehouse.db?mode=rwc"))
-    };
+    // Ensure all workspace directories exist
+    paths.ensure_dirs()?;
+
+    let store_path = paths.store();
+    let litehouse_url = paths.litehouse_url();
 
     // Initialize AppState with lazy loading - metadata only, no data loaded
-    let mut state = match (&config.default_dataset, &config.store_path) {
+    let has_store = store_path.exists() && store_path.is_dir();
+    let mut state = match (&config.default_dataset, has_store) {
         // Both default dataset and store
-        (Some(csv_path), Some(store_path)) if std::path::Path::new(csv_path).exists() => {
+        (Some(csv_path), true) if std::path::Path::new(csv_path).exists() => {
             tracing::info!("Loading default dataset from: {}", csv_path);
-            tracing::info!("Indexing tables from: {} (metadata only)", store_path);
-            let litehouse_url = litehouse_url_for_store(store_path);
-            let store = brightflow_store::ParquetStore::new(store_path, &litehouse_url).await?;
+            tracing::info!(
+                "Indexing tables from: {} (metadata only)",
+                store_path.display()
+            );
+            let store = brightflow_store::ParquetStore::new(&store_path, &litehouse_url).await?;
             match AppState::with_default_and_store(csv_path, store).await {
                 Ok(s) => {
                     if let Some(dataset) = s.datasets.get_dataset("default") {
@@ -200,14 +144,16 @@ pub async fn serve(
             }
         },
         // Only store - lazy load metadata only
-        (_, Some(store_path)) => {
-            tracing::info!("Indexing tables from: {} (metadata only)", store_path);
-            let litehouse_url = litehouse_url_for_store(store_path);
-            let store = brightflow_store::ParquetStore::new(store_path, &litehouse_url).await?;
+        (_, true) => {
+            tracing::info!(
+                "Indexing tables from: {} (metadata only)",
+                store_path.display()
+            );
+            let store = brightflow_store::ParquetStore::new(&store_path, &litehouse_url).await?;
             AppState::with_store(store).await
         },
         // Only default dataset
-        (Some(csv_path), None) if std::path::Path::new(csv_path).exists() => {
+        (Some(csv_path), false) if std::path::Path::new(csv_path).exists() => {
             tracing::info!("Loading default dataset from: {}", csv_path);
             match AppState::with_default_dataset(csv_path).await {
                 Ok(s) => {
@@ -226,7 +172,7 @@ pub async fn serve(
                 },
             }
         },
-        (Some(path), None) => {
+        (Some(path), false) => {
             tracing::warn!(
                 "Default dataset not found at {}, starting with empty state",
                 path
@@ -234,7 +180,7 @@ pub async fn serve(
             AppState::new()
         },
         // No data source configured
-        (None, None) => AppState::new(),
+        (None, false) => AppState::new(),
     };
 
     // Replace log_sender if one was provided from init_tracing
@@ -247,34 +193,19 @@ pub async fn serve(
     let sampler_start = state.start_time;
     tokio::spawn(system::sampler::run_sampler(sampler_metrics, sampler_start));
 
-    // Load schema configs from YAML files
-    if let Some(schema_dir) = &config.schema_dir {
-        state.load_schemas_from_dir(std::path::Path::new(schema_dir));
-    } else {
-        // Default: look for schemas/ in the working directory
-        state.load_schemas_from_dir(std::path::Path::new("schemas"));
-    }
+    // Load schema configs
+    state.load_schemas_from_dir(&paths.schemas());
 
     // Set connector config directory
-    if let Some(dir) = &config.connector_config_dir {
-        state.connector_config_dir = Some(std::path::PathBuf::from(dir));
-        tracing::info!("Connector configs directory: {}", dir);
-    }
+    let connector_config_dir = paths.connector_configs();
+    state.connector_config_dir = Some(connector_config_dir.clone());
+    tracing::info!(
+        "Connector configs directory: {}",
+        connector_config_dir.display()
+    );
 
     // Initialize auth database
-    let auth_db_url = config
-        .database_url
-        .clone()
-        .unwrap_or_else(|| "sqlite:data/auth.db?mode=rwc".to_string());
-
-    // Ensure data directory exists
-    if let Some(path) = auth_db_url.strip_prefix("sqlite:") {
-        let db_path = path.split('?').next().unwrap_or(path);
-        if let Some(parent) = std::path::Path::new(db_path).parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-    }
-
+    let auth_db_url = paths.auth_url();
     let auth_db = AuthDb::new(&auth_db_url).await?;
     let auth_db_arc = Arc::new(auth_db.clone());
     state.auth_db = Some(Arc::clone(&auth_db_arc));
@@ -297,23 +228,17 @@ pub async fn serve(
 
     // Initialize scheduler if store is available
     if let Some(store) = state.store() {
-        let scheduler_db_url = config
-            .scheduler_database_url
-            .clone()
-            .unwrap_or_else(|| "sqlite:data/scheduler.db?mode=rwc".to_string());
-        if let Some(path) = scheduler_db_url.strip_prefix("sqlite:") {
-            let db_path = path.split('?').next().unwrap_or(path);
-            if let Some(parent) = std::path::Path::new(db_path).parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-        }
+        let scheduler_db_url = paths.scheduler_url();
         let scheduler_db = brightflow_scheduler::SchedulerDb::new(&scheduler_db_url)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to initialize scheduler database: {e}"))?;
         let scheduler_db = Arc::new(scheduler_db);
 
-        let scheduler =
-            brightflow_scheduler::Scheduler::new(Arc::clone(&scheduler_db), Arc::clone(store));
+        let scheduler = brightflow_scheduler::Scheduler::new(
+            Arc::clone(&scheduler_db),
+            Arc::clone(store),
+            paths.clone(),
+        );
         let scheduler = Arc::new(scheduler);
         state.scheduler = Some(Arc::clone(&scheduler));
         state.scheduler_db = Some(scheduler_db);

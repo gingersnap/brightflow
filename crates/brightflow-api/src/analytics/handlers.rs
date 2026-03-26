@@ -39,10 +39,9 @@ pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<Ta
 }
 
 /// Load a specific Delta table (unloads previously loaded tables)
-#[instrument(skip(state, auth_session))]
+#[instrument(skip(state))]
 pub async fn load_table(
     State(state): State<AppState>,
-    auth_session: crate::auth::AuthSession,
     Path(name): Path<String>,
 ) -> AppResult<Json<LoadTableResponse>> {
     // Check if table exists in index
@@ -52,25 +51,8 @@ pub async fn load_table(
         )));
     }
 
-    // Determine data mode from user settings
-    let data_mode = if let Some(user) = &auth_session.user {
-        if let Some(auth_db) = &state.auth_db {
-            let mode_str = auth_db
-                .get_data_mode(&user.id)
-                .await
-                .unwrap_or_else(|_| "memory".to_string());
-            mode_str
-                .parse::<brightflow_core::DataMode>()
-                .unwrap_or_default()
-        } else {
-            brightflow_core::DataMode::default()
-        }
-    } else {
-        brightflow_core::DataMode::default()
-    };
-
-    // Load the table (this unloads any previously loaded delta tables)
-    let id = state.load_table(&name, data_mode).await?;
+    // Load the table (this unloads any previously loaded store tables)
+    let id = state.load_table(&name).await?;
 
     // Get the loaded dataset info
     let dataset = state
@@ -84,7 +66,6 @@ pub async fn load_table(
         row_count: dataset.row_count(),
         column_count: dataset.column_count(),
         columns: dataset.columns(),
-        data_mode: dataset.data_mode.to_string(),
     }))
 }
 
@@ -104,7 +85,6 @@ pub async fn get_dataset(
         row_count: dataset.row_count(),
         column_count: dataset.column_count(),
         columns: dataset.columns(),
-        data_mode: dataset.data_mode.to_string(),
     }))
 }
 
@@ -179,8 +159,7 @@ pub async fn upload_dataset(
 
     let id = state.datasets.add_dataset(
         name.clone(),
-        DatasetData::Eager(df),
-        brightflow_core::DataMode::Memory,
+        DatasetData::Uploaded(df),
         DatasetSource::Upload {
             filename: name.clone(),
         },

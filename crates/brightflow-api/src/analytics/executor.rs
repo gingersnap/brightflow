@@ -4,15 +4,15 @@ use crate::shared::{AppError, AppResult};
 use polars::prelude::*;
 use std::time::Instant;
 
-/// Execute a query against dataset data (eager DataFrame or lazy parquet scan)
+/// Execute a query against dataset data
 pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryResponse> {
     let start = Instant::now();
 
     // Build LazyFrame from the data source
     let mut lf = match data {
-        DatasetData::Eager(df) => df.clone().lazy(),
-        DatasetData::Lazy { parquet_files } => {
-            LazyFrame::scan_parquet_files(parquet_files.clone().into(), ScanArgsParquet::default())?
+        DatasetData::Uploaded(df) => df.clone().lazy(),
+        DatasetData::Parquet { files } => {
+            LazyFrame::scan_parquet_files(files.clone().into(), ScanArgsParquet::default())?
         },
     };
 
@@ -33,32 +33,20 @@ pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryRespons
         lf = apply_operation(lf, op)?;
     }
 
-    // Collect results, optimizing for lazy mode when a limit is present
+    // Collect results with two-pass approach when limit is present
     let (result_df, total_rows) = if let Some(n) = limit_op {
-        match data {
-            DatasetData::Lazy { .. } => {
-                // Lazy mode: two lightweight passes avoid full materialization
-                // 1) Count rows (Polars optimizes to metadata scan when unfiltered)
-                let total_rows = lf
-                    .clone()
-                    .select([len()])
-                    .collect()?
-                    .column("len")?
-                    .u32()?
-                    .get(0)
-                    .unwrap_or(0) as usize;
-                // 2) Only materialize the limited rows from parquet
-                let result_df = lf.limit(n).collect()?;
-                (result_df, total_rows)
-            },
-            DatasetData::Eager(_) => {
-                // Eager mode: data already in memory, single pass is optimal
-                let filtered_df = lf.collect()?;
-                let total_rows = filtered_df.height();
-                let result_df = filtered_df.head(Some(n as usize));
-                (result_df, total_rows)
-            },
-        }
+        // 1) Count rows (Polars optimizes to metadata scan when unfiltered)
+        let total_rows = lf
+            .clone()
+            .select([len()])
+            .collect()?
+            .column("len")?
+            .u32()?
+            .get(0)
+            .unwrap_or(0) as usize;
+        // 2) Only materialize the limited rows
+        let result_df = lf.limit(n).collect()?;
+        (result_df, total_rows)
     } else {
         let filtered_df = lf.collect()?;
         let total_rows = filtered_df.height();

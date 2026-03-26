@@ -11,17 +11,13 @@ import {
   Moon,
   Plus,
   LogOut,
-  Zap,
-  HardDrive,
 } from 'lucide-vue-next';
 import { useColorMode } from '@vueuse/core';
 import { useDatasetStore } from '@/stores/dataset';
-import { useAuthStore, type DataMode } from '@/stores/auth';
 import { useUiStore, type AppMode } from '@/stores/ui';
 import { useConnectStore } from '@/stores/connect';
 
 const datasetStore = useDatasetStore();
-const authStore = useAuthStore();
 const uiStore = useUiStore();
 const connectStore = useConnectStore();
 const colorMode = useColorMode();
@@ -70,11 +66,6 @@ function toggleSystem(): void {
 
 function toggleTheme(): void {
   colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
-}
-
-async function toggleDataMode(): Promise<void> {
-  const newMode: DataMode = authStore.dataMode === 'memory' ? 'lazy' : 'memory';
-  await authStore.setDataMode(newMode);
 }
 </script>
 
@@ -170,22 +161,6 @@ async function toggleDataMode(): Promise<void> {
         System
       </button>
 
-      <!-- Data mode toggle -->
-      <button
-        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer"
-        :class="
-          authStore.dataMode === 'lazy'
-            ? 'bg-primary-500/10 text-primary-500'
-            : 'text-muted hover:text-highlighted hover:bg-elevated'
-        "
-        :title="authStore.dataMode === 'memory' ? 'Mode: In-Memory (click for Lazy)' : 'Mode: Lazy Scan (click for In-Memory)'"
-        @click="toggleDataMode"
-      >
-        <Zap v-if="authStore.dataMode === 'lazy'" class="w-3.5 h-3.5" />
-        <HardDrive v-else class="w-3.5 h-3.5" />
-        {{ authStore.dataMode === 'lazy' ? 'Lazy' : 'Memory' }}
-      </button>
-
       <!-- Theme toggle -->
       <UButton
         variant="ghost"
@@ -219,9 +194,6 @@ async function toggleDataMode(): Promise<void> {
         />
         <span class="text-xs text-muted">
           {{ datasetStore.hasData ? (datasetStore.name ?? 'Dataset loaded') : 'No dataset' }}
-          <span v-if="datasetStore.hasData && datasetStore.dataMode" class="ml-1 opacity-70">
-            [{{ datasetStore.dataMode }}]
-          </span>
           <span v-if="lastSyncTime" class="ml-1 opacity-70">
             · synced {{ lastSyncTime }}
           </span>

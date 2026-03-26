@@ -237,12 +237,9 @@ impl AppState {
             .unwrap_or("default")
             .to_string();
 
-        state.datasets.add_dataset(
-            name,
-            DatasetData::Eager(df),
-            brightflow_core::DataMode::Memory,
-            DatasetSource::Default,
-        );
+        state
+            .datasets
+            .add_dataset(name, DatasetData::Uploaded(df), DatasetSource::Default);
 
         Ok(state)
     }
@@ -268,12 +265,9 @@ impl AppState {
             .unwrap_or("default")
             .to_string();
 
-        state.datasets.add_dataset(
-            name,
-            DatasetData::Eager(df),
-            brightflow_core::DataMode::Memory,
-            DatasetSource::Default,
-        );
+        state
+            .datasets
+            .add_dataset(name, DatasetData::Uploaded(df), DatasetSource::Default);
 
         Ok(state)
     }
@@ -283,19 +277,15 @@ impl AppState {
         self.table_index.read().await.clone()
     }
 
-    /// Load a specific table on-demand with the given data mode
+    /// Load a specific table on-demand (lazy parquet scan).
     ///
-    /// This unloads any previously loaded tables first to keep memory usage low.
-    pub async fn load_table(
-        &self,
-        table_name: &str,
-        data_mode: brightflow_core::DataMode,
-    ) -> AppResult<String> {
+    /// This unloads any previously loaded store tables first.
+    pub async fn load_table(&self, table_name: &str) -> AppResult<String> {
         let store = self.store.as_ref().ok_or_else(|| {
             crate::shared::AppError::BadRequest("No store configured".to_string())
         })?;
 
-        // Unload any existing store tables to free memory
+        // Unload any existing store tables
         self.unload_store_tables();
 
         let source = DatasetSource::StoreTable {
@@ -303,34 +293,18 @@ impl AppState {
             version: -1,
         };
 
-        let id = match data_mode {
-            brightflow_core::DataMode::Memory => {
-                tracing::info!("Loading table '{}' into memory (eager)", table_name);
-                let df = store.read_table(table_name).await?;
-                tracing::info!("Loaded table '{}': {} rows", table_name, df.height());
-                self.datasets.add_dataset(
-                    table_name.to_string(),
-                    DatasetData::Eager(df),
-                    data_mode,
-                    source,
-                )
-            },
-            brightflow_core::DataMode::Lazy => {
-                tracing::info!("Loading table '{}' in lazy mode (parquet scan)", table_name);
-                let parquet_files = store.get_table_parquet_paths(table_name).await?;
-                tracing::info!(
-                    "Registered {} parquet file(s) for lazy scan of '{}'",
-                    parquet_files.len(),
-                    table_name
-                );
-                self.datasets.add_dataset(
-                    table_name.to_string(),
-                    DatasetData::Lazy { parquet_files },
-                    data_mode,
-                    source,
-                )
-            },
-        };
+        tracing::info!("Loading table '{}' (lazy parquet scan)", table_name);
+        let files = store.get_table_parquet_paths(table_name).await?;
+        tracing::info!(
+            "Registered {} parquet file(s) for '{}'",
+            files.len(),
+            table_name
+        );
+        let id = self.datasets.add_dataset(
+            table_name.to_string(),
+            DatasetData::Parquet { files },
+            source,
+        );
 
         Ok(id)
     }
@@ -341,7 +315,7 @@ impl AppState {
             .datasets
             .list_datasets()
             .iter()
-            .filter(|d| d.id.starts_with("delta:"))
+            .filter(|d| d.id.starts_with("store:"))
             .map(|d| d.id.clone())
             .collect();
 
@@ -360,13 +334,13 @@ impl AppState {
         index.iter().any(|t| t.name == table_name)
     }
 
-    /// Load a table directly from a store
+    /// Load a table directly from a store (lazy parquet scan)
     pub async fn load_store_table(
         &self,
         store: &ParquetStore,
         table_name: &str,
     ) -> AppResult<String> {
-        let df = store.read_table(table_name).await?;
+        let files = store.get_table_parquet_paths(table_name).await?;
 
         let source = DatasetSource::StoreTable {
             table_name: table_name.to_string(),
@@ -375,8 +349,7 @@ impl AppState {
 
         let id = self.datasets.add_dataset(
             table_name.to_string(),
-            DatasetData::Eager(df),
-            brightflow_core::DataMode::Memory,
+            DatasetData::Parquet { files },
             source,
         );
         Ok(id)

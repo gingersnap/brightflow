@@ -1,35 +1,46 @@
 #!/usr/bin/env bash
-# Clean all synced data while preserving user accounts and settings.
+# Clean all synced data while preserving user accounts.
 #
 # Removes:
-#   - Parquet tables in data/store/
-#   - Parquet connector output in data/github/
-#   - Litehouse metadata (data/litehouse.db)
+#   - Parquet tables in {workspace}/store/
+#   - Litehouse metadata ({workspace}/litehouse.db)
 #   - SQLite: sync_runs, sync_state, scheduler_jobs, connector_configs
 #
 # Preserves:
-#   - SQLite: users, user_settings, tower_sessions, _sqlx_migrations (auth.db)
-#   - Connector config files in configs/
+#   - SQLite: users, tower_sessions, _sqlx_migrations (auth.db)
+#   - Connector config files
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-SCHEDULER_DB="$ROOT_DIR/data/scheduler.db"
-LITEHOUSE_DB="$ROOT_DIR/data/litehouse.db"
-STORE_DIR="$ROOT_DIR/data/store"
-GITHUB_DIR="$ROOT_DIR/data/github"
+# Load .env if present
+if [ -f "$ROOT_DIR/.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$ROOT_DIR/.env"
+    set +a
+fi
+
+DATA_DIR="${BRIGHTFLOW_DATA_DIR:-$ROOT_DIR/data}"
+WS="${BRIGHTFLOW_WORKSPACE:-default}"
+WS_DIR="$DATA_DIR/workspaces/$WS"
+
+SCHEDULER_DB="$WS_DIR/scheduler.db"
+LITEHOUSE_DB="$WS_DIR/litehouse.db"
+STORE_DIR="$WS_DIR/store"
 
 echo "=== Brightflow Sync Data Cleanup ==="
 echo ""
+echo "Workspace: $WS_DIR"
+echo ""
 echo "This will remove:"
 echo "  - Parquet tables in $STORE_DIR"
-echo "  - Parquet output in $GITHUB_DIR"
 echo "  - Litehouse metadata ($LITEHOUSE_DB)"
 echo "  - Sync runs, sync state, scheduler jobs, connector configs from SQLite"
 echo ""
-echo "User accounts and settings will be preserved."
+echo "User accounts will be preserved."
 echo ""
 read -rp "Continue? [y/N] " confirm
 if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
@@ -49,17 +60,7 @@ else
     echo "No store directory found, skipping."
 fi
 
-# 2. Clean connector parquet output
-if [ -d "$GITHUB_DIR" ]; then
-    echo "Removing parquet output in $GITHUB_DIR..."
-    rm -rf "$GITHUB_DIR"
-    mkdir -p "$GITHUB_DIR"
-    echo "  Done."
-else
-    echo "No github output directory found, skipping."
-fi
-
-# 3. Clean Litehouse metadata database
+# 2. Clean Litehouse metadata database
 if [ -f "$LITEHOUSE_DB" ]; then
     echo "Removing Litehouse metadata ($LITEHOUSE_DB)..."
     rm -f "$LITEHOUSE_DB" "$LITEHOUSE_DB-shm" "$LITEHOUSE_DB-wal"
@@ -68,7 +69,7 @@ else
     echo "No Litehouse database found, skipping."
 fi
 
-# 4. Clean SQLite scheduler sync data
+# 3. Clean SQLite scheduler sync data
 if [ -f "$SCHEDULER_DB" ]; then
     if command -v sqlite3 &>/dev/null; then
         echo "Cleaning scheduler sync data (preserving config)..."

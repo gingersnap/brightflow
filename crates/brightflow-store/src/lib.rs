@@ -25,7 +25,6 @@
 pub mod db;
 mod error;
 mod ingest;
-mod migrate;
 mod models;
 mod stats;
 mod table;
@@ -54,9 +53,6 @@ impl ParquetStore {
     pub async fn new(root_path: impl Into<PathBuf>, database_url: &str) -> StoreResult<Self> {
         let db = StoreDb::new(database_url).await?;
         let root = root_path.into();
-
-        // One-time migration from legacy manifest.json files
-        migrate::migrate_manifests(&db, &root).await?;
 
         Ok(Self {
             root_path: root,

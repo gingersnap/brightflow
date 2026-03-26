@@ -165,7 +165,6 @@ pub struct DatasetMetadataResponse {
     pub row_count: Option<usize>,
     pub column_count: Option<usize>,
     pub columns: Vec<ColumnInfo>,
-    pub data_mode: String,
 }
 
 /// Response for loading a Delta table on-demand
@@ -177,5 +176,4 @@ pub struct LoadTableResponse {
     pub row_count: Option<usize>,
     pub column_count: Option<usize>,
     pub columns: Vec<ColumnInfo>,
-    pub data_mode: String,
 }

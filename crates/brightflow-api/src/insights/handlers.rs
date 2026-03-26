@@ -115,9 +115,9 @@ fn get_dataset_data_and_schema(
 /// Materialize DatasetData into a DataFrame (safe to call from blocking context)
 fn materialize_data(data: DatasetData) -> AppResult<polars::prelude::DataFrame> {
     Ok(match data {
-        DatasetData::Eager(df) => df,
-        DatasetData::Lazy { parquet_files } => polars::prelude::LazyFrame::scan_parquet_files(
-            parquet_files.into(),
+        DatasetData::Uploaded(df) => df,
+        DatasetData::Parquet { files } => polars::prelude::LazyFrame::scan_parquet_files(
+            files.into(),
             polars::prelude::ScanArgsParquet::default(),
         )?
         .collect()?,

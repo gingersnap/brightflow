@@ -8,5 +8,5 @@ pub mod password;
 pub use backend::{AuthBackend, AuthSession, Credentials};
 pub use db::AuthDb;
 pub use error::{AuthError, AuthResult};
-pub use models::{User, UserSettings};
+pub use models::User;
 pub use password::{hash_password, verify_password};

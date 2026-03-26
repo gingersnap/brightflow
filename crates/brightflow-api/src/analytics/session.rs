@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use brightflow_core::DataMode;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use polars::prelude::*;
@@ -23,35 +22,28 @@ pub enum DatasetSource {
     },
 }
 
-/// The underlying data for a dataset — either eagerly loaded or lazy scan references
+/// The underlying data for a dataset
 #[derive(Clone, Debug)]
 pub enum DatasetData {
-    /// Fully materialized in-memory DataFrame
-    Eager(DataFrame),
+    /// In-memory DataFrame from CSV upload or default dataset
+    Uploaded(DataFrame),
     /// References to parquet files, scanned lazily per query
-    Lazy { parquet_files: Vec<PathBuf> },
+    Parquet { files: Vec<PathBuf> },
 }
 
 /// A loaded dataset with metadata
 pub struct Dataset {
     pub name: String,
     pub data: DatasetData,
-    pub data_mode: DataMode,
     pub loaded_at: DateTime<Utc>,
     pub source: DatasetSource,
 }
 
 impl Dataset {
-    pub fn new(
-        name: String,
-        data: DatasetData,
-        data_mode: DataMode,
-        source: DatasetSource,
-    ) -> Self {
+    pub fn new(name: String, data: DatasetData, source: DatasetSource) -> Self {
         Self {
             name,
             data,
-            data_mode,
             loaded_at: Utc::now(),
             source,
         }
@@ -59,21 +51,20 @@ impl Dataset {
 
     pub fn row_count(&self) -> Option<usize> {
         match &self.data {
-            DatasetData::Eager(df) => Some(df.height()),
-            DatasetData::Lazy { .. } => None,
+            DatasetData::Uploaded(df) => Some(df.height()),
+            // Row count requires .collect() which can't run inside the tokio runtime.
+            // The executor returns total_rows with each query result instead.
+            DatasetData::Parquet { .. } => None,
         }
     }
 
     pub fn column_count(&self) -> Option<usize> {
-        match &self.data {
-            DatasetData::Eager(df) => Some(df.width()),
-            DatasetData::Lazy { .. } => None,
-        }
+        Some(self.columns().len())
     }
 
     pub fn columns(&self) -> Vec<ColumnInfo> {
         match &self.data {
-            DatasetData::Eager(df) => df
+            DatasetData::Uploaded(df) => df
                 .get_columns()
                 .iter()
                 .map(|col| ColumnInfo {
@@ -81,9 +72,8 @@ impl Dataset {
                     dtype: dtype_to_string(col.dtype()),
                 })
                 .collect(),
-            DatasetData::Lazy { parquet_files } => {
-                // Read schema from the first parquet file
-                if let Some(first) = parquet_files.first() {
+            DatasetData::Parquet { files } => {
+                if let Some(first) = files.first() {
                     if let Ok(mut lf) = LazyFrame::scan_parquet(first, ScanArgsParquet::default()) {
                         if let Ok(schema) = lf.collect_schema() {
                             return schema
@@ -118,7 +108,6 @@ pub struct DatasetInfo {
     pub name: String,
     pub row_count: Option<usize>,
     pub column_count: Option<usize>,
-    pub data_mode: String,
     pub loaded_at: DateTime<Utc>,
 }
 
@@ -142,13 +131,7 @@ impl DatasetManager {
     }
 
     /// Add a new dataset, returns its ID
-    pub fn add_dataset(
-        &self,
-        name: String,
-        data: DatasetData,
-        data_mode: DataMode,
-        source: DatasetSource,
-    ) -> String {
+    pub fn add_dataset(&self, name: String, data: DatasetData, source: DatasetSource) -> String {
         let id = match &source {
             DatasetSource::Default => "default".to_string(),
             DatasetSource::Upload { .. } => uuid::Uuid::new_v4().to_string(),
@@ -156,7 +139,7 @@ impl DatasetManager {
         };
 
         self.datasets
-            .insert(id.clone(), Dataset::new(name, data, data_mode, source));
+            .insert(id.clone(), Dataset::new(name, data, source));
         id
     }
 
@@ -187,7 +170,6 @@ impl DatasetManager {
                 name: entry.value().name.clone(),
                 row_count: entry.value().row_count(),
                 column_count: entry.value().column_count(),
-                data_mode: entry.value().data_mode.to_string(),
                 loaded_at: entry.value().loaded_at,
             })
             .collect()

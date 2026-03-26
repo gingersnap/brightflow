@@ -21,7 +21,6 @@ export const useDatasetStore = defineStore('dataset', () => {
   const rowCount = ref<number | null>(null);
   const columnCount = ref<number | null>(null);
   const columns = ref<Column[]>([]);
-  const dataMode = ref<string | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -47,7 +46,6 @@ export const useDatasetStore = defineStore('dataset', () => {
     rowCount.value = response.rowCount;
     columnCount.value = response.columnCount;
     columns.value = response.columns;
-    dataMode.value = response.dataMode ?? 'memory';
     loading.value = false;
     error.value = null;
 
@@ -74,7 +72,6 @@ export const useDatasetStore = defineStore('dataset', () => {
     rowCount.value = null;
     columnCount.value = null;
     columns.value = [];
-    dataMode.value = null;
     error.value = null;
   }
 
@@ -146,7 +143,6 @@ export const useDatasetStore = defineStore('dataset', () => {
     rowCount,
     columnCount,
     columns,
-    dataMode,
     loading,
     error,
     // Available datasets

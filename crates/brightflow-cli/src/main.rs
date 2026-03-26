@@ -225,9 +225,9 @@ enum ConnectCommands {
         #[arg(long)]
         ingest: bool,
 
-        /// Store path for ingestion (default: ./data/store)
-        #[arg(long, default_value = "./data/store")]
-        store_path: PathBuf,
+        /// Store path for ingestion (derived from BRIGHTFLOW_DATA_DIR)
+        #[arg(long)]
+        store_path: Option<PathBuf>,
     },
 
     /// List available built-in connectors
@@ -238,9 +238,9 @@ enum ConnectCommands {
 enum StoreCommands {
     /// List all tables in the store
     List {
-        /// Store path (default: ./data/store)
-        #[arg(short, long, default_value = "./data/store")]
-        path: PathBuf,
+        /// Store path (derived from BRIGHTFLOW_DATA_DIR)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
     },
 
     /// Show information about a table
@@ -248,9 +248,9 @@ enum StoreCommands {
         /// Table name
         name: String,
 
-        /// Store path (default: ./data/store)
-        #[arg(short, long, default_value = "./data/store")]
-        path: PathBuf,
+        /// Store path (derived from BRIGHTFLOW_DATA_DIR)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
     },
 
     /// Ingest a Parquet file into a table
@@ -262,9 +262,9 @@ enum StoreCommands {
         #[arg(short, long)]
         input: PathBuf,
 
-        /// Store path (default: ./data/store)
-        #[arg(short, long, default_value = "./data/store")]
-        path: PathBuf,
+        /// Store path (derived from BRIGHTFLOW_DATA_DIR)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
 
         /// Overwrite existing data instead of appending
         #[arg(long)]
@@ -280,9 +280,9 @@ enum StoreCommands {
         #[arg(short, long)]
         output: PathBuf,
 
-        /// Store path (default: ./data/store)
-        #[arg(short, long, default_value = "./data/store")]
-        path: PathBuf,
+        /// Store path (derived from BRIGHTFLOW_DATA_DIR)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
     },
 
     /// Delete a table from the store
@@ -290,9 +290,9 @@ enum StoreCommands {
         /// Table name to delete
         table: String,
 
-        /// Store path (default: ./data/store)
-        #[arg(short, long, default_value = "./data/store")]
-        path: PathBuf,
+        /// Store path (derived from BRIGHTFLOW_DATA_DIR)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
 
         /// Skip confirmation prompt
         #[arg(short, long)]
@@ -354,10 +354,10 @@ async fn main() -> Result<()> {
                 host.as_deref(),
                 port,
                 dataset,
-                store,
+                store.as_deref(),
                 tables,
                 connector_configs.as_deref(),
-                database_url,
+                database_url.as_deref(),
             );
 
             // Scheduler is now integrated into the API server (started automatically)
@@ -379,10 +379,10 @@ async fn main() -> Result<()> {
                 host.as_deref(),
                 port,
                 dataset,
-                store,
+                store.as_deref(),
                 tables,
                 connector_configs.as_deref(),
-                database_url,
+                database_url.as_deref(),
             );
             brightflow_api::serve(config, Some(log_sender)).await?;
         },
@@ -431,13 +431,7 @@ async fn main() -> Result<()> {
             database_url,
         } => {
             let database_url = database_url
-                .or_else(|| std::env::var("BRIGHTFLOW_DATABASE_URL").ok())
-                .or_else(|| {
-                    std::env::var("BRIGHTFLOW_DATA_DIR")
-                        .ok()
-                        .map(|d| format!("sqlite:{d}/workspaces/default/auth.db?mode=rwc"))
-                })
-                .unwrap_or_else(|| "sqlite:data/auth.db?mode=rwc".to_string());
+                .unwrap_or_else(|| brightflow_core::WorkspacePaths::from_env().auth_url());
             handle_create_admin(&email, &name, &database_url).await?;
         },
     }
@@ -475,12 +469,22 @@ fn build_serve_config(
     host: Option<&str>,
     port: Option<u16>,
     dataset: Option<String>,
-    store: Option<String>,
+    store: Option<&str>,
     tables: Option<String>,
     connector_configs: Option<&str>,
-    database_url: Option<String>,
+    database_url: Option<&str>,
 ) -> ServeConfig {
-    // Start from env-based config, then override with CLI args
+    // Set env vars for CLI overrides so WorkspacePaths picks them up
+    if let Some(store) = store {
+        std::env::set_var("BRIGHTFLOW_STORE", store);
+    }
+    if let Some(configs) = connector_configs {
+        std::env::set_var("BRIGHTFLOW_CONNECTOR_CONFIGS", configs);
+    }
+    if let Some(url) = database_url {
+        std::env::set_var("BRIGHTFLOW_DATABASE_URL", url);
+    }
+
     let mut config = ServeConfig::from_env();
 
     if let Some(host) = host {
@@ -493,17 +497,8 @@ fn build_serve_config(
     if dataset.is_some() {
         config.default_dataset = dataset;
     }
-    if let Some(store) = store {
-        config.store_path = Some(store);
-    }
     if let Some(tables) = tables {
         config.tables = Some(tables.split(',').map(|t| t.trim().to_string()).collect());
-    }
-    if let Some(configs) = connector_configs {
-        config.connector_config_dir = Some(configs.to_string());
-    }
-    if database_url.is_some() {
-        config.database_url = database_url;
     }
 
     config
@@ -649,12 +644,14 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
 
                 // Ingest into store if requested
                 if ingest {
+                    let paths = brightflow_core::WorkspacePaths::from_env();
+                    let resolved_store = store_path.unwrap_or_else(|| paths.store());
+                    let litehouse_url = paths.litehouse_url();
                     tracing::info!("Ingesting output into Parquet store...");
-                    let litehouse_url = litehouse_url_from_path(&store_path);
-                    let store = ParquetStore::new(&store_path, &litehouse_url).await?;
+                    let store = ParquetStore::new(&resolved_store, &litehouse_url).await?;
 
                     // Create store directory if it doesn't exist
-                    std::fs::create_dir_all(&store_path)?;
+                    std::fs::create_dir_all(&resolved_store)?;
 
                     // Find and ingest all parquet files from output
                     let output_dir = PathBuf::from(&result.output_path);
@@ -708,28 +705,20 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
     Ok(())
 }
 
-/// Derive the Litehouse database URL from a store path
-fn litehouse_url_from_path(store_path: &std::path::Path) -> String {
-    std::env::var("BRIGHTFLOW_LITEHOUSE_URL").unwrap_or_else(|_| {
-        let db_path = store_path
-            .parent()
-            .unwrap_or(store_path)
-            .join("litehouse.db");
-        format!("sqlite:{}?mode=rwc", db_path.display())
-    })
-}
-
 async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let litehouse_url = wp.litehouse_url();
+
     match cmd {
         StoreCommands::List { path } => {
-            let litehouse_url = litehouse_url_from_path(&path);
-            let store = ParquetStore::new(&path, &litehouse_url).await?;
+            let store_path = path.unwrap_or_else(|| wp.store());
+            let store = ParquetStore::new(&store_path, &litehouse_url).await?;
             let tables = store.list_tables().await?;
 
             if tables.is_empty() {
-                println!("No tables found in store at {}", path.display());
+                println!("No tables found in store at {}", store_path.display());
             } else {
-                println!("Tables in {}:", path.display());
+                println!("Tables in {}:", store_path.display());
                 for table in tables {
                     println!("  - {}", table.name);
                 }
@@ -737,8 +726,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
         },
 
         StoreCommands::Info { name, path } => {
-            let litehouse_url = litehouse_url_from_path(&path);
-            let store = ParquetStore::new(&path, &litehouse_url).await?;
+            let store_path = path.unwrap_or_else(|| wp.store());
+            let store = ParquetStore::new(&store_path, &litehouse_url).await?;
             let info = store.table_info(&name).await?;
 
             println!("Table: {}", info.name);
@@ -766,9 +755,9 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 anyhow::bail!("Input file not found: {}", input.display());
             }
 
-            let litehouse_url = litehouse_url_from_path(&path);
-            let store = ParquetStore::new(&path, &litehouse_url).await?;
-            std::fs::create_dir_all(&path)?;
+            let store_path = path.unwrap_or_else(|| wp.store());
+            let store = ParquetStore::new(&store_path, &litehouse_url).await?;
+            std::fs::create_dir_all(&store_path)?;
 
             let options = IngestOptions {
                 mode: if overwrite {
@@ -792,8 +781,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             output,
             path,
         } => {
-            let litehouse_url = litehouse_url_from_path(&path);
-            let store = ParquetStore::new(&path, &litehouse_url).await?;
+            let store_path = path.unwrap_or_else(|| wp.store());
+            let store = ParquetStore::new(&store_path, &litehouse_url).await?;
             let df = store.read_table(&table).await?;
 
             // Create output directory if needed
@@ -816,8 +805,8 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 return Ok(());
             }
 
-            let litehouse_url = litehouse_url_from_path(&path);
-            let store = ParquetStore::new(&path, &litehouse_url).await?;
+            let store_path = path.unwrap_or_else(|| wp.store());
+            let store = ParquetStore::new(&store_path, &litehouse_url).await?;
             store.delete_table(&table).await?;
             println!("Deleted table '{table}'");
         },
