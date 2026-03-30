@@ -35,11 +35,11 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run format` 
 
 **WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.ts`, query execution in `composables/useWsQuery.ts`.
 
-**Query builder as primary UX** - users build queries visually rather than writing code. Each section (filter, group by, sort, limit) is toggleable. See `stores/query.ts` for state shape and `components/query-builder/` for UI.
+**Query builder as primary UX** - users build queries visually rather than writing code. Each section (filter, group by, sort, limit) is toggleable. See `stores/query.ts` for state shape and `components/query/` for UI.
 
 ## Key Files
 
-- `API.md` - Backend API documentation
+- `../crates/brightflow-api/API.md` - Backend API documentation
 - `src/types/index.ts` - Shared TypeScript types (frontend-only + re-exports from generated)
 - `src/types/generated/` - TypeScript types auto-generated from Rust via ts-rs
 - `stores/query.ts` - Query state and operations builder

@@ -2,7 +2,7 @@
 import type { ColumnInfo } from './ColumnInfo';
 
 /**
- * Response for loading a Delta table on-demand
+ * Response for loading a Parquet table on-demand
  */
 export type LoadTableResponse = {
   id: string;

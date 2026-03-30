@@ -33,12 +33,12 @@ pub async fn list_datasets(State(state): State<AppState>) -> Json<Vec<DatasetInf
     Json(state.datasets.list_datasets())
 }
 
-/// List available Delta tables (metadata only, no data loaded)
+/// List available Parquet tables (metadata only, no data loaded)
 pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<TableInfo>> {
     Json(state.get_available_tables().await)
 }
 
-/// Load a specific Delta table (unloads previously loaded tables)
+/// Load a specific Parquet table (unloads previously loaded tables)
 #[instrument(skip(state))]
 pub async fn load_table(
     State(state): State<AppState>,

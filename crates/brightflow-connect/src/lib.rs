@@ -8,9 +8,8 @@
 pub use longbow;
 
 use brightflow_core::{BrightflowError, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::LazyLock;
 
 /// Built-in connector Lua sources, embedded at compile time.
@@ -19,21 +18,6 @@ static BUILTIN_CONNECTORS: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
     m.insert("github", include_str!("../connectors/github.lua"));
     m
 });
-
-/// Configuration for a connector
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectorConfig {
-    pub name: String,
-    pub connector_path: PathBuf,
-    pub config_path: PathBuf,
-    pub output_path: PathBuf,
-}
-
-/// Load connector configuration from a TOML file
-pub fn load_config(path: &Path) -> Result<ConnectorConfig> {
-    let content = std::fs::read_to_string(path)?;
-    toml::from_str(&content).map_err(|e| BrightflowError::Other(e.to_string()))
-}
 
 /// Options for running a connector
 #[derive(Debug, Clone, Default)]
@@ -144,9 +128,6 @@ async fn run_connector_impl(
         }
     }
 
-    let processed_config = longbow::config::load_config_from_value(config)
-        .map_err(|e| BrightflowError::Other(format!("Failed to process config: {e}")))?;
-
     let lua = longbow::runtime::create_lua_runtime()
         .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
 
@@ -176,7 +157,7 @@ async fn run_connector_impl(
         },
     };
 
-    let mut pipeline = longbow::pipeline::load_connector(&lua, &connector_str, processed_config)
+    let mut pipeline = longbow::pipeline::load_connector(&lua, &connector_str, config)
         .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
 
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());

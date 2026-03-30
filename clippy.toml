@@ -22,7 +22,6 @@ doc-valid-idents = [
     "PostgreSQL",
     "MySQL",
     "SQLite",
-    "DeltaLake",
     "Polars",
     "DataFrame",
     "WebSocket",
@@ -40,7 +39,6 @@ doc-valid-idents = [
     "URL",
     "Axum",
     "Tokio",
-    "Avon",
     "Brightflow",
 ]
 

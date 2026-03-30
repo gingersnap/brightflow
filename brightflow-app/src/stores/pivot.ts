@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { PivotField, FormatRule, PivotOperation } from '@/types';
+import type { PivotField, PivotOperation } from '@/types';
 
 type BucketName = 'rows' | 'columns' | 'values';
 
@@ -25,9 +25,6 @@ export const usePivotStore = defineStore('pivot', () => {
   // === UI State ===
   // Track which row groups are collapsed
   const collapsedGroups = ref<Set<string>>(new Set());
-
-  // Conditional formatting rules
-  const formatRules = ref<FormatRule[]>([]);
 
   // === Computed ===
 
@@ -158,18 +155,6 @@ export const usePivotStore = defineStore('pivot', () => {
     collapsedGroups.value = new Set(groupKeys);
   }
 
-  // Conditional formatting
-  function addFormatRule(rule: Omit<FormatRule, 'id'>): void {
-    formatRules.value.push({
-      id: crypto.randomUUID(),
-      ...rule,
-    });
-  }
-
-  function removeFormatRule(id: string): void {
-    formatRules.value = formatRules.value.filter((r) => r.id !== id);
-  }
-
   // Reset all pivot state
   function reset(): void {
     rowFields.value = [];
@@ -181,7 +166,6 @@ export const usePivotStore = defineStore('pivot', () => {
     showConditionalFormatting.value = false;
     decimalPlaces.value = 2;
     collapsedGroups.value = new Set();
-    formatRules.value = [];
   }
 
   // Flip/swap rows and columns
@@ -259,7 +243,6 @@ export const usePivotStore = defineStore('pivot', () => {
     showConditionalFormatting,
     decimalPlaces,
     collapsedGroups,
-    formatRules,
 
     // Computed
     isConfigured,
@@ -281,8 +264,6 @@ export const usePivotStore = defineStore('pivot', () => {
     isGroupCollapsed,
     expandAllGroups,
     collapseAllGroups,
-    addFormatRule,
-    removeFormatRule,
     moveField,
     flipRowsAndColumns,
     reset,

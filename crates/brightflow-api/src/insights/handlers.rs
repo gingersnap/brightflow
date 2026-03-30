@@ -105,7 +105,7 @@ fn get_dataset_data_and_schema(
     let schema = state.get_schema(&table_name).ok_or_else(|| {
         AppError::BadRequest(format!(
             "No schema configured for table '{table_name}'. \
-             Add a YAML schema file to the schemas/ directory."
+             Add a TOML schema file to the schemas/ directory."
         ))
     })?;
 

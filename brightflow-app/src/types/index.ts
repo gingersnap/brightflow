@@ -7,7 +7,6 @@ export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './ge
 // Also re-export remaining generated types used across the app
 export type {
   DatasetInfo,
-  DatasetMetadataResponse,
   InsightsResponse,
   LoadTableResponse,
   RunTriggerResponse,
@@ -65,12 +64,6 @@ export interface PivotField {
   column: string;
   dtype: string;
   aggregation?: string;
-}
-
-// Format rule for conditional formatting (frontend-only)
-export interface FormatRule {
-  id: string;
-  [key: string]: unknown;
 }
 
 // Frontend-only pivot operation (extends wire format with UI-only fields)

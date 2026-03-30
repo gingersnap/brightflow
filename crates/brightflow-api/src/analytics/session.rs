@@ -26,7 +26,7 @@ pub enum DatasetSource {
 /// The underlying data for a dataset
 #[derive(Clone, Debug)]
 pub enum DatasetData {
-    /// In-memory DataFrame from CSV upload or default dataset
+    /// DataFrame from CSV upload or default dataset
     Uploaded(DataFrame),
     /// References to parquet files, scanned lazily per query
     Parquet { files: Vec<PathBuf> },
@@ -114,7 +114,7 @@ pub struct DatasetInfo {
     pub loaded_at: DateTime<Utc>,
 }
 
-/// Thread-safe manager for in-memory datasets
+/// Thread-safe manager for datasets
 #[derive(Clone)]
 pub struct DatasetManager {
     datasets: Arc<DashMap<String, Dataset>>,

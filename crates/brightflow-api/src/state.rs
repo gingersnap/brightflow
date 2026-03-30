@@ -18,7 +18,7 @@ use tokio::sync::{broadcast, RwLock};
 pub struct AppState {
     /// Thread-safe storage for loaded datasets
     pub datasets: DatasetManager,
-    /// Index of available Delta tables (metadata only, no data loaded)
+    /// Index of available Parquet tables (metadata only, no data loaded)
     pub table_index: Arc<RwLock<Vec<TableInfo>>>,
     /// Reference to the Parquet store for lazy loading
     store: Option<Arc<ParquetStore>>,
@@ -82,7 +82,7 @@ impl AppState {
         }
     }
 
-    /// Load schema configs from YAML files in a directory
+    /// Load schema configs from TOML files in a directory
     pub fn load_schemas_from_dir(&self, dir: &Path) {
         if !dir.exists() || !dir.is_dir() {
             tracing::debug!("Schema directory not found: {}", dir.display());

@@ -2,7 +2,7 @@ target/
 .cargo/config.toml
 .env
 
-# Data (fetched parquet/delta files)
+# Data (Parquet files)
 data/
 
 # Frontend

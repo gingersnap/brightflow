@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
+use ts_rs::TS;
 
 use crate::db::StoreDb;
 use crate::error::{StoreError, StoreResult};
@@ -21,28 +22,34 @@ pub struct TableRef {
 }
 
 /// Column-level statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ColumnStat {
     pub column_name: String,
     pub min_value: Option<String>,
     pub max_value: Option<String>,
+    #[ts(type = "number | null")]
     pub null_count: Option<i64>,
 }
 
 /// Information about a table
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TableInfo {
     /// Table name
     pub name: String,
     /// Path to the table
     pub path: String,
     /// Current version
+    #[ts(type = "number")]
     pub version: i64,
     /// Number of rows
+    #[ts(type = "number | null")]
     pub num_rows: Option<i64>,
     /// Number of files
     pub num_files: usize,
     /// Schema as JSON
+    #[ts(type = "unknown")]
     pub schema: Option<serde_json::Value>,
     /// Column-level statistics (min/max/null_count)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

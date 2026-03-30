@@ -14,7 +14,7 @@ polars = { version = "0.48", features = ["lazy", "csv", "json", "parquet", "pivo
 axum = { version = "0.7", features = ["ws", "multipart"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-ts-rs = { version = "10", features = ["serde-compat", "chrono-impl"] }
+ts-rs = { version = "10", features = ["serde-compat", "chrono-impl", "serde-json-impl"] }
 dotenvy = "0.15"
 tikv-jemallocator = "0.6"
 tikv-jemalloc-ctl = "0.6"
@@ -93,8 +93,3 @@ many_single_char_names = "allow"
 unreadable_literal = "allow"
 doc_markdown = "allow"
 missing_const_for_fn = "allow"
-
-# Local development: override longbow to use local checkout
-# Remove or comment out before committing to CI
-[patch.crates-io]
-longbow = { path = "../longbow" }

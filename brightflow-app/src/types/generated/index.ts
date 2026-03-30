@@ -4,6 +4,7 @@
 export type { Aggregation } from './Aggregation';
 export type { AggSpec } from './AggSpec';
 export type { ColumnInfo } from './ColumnInfo';
+export type { ColumnStat } from './ColumnStat';
 export type { ConnectorConfig } from './ConnectorConfig';
 export type { ConnectorInfo } from './ConnectorInfo';
 export type { CreateConnectorConfigRequest } from './CreateConnectorConfigRequest';
@@ -24,6 +25,7 @@ export type { ScheduleResponse } from './ScheduleResponse';
 export type { SchedulerJob } from './SchedulerJob';
 export type { SyncRun } from './SyncRun';
 export type { SyncState } from './SyncState';
+export type { TableInfo } from './TableInfo';
 export type { TrendsRequest } from './TrendsRequest';
 export type { TriggerRunResponse } from './TriggerRunResponse';
 export type { UnifiedConnector } from './UnifiedConnector';

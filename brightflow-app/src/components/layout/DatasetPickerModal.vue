@@ -111,7 +111,7 @@ watch(
           <Table2 class="w-8 h-8 mx-auto mb-3 text-muted" />
           <p class="text-sm text-muted">No tables available</p>
           <p class="text-xs text-muted mt-1">
-            Run a data sync to populate the Delta store
+            Run a data sync to populate the data store
           </p>
         </div>
 

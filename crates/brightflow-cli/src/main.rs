@@ -88,14 +88,14 @@ enum Commands {
         dataset: Option<String>,
 
         /// Path to Parquet store to auto-load tables from
-        #[arg(long, alias = "delta-store")]
+        #[arg(long)]
         store: Option<String>,
 
         /// Specific tables to load (comma-separated, loads all if not specified)
-        #[arg(long, alias = "delta-tables")]
+        #[arg(long)]
         tables: Option<String>,
 
-        /// Path to connector config YAML directory
+        /// Path to connector config directory
         #[arg(long)]
         connector_configs: Option<String>,
 
@@ -119,14 +119,14 @@ enum Commands {
         dataset: Option<String>,
 
         /// Path to Parquet store to auto-load tables from
-        #[arg(long, alias = "delta-store")]
+        #[arg(long)]
         store: Option<String>,
 
         /// Specific tables to load (comma-separated, loads all if not specified)
-        #[arg(long, alias = "delta-tables")]
+        #[arg(long)]
         tables: Option<String>,
 
-        /// Path to connector config YAML directory
+        /// Path to connector config directory
         #[arg(long)]
         connector_configs: Option<String>,
 

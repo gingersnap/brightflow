@@ -29,7 +29,6 @@ mod models;
 mod stats;
 mod table;
 
-pub use brightflow_core::{DatasetId, DatasetMeta, StorageConfig, TenantId};
 pub use error::{StoreError, StoreResult};
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use table::{TableInfo, TableRef};
@@ -58,13 +57,6 @@ impl ParquetStore {
             root_path: root,
             db,
         })
-    }
-
-    /// Create a `ParquetStore` from a `StorageConfig` and database URL
-    pub async fn from_config(config: &StorageConfig, database_url: &str) -> StoreResult<Self> {
-        match config {
-            StorageConfig::Local { path } => Self::new(path, database_url).await,
-        }
     }
 
     /// Get the root path of the store

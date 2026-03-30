@@ -183,7 +183,7 @@ pub struct DatasetMetadataResponse {
     pub columns: Vec<ColumnInfo>,
 }
 
-/// Response for loading a Delta table on-demand
+/// Response for loading a Parquet table on-demand
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]

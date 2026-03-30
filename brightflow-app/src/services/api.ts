@@ -77,16 +77,11 @@ export const api = {
     request<T>(endpoint, { method: 'DELETE', ...options }),
 };
 
-// Available table from Delta store (metadata only, not loaded)
-export interface TableInfo {
-  name: string;
-  path: string;
-  version: number;
-  num_rows: number | null;
-  num_files: number;
-}
+// Re-export generated TableInfo from Rust backend
+import type { TableInfo } from '@/types/generated/TableInfo';
+export type { TableInfo };
 
-// Table API - for lazy loading Delta tables
+// Table API - for lazy loading Parquet tables
 export const tableApi = {
   // Get list of available tables (metadata only, nothing loaded)
   listAvailable: (): Promise<TableInfo[] | null> => api.get<TableInfo[]>('/api/tables'),

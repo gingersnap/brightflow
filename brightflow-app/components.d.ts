@@ -24,7 +24,6 @@ declare module 'vue' {
     InsightsPanel: typeof import('./src/components/insights/InsightsPanel.vue')['default']
     InsightsView: typeof import('./src/components/insights/InsightsView.vue')['default']
     LoginPage: typeof import('./src/components/auth/LoginPage.vue')['default']
-    NotebookEditor: typeof import('./src/components/notebook/NotebookEditor.vue')['default']
     PivotTable: typeof import('./src/components/pivot/PivotTable.vue')['default']
     QueryBuilder: typeof import('./src/components/query/QueryBuilder.vue')['default']
     ResultsPanel: typeof import('./src/components/results/ResultsPanel.vue')['default']

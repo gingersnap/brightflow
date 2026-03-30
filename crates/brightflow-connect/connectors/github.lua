@@ -1,4 +1,4 @@
--- GitHub Connector for Avon
+-- GitHub Connector for Brightflow
 -- Extracts repository, issues, pull requests, and contributors data
 -- Config: token, owner, repo, output_path
 
@@ -16,7 +16,7 @@ return function(p)
         ctx.headers["Authorization"] = "token " .. p.config.token
         ctx.headers["Accept"] = "application/vnd.github+json"
         ctx.headers["X-GitHub-Api-Version"] = "2022-11-28"
-        ctx.headers["User-Agent"] = "Avon/0.1.0"
+        ctx.headers["User-Agent"] = "Brightflow/0.1.0"
     end)
 
     -- Pagination: GitHub uses Link headers
