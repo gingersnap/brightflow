@@ -216,7 +216,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     };
     if let Ok(json) = serde_json::to_string(&connected) {
         tracing::debug!("Sending connected message: {}", json);
-        if sender.send(Message::Text(json)).await.is_err() {
+        if sender.send(Message::Text(json.into())).await.is_err() {
             tracing::warn!("Failed to send connected message, client disconnected");
             return;
         }
@@ -251,7 +251,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             };
 
             tracing::debug!("Sending response: {} bytes", json.len());
-            if sender.send(Message::Text(json)).await.is_err() {
+            if sender.send(Message::Text(json.into())).await.is_err() {
                 tracing::warn!("Failed to send response, client disconnected");
                 break;
             }

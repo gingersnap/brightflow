@@ -47,7 +47,11 @@ async fn handle_system_socket(socket: WebSocket, state: AppState) {
     {
         let snapshot = state.system_metrics.read().await;
         let msg = build_metrics_msg(&snapshot);
-        if sender.send(Message::Text(msg.to_string())).await.is_err() {
+        if sender
+            .send(Message::Text(msg.to_string().into()))
+            .await
+            .is_err()
+        {
             return;
         }
     }
@@ -57,7 +61,7 @@ async fn handle_system_socket(socket: WebSocket, state: AppState) {
             _ = metrics_interval.tick() => {
                 let snapshot = state.system_metrics.read().await;
                 let msg = build_metrics_msg(&snapshot);
-                if sender.send(Message::Text(msg.to_string())).await.is_err() {
+                if sender.send(Message::Text(msg.to_string().into())).await.is_err() {
                     break;
                 }
             }
@@ -71,7 +75,7 @@ async fn handle_system_socket(socket: WebSocket, state: AppState) {
                             "target": entry.target,
                             "message": entry.message,
                         });
-                        if sender.send(Message::Text(msg.to_string())).await.is_err() {
+                        if sender.send(Message::Text(msg.to_string().into())).await.is_err() {
                             break;
                         }
                     }

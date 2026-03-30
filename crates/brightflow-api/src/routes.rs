@@ -32,7 +32,7 @@ fn api_routes() -> Router<AppState> {
     let protected = Router::new()
         // Available tables (metadata only, for lazy loading)
         .route("/tables", get(handlers::list_available_tables))
-        .route("/tables/:name/load", post(handlers::load_table))
+        .route("/tables/{name}/load", post(handlers::load_table))
         // Dataset management (loaded datasets)
         .route("/datasets", get(handlers::list_datasets))
         .route("/datasets/{id}", get(handlers::get_dataset))
@@ -52,19 +52,19 @@ fn api_routes() -> Router<AppState> {
             get(connect_handlers::list_unified_connectors),
         )
         .route(
-            "/connectors/:name/run",
+            "/connectors/{name}/run",
             post(connect_handlers::run_connector),
         )
         .route(
-            "/connectors/:name/runs",
+            "/connectors/{name}/runs",
             get(connect_handlers::list_connector_runs),
         )
         .route(
-            "/connectors/:name/schedule",
+            "/connectors/{name}/schedule",
             post(connect_handlers::schedule_connector),
         )
         .route(
-            "/connectors/:name/token",
+            "/connectors/{name}/token",
             put(connect_handlers::update_connector_token),
         )
         // Connector Config CRUD (DB-backed)

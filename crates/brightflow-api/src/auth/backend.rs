@@ -23,7 +23,6 @@ impl AuthBackend {
     }
 }
 
-#[async_trait::async_trait]
 impl AuthnBackend for AuthBackend {
     type User = User;
     type Credentials = Credentials;

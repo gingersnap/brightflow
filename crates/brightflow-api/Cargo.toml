@@ -21,9 +21,9 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 time = "0.3"
 
 # Auth framework
-axum-login = "0.16"
-tower-sessions = "0.13"
-tower-sessions-sqlx-store = { version = "0.14", features = ["sqlite"] }
+axum-login = "0.18"
+tower-sessions = "0.14"
+tower-sessions-sqlx-store = { version = "0.15", features = ["sqlite"] }
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
@@ -31,9 +31,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
 # Password hashing
 argon2 = "0.5"
 password-hash = { version = "0.5", features = ["rand_core"] }
-
-# Async
-async-trait = "0.1"
 
 # Data processing
 polars = { workspace = true }

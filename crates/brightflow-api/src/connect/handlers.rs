@@ -5,8 +5,8 @@ use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
 use super::types::{
-    ConnectorInfo, RunRequest, RunTriggerResponse, ScheduleRequest, ScheduleResponse,
-    UnifiedConnector, UnifiedJob, UnifiedSyncRun, UpdateTokenRequest,
+    ConnectorInfo, RunTriggerResponse, ScheduleRequest, ScheduleResponse, UnifiedConnector,
+    UnifiedJob, UnifiedSyncRun, UpdateTokenRequest,
 };
 
 /// GET /api/connectors — list configured connectors from config dir
@@ -172,7 +172,6 @@ pub async fn list_connector_runs(
 pub async fn run_connector(
     State(state): State<AppState>,
     Path(name): Path<String>,
-    _body: Option<Json<RunRequest>>,
 ) -> AppResult<Json<RunTriggerResponse>> {
     let db = state
         .scheduler_db
