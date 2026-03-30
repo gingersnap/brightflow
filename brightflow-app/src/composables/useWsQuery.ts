@@ -4,12 +4,12 @@ import { useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
 import { usePivotStore } from '@/stores/pivot';
 import { useUiStore } from '@/stores/ui';
-import type { QueryOperation, WsMessage, ErrorMessage } from '@/types';
+import type { Operation, Aggregation as AggFn, FilterOp } from '@/types/generated';
 
 /**
- * Query execution composable
+ * WebSocket query execution composable
  */
-export function useQuery() {
+export function useWsQuery() {
   const connectionStore = useConnectionStore();
   const datasetStore = useDatasetStore();
   const queryStore = useQueryStore();
@@ -20,22 +20,19 @@ export function useQuery() {
   /**
    * Build operations for table view (filters + limit)
    */
-  function buildTableOperations(): QueryOperation[] {
-    const ops: QueryOperation[] = [];
+  function buildTableOperations(): Operation[] {
+    const ops: Operation[] = [];
 
     // Add filters
     if (queryStore.filters.length > 0) {
       queryStore.filters.forEach((filter) => {
         if (filter.column && filter.op) {
-          const op: QueryOperation = {
+          ops.push({
             type: 'filter',
             column: filter.column,
-            op: filter.op,
-          };
-          if (!['isNull', 'isNotNull'].includes(filter.op)) {
-            op.value = filter.value;
-          }
-          ops.push(op);
+            op: filter.op as FilterOp,
+            value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
+          });
         }
       });
     }
@@ -60,18 +57,23 @@ export function useQuery() {
 
     resultsStore.setLoading(true);
 
-    const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
-      resultsStore.setTableResults(message);
-      unsubscribeResult();
-      unsubscribeError();
-    });
+    const unsubscribeResult = connectionStore.onMessage(
+      'queryResult',
+      (message: Record<string, unknown>) => {
+        resultsStore.setTableResults(message);
+        unsubscribeResult();
+        unsubscribeError();
+      },
+    );
 
-    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
-      const errMsg = message as ErrorMessage;
-      resultsStore.setError(errMsg.message);
-      unsubscribeResult();
-      unsubscribeError();
-    });
+    const unsubscribeError = connectionStore.onMessage(
+      'error',
+      (message: Record<string, unknown>) => {
+        resultsStore.setError((message['message'] as string) ?? 'Query failed');
+        unsubscribeResult();
+        unsubscribeError();
+      },
+    );
 
     connectionStore.send({
       type: 'query',
@@ -83,24 +85,21 @@ export function useQuery() {
   /**
    * Build operations based on current configuration
    */
-  function buildOperations(): QueryOperation[] {
+  function buildOperations(): Operation[] {
     // If pivot is configured, use pivot operation (regardless of view mode)
     if (pivotStore.isConfigured) {
-      const ops: QueryOperation[] = [];
+      const ops: Operation[] = [];
 
       // Add any filters from query store
       if (queryStore.sections.filter.enabled && queryStore.filters.length > 0) {
         queryStore.filters.forEach((filter) => {
           if (filter.column && filter.op) {
-            const op: QueryOperation = {
+            ops.push({
               type: 'filter',
               column: filter.column,
-              op: filter.op,
-            };
-            if (!['isNull', 'isNotNull'].includes(filter.op)) {
-              op.value = filter.value;
-            }
-            ops.push(op);
+              op: filter.op as FilterOp,
+              value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
+            });
           }
         });
       }
@@ -113,15 +112,12 @@ export function useQuery() {
         const rowCols = pivotStore.rowFields.map((f) => f.column);
         const colField =
           pivotStore.columnFields.length > 0 ? (pivotStore.columnFields[0]?.column ?? null) : null;
-        const aggFunc = valueField.aggregation ?? 'count';
+        const aggFunc = (valueField.aggregation ?? 'count') as AggFn;
 
         // Determine the best operation based on configuration
-        // Note: The UI watcher should auto-add rows when values exist but rows/columns are empty
-        // So rowCols.length === 0 && !colField should not happen in normal operation
         if (rowCols.length === 0 && !colField) {
-          // Invalid state - should be handled by UI watcher, skip operation
           console.warn(
-            '[useQuery] Pivot has values but no rows/columns - waiting for UI to auto-add',
+            '[useWsQuery] Pivot has values but no rows/columns - waiting for UI to auto-add',
           );
           return ops;
         }
@@ -135,7 +131,6 @@ export function useQuery() {
           });
         } else if (rowCols.length === 0) {
           // Only columns (no rows) - group by the column field
-          // This shows one row per unique value in the column field
           ops.push({
             type: 'groupBy',
             by: [colField],
@@ -153,7 +148,7 @@ export function useQuery() {
         }
 
         const lastOp = ops[ops.length - 1];
-        console.log('[useQuery] Pivot/GroupBy operation:', lastOp);
+        console.log('[useWsQuery] Pivot/GroupBy operation:', lastOp);
       }
 
       // Add sort
@@ -192,7 +187,6 @@ export function useQuery() {
     }
 
     if (!pivotStore.isConfigured) {
-      // Don't execute if pivot isn't configured (needs values)
       return;
     }
 
@@ -200,26 +194,25 @@ export function useQuery() {
 
     resultsStore.setLoading(true);
 
-    // Register one-time handler for query result
-    const unsubscribeResult = connectionStore.onMessage('queryResult', (message: WsMessage) => {
-      resultsStore.setPivotResults(message);
+    const unsubscribeResult = connectionStore.onMessage(
+      'queryResult',
+      (message: Record<string, unknown>) => {
+        resultsStore.setPivotResults(message);
+        uiStore.onPivotResults();
+        unsubscribeResult();
+        unsubscribeError();
+      },
+    );
 
-      // Auto-switch to pivot view on first pivot results
-      uiStore.onPivotResults();
+    const unsubscribeError = connectionStore.onMessage(
+      'error',
+      (message: Record<string, unknown>) => {
+        resultsStore.setError((message['message'] as string) ?? 'Query failed');
+        unsubscribeResult();
+        unsubscribeError();
+      },
+    );
 
-      unsubscribeResult();
-      unsubscribeError();
-    });
-
-    // Handle errors
-    const unsubscribeError = connectionStore.onMessage('error', (message: WsMessage) => {
-      const errMsg = message as ErrorMessage;
-      resultsStore.setError(errMsg.message);
-      unsubscribeResult();
-      unsubscribeError();
-    });
-
-    // Send query
     connectionStore.send({
       type: 'query',
       datasetId: datasetStore.id,
@@ -240,7 +233,6 @@ export function useQuery() {
       return false;
     }
 
-    // If pivot is configured, it's executable
     if (pivotStore.isConfigured) {
       return true;
     }

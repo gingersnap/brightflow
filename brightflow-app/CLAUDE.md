@@ -20,7 +20,7 @@ Strict TypeScript is enabled with all strict flags plus additional checks:
 - `exactOptionalPropertyTypes` - distinguishes missing vs undefined
 - `noUnusedLocals` / `noUnusedParameters` - errors on dead code
 
-Shared types in `src/types/index.ts`. Run `npm run type-check` to verify.
+Shared types in `src/types/index.ts`. Generated types from Rust (via ts-rs) in `src/types/generated/`. Run `npm run type-check` to verify.
 
 ## Linting & Formatting
 
@@ -33,14 +33,15 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run format` 
 
 **Single dataset focus** - no workspace switching, one data source at a time.
 
-**WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.ts`, query execution in `composables/useQuery.ts`.
+**WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.ts`, query execution in `composables/useWsQuery.ts`.
 
 **Query builder as primary UX** - users build queries visually rather than writing code. Each section (filter, group by, sort, limit) is toggleable. See `stores/query.ts` for state shape and `components/query-builder/` for UI.
 
 ## Key Files
 
 - `API.md` - Backend API documentation
-- `src/types/index.ts` - Shared TypeScript types
+- `src/types/index.ts` - Shared TypeScript types (frontend-only + re-exports from generated)
+- `src/types/generated/` - TypeScript types auto-generated from Rust via ts-rs
 - `stores/query.ts` - Query state and operations builder
 - `composables/useOperators.ts` - Filter operators by column type
 - `services/websocket.ts` - WebSocket client with reconnection

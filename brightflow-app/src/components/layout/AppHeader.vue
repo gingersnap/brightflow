@@ -13,17 +13,26 @@ import {
   LogOut,
 } from 'lucide-vue-next';
 import { useColorMode } from '@vueuse/core';
+import { useQuery } from '@pinia/colada';
+import { connectApi } from '@/services/api';
 import { useDatasetStore } from '@/stores/dataset';
 import { useUiStore, type AppMode } from '@/stores/ui';
-import { useConnectStore } from '@/stores/connect';
+import type { UnifiedConnector } from '@/types';
 
 const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
-const connectStore = useConnectStore();
 const colorMode = useColorMode();
 
+const { data: connectors } = useQuery({
+  key: ['connectors'],
+  query: async () => {
+    const result = await connectApi.listUnified();
+    return result ?? ([] as UnifiedConnector[]);
+  },
+});
+
 const lastSyncTime = computed(() => {
-  const latest = connectStore.connectors
+  const latest = (connectors.value ?? [])
     .map((c) => c.lastRun)
     .filter(
       (r): r is NonNullable<typeof r> =>

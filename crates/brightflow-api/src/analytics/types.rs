@@ -1,8 +1,10 @@
 use crate::analytics::session::ColumnInfo;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Main query structure - a chain of operations applied sequentially
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Query {
     /// ID of the dataset to query (defaults to "default")
@@ -18,7 +20,8 @@ fn default_dataset_id() -> String {
 }
 
 /// Each operation transforms the DataFrame
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Operation {
     /// Filter rows by column condition
@@ -26,6 +29,7 @@ pub enum Operation {
         column: String,
         op: FilterOp,
         #[serde(default)]
+        #[ts(type = "unknown")]
         value: serde_json::Value,
     },
 
@@ -56,7 +60,8 @@ pub enum Operation {
 }
 
 /// Filter comparison operators
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum FilterOp {
     Eq,
@@ -72,7 +77,8 @@ pub enum FilterOp {
 }
 
 /// Aggregation specification for GroupBy
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
 pub struct AggSpec {
     /// Column to aggregate ("*" for count)
     pub column: String,
@@ -84,7 +90,8 @@ pub struct AggSpec {
 }
 
 /// Aggregation functions
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub enum Aggregation {
     Count,
@@ -99,10 +106,12 @@ pub enum Aggregation {
 }
 
 /// Query execution response
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResponse {
     pub columns: Vec<ColumnInfo>,
+    #[ts(type = "unknown[][]")]
     pub rows: Vec<Vec<serde_json::Value>>,
     pub row_count: usize,
     pub total_rows: usize,
@@ -114,7 +123,8 @@ pub struct QueryResponse {
 // ============================================================================
 
 /// WebSocket message from client
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum WsClientMessage {
     /// Execute a query
@@ -125,7 +135,8 @@ pub enum WsClientMessage {
 }
 
 /// WebSocket message to client
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum WsServerMessage {
     /// Query results
@@ -138,7 +149,10 @@ pub enum WsServerMessage {
     Pong,
 
     /// Connection established acknowledgment
-    Connected { server_version: String },
+    Connected {
+        #[serde(rename = "serverVersion")]
+        server_version: String,
+    },
 }
 
 // ============================================================================
@@ -146,7 +160,8 @@ pub enum WsServerMessage {
 // ============================================================================
 
 /// Response for dataset upload
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadResponse {
     pub id: String,
@@ -157,7 +172,8 @@ pub struct UploadResponse {
 }
 
 /// Response for dataset metadata
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetMetadataResponse {
     pub id: String,
@@ -168,7 +184,8 @@ pub struct DatasetMetadataResponse {
 }
 
 /// Response for loading a Delta table on-demand
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTableResponse {
     pub id: String,

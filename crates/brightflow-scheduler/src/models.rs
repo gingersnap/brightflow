@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // --- Connector Config ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorConfig {
     pub id: String,
@@ -15,7 +17,8 @@ pub struct ConnectorConfig {
 
 // --- Scheduler Job ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SchedulerJob {
     pub id: String,
@@ -29,7 +32,8 @@ pub struct SchedulerJob {
 
 // --- Sync State ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncState {
     pub connector_id: String,
@@ -43,7 +47,8 @@ pub struct SyncState {
 
 // --- Sync Run ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncRun {
     pub id: String,

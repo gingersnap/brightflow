@@ -1,6 +1,19 @@
 /**
  * REST API client
  */
+import type {
+  DatasetInfo,
+  InsightsResponse,
+  LoadTableResponse,
+  QueryResponse,
+  RunTriggerResponse,
+  ScheduleResponse,
+  SyncRun,
+  UnifiedConnector,
+  UploadResponse,
+  User,
+} from '@/types/generated';
+
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export class ApiError extends Error {
@@ -64,14 +77,6 @@ export const api = {
     request<T>(endpoint, { method: 'DELETE', ...options }),
 };
 
-interface DatasetInfo {
-  id: string;
-  name: string;
-  rowCount: number | null;
-  columnCount: number | null;
-  loadedAt: string;
-}
-
 // Available table from Delta store (metadata only, not loaded)
 export interface TableInfo {
   name: string;
@@ -79,28 +84,6 @@ export interface TableInfo {
   version: number;
   num_rows: number | null;
   num_files: number;
-}
-
-// Response when loading a table
-export interface LoadTableResponse {
-  id: string;
-  name: string;
-  rowCount: number | null;
-  columnCount: number | null;
-  columns: Array<{ name: string; dtype: string }>;
-}
-
-interface UploadResponse {
-  id: string;
-  name: string;
-  row_count: number;
-}
-
-interface QueryResponse {
-  columns: Array<{ name: string; dtype: string }>;
-  rows: unknown[][];
-  row_count: number;
-  total_rows: number;
 }
 
 // Table API - for lazy loading Delta tables
@@ -114,55 +97,6 @@ export const tableApi = {
 
 // Connector types
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
-
-export interface UnifiedJob {
-  id: string;
-  intervalSecs: number;
-  enabled: boolean;
-}
-
-export interface UnifiedSyncRun {
-  id: string;
-  status: RunStatus;
-  startedAt: string;
-  finishedAt: string | null;
-  rowsSynced: number;
-  error: string | null;
-}
-
-export interface UnifiedConnector {
-  name: string;
-  connector: string;
-  valid: boolean;
-  hasToken: boolean;
-  job: UnifiedJob | null;
-  lastRun: UnifiedSyncRun | null;
-}
-
-export interface SyncRun {
-  id: string;
-  jobId: string | null;
-  connectorId: string;
-  startedAt: string;
-  finishedAt: string | null;
-  status: RunStatus;
-  endpointsSynced: string | null;
-  rowsSynced: number;
-  error: string | null;
-}
-
-export interface RunTriggerResponse {
-  runId: string;
-  connector: string;
-  status: string;
-}
-
-export interface ScheduleResponse {
-  jobId: string;
-  connectorConfigId: string;
-  intervalSecs: number;
-  enabled: boolean;
-}
 
 // Connector API
 export const connectApi = {
@@ -183,18 +117,7 @@ export const connectApi = {
   deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
 };
 
-// Insights API response
-export interface InsightsResponse {
-  datasetId: string;
-  reportType: string;
-  tree: AnalysisTree;
-  nodeCount: number;
-  findingCount: number;
-  firstLevelCount: number;
-  deeperCount: number;
-  executionTimeMs: number;
-}
-
+// Frontend-specific tree types (refinements of the backend's serde_json::Value)
 export interface AnalysisTree {
   nodes: AnalysisNode[];
   roots: Array<{ '0': number }>;
@@ -224,20 +147,12 @@ export const insightsApi = {
     api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
 };
 
-// Auth types
-interface AuthUser {
-  id: string;
-  email: string;
-  displayName: string;
-  isAdmin: boolean;
-}
-
 // Auth API
 export const authApi = {
-  login: (email: string, password: string): Promise<AuthUser | null> =>
-    api.post<AuthUser>('/api/auth/login', { email, password }),
+  login: (email: string, password: string): Promise<User | null> =>
+    api.post<User>('/api/auth/login', { email, password }),
   logout: (): Promise<unknown> => api.post('/api/auth/logout'),
-  me: (): Promise<AuthUser | null> => api.get<AuthUser>('/api/auth/me'),
+  me: (): Promise<User | null> => api.get<User>('/api/auth/me'),
 };
 
 // Dataset-specific API methods (for loaded datasets)

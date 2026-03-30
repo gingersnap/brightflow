@@ -1,32 +1,29 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { Column } from '@/types';
+import type { ColumnInfo } from '@/types';
 
-// Flexible type to accept both WsMessage and explicit result data
+// Flexible type to accept WsMessage data and explicit result data
 interface ResultData {
-  columns?: Column[];
+  columns?: ColumnInfo[];
   rows?: unknown[][];
   rowCount?: number;
-  row_count?: number;
   totalRows?: number;
-  total_rows?: number;
   executionTimeMs?: number;
-  execution_time_ms?: number;
-  [key: string]: unknown; // Allow additional properties from WsMessage
+  [key: string]: unknown;
 }
 
 type ResultType = 'table' | 'pivot';
 
 export const useResultsStore = defineStore('results', () => {
   // Table data (raw data)
-  const tableColumns = ref<Column[]>([]);
+  const tableColumns = ref<ColumnInfo[]>([]);
   const tableRows = ref<unknown[][]>([]);
   const tableRowCount = ref(0);
   const tableTotalRows = ref(0);
   const tableExecutionTimeMs = ref<number | null>(null);
 
   // Pivot data (aggregated data)
-  const pivotColumns = ref<Column[]>([]);
+  const pivotColumns = ref<ColumnInfo[]>([]);
   const pivotRows = ref<unknown[][]>([]);
   const pivotRowCount = ref(0);
   const pivotTotalRows = ref(0);
@@ -70,9 +67,9 @@ export const useResultsStore = defineStore('results', () => {
   function setResults(data: ResultData, type: ResultType = 'table'): void {
     const cols = data.columns ?? [];
     const rowsData = data.rows ?? [];
-    const count = data.rowCount ?? data.row_count ?? rowsData.length;
-    const total = data.totalRows ?? data.total_rows ?? count;
-    const time = data.executionTimeMs ?? data.execution_time_ms ?? null;
+    const count = data.rowCount ?? rowsData.length;
+    const total = data.totalRows ?? count;
+    const time = data.executionTimeMs ?? null;
 
     if (type === 'pivot') {
       pivotColumns.value = cols;

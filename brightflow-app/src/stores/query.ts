@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { Filter, Aggregation, QuerySections, PivotState, QueryOperation } from '@/types';
+import type { Filter, Aggregation, QuerySections, PivotState } from '@/types';
+import type { Operation, Aggregation as AggFn, FilterOp } from '@/types/generated';
 
 type SectionKey = keyof QuerySections;
 
@@ -41,23 +42,19 @@ export const useQueryStore = defineStore('query', () => {
   const limit = ref(100);
 
   // Computed: Build operations array for API
-  const operations = computed((): QueryOperation[] => {
-    const ops: QueryOperation[] = [];
+  const operations = computed((): Operation[] => {
+    const ops: Operation[] = [];
 
     // Add filters
     if (sections.value.filter.enabled && filters.value.length > 0) {
       filters.value.forEach((filter) => {
         if (filter.column && filter.op) {
-          const op: QueryOperation = {
+          ops.push({
             type: 'filter',
             column: filter.column,
-            op: filter.op,
-          };
-          // Only add value if operator requires it
-          if (!['isNull', 'isNotNull'].includes(filter.op)) {
-            op.value = filter.value;
-          }
-          ops.push(op);
+            op: filter.op as FilterOp,
+            value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
+          });
         }
       });
     }
@@ -69,20 +66,20 @@ export const useQueryStore = defineStore('query', () => {
         by: groupByColumns.value,
         aggs: aggregations.value.map((agg) => ({
           column: agg.column,
-          function: agg.function,
+          function: agg.function as AggFn,
           alias: agg.alias || `${agg.function}_${agg.column}`,
         })),
       });
     }
 
     // Add pivot
-    if (sections.value.pivot.enabled && pivot.value.values) {
+    if (sections.value.pivot.enabled && pivot.value.values && pivot.value.columns) {
       ops.push({
         type: 'pivot',
         index: pivot.value.index,
         columns: pivot.value.columns,
         values: pivot.value.values,
-        agg: pivot.value.agg,
+        agg: pivot.value.agg as AggFn,
       });
     }
 

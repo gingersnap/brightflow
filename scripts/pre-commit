@@ -58,6 +58,24 @@ else
 fi
 
 # ============================================
+# Rust Tests + TypeScript Type Generation
+# ============================================
+
+echo -e "${BLUE}[Rust]${NC} Running tests (generates TypeScript types)..."
+if ! TS_RS_EXPORT_DIR="$ROOT_DIR/brightflow-app/src/types/generated" cargo test --workspace 2>/dev/null; then
+    echo -e "${RED}✗ Rust tests failed${NC}"
+    FAILED=1
+else
+    echo -e "${GREEN}✓ Rust tests & type generation${NC}"
+    # Format generated types to match project conventions
+    if [ -d "$ROOT_DIR/brightflow-app/node_modules" ]; then
+        (cd "$ROOT_DIR/brightflow-app" && npx biome format --write src/types/generated/ 2>/dev/null) || true
+    fi
+    # Stage updated generated types
+    git add "$ROOT_DIR/brightflow-app/src/types/generated/"*.ts 2>/dev/null || true
+fi
+
+# ============================================
 # TypeScript/Frontend Checks
 # ============================================
 

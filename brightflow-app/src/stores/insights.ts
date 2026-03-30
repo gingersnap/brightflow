@@ -30,7 +30,7 @@ export const useInsightsStore = defineStore('insights', () => {
     try {
       const result = await insightsApi.runReview(datasetStore.id, selectedCadence);
       if (result) {
-        tree.value = result.tree;
+        tree.value = result.tree as AnalysisTree;
         executionTimeMs.value = result.executionTimeMs;
         nodeCount.value = result.nodeCount;
         findingCount.value = result.findingCount;
@@ -56,7 +56,7 @@ export const useInsightsStore = defineStore('insights', () => {
     try {
       const result = await insightsApi.runTrends(datasetStore.id);
       if (result) {
-        tree.value = result.tree;
+        tree.value = result.tree as AnalysisTree;
         executionTimeMs.value = result.executionTimeMs;
         nodeCount.value = result.nodeCount;
         findingCount.value = result.findingCount;

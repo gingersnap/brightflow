@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { createWebSocketClient, type WebSocketClient } from '@/services/websocket';
-import type { ConnectionStatus, WsMessage, ConnectedMessage } from '@/types';
+import type { ConnectionStatus } from '@/types';
 
-type MessageHandler = (message: WsMessage) => void;
+type MessageHandler = (message: Record<string, unknown>) => void;
 
 export const useConnectionStore = defineStore('connection', () => {
   // State
@@ -51,14 +51,13 @@ export const useConnectionStore = defineStore('connection', () => {
   // Message handlers
   const messageHandlers = new Map<string, MessageHandler[]>();
 
-  function handleMessage(message: WsMessage): void {
-    const { type } = message;
+  function handleMessage(message: Record<string, unknown>): void {
+    const type = message['type'] as string;
     console.log('[WS] Received:', type, message);
 
     switch (type) {
       case 'connected': {
-        const connectedMsg = message as ConnectedMessage;
-        serverVersion.value = connectedMsg.serverVersion;
+        serverVersion.value = (message['serverVersion'] as string) ?? null;
         status.value = 'connected';
         break;
       }
@@ -103,7 +102,7 @@ export const useConnectionStore = defineStore('connection', () => {
       reconnectCount.value++;
     });
 
-    client.on<WsMessage>('message', handleMessage);
+    client.on<Record<string, unknown>>('message', handleMessage);
 
     client.connect();
   }

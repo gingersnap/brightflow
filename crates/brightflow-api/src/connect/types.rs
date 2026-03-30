@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Info about a configured connector (from TOML config on disk)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct ConnectorInfo {
     /// Name derived from config filename (e.g., "github")
     pub name: String,
@@ -12,21 +14,24 @@ pub struct ConnectorInfo {
 }
 
 /// Optional request body for POST /connectors/:name/run
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 pub struct RunRequest {
     /// Only sync specific endpoints (comma-separated)
     pub only: Option<String>,
 }
 
 /// Request body for POST /connectors/:name/schedule
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleRequest {
     pub interval_secs: i64,
 }
 
 /// Response for POST /connectors/:name/schedule
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleResponse {
     pub job_id: String,
@@ -36,7 +41,8 @@ pub struct ScheduleResponse {
 }
 
 /// Response for POST /connectors/:name/run
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct RunTriggerResponse {
     pub run_id: String,
@@ -45,13 +51,15 @@ pub struct RunTriggerResponse {
 }
 
 /// Request body for PUT /connectors/:name/token
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 pub struct UpdateTokenRequest {
     pub token: String,
 }
 
 /// Unified connector view — combines file config + DB schedule + latest run
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UnifiedConnector {
     pub name: String,
@@ -63,7 +71,8 @@ pub struct UnifiedConnector {
 }
 
 /// Schedule info for a connector
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UnifiedJob {
     pub id: String,
@@ -72,7 +81,8 @@ pub struct UnifiedJob {
 }
 
 /// Last run info for a connector
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UnifiedSyncRun {
     pub id: String,

@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use polars::prelude::*;
 use serde::Serialize;
+use ts_rs::TS;
 
 /// Source of a dataset
 #[derive(Clone, Debug)]
@@ -93,7 +94,8 @@ impl Dataset {
 }
 
 /// Column metadata
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnInfo {
     pub name: String,
@@ -101,7 +103,8 @@ pub struct ColumnInfo {
 }
 
 /// Summary info for a dataset
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DatasetInfo {
     pub id: String,

@@ -1,5 +1,6 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
+import { PiniaColada } from '@pinia/colada';
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import ui from '@nuxt/ui/vue-plugin';
 import App from './App.vue';
@@ -17,6 +18,7 @@ const app = createApp(App);
 const pinia = createPinia();
 
 app.use(pinia);
+app.use(PiniaColada);
 app.use(router);
 app.use(ui);
 app.mount('#app');

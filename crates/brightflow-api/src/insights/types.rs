@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Request to run a review analysis
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
     pub dataset_id: String,
@@ -15,18 +17,21 @@ fn default_cadence() -> String {
 }
 
 /// Request to run a trends analysis
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct TrendsRequest {
     pub dataset_id: String,
 }
 
 /// Response from an insights analysis
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct InsightsResponse {
     pub dataset_id: String,
     pub report_type: String,
+    #[ts(type = "unknown")]
     pub tree: serde_json::Value,
     pub node_count: usize,
     pub finding_count: usize,

@@ -19,7 +19,7 @@ import { useQueryStore } from '@/stores/query';
 import { useDatasetStore } from '@/stores/dataset';
 import { useConnectionStore } from '@/stores/connection';
 import { useUiStore } from '@/stores/ui';
-import { useQuery } from '@/composables/useQuery';
+import { useWsQuery } from '@/composables/useWsQuery';
 import BucketDropzone from '../pivot/BucketDropzone.vue';
 import type { PivotField } from '@/types';
 
@@ -36,7 +36,7 @@ const queryStore = useQueryStore();
 const datasetStore = useDatasetStore();
 const connectionStore = useConnectionStore();
 const uiStore = useUiStore();
-const { execute, canExecute } = useQuery();
+const { execute, canExecute } = useWsQuery();
 
 const isCollapsed = computed(() => uiStore.summarizeCollapsed);
 

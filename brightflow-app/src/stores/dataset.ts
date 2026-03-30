@@ -3,8 +3,8 @@ import { ref, computed } from 'vue';
 import { useUiStore } from './ui';
 import { useResultsStore } from './results';
 import { useQueryStore } from './query';
-import { datasetApi, type LoadTableResponse } from '@/services/api';
-import type { Column } from '@/types';
+import { datasetApi } from '@/services/api';
+import type { ColumnInfo, LoadTableResponse } from '@/types';
 
 // Dataset summary from list endpoint
 export interface DatasetSummary {
@@ -20,7 +20,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const name = ref<string | null>(null);
   const rowCount = ref<number | null>(null);
   const columnCount = ref<number | null>(null);
-  const columns = ref<Column[]>([]);
+  const columns = ref<ColumnInfo[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -57,7 +57,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     loadInitialDataRest();
   }
 
-  function getColumnByName(columnName: string): Column | undefined {
+  function getColumnByName(columnName: string): ColumnInfo | undefined {
     return columns.value.find((c) => c.name === columnName);
   }
 

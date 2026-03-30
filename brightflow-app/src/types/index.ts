@@ -2,13 +2,25 @@
  * Shared type definitions for Brightflow
  */
 
-// Column metadata from backend
-export interface Column {
-  name: string;
-  dtype: string;
-}
+// Re-export generated types from Rust backend
+export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './generated';
+// Also re-export remaining generated types used across the app
+export type {
+  DatasetInfo,
+  DatasetMetadataResponse,
+  InsightsResponse,
+  LoadTableResponse,
+  RunTriggerResponse,
+  ScheduleResponse,
+  SyncRun,
+  UnifiedConnector,
+  UnifiedJob,
+  UnifiedSyncRun,
+  UploadResponse,
+  User,
+} from './generated';
 
-// Filter state
+// Filter state (frontend-only)
 export interface Filter {
   id: string;
   column: string | null;
@@ -16,7 +28,7 @@ export interface Filter {
   value: unknown;
 }
 
-// Aggregation state
+// Aggregation state (frontend-only)
 export interface Aggregation {
   id: string;
   column: string;
@@ -24,7 +36,7 @@ export interface Aggregation {
   alias: string;
 }
 
-// Query section state
+// Query section state (frontend-only)
 export interface SectionState {
   enabled: boolean;
   collapsed: boolean;
@@ -39,7 +51,7 @@ export interface QuerySections {
   limit: SectionState;
 }
 
-// Pivot state
+// Pivot state (frontend-only)
 export interface PivotState {
   index: string[];
   columns: string | null;
@@ -47,7 +59,7 @@ export interface PivotState {
   agg: string;
 }
 
-// Pivot field
+// Pivot field (frontend-only)
 export interface PivotField {
   id: string;
   column: string;
@@ -55,30 +67,13 @@ export interface PivotField {
   aggregation?: string;
 }
 
-// Format rule for conditional formatting
+// Format rule for conditional formatting (frontend-only)
 export interface FormatRule {
   id: string;
   [key: string]: unknown;
 }
 
-// Query operations
-export interface FilterOperation {
-  type: 'filter';
-  column: string;
-  op: string;
-  value?: unknown;
-}
-
-export interface GroupByOperation {
-  type: 'groupBy';
-  by: string[];
-  aggs: Array<{
-    column: string;
-    function: string;
-    alias: string;
-  }>;
-}
-
+// Frontend-only pivot operation (extends wire format with UI-only fields)
 export interface PivotOperation {
   type: 'pivot';
   index: string[];
@@ -89,63 +84,14 @@ export interface PivotOperation {
   includeTotals?: boolean;
 }
 
-export interface SelectOperation {
-  type: 'select';
-  columns: string[];
-}
-
-export interface SortOperation {
-  type: 'sort';
-  by: string;
-  descending: boolean;
-}
-
-export interface LimitOperation {
-  type: 'limit';
-  n: number;
-}
-
-export type QueryOperation =
-  | FilterOperation
-  | GroupByOperation
-  | PivotOperation
-  | SelectOperation
-  | SortOperation
-  | LimitOperation;
-
-// WebSocket message types
-export interface WsMessage {
-  type: string;
-  [key: string]: unknown;
-}
-
-export interface ConnectedMessage extends WsMessage {
-  type: 'connected';
-  serverVersion: string;
-}
-
-export interface QueryResultMessage extends WsMessage {
-  type: 'queryResult';
-  columns: Column[];
-  rows: unknown[][];
-  row_count: number;
-  total_rows: number;
-  execution_time_ms: number;
-}
-
-export interface ErrorMessage extends WsMessage {
-  type: 'error';
-  message: string;
-}
-
-// Connection status
+// Connection status (frontend-only)
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
 
-// View modes
+// View modes (frontend-only)
 export type ViewMode = 'table' | 'pivot' | 'chart' | 'split' | 'number';
 export type ChartType = 'bar' | 'line' | 'pie' | 'scatter';
 
-// Operator definition
+// Operator definition (frontend-only)
 export interface OperatorDef {
   label: string;
   types: string[];
@@ -160,7 +106,7 @@ export interface Operator {
   isArray: boolean;
 }
 
-// Aggregation definition
+// Aggregation definition (frontend-only)
 export interface AggregationDef {
   label: string;
   description: string;

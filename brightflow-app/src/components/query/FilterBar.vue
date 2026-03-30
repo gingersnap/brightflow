@@ -6,7 +6,7 @@ import { useDatasetStore } from '@/stores/dataset';
 import { useUiStore } from '@/stores/ui';
 import { useConnectionStore } from '@/stores/connection';
 import { useOperators } from '@/composables/useOperators';
-import { useQuery } from '@/composables/useQuery';
+import { useWsQuery } from '@/composables/useWsQuery';
 import type { Filter, Operator } from '@/types';
 
 const queryStore = useQueryStore();
@@ -14,7 +14,7 @@ const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
 const connectionStore = useConnectionStore();
 const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators();
-const { loadTableData } = useQuery();
+const { loadTableData } = useWsQuery();
 
 const isCollapsed = computed(() => uiStore.filterCollapsed);
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { Play, AlertTriangle, ChevronRight, ChevronDown, Key } from 'lucide-vue-next';
-import type { UnifiedConnector, SyncRun } from '@/services/api';
+import type { UnifiedConnector, SyncRun } from '@/types';
 import SyncStatusBadge from './SyncStatusBadge.vue';
 
 const props = defineProps<{
@@ -164,7 +164,7 @@ function duration(startedAt: string, finishedAt: string): string {
         <span class="text-blue-500">Sync in progress...</span>
       </template>
       <template v-else-if="connector.lastRun">
-        <SyncStatusBadge :status="connector.lastRun.status" />
+        <SyncStatusBadge :status="(connector.lastRun.status as 'pending' | 'running' | 'completed' | 'failed')" />
         <span>{{ relativeTime(connector.lastRun.startedAt) }}</span>
         <span v-if="connector.lastRun.finishedAt">
           ({{ duration(connector.lastRun.startedAt, connector.lastRun.finishedAt) }})
@@ -203,7 +203,7 @@ function duration(startedAt: string, finishedAt: string): string {
           :key="run.id"
           class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2 text-xs"
         >
-          <SyncStatusBadge :status="run.status" />
+          <SyncStatusBadge :status="(run.status as 'pending' | 'running' | 'completed' | 'failed')" />
           <span class="text-muted">{{ relativeTime(run.startedAt) }}</span>
           <span v-if="run.finishedAt" class="text-muted">
             ({{ duration(run.startedAt, run.finishedAt) }})

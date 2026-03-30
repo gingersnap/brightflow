@@ -1,6 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -9,23 +10,28 @@ use crate::state::AppState;
 // Request/Response types
 // =====================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateConnectorConfigRequest {
     pub name: String,
     pub connector_path: String,
+    #[ts(type = "unknown")]
     pub config_json: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateConnectorConfigRequest {
     pub name: String,
     pub connector_path: String,
+    #[ts(type = "unknown")]
     pub config_json: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateJobRequest {
     pub name: String,
@@ -33,14 +39,16 @@ pub struct CreateJobRequest {
     pub interval_secs: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateJobRequest {
     pub interval_secs: Option<i64>,
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerRunResponse {
     pub run_id: String,
