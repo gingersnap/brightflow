@@ -49,7 +49,7 @@ export const useQueryStore = defineStore('query', () => {
     // Add filters
     if (sections.value.filter.enabled && filters.value.length > 0) {
       filters.value.forEach((filter) => {
-        if (filter.column && filter.op) {
+        if (filter.column != null && filter.op !== '') {
           ops.push({
             column: filter.column,
             op: filter.op as FilterOp,
@@ -74,7 +74,7 @@ export const useQueryStore = defineStore('query', () => {
     }
 
     // Add pivot
-    if (sections.value.pivot.enabled && pivot.value.values && pivot.value.columns) {
+    if (sections.value.pivot.enabled && pivot.value.values != null && pivot.value.columns != null) {
       ops.push({
         agg: pivot.value.agg as AggFn,
         columns: pivot.value.columns,
@@ -93,7 +93,7 @@ export const useQueryStore = defineStore('query', () => {
     }
 
     // Add sort
-    if (sections.value.sort.enabled && sortBy.value) {
+    if (sections.value.sort.enabled && sortBy.value != null) {
       ops.push({
         by: sortBy.value,
         descending: sortDescending.value,
@@ -121,12 +121,16 @@ export const useQueryStore = defineStore('query', () => {
     groupBy:
       groupByColumns.value.length > 0 ? `By: ${groupByColumns.value.join(', ')}` : 'Not grouped',
     limit: `${limit.value.toLocaleString()} rows`,
-    pivot: pivot.value.values
-      ? `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`
-      : 'Not configured',
+    pivot:
+      pivot.value.values != null
+        ? `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`
+        : 'Not configured',
     select:
       selectedColumns.value.length > 0 ? `${selectedColumns.value.length} columns` : 'All columns',
-    sort: sortBy.value ? `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}` : 'Not sorted',
+    sort:
+      sortBy.value != null
+        ? `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}`
+        : 'Not sorted',
   }));
 
   const isValid = computed(() => true);

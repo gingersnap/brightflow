@@ -21,6 +21,13 @@ type SystemStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 const MAX_LOG_ENTRIES = 500;
 
+function getWsUrl(): string {
+  const base =
+    import.meta.env.VITE_WS_URL ||
+    `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
+  return base.replace(/\/api\/ws$/, '/api/system/ws');
+}
+
 export const useSystemStore = defineStore('system', () => {
   const metrics = ref<SystemMetrics | null>(null);
   const logs = ref<LogEntry[]>([]);
@@ -31,14 +38,6 @@ export const useSystemStore = defineStore('system', () => {
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectCount = 0;
-
-  function getWsUrl(): string {
-    const base =
-      import.meta.env.VITE_WS_URL ||
-      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
-    // Replace /api/ws with /api/system/ws
-    return base.replace(/\/api\/ws$/, '/api/system/ws');
-  }
 
   function connect(): void {
     if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) {

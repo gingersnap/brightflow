@@ -22,6 +22,7 @@ export class ApiError extends Error {
 
   constructor(message: string, status: number, data: unknown) {
     super(message);
+    this.name = 'ApiError';
     this.status = status;
     this.data = data;
   }
@@ -44,7 +45,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     ...restOptions,
   };
 
-  if (body && typeof body === 'object') {
+  if (body != null && typeof body === 'object') {
     config.body = JSON.stringify(body);
   }
 
@@ -67,13 +68,13 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 }
 
 export const api = {
-  delete: async <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
+  delete: <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
     request<T>(endpoint, { method: 'DELETE', ...options }),
-  get: async <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
+  get: <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
     request<T>(endpoint, { method: 'GET', ...options }),
-  post: async <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
+  post: <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
     request<T>(endpoint, { method: 'POST', body, ...options }),
-  put: async <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
+  put: <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
     request<T>(endpoint, { method: 'PUT', body, ...options }),
 };
 
@@ -84,9 +85,9 @@ export type { TableInfo };
 // Table API - for lazy loading Parquet tables
 export const tableApi = {
   // Get list of available tables (metadata only, nothing loaded)
-  listAvailable: async (): Promise<TableInfo[] | null> => api.get<TableInfo[]>('/api/tables'),
+  listAvailable: (): Promise<TableInfo[] | null> => api.get<TableInfo[]>('/api/tables'),
   // Load a specific table into memory
-  load: async (name: string): Promise<LoadTableResponse | null> =>
+  load: (name: string): Promise<LoadTableResponse | null> =>
     api.post<LoadTableResponse>(`/api/tables/${encodeURIComponent(name)}/load`),
 };
 
@@ -95,22 +96,20 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 // Connector API
 export const connectApi = {
-  deleteJob: async (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
-  listConnectorRuns: async (name: string): Promise<SyncRun[] | null> =>
+  deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
+  listConnectorRuns: (name: string): Promise<SyncRun[] | null> =>
     api.get<SyncRun[]>(`/api/connectors/${encodeURIComponent(name)}/runs`),
-  listUnified: async (): Promise<UnifiedConnector[] | null> =>
+  listUnified: (): Promise<UnifiedConnector[] | null> =>
     api.get<UnifiedConnector[]>('/api/connectors/unified'),
-  runConnector: async (name: string): Promise<RunTriggerResponse | null> =>
+  runConnector: (name: string): Promise<RunTriggerResponse | null> =>
     api.post<RunTriggerResponse>(`/api/connectors/${encodeURIComponent(name)}/run`),
-  scheduleConnector: async (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
+  scheduleConnector: (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
     api.post<ScheduleResponse>(`/api/connectors/${encodeURIComponent(name)}/schedule`, {
       intervalSecs,
     }),
-  updateJob: async (
-    id: string,
-    data: { intervalSecs?: number; enabled?: boolean },
-  ): Promise<unknown> => api.put(`/api/scheduler/jobs/${id}`, data),
-  updateToken: async (name: string, token: string): Promise<unknown> =>
+  updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
+    api.put(`/api/scheduler/jobs/${id}`, data),
+  updateToken: (name: string, token: string): Promise<unknown> =>
     api.put(`/api/connectors/${encodeURIComponent(name)}/token`, { token }),
 };
 
@@ -138,27 +137,26 @@ export interface AnalysisType {
 
 // Insights API
 export const insightsApi = {
-  runReview: async (datasetId: string, cadence = 'weekly'): Promise<InsightsResponse | null> =>
+  runReview: (datasetId: string, cadence = 'weekly'): Promise<InsightsResponse | null> =>
     api.post<InsightsResponse>('/api/insights/review', { cadence, datasetId }),
-  runTrends: async (datasetId: string): Promise<InsightsResponse | null> =>
+  runTrends: (datasetId: string): Promise<InsightsResponse | null> =>
     api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
 };
 
 // Auth API
 export const authApi = {
-  login: async (email: string, password: string): Promise<User | null> =>
+  login: (email: string, password: string): Promise<User | null> =>
     api.post<User>('/api/auth/login', { email, password }),
-  logout: async (): Promise<unknown> => api.post('/api/auth/logout'),
-  me: async (): Promise<User | null> => api.get<User>('/api/auth/me'),
+  logout: (): Promise<unknown> => api.post('/api/auth/logout'),
+  me: (): Promise<User | null> => api.get<User>('/api/auth/me'),
 };
 
 // Dataset-specific API methods (for loaded datasets)
 export const datasetApi = {
-  delete: async (id: string): Promise<unknown> => api.delete(`/api/datasets/${id}`),
-  get: async (id: string): Promise<DatasetInfo | null> =>
-    api.get<DatasetInfo>(`/api/datasets/${id}`),
-  list: async (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
-  query: async (datasetId: string, operations: unknown[]): Promise<QueryResponse | null> =>
+  delete: (id: string): Promise<unknown> => api.delete(`/api/datasets/${id}`),
+  get: (id: string): Promise<DatasetInfo | null> => api.get<DatasetInfo>(`/api/datasets/${id}`),
+  list: (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
+  query: (datasetId: string, operations: unknown[]): Promise<QueryResponse | null> =>
     api.post<QueryResponse>('/api/query', { datasetId, operations }),
   upload: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();

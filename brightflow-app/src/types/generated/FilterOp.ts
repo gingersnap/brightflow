@@ -3,14 +3,4 @@
 /**
  * Filter comparison operators
  */
-export type FilterOp =
-  | 'eq'
-  | 'ne'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'contains'
-  | 'in'
-  | 'isNull'
-  | 'isNotNull';
+export type FilterOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains" | "in" | "isNull" | "isNotNull";

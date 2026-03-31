@@ -29,7 +29,7 @@ function toggleTokenInput(): void {
   tokenValue.value = '';
 }
 
-async function saveToken(): Promise<void> {
+function saveToken(): void {
   if (!tokenValue.value.trim()) {
     return;
   }

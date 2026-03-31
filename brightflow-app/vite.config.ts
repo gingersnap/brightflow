@@ -25,30 +25,37 @@ export default defineConfig({
       'no-console': 'warn',
       'no-debugger': 'error',
       eqeqeq: ['error', 'smart'],
-      // Rules new in oxlint 1.57 — disabled to match old 1.43 behavior
-      'no-magic-numbers': 'off',
-      'func-style': 'off',
-      'unicorn/no-null': 'off',
-      'id-length': 'off',
-      'sort-keys': 'off',
-      'unicorn/filename-case': 'off',
-      'sort-imports': 'off',
-      'no-ternary': 'off',
-      'max-statements': 'off',
-      'max-lines-per-function': 'off',
-      'no-inline-comments': 'off',
-      'prefer-destructuring': 'off',
-      'no-shadow': 'off',
-      '@typescript-eslint/no-unsafe-type-assertion': 'off',
-      '@typescript-eslint/strict-boolean-expressions': 'off',
-      'require-await': 'off',
-      'max-lines': 'off',
-      'unicorn/prefer-add-event-listener': 'off',
-      'unicorn/prefer-global-this': 'off',
-      'no-negated-condition': 'off',
-      'unicorn/consistent-function-scoping': 'off',
-      'unicorn/custom-error-definition': 'off',
-      'unicorn/no-immediate-mutation': 'off',
+      'no-shadow': 'error',
+      'require-await': 'error',
+      '@typescript-eslint/strict-boolean-expressions': 'error',
+      '@typescript-eslint/no-unsafe-type-assertion': 'off', // Pending: type guards for WS/API data
+      'unicorn/consistent-function-scoping': 'error',
+      'unicorn/custom-error-definition': 'error',
+
+      // --- Advisory: complexity metrics (warn = visible but non-blocking) ---
+      'max-statements': ['warn', { max: 25 }],
+      'max-lines-per-function': ['warn', { max: 150 }],
+      'max-lines': 'warn',
+
+      // --- Off: Vue/JS idiom conflicts ---
+      'func-style': 'off', // Function declarations idiomatic in Vue/Pinia
+      'unicorn/no-null': 'off', // Vue ref<T | null>(null) is standard
+      'unicorn/filename-case': 'off', // PascalCase SFCs = official Vue convention
+
+      // --- Off: too aggressive ---
+      'no-magic-numbers': 'off', // Flags 0, 1024, 3600 etc.
+      'id-length': 'off', // Flags (a, b) in sort comparators
+      'sort-keys': 'off', // Destroys logical key grouping
+      'no-ternary': 'off', // Bans a core language feature
+      'no-inline-comments': 'off', // Marginal style preference
+      'prefer-destructuring': 'off', // Splice()[0] reads more clearly
+
+      // --- Off: handled elsewhere or not applicable ---
+      'sort-imports': 'off', // Handled by Oxfmt sortImports
+      'unicorn/prefer-global-this': 'off', // Browser-only app
+      'unicorn/prefer-add-event-listener': 'off', // WebSocket .onopen is idiomatic
+      'no-negated-condition': 'off', // Only 2 instances, both clear
+      'unicorn/no-immediate-mutation': 'off', // Clone-then-mutate is a clear pattern
     },
     categories: {
       correctness: 'error',

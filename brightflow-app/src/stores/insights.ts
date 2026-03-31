@@ -41,8 +41,9 @@ export const useInsightsStore = defineStore('insights', () => {
         firstLevelCount.value = result.firstLevelCount;
         deeperCount.value = result.deeperCount;
       }
-    } catch (error) {
-      error.value = error instanceof Error ? error.message : 'Analysis failed';
+      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Analysis failed';
       tree.value = null;
     } finally {
       loading.value = false;
@@ -69,8 +70,9 @@ export const useInsightsStore = defineStore('insights', () => {
         firstLevelCount.value = result.firstLevelCount;
         deeperCount.value = result.deeperCount;
       }
-    } catch (error) {
-      error.value = error instanceof Error ? error.message : 'Analysis failed';
+      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Analysis failed';
       tree.value = null;
     } finally {
       loading.value = false;

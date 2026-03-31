@@ -3,4 +3,4 @@
 /**
  * Column metadata
  */
-export interface ColumnInfo { name: string; dtype: string }
+export type ColumnInfo = { name: string, dtype: string, };

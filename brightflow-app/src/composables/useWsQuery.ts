@@ -26,7 +26,7 @@ export function useWsQuery() {
     // Add filters
     if (queryStore.filters.length > 0) {
       queryStore.filters.forEach((filter) => {
-        if (filter.column && filter.op) {
+        if (filter.column != null && filter.op !== '') {
           ops.push({
             column: filter.column,
             op: filter.op as FilterOp,
@@ -93,7 +93,7 @@ export function useWsQuery() {
       // Add any filters from query store
       if (queryStore.sections.filter.enabled && queryStore.filters.length > 0) {
         queryStore.filters.forEach((filter) => {
-          if (filter.column && filter.op) {
+          if (filter.column != null && filter.op !== '') {
             ops.push({
               column: filter.column,
               op: filter.op as FilterOp,
@@ -117,14 +117,14 @@ export function useWsQuery() {
         const aggFunc = (valueField.aggregation ?? 'count') as AggFn;
 
         // Determine the best operation based on configuration
-        if (rowCols.length === 0 && !colField) {
+        if (rowCols.length === 0 && colField == null) {
           console.warn(
             '[useWsQuery] Pivot has values but no rows/columns - waiting for UI to auto-add',
           );
           return ops;
         }
 
-        if (!colField) {
+        if (colField == null) {
           // Only rows, no column pivot - use groupBy
           ops.push({
             aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
@@ -154,7 +154,7 @@ export function useWsQuery() {
       }
 
       // Add sort
-      if (queryStore.sections.sort.enabled && queryStore.sortBy) {
+      if (queryStore.sections.sort.enabled && queryStore.sortBy != null) {
         ops.push({
           by: queryStore.sortBy,
           descending: queryStore.sortDescending,

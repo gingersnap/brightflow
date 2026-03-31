@@ -3,10 +3,4 @@
 /**
  * Summary info for a dataset
  */
-export interface DatasetInfo {
-  id: string;
-  name: string;
-  rowCount: number | null;
-  columnCount: number | null;
-  loadedAt: string;
-}
+export type DatasetInfo = { id: string, name: string, rowCount: number | null, columnCount: number | null, loadedAt: string, };

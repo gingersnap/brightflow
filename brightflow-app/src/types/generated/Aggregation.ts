@@ -3,13 +3,4 @@
 /**
  * Aggregation functions
  */
-export type Aggregation =
-  | 'count'
-  | 'sum'
-  | 'avg'
-  | 'min'
-  | 'max'
-  | 'median'
-  | 'std'
-  | 'first'
-  | 'last';
+export type Aggregation = "count" | "sum" | "avg" | "min" | "max" | "median" | "std" | "first" | "last";

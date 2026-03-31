@@ -27,8 +27,9 @@ async function fetchTables(): Promise<void> {
   try {
     const result = await tableApi.listAvailable();
     tables.value = result ?? [];
-  } catch (error) {
-    error.value = error instanceof Error ? error.message : 'Failed to fetch tables';
+    // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the component ref
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to fetch tables';
   } finally {
     fetching.value = false;
   }

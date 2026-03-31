@@ -3,13 +3,4 @@
 /**
  * Response from an insights analysis
  */
-export interface InsightsResponse {
-  datasetId: string;
-  reportType: string;
-  tree: unknown;
-  nodeCount: number;
-  findingCount: number;
-  firstLevelCount: number;
-  deeperCount: number;
-  executionTimeMs: number;
-}
+export type InsightsResponse = { datasetId: string, reportType: string, tree: unknown, nodeCount: number, findingCount: number, firstLevelCount: number, deeperCount: number, executionTimeMs: number, };

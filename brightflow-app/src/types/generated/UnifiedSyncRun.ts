@@ -3,11 +3,4 @@
 /**
  * Last run info for a connector
  */
-export interface UnifiedSyncRun {
-  id: string;
-  status: string;
-  startedAt: string;
-  finishedAt: string | null;
-  rowsSynced: bigint;
-  error: string | null;
-}
+export type UnifiedSyncRun = { id: string, status: string, startedAt: string, finishedAt: string | null, rowsSynced: bigint, error: string | null, };

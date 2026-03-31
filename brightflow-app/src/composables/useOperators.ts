@@ -29,7 +29,7 @@ const OPERATORS: Record<string, OperatorDef> = {
  * Normalize backend dtype to standard type
  */
 function normalizeType(dtype: string | null | undefined): NormalizedType {
-  if (!dtype) {
+  if (dtype == null || dtype === '') {
     return 'string';
   }
 
@@ -80,7 +80,7 @@ export function useOperators() {
    */
   function operatorNeedsValue(operatorKey: string): boolean {
     const op = OPERATORS[operatorKey];
-    return op ? !op.noValue : true;
+    return op != null ? op.noValue !== true : true;
   }
 
   /**

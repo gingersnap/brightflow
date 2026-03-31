@@ -30,10 +30,11 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const result = await authApi.login(email, password);
       user.value = result;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Login failed';
+      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Login failed';
       error.value = msg;
-      throw error;
+      throw err;
     }
   }
 

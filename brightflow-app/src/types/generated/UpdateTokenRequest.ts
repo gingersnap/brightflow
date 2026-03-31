@@ -3,4 +3,4 @@
 /**
  * Request body for PUT /connectors/:name/token
  */
-export interface UpdateTokenRequest { token: string }
+export type UpdateTokenRequest = { token: string, };

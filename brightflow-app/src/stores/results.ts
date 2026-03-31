@@ -15,6 +15,18 @@ interface ResultData {
 
 type ResultType = 'table' | 'pivot';
 
+function escapeCsvCell(cell: unknown): string {
+  if (cell === null || cell === undefined) {
+    return '';
+  }
+  const str =
+    typeof cell === 'object' ? JSON.stringify(cell) : String(cell as string | number | boolean);
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replaceAll('"', '""')}"`;
+  }
+  return str;
+}
+
 export const useResultsStore = defineStore('results', () => {
   // Table data (raw data)
   const tableColumns = ref<ColumnInfo[]>([]);
@@ -45,7 +57,7 @@ export const useResultsStore = defineStore('results', () => {
   const hasTableResults = computed(() => tableRows.value.length > 0);
   const hasPivotResults = computed(() => pivotRows.value.length > 0);
   const hasResults = computed(() => hasTableResults.value || hasPivotResults.value);
-  const isEmpty = computed(() => !loading.value && !error.value && !hasResults.value);
+  const isEmpty = computed(() => !loading.value && error.value == null && !hasResults.value);
   const isTruncated = computed(() => tableRowCount.value < tableTotalRows.value);
 
   const columnNames = computed(() => tableColumns.value.map((c) => c.name));
@@ -123,20 +135,6 @@ export const useResultsStore = defineStore('results', () => {
     pivotRowCount.value = 0;
     pivotTotalRows.value = 0;
     pivotExecutionTimeMs.value = null;
-  }
-
-  // Helper to escape CSV cell
-  function escapeCsvCell(cell: unknown): string {
-    if (cell === null || cell === undefined) {
-      return '';
-    }
-    const str =
-      typeof cell === 'object' ? JSON.stringify(cell) : String(cell as string | number | boolean);
-    // Escape quotes and wrap in quotes if contains comma, quote, or newline
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replaceAll('"', '""')}"`;
-    }
-    return str;
   }
 
   // Export to CSV - supports both table and pivot data

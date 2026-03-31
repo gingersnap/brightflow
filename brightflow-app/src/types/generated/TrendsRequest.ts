@@ -3,4 +3,4 @@
 /**
  * Request to run a trends analysis
  */
-export interface TrendsRequest { datasetId: string }
+export type TrendsRequest = { datasetId: string, };
