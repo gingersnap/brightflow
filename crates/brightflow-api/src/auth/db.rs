@@ -14,7 +14,12 @@ impl AuthDb {
     pub async fn new(database_url: &str) -> AuthResult<Self> {
         let options = SqliteConnectOptions::from_str(database_url)?
             .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .pragma("synchronous", "NORMAL")
+            .pragma("cache_size", "-64000")
+            .pragma("mmap_size", "268435456")
+            .pragma("temp_store", "MEMORY")
+            .busy_timeout(std::time::Duration::from_secs(5));
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
