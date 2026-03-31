@@ -86,11 +86,11 @@ function duration(startedAt: string, finishedAt: string): string {
     <div class="flex items-center gap-3 px-4 py-3">
       <!-- Status dot -->
       <span
-        class="h-2.5 w-2.5 rounded-full shrink-0"
+        class="h-2.5 w-2.5 shrink-0 rounded-full"
         :class="{
           'bg-green-500': connector.lastRun?.status === 'completed',
           'bg-red-500': connector.lastRun?.status === 'failed',
-          'bg-blue-500 animate-pulse': running,
+          'animate-pulse bg-blue-500': running,
           'bg-neutral-400': !connector.lastRun && !running,
         }"
       />
@@ -98,12 +98,12 @@ function duration(startedAt: string, finishedAt: string): string {
       <!-- Connector name -->
       <div class="min-w-0">
         <div class="flex items-center gap-1.5">
-          <span class="font-medium text-highlighted text-sm">{{ connector.name }}</span>
+          <span class="text-sm font-medium text-highlighted">{{ connector.name }}</span>
           <span
             v-if="!connector.valid"
             class="inline-flex items-center gap-0.5 text-xs text-amber-500"
           >
-            <AlertTriangle class="w-3 h-3" />
+            <AlertTriangle class="h-3 w-3" />
             missing
           </span>
         </div>
@@ -111,7 +111,7 @@ function duration(startedAt: string, finishedAt: string): string {
 
       <!-- Token status -->
       <button
-        class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+        class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors"
         :class="
           connector.hasToken
             ? 'text-green-500 hover:text-green-400'
@@ -122,7 +122,7 @@ function duration(startedAt: string, finishedAt: string): string {
         "
         @click="toggleTokenInput"
       >
-        <Key class="w-3 h-3" />
+        <Key class="h-3 w-3" />
         {{ connector.hasToken ? 'Token set' : 'No token' }}
       </button>
 
@@ -130,7 +130,7 @@ function duration(startedAt: string, finishedAt: string): string {
 
       <!-- Schedule dropdown -->
       <select
-        class="text-xs bg-elevated border border-default rounded px-2 py-1 text-muted cursor-pointer"
+        class="cursor-pointer rounded border border-default bg-elevated px-2 py-1 text-xs text-muted"
         :value="currentInterval"
         @change="handleScheduleChange"
       >
@@ -146,18 +146,18 @@ function duration(startedAt: string, finishedAt: string): string {
         :loading="running"
         @click="emit('run')"
       >
-        <Play v-if="!running" class="w-3.5 h-3.5 mr-1" />
+        <Play v-if="!running" class="mr-1 h-3.5 w-3.5" />
         {{ running ? 'Syncing...' : 'Sync Now' }}
       </UButton>
     </div>
 
     <!-- Token input -->
-    <div v-if="showTokenInput" class="px-4 pb-2 flex items-center gap-2">
+    <div v-if="showTokenInput" class="flex items-center gap-2 px-4 pb-2">
       <input
         v-model="tokenValue"
         type="password"
         placeholder="Paste API token..."
-        class="flex-1 text-xs bg-elevated border border-default rounded px-2 py-1.5 text-highlighted placeholder-muted focus:outline-none focus:border-blue-500"
+        class="flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted placeholder-muted focus:border-blue-500 focus:outline-none"
         @keyup.enter="saveToken"
       />
       <UButton size="xs" :loading="savingToken" :disabled="!tokenValue.trim()" @click="saveToken">
@@ -169,7 +169,7 @@ function duration(startedAt: string, finishedAt: string): string {
     <!-- Last sync summary -->
     <div
       v-if="connector.lastRun || running"
-      class="px-4 pb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pb-2 text-xs text-muted"
     >
       <template v-if="running && !connector.lastRun">
         <span class="text-blue-500">Sync in progress...</span>
@@ -187,7 +187,7 @@ function duration(startedAt: string, finishedAt: string): string {
         </span>
         <span
           v-if="connector.lastRun.status === 'failed' && connector.lastRun.error"
-          class="text-red-400 break-all"
+          class="break-all text-red-400"
         >
           {{ connector.lastRun.error }}
         </span>
@@ -196,17 +196,17 @@ function duration(startedAt: string, finishedAt: string): string {
 
     <!-- Run History toggle -->
     <button
-      class="w-full flex items-center gap-1.5 px-4 py-2 text-xs text-muted hover:text-highlighted border-t border-default transition-colors cursor-pointer"
+      class="flex w-full cursor-pointer items-center gap-1.5 border-t border-default px-4 py-2 text-xs text-muted transition-colors hover:text-highlighted"
       @click="emit('toggleHistory')"
     >
-      <ChevronDown v-if="expanded" class="w-3 h-3" />
-      <ChevronRight v-else class="w-3 h-3" />
+      <ChevronDown v-if="expanded" class="h-3 w-3" />
+      <ChevronRight v-else class="h-3 w-3" />
       Run History
     </button>
 
     <!-- Expanded history -->
     <div v-if="expanded" class="border-t border-default">
-      <div v-if="history.length === 0" class="px-4 py-3 text-xs text-muted text-center">
+      <div v-if="history.length === 0" class="px-4 py-3 text-center text-xs text-muted">
         No runs yet
       </div>
       <div v-else class="divide-y divide-default">
@@ -221,7 +221,7 @@ function duration(startedAt: string, finishedAt: string): string {
             ({{ duration(run.startedAt, run.finishedAt) }})
           </span>
           <span v-if="run.rowsSynced > 0" class="text-muted"> {{ run.rowsSynced }} rows </span>
-          <span v-if="run.status === 'failed' && run.error" class="text-red-400 break-all">
+          <span v-if="run.status === 'failed' && run.error" class="break-all text-red-400">
             {{ run.error }}
           </span>
         </div>

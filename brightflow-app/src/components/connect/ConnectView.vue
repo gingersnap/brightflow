@@ -93,9 +93,9 @@ const { mutate: updateToken } = useMutation({
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full flex-col">
     <!-- Toolbar -->
-    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-default bg-default">
+    <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
       <h2 class="text-sm font-semibold text-highlighted">Data Connectors</h2>
 
       <div class="flex-1" />
@@ -106,15 +106,15 @@ const { mutate: updateToken } = useMutation({
         :loading="loading"
         @click="queryCache.invalidateQueries({ key: ['connectors'] })"
       >
-        <RefreshCw class="w-3.5 h-3.5 mr-1.5" />
+        <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
         Refresh
       </UButton>
     </div>
 
     <!-- Content -->
-    <div class="flex-1 min-h-0 overflow-y-auto p-4">
+    <div class="min-h-0 flex-1 overflow-y-auto p-4">
       <!-- Error -->
-      <div v-if="errorMessage" class="mb-4 p-3 rounded-lg bg-red-500/10 text-red-500 text-sm">
+      <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">
         {{ errorMessage }}
       </div>
 
@@ -123,15 +123,15 @@ const { mutate: updateToken } = useMutation({
         v-if="!loading && connectorList.length === 0"
         class="flex flex-col items-center justify-center py-16 text-center"
       >
-        <p class="text-muted mb-2">No connector configs found</p>
+        <p class="mb-2 text-muted">No connector configs found</p>
         <p class="text-xs text-muted">
           Place TOML config files in the
-          <code class="px-1 py-0.5 bg-elevated rounded">configs/</code> directory
+          <code class="rounded bg-elevated px-1 py-0.5">configs/</code> directory
         </p>
       </div>
 
       <!-- Connector cards -->
-      <div v-else class="space-y-3 max-w-3xl">
+      <div v-else class="max-w-3xl space-y-3">
         <ConnectorCard
           v-for="connector in connectorList"
           :key="connector.name"

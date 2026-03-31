@@ -192,10 +192,10 @@ const sortColumnOptions = computed(() =>
     <!-- Section Header -->
     <div class="flex items-center justify-between bg-muted/30">
       <button
-        class="flex items-center gap-2 px-4 py-2 text-left hover:bg-muted/40 transition-colors"
+        class="flex items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-muted/40"
         @click="uiStore.toggleSection('summarize')"
       >
-        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="w-4 h-4 text-muted" />
+        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted" />
         <h2 class="text-sm font-medium text-default">Summarize</h2>
         <span v-if="pivotStore.isConfigured" class="text-xs text-muted">
           ({{ pivotStore.valueFields.length }} value{{
@@ -206,15 +206,15 @@ const sortColumnOptions = computed(() =>
 
       <div v-if="!isCollapsed" class="flex items-center gap-3 pr-4">
         <!-- Settings toggles -->
-        <label class="flex items-center gap-1.5 text-xs text-muted cursor-pointer" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted" @click.stop>
           <USwitch v-model="pivotStore.showSubtotals" size="xs" />
           Subtotals
         </label>
-        <label class="flex items-center gap-1.5 text-xs text-muted cursor-pointer" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted" @click.stop>
           <USwitch v-model="pivotStore.showColumnTotals" size="xs" />
           Totals
         </label>
-        <label class="flex items-center gap-1.5 text-xs text-muted cursor-pointer" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted" @click.stop>
           <USwitch v-model="pivotStore.showConditionalFormatting" size="xs" />
           Heatmap
         </label>
@@ -238,16 +238,16 @@ const sortColumnOptions = computed(() =>
 
         <!-- Reset -->
         <UButton variant="ghost" size="xs" @click.stop="pivotStore.reset()">
-          <RotateCcw class="w-3 h-3" />
+          <RotateCcw class="h-3 w-3" />
         </UButton>
       </div>
     </div>
 
     <!-- Content -->
-    <div v-if="!isCollapsed" class="flex bg-muted/10 border-t border-default">
+    <div v-if="!isCollapsed" class="flex border-t border-default bg-muted/10">
       <!-- Column List (left side) -->
-      <div class="w-48 border-r border-default p-3 bg-muted/20">
-        <div v-if="columns.length" class="space-y-1 max-h-48 overflow-y-auto">
+      <div class="w-48 border-r border-default bg-muted/20 p-3">
+        <div v-if="columns.length" class="max-h-48 space-y-1 overflow-y-auto">
           <draggable
             :list="columns"
             :group="{ name: 'columns', pull: 'clone', put: false }"
@@ -258,23 +258,23 @@ const sortColumnOptions = computed(() =>
           >
             <template #item="{ element }">
               <div
-                class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-default/50 hover:bg-default cursor-grab active:cursor-grabbing transition-colors text-xs group"
+                class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-xs transition-colors hover:bg-default active:cursor-grabbing"
               >
-                <GripVertical class="w-3 h-3 text-muted/30 group-hover:text-muted/60" />
-                <component :is="getTypeIcon(element)" class="w-3 h-3 text-muted" />
-                <span class="truncate flex-1">{{ element.name }}</span>
+                <GripVertical class="h-3 w-3 text-muted/30 group-hover:text-muted/60" />
+                <component :is="getTypeIcon(element)" class="h-3 w-3 text-muted" />
+                <span class="flex-1 truncate">{{ element.name }}</span>
               </div>
             </template>
           </draggable>
         </div>
 
-        <div v-else class="text-xs text-muted/60 py-4">No columns loaded</div>
+        <div v-else class="py-4 text-xs text-muted/60">No columns loaded</div>
       </div>
 
       <!-- Buckets (right side) -->
       <div class="flex-1 p-3">
         <!-- Three Bucket Layout -->
-        <div class="grid grid-cols-3 gap-3 mb-3">
+        <div class="mb-3 grid grid-cols-3 gap-3">
           <BucketDropzone
             title="Rows"
             bucket="rows"
@@ -288,11 +288,11 @@ const sortColumnOptions = computed(() =>
             <!-- Flip button between Rows and Columns -->
             <button
               v-if="pivotStore.rowFields.length > 0 || pivotStore.columnFields.length > 0"
-              class="absolute -left-5 top-8 z-10 p-1 rounded-full bg-muted/50 hover:bg-muted text-muted hover:text-default transition-colors"
+              class="absolute top-8 -left-5 z-10 rounded-full bg-muted/50 p-1 text-muted transition-colors hover:bg-muted hover:text-default"
               title="Flip rows and columns"
               @click="pivotStore.flipRowsAndColumns()"
             >
-              <ArrowLeftRight class="w-3 h-3" />
+              <ArrowLeftRight class="h-3 w-3" />
             </button>
             <BucketDropzone
               title="Columns"
@@ -319,13 +319,13 @@ const sortColumnOptions = computed(() =>
         </div>
 
         <!-- Sort Row -->
-        <div class="flex items-center gap-3 pt-2 border-t border-default/50">
+        <div class="flex items-center gap-3 border-t border-default/50 pt-2">
           <button
             class="flex items-center gap-1.5 text-xs"
             :class="queryStore.sections.sort.enabled ? 'text-muted' : 'text-muted/50'"
             @click="toggleSort"
           >
-            <ArrowUpDown class="w-3.5 h-3.5" />
+            <ArrowUpDown class="h-3.5 w-3.5" />
             Sort
           </button>
 
@@ -348,7 +348,7 @@ const sortColumnOptions = computed(() =>
             >
               <component
                 :is="queryStore.sortDescending ? ArrowDown : ArrowUp"
-                class="w-3.5 h-3.5 mr-1"
+                class="mr-1 h-3.5 w-3.5"
               />
               {{ queryStore.sortDescending ? 'DESC' : 'ASC' }}
             </UButton>

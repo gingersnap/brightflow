@@ -10,9 +10,7 @@
     "preview": "vp preview",
     "check": "vp check",
     "check:fix": "vp check --fix",
-    "fmt": "vp fmt",
-    "lint": "vp lint src",
-    "lint:fix": "vp lint src --fix"
+    "fmt": "vp fmt"
   },
   "dependencies": {
     "@pinia/colada": "^1.0.0",

@@ -88,7 +88,7 @@ function toggleTheme(): void {
 </script>
 
 <template>
-  <div class="flex h-14 items-center justify-between px-4 border-b border-default bg-default">
+  <div class="flex h-14 items-center justify-between border-b border-default bg-default px-4">
     <!-- Left: Logo and Current Dataset -->
     <div class="flex items-center gap-4">
       <h1 class="text-lg font-semibold text-highlighted">Brightflow</h1>
@@ -96,34 +96,34 @@ function toggleTheme(): void {
       <!-- Current dataset display with change button -->
       <button
         v-if="currentDataset"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-default hover:border-primary-500/50 hover:bg-elevated transition-colors cursor-pointer"
+        class="flex cursor-pointer items-center gap-2 rounded-lg border border-default px-3 py-1.5 transition-colors hover:border-primary-500/50 hover:bg-elevated"
         @click="emit('change-dataset')"
       >
-        <Database class="w-4 h-4 text-muted" />
+        <Database class="h-4 w-4 text-muted" />
         <span class="font-medium">{{ datasetStore.name ?? currentDataset }}</span>
         <span v-if="datasetStore.rowCount" class="text-xs text-muted">
           ({{ datasetStore.rowCount.toLocaleString() }} rows)
         </span>
-        <ChevronDown class="w-4 h-4 text-muted" />
+        <ChevronDown class="h-4 w-4 text-muted" />
       </button>
 
       <!-- Select Dataset button when no dataset is loaded -->
       <button
         v-else
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-default text-muted hover:border-primary-500/50 hover:text-highlighted transition-colors cursor-pointer"
+        class="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-default px-3 py-1.5 text-muted transition-colors hover:border-primary-500/50 hover:text-highlighted"
         @click="emit('change-dataset')"
       >
-        <Plus class="w-4 h-4" />
+        <Plus class="h-4 w-4" />
         <span class="text-sm">Select Dataset</span>
       </button>
 
       <!-- Mode switcher (disabled when no dataset) -->
       <div
-        class="flex items-center gap-1 bg-elevated rounded-lg p-0.5 ml-2 transition-opacity"
-        :class="{ 'opacity-40 pointer-events-none': !currentDataset }"
+        class="ml-2 flex items-center gap-1 rounded-lg bg-elevated p-0.5 transition-opacity"
+        :class="{ 'pointer-events-none opacity-40': !currentDataset }"
       >
         <button
-          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
+          class="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors"
           :class="
             uiStore.appMode === 'explore' && !uiStore.showConnect && !uiStore.showSystem
               ? 'bg-default text-highlighted shadow-sm'
@@ -131,11 +131,11 @@ function toggleTheme(): void {
           "
           @click="setMode('explore')"
         >
-          <Search class="w-3.5 h-3.5" />
+          <Search class="h-3.5 w-3.5" />
           Explore
         </button>
         <button
-          class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer"
+          class="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors"
           :class="
             uiStore.appMode === 'insights' && !uiStore.showConnect && !uiStore.showSystem
               ? 'bg-default text-highlighted shadow-sm'
@@ -143,7 +143,7 @@ function toggleTheme(): void {
           "
           @click="setMode('insights')"
         >
-          <Sparkles class="w-3.5 h-3.5" />
+          <Sparkles class="h-3.5 w-3.5" />
           Insights
         </button>
       </div>
@@ -153,50 +153,50 @@ function toggleTheme(): void {
     <div class="flex items-center gap-3">
       <!-- Connect button -->
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+        class="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
         :class="
           uiStore.showConnect
             ? 'bg-primary-500/10 text-primary-500'
-            : 'text-muted hover:text-highlighted hover:bg-elevated'
+            : 'text-muted hover:bg-elevated hover:text-highlighted'
         "
         @click="toggleConnect"
       >
-        <Cable class="w-3.5 h-3.5" />
+        <Cable class="h-3.5 w-3.5" />
         Connect
       </button>
 
       <!-- System button -->
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+        class="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
         :class="
           uiStore.showSystem
             ? 'bg-primary-500/10 text-primary-500'
-            : 'text-muted hover:text-highlighted hover:bg-elevated'
+            : 'text-muted hover:bg-elevated hover:text-highlighted'
         "
         @click="toggleSystem"
       >
-        <Activity class="w-3.5 h-3.5" />
+        <Activity class="h-3.5 w-3.5" />
         System
       </button>
 
       <!-- Theme toggle -->
       <UButton variant="ghost" size="sm" square @click="toggleTheme">
-        <Sun v-if="colorMode === 'dark'" class="w-4 h-4" />
-        <Moon v-else class="w-4 h-4" />
+        <Sun v-if="colorMode === 'dark'" class="h-4 w-4" />
+        <Moon v-else class="h-4 w-4" />
       </UButton>
 
       <!-- Logout button -->
       <UButton variant="ghost" size="sm" square @click="emit('logout')">
-        <LogOut class="w-4 h-4" />
+        <LogOut class="h-4 w-4" />
       </UButton>
 
       <!-- Dataset Status Dot -->
-      <div class="flex items-center gap-2 pl-3 border-l border-default">
+      <div class="flex items-center gap-2 border-l border-default pl-3">
         <span
           class="h-2 w-2 rounded-full"
           :class="{
             'bg-green-500': datasetStore.hasData,
-            'bg-yellow-500 animate-pulse': datasetStore.loading,
+            'animate-pulse bg-yellow-500': datasetStore.loading,
             'bg-neutral-400': !datasetStore.hasData && !datasetStore.loading,
           }"
         />

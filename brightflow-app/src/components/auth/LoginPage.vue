@@ -26,11 +26,11 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex-1 flex items-center justify-center bg-default">
+  <div class="flex flex-1 items-center justify-center bg-default">
     <div class="w-full max-w-sm">
-      <div class="text-center mb-8">
+      <div class="mb-8 text-center">
         <h1 class="text-2xl font-semibold text-highlighted">Brightflow</h1>
-        <p class="text-sm text-muted mt-1">Sign in to continue</p>
+        <p class="mt-1 text-sm text-muted">Sign in to continue</p>
       </div>
 
       <form class="space-y-4" @submit.prevent="handleSubmit">

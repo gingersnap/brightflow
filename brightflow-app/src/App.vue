@@ -102,12 +102,12 @@ async function handleLogout(): Promise<void> {
 <template>
   <UApp>
     <!-- Auth loading state -->
-    <div v-if="authStore.loading" class="h-screen flex items-center justify-center bg-default">
+    <div v-if="authStore.loading" class="flex h-screen items-center justify-center bg-default">
       <p class="text-muted">Loading...</p>
     </div>
 
     <!-- Login page -->
-    <div v-else-if="!authStore.isAuthenticated" class="h-screen flex flex-col bg-default">
+    <div v-else-if="!authStore.isAuthenticated" class="flex h-screen flex-col bg-default">
       <LoginPage />
     </div>
 
@@ -121,7 +121,7 @@ async function handleLogout(): Promise<void> {
         @close="showDatasetPicker = false"
       />
 
-      <div class="h-screen flex flex-col bg-default">
+      <div class="flex h-screen flex-col bg-default">
         <!-- Header with change dataset action -->
         <AppHeader
           :current-dataset="currentDataset"
@@ -131,14 +131,14 @@ async function handleLogout(): Promise<void> {
 
         <!-- System mode - works without a dataset -->
         <template v-if="uiStore.showSystem">
-          <div class="flex-1 min-h-0 overflow-hidden relative">
+          <div class="relative min-h-0 flex-1 overflow-hidden">
             <SystemView />
           </div>
         </template>
 
         <!-- Connect mode - works without a dataset -->
         <template v-else-if="uiStore.showConnect">
-          <div class="flex-1 min-h-0 overflow-hidden">
+          <div class="min-h-0 flex-1 overflow-hidden">
             <ConnectView />
           </div>
         </template>
@@ -149,14 +149,14 @@ async function handleLogout(): Promise<void> {
           <template v-if="uiStore.appMode === 'explore'">
             <FilterBar />
             <QueryBuilder />
-            <div class="flex-1 min-h-0 overflow-hidden">
+            <div class="min-h-0 flex-1 overflow-hidden">
               <ResultsPanel />
             </div>
           </template>
 
           <!-- Insights mode -->
           <template v-else>
-            <div class="flex-1 min-h-0 overflow-hidden">
+            <div class="min-h-0 flex-1 overflow-hidden">
               <InsightsView />
             </div>
           </template>
@@ -164,7 +164,7 @@ async function handleLogout(): Promise<void> {
 
         <!-- Welcome landing page when no dataset is loaded -->
         <template v-else>
-          <div v-if="loadingTable" class="flex-1 flex items-center justify-center">
+          <div v-if="loadingTable" class="flex flex-1 items-center justify-center">
             <p class="text-muted">Loading dataset...</p>
           </div>
           <WelcomeLanding

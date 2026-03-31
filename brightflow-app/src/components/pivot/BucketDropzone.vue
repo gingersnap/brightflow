@@ -127,9 +127,9 @@ function handleChange(evt: DragEvent): void {
 </script>
 
 <template>
-  <div class="flex flex-col h-full min-h-[120px]">
+  <div class="flex h-full min-h-[120px] flex-col">
     <!-- Header -->
-    <div class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">
+    <div class="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">
       {{ title }}
     </div>
 
@@ -138,7 +138,7 @@ function handleChange(evt: DragEvent): void {
       :list="localFields"
       :group="{ name: 'columns', pull: false, put: canAcceptMore() }"
       item-key="id"
-      class="flex-1 min-h-[80px] rounded-md border-2 border-dashed p-2 transition-colors"
+      class="min-h-[80px] flex-1 rounded-md border-2 border-dashed p-2 transition-colors"
       :class="{
         'border-primary bg-primary/5': canAcceptMore(),
         'border-muted/30 bg-muted/5 opacity-50': disabled,
@@ -150,11 +150,11 @@ function handleChange(evt: DragEvent): void {
     >
       <template #item="{ element }">
         <div
-          class="flex items-center gap-2 px-2 py-1.5 mb-1 rounded-md bg-default border border-default hover:border-primary/50 cursor-grab active:cursor-grabbing transition-colors group"
+          class="group mb-1 flex cursor-grab items-center gap-2 rounded-md border border-default bg-default px-2 py-1.5 transition-colors hover:border-primary/50 active:cursor-grabbing"
         >
-          <GripVertical class="w-3 h-3 text-muted/50" />
-          <component :is="getTypeIcon(element)" class="w-3.5 h-3.5 text-muted flex-shrink-0" />
-          <span class="text-sm text-default truncate flex-1">
+          <GripVertical class="h-3 w-3 text-muted/50" />
+          <component :is="getTypeIcon(element)" class="h-3.5 w-3.5 flex-shrink-0 text-muted" />
+          <span class="flex-1 truncate text-sm text-default">
             {{ element.column }}
           </span>
 
@@ -171,10 +171,10 @@ function handleChange(evt: DragEvent): void {
 
           <!-- Remove button -->
           <button
-            class="p-0.5 rounded hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+            class="rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 hover:bg-muted"
             @click.stop="emit('remove', element.id)"
           >
-            <X class="w-3.5 h-3.5 text-muted hover:text-default" />
+            <X class="h-3.5 w-3.5 text-muted hover:text-default" />
           </button>
         </div>
       </template>
@@ -183,7 +183,7 @@ function handleChange(evt: DragEvent): void {
       <template #footer>
         <div
           v-if="localFields.length === 0"
-          class="flex items-center justify-center h-full text-xs py-4"
+          class="flex h-full items-center justify-center py-4 text-xs"
           :class="disabled ? 'text-muted/50' : 'text-muted/70'"
         >
           {{ disabled ? disabledMessage : 'Drop columns here' }}

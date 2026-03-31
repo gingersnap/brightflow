@@ -52,7 +52,7 @@ function formatCell(value: unknown, dtype: string): string {
 </script>
 
 <template>
-  <div class="overflow-auto h-full">
+  <div class="h-full overflow-auto">
     <UTable :data="tableData" :columns="tableColumns" class="w-full" />
   </div>
 </template>

@@ -313,29 +313,29 @@ function isNumeric(dtype: string | undefined): boolean {
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
+  <div class="flex h-full flex-col">
     <!-- Empty state if no data -->
-    <div v-if="!pivotData" class="flex items-center justify-center h-full text-muted">
+    <div v-if="!pivotData" class="flex h-full items-center justify-center text-muted">
       <div class="text-center">
         <p class="text-sm">No pivot data</p>
-        <p class="text-xs text-muted/70 mt-1">Configure your pivot and run the query</p>
+        <p class="mt-1 text-xs text-muted/70">Configure your pivot and run the query</p>
       </div>
     </div>
 
     <!-- Grouping toolbar -->
     <div
       v-if="hasGrouping && pivotData"
-      class="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b border-default text-xs"
+      class="flex items-center gap-2 border-b border-default bg-muted/30 px-3 py-1.5 text-xs"
     >
       <span class="text-muted">Groups:</span>
       <button
-        class="px-2 py-0.5 rounded hover:bg-muted/50 text-muted hover:text-default transition-colors"
+        class="rounded px-2 py-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
         @click="expandAll"
       >
         Expand all
       </button>
       <button
-        class="px-2 py-0.5 rounded hover:bg-muted/50 text-muted hover:text-default transition-colors"
+        class="rounded px-2 py-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
         @click="collapseAll"
       >
         Collapse all
@@ -352,7 +352,7 @@ function isNumeric(dtype: string | undefined): boolean {
             <th
               v-for="col in pivotData.indexColumns"
               :key="'idx-' + col.name"
-              class="px-3 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wide border-b border-default bg-muted/50"
+              class="border-b border-default bg-muted/50 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted uppercase"
             >
               {{ col.name }}
             </th>
@@ -361,7 +361,7 @@ function isNumeric(dtype: string | undefined): boolean {
             <th
               v-for="col in pivotData.valueColumns"
               :key="'val-' + col.name"
-              class="px-3 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wide border-b border-default bg-muted/50"
+              class="border-b border-default bg-muted/50 px-3 py-2 text-right text-xs font-semibold tracking-wide text-muted uppercase"
             >
               {{ col.name }}
             </th>
@@ -374,21 +374,21 @@ function isNumeric(dtype: string | undefined): boolean {
             <!-- Group header row -->
             <tr
               v-if="row.isGroup && row.groupKey"
-              class="bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors"
+              class="cursor-pointer bg-muted/40 transition-colors hover:bg-muted/60"
               @click="pivotStore.toggleGroup(row.groupKey)"
             >
               <!-- Group label with expand/collapse icon -->
               <td
                 :colspan="hasGrouping ? pivotData.indexColumns.length : 1"
-                class="px-3 py-2 border-b border-default font-semibold"
+                class="border-b border-default px-3 py-2 font-semibold"
               >
                 <div class="flex items-center gap-2">
                   <component
                     :is="row.isCollapsed ? ChevronRight : ChevronDown"
-                    class="w-4 h-4 text-muted"
+                    class="h-4 w-4 text-muted"
                   />
                   <span>{{ row.groupLabel }}</span>
-                  <span class="text-xs text-muted font-normal">({{ row.rowCount }})</span>
+                  <span class="text-xs font-normal text-muted">({{ row.rowCount }})</span>
                 </div>
               </td>
 
@@ -396,7 +396,7 @@ function isNumeric(dtype: string | undefined): boolean {
               <td
                 v-for="(value, idx) in row.dataValues"
                 :key="'subtotal-' + idx"
-                class="px-3 py-2 text-right border-b border-default tabular-nums font-semibold"
+                class="border-b border-default px-3 py-2 text-right font-semibold tabular-nums"
                 :class="{
                   'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype),
                 }"
@@ -408,14 +408,14 @@ function isNumeric(dtype: string | undefined): boolean {
                 v-if="row.dataValues.length === 0"
                 v-for="idx in pivotData.valueColumns.length"
                 :key="'empty-' + idx"
-                class="px-3 py-2 border-b border-default"
+                class="border-b border-default px-3 py-2"
               />
             </tr>
 
             <!-- Regular data row -->
             <tr
               v-else
-              class="hover:bg-muted/30 transition-colors"
+              class="transition-colors hover:bg-muted/30"
               :class="{ 'pl-4': row.level > 0 }"
             >
               <!-- Index cells (row labels) -->
@@ -424,7 +424,7 @@ function isNumeric(dtype: string | undefined): boolean {
                 <td
                   v-for="(value, idx) in row.displayIndexValues || row.indexValues"
                   :key="'idx-' + idx"
-                  class="px-3 py-2 border-b border-default/50"
+                  class="border-b border-default/50 px-3 py-2"
                   :class="{ 'pl-8': idx === 0 && row.level > 0 }"
                 >
                   {{ formatValue(value, pivotData.indexColumns[idx + row.level]?.dtype) }}
@@ -434,7 +434,7 @@ function isNumeric(dtype: string | undefined): boolean {
                 <td
                   v-for="(value, idx) in row.indexValues"
                   :key="'idx-' + idx"
-                  class="px-3 py-2 border-b border-default/50 font-medium"
+                  class="border-b border-default/50 px-3 py-2 font-medium"
                 >
                   {{ formatValue(value, pivotData.indexColumns[idx]?.dtype) }}
                 </td>
@@ -444,7 +444,7 @@ function isNumeric(dtype: string | undefined): boolean {
               <td
                 v-for="(value, idx) in row.dataValues"
                 :key="'val-' + idx"
-                class="px-3 py-2 text-right border-b border-default/50 tabular-nums"
+                class="border-b border-default/50 px-3 py-2 text-right tabular-nums"
                 :class="{
                   'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype),
                 }"
@@ -459,14 +459,14 @@ function isNumeric(dtype: string | undefined): boolean {
           <tr v-if="columnTotals" class="bg-primary/10 font-bold">
             <td
               :colspan="pivotData.indexColumns.length"
-              class="px-3 py-2 border-t-2 border-primary/30"
+              class="border-t-2 border-primary/30 px-3 py-2"
             >
               Total
             </td>
             <td
               v-for="(value, idx) in columnTotals"
               :key="'total-' + idx"
-              class="px-3 py-2 text-right font-mono tabular-nums border-t-2 border-primary/30"
+              class="border-t-2 border-primary/30 px-3 py-2 text-right font-mono tabular-nums"
             >
               {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
             </td>

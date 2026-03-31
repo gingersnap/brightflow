@@ -1,5 +1,3 @@
-import { URL, fileURLToPath } from 'node:url';
-
 import ui from '@nuxt/ui/vite';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite-plus';
@@ -14,12 +12,16 @@ export default defineConfig({
     tabWidth: 2,
     useTabs: false,
     sortImports: {},
+    sortTailwindcss: {
+      stylesheet: './src/assets/main.css',
+      attributes: [':class'],
+    },
   },
   lint: {
     ignorePatterns: ['dist/**', 'src/types/generated/**'],
     options: {
       typeAware: true,
-      typeCheck: false, // Tsgolint alpha: Vue SFC resolution issues — re-enable when stable
+      typeCheck: true,
     },
     rules: {
       'no-console': 'warn',
@@ -77,10 +79,11 @@ export default defineConfig({
       },
     }),
   ],
+  staged: {
+    '*.{ts,vue}': 'vp check --fix',
+  },
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('src', import.meta.url)),
-    },
+    tsconfigPaths: true,
   },
   server: {
     forwardConsole: true,

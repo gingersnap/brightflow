@@ -24,10 +24,10 @@ const rootNodes = computed(() => {
 <template>
   <div class="h-full overflow-y-auto">
     <!-- Loading state -->
-    <div v-if="insightsStore.loading" class="flex items-center justify-center h-64">
+    <div v-if="insightsStore.loading" class="flex h-64 items-center justify-center">
       <div class="text-center">
         <div
-          class="inline-block w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-3"
+          class="mb-3 inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"
         />
         <p class="text-sm text-muted">Running analysis...</p>
       </div>
@@ -35,32 +35,32 @@ const rootNodes = computed(() => {
 
     <!-- Error state -->
     <div v-else-if="insightsStore.error" class="p-6">
-      <div class="border border-red-500/20 bg-red-500/5 rounded-lg p-4">
+      <div class="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
         <p class="text-sm text-red-500">{{ insightsStore.error }}</p>
       </div>
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="!insightsStore.tree" class="flex items-center justify-center h-64">
+    <div v-else-if="!insightsStore.tree" class="flex h-64 items-center justify-center">
       <div class="text-center">
-        <FileSearch class="w-10 h-10 text-muted mx-auto mb-3" />
+        <FileSearch class="mx-auto mb-3 h-10 w-10 text-muted" />
         <p class="text-sm text-muted">Select a report type and click Run to start analysis</p>
       </div>
     </div>
 
     <!-- No findings -->
-    <div v-else-if="rootNodes.length === 0" class="flex items-center justify-center h-64">
+    <div v-else-if="rootNodes.length === 0" class="flex h-64 items-center justify-center">
       <div class="text-center">
         <p class="text-sm text-muted">No significant findings detected</p>
-        <p class="text-xs text-muted mt-1">Try a different report type or cadence</p>
+        <p class="mt-1 text-xs text-muted">Try a different report type or cadence</p>
       </div>
     </div>
 
     <!-- Results -->
-    <div v-else class="p-4 space-y-3">
+    <div v-else class="space-y-3 p-4">
       <!-- Summary bar -->
       <div
-        class="flex items-center justify-between text-xs text-muted pb-2 border-b border-default"
+        class="flex items-center justify-between border-b border-default pb-2 text-xs text-muted"
       >
         <span>
           {{ insightsStore.firstLevelCount + insightsStore.deeperCount }} analyses

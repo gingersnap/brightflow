@@ -116,7 +116,7 @@ const analysisTypeConfig = computed(() => {
 
 <template>
   <div
-    class="border rounded-lg transition-colors"
+    class="rounded-lg border transition-colors"
     :class="[
       currentDepth === 0 ? 'border-default bg-default' : 'border-default/50 bg-elevated/50',
       currentDepth > 0 ? 'ml-6' : '',
@@ -124,40 +124,40 @@ const analysisTypeConfig = computed(() => {
   >
     <!-- Card header -->
     <button
-      class="w-full flex items-start gap-3 p-4 text-left"
+      class="flex w-full items-start gap-3 p-4 text-left"
       :class="{ 'cursor-pointer hover:bg-elevated/50': hasChildren }"
       @click="hasChildren ? (expanded = !expanded) : undefined"
     >
       <!-- Type icon -->
-      <div class="flex-shrink-0 p-1.5 rounded-md" :class="analysisTypeConfig.bg">
+      <div class="flex-shrink-0 rounded-md p-1.5" :class="analysisTypeConfig.bg">
         <component
           :is="analysisTypeConfig.icon"
-          class="w-4 h-4"
+          class="h-4 w-4"
           :class="analysisTypeConfig.color"
         />
       </div>
 
       <!-- Content -->
-      <div class="flex-1 min-w-0">
+      <div class="min-w-0 flex-1">
         <!-- Summary -->
-        <p class="text-sm text-highlighted leading-relaxed">
+        <p class="text-sm leading-relaxed text-highlighted">
           {{ node.summary }}
         </p>
         <!-- Tech summary badge -->
-        <p class="mt-1 text-xs text-muted font-mono-data">
+        <p class="font-mono-data mt-1 text-xs text-muted">
           {{ node.tech_summary }}
         </p>
       </div>
 
       <!-- Expand/collapse indicator -->
-      <div v-if="hasChildren" class="flex-shrink-0 mt-0.5">
-        <span class="text-xs text-muted mr-1">{{ childNodes.length }}</span>
-        <component :is="expanded ? ChevronDown : ChevronRight" class="w-4 h-4 text-muted inline" />
+      <div v-if="hasChildren" class="mt-0.5 flex-shrink-0">
+        <span class="mr-1 text-xs text-muted">{{ childNodes.length }}</span>
+        <component :is="expanded ? ChevronDown : ChevronRight" class="inline h-4 w-4 text-muted" />
       </div>
     </button>
 
     <!-- Children (drill-down) -->
-    <div v-if="expanded && hasChildren" class="px-4 pb-4 space-y-2">
+    <div v-if="expanded && hasChildren" class="space-y-2 px-4 pb-4">
       <InsightCard
         v-for="child in childNodes"
         :key="child.id['0']"

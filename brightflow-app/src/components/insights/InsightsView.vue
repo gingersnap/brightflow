@@ -36,15 +36,15 @@ function selectCadence(c: Cadence): void {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full flex-col">
     <!-- Toolbar -->
-    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-default bg-default">
+    <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
       <!-- Report type selector -->
-      <div class="flex items-center gap-1 bg-elevated rounded-lg p-0.5">
+      <div class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
         <button
           v-for="rt in reportTypes"
           :key="rt.value"
-          class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
           :class="
             insightsStore.reportType === rt.value
               ? 'bg-default text-highlighted shadow-sm'
@@ -59,12 +59,12 @@ function selectCadence(c: Cadence): void {
       <!-- Cadence selector (only for review) -->
       <div
         v-if="insightsStore.reportType === 'review'"
-        class="flex items-center gap-1 bg-elevated rounded-lg p-0.5"
+        class="flex items-center gap-1 rounded-lg bg-elevated p-0.5"
       >
         <button
           v-for="c in cadences"
           :key="c.value"
-          class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+          class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
           :class="
             insightsStore.cadence === c.value
               ? 'bg-default text-highlighted shadow-sm'
@@ -81,13 +81,13 @@ function selectCadence(c: Cadence): void {
 
       <!-- Run button -->
       <UButton size="sm" :loading="insightsStore.loading" @click="runAnalysis">
-        <Play class="w-3.5 h-3.5 mr-1.5" />
+        <Play class="mr-1.5 h-3.5 w-3.5" />
         Run Analysis
       </UButton>
     </div>
 
     <!-- Results -->
-    <div class="flex-1 min-h-0">
+    <div class="min-h-0 flex-1">
       <InsightsPanel />
     </div>
   </div>

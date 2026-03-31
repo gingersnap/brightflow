@@ -92,9 +92,9 @@ function handleScroll(): void {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full flex-col">
     <!-- Toolbar -->
-    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-default bg-default">
+    <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
       <h2 class="text-sm font-semibold text-highlighted">System</h2>
 
       <div class="flex-1" />
@@ -103,14 +103,14 @@ function handleScroll(): void {
         class="h-2 w-2 rounded-full"
         :class="{
           'bg-green-500': systemStore.isConnected,
-          'bg-yellow-500 animate-pulse': systemStore.status === 'connecting',
+          'animate-pulse bg-yellow-500': systemStore.status === 'connecting',
           'bg-neutral-400': !systemStore.isConnected && systemStore.status !== 'connecting',
         }"
       />
       <span class="text-xs text-muted">{{ systemStore.status }}</span>
 
       <UButton variant="ghost" size="xs" @click="systemStore.clearLogs()">
-        <Trash2 class="w-3.5 h-3.5" />
+        <Trash2 class="h-3.5 w-3.5" />
         Clear
       </UButton>
     </div>
@@ -118,14 +118,14 @@ function handleScroll(): void {
     <!-- Metrics cards -->
     <div
       v-if="systemStore.metrics"
-      class="grid grid-cols-4 gap-3 px-4 py-3 border-b border-default bg-elevated/50"
+      class="grid grid-cols-4 gap-3 border-b border-default bg-elevated/50 px-4 py-3"
     >
       <!-- Process Memory -->
       <div class="rounded-lg border border-default bg-default p-3">
-        <div class="text-xs text-muted mb-1">Process Memory</div>
+        <div class="mb-1 text-xs text-muted">Process Memory</div>
         <div class="text-lg font-semibold text-highlighted">
           {{ formatBytes(systemStore.metrics.processRssBytes) }}
-          <span class="text-xs text-muted font-normal"
+          <span class="text-xs font-normal text-muted"
             >({{ formatBytes(systemStore.metrics.processAnonBytes) }} private)</span
           >
         </div>
@@ -133,14 +133,14 @@ function handleScroll(): void {
 
       <!-- System Memory -->
       <div class="rounded-lg border border-default bg-default p-3">
-        <div class="text-xs text-muted mb-1">System Memory</div>
-        <div class="text-sm font-semibold text-highlighted mb-1.5">
+        <div class="mb-1 text-xs text-muted">System Memory</div>
+        <div class="mb-1.5 text-sm font-semibold text-highlighted">
           {{ formatBytes(systemStore.metrics.systemUsedBytes) }}
-          <span class="text-xs text-muted font-normal"
+          <span class="text-xs font-normal text-muted"
             >/ {{ formatBytes(systemStore.metrics.systemTotalBytes) }}</span
           >
         </div>
-        <div class="w-full h-1.5 bg-elevated rounded-full overflow-hidden">
+        <div class="h-1.5 w-full overflow-hidden rounded-full bg-elevated">
           <div
             class="h-full rounded-full transition-all duration-500"
             :class="
@@ -157,7 +157,7 @@ function handleScroll(): void {
 
       <!-- Process CPU -->
       <div class="rounded-lg border border-default bg-default p-3">
-        <div class="text-xs text-muted mb-1">Process CPU</div>
+        <div class="mb-1 text-xs text-muted">Process CPU</div>
         <div class="text-lg font-semibold text-highlighted">
           {{ formatCpu(systemStore.metrics.cpuPercent) }}
         </div>
@@ -165,7 +165,7 @@ function handleScroll(): void {
 
       <!-- Uptime -->
       <div class="rounded-lg border border-default bg-default p-3">
-        <div class="text-xs text-muted mb-1">Uptime</div>
+        <div class="mb-1 text-xs text-muted">Uptime</div>
         <div class="text-lg font-semibold text-highlighted">
           {{ formatUptime(systemStore.metrics.uptimeSecs) }}
         </div>
@@ -175,12 +175,12 @@ function handleScroll(): void {
     <!-- Log feed -->
     <div
       ref="logContainer"
-      class="flex-1 min-h-0 overflow-y-auto font-mono text-xs"
+      class="min-h-0 flex-1 overflow-y-auto font-mono text-xs"
       @scroll="handleScroll"
     >
       <div
         v-if="systemStore.logs.length === 0"
-        class="flex items-center justify-center h-full text-muted"
+        class="flex h-full items-center justify-center text-muted"
       >
         Waiting for log entries...
       </div>
@@ -188,22 +188,22 @@ function handleScroll(): void {
       <div
         v-for="(entry, i) in systemStore.logs"
         :key="i"
-        class="flex items-start gap-2 px-4 py-1 border-b border-default/50 hover:bg-elevated/50"
+        class="flex items-start gap-2 border-b border-default/50 px-4 py-1 hover:bg-elevated/50"
       >
-        <span class="text-muted shrink-0 w-18">{{ formatTimestamp(entry.timestamp) }}</span>
+        <span class="w-18 shrink-0 text-muted">{{ formatTimestamp(entry.timestamp) }}</span>
         <span
-          class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-none"
+          class="shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-semibold"
           :class="levelColor(entry.level)"
         >
           {{ entry.level }}
         </span>
-        <span class="text-muted shrink-0 max-w-48 truncate">{{ entry.target }}</span>
-        <span class="text-highlighted break-all">{{ entry.message }}</span>
+        <span class="max-w-48 shrink-0 truncate text-muted">{{ entry.target }}</span>
+        <span class="break-all text-highlighted">{{ entry.message }}</span>
       </div>
     </div>
 
     <!-- Auto-scroll indicator -->
-    <div v-if="!autoScroll && systemStore.logs.length > 0" class="absolute bottom-4 right-4">
+    <div v-if="!autoScroll && systemStore.logs.length > 0" class="absolute right-4 bottom-4">
       <UButton size="xs" variant="solid" @click="autoScroll = true"> Scroll to bottom </UButton>
     </div>
   </div>

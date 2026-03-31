@@ -102,8 +102,8 @@ if [ -d "$ROOT_DIR/brightflow-app" ]; then
         echo -e "${YELLOW}[Frontend] node_modules not found, skipping checks${NC}"
         echo "  Run 'npm install' in brightflow-app to enable"
     else
-        echo -e "${BLUE}[Frontend]${NC} Running checks (types + lint + format)..."
-        if ! npm run check:fix --silent 2>/dev/null; then
+        echo -e "${BLUE}[Frontend]${NC} Running staged checks (types + lint + format)..."
+        if ! npx vp staged 2>/dev/null; then
             echo -e "${RED}✗ Frontend checks failed${NC}"
             echo "  Run 'npm run check:fix' in brightflow-app to fix"
             FAILED=1

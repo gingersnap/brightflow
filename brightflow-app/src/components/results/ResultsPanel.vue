@@ -87,14 +87,14 @@ const rowCountDisplay = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full flex-col">
     <!-- Section Header -->
-    <div class="flex items-center justify-between bg-muted/30 border-b border-default">
+    <div class="flex items-center justify-between border-b border-default bg-muted/30">
       <button
-        class="flex items-center gap-2 px-4 py-2 text-left hover:bg-muted/40 transition-colors"
+        class="flex items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-muted/40"
         @click="uiStore.toggleSection('results')"
       >
-        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="w-4 h-4 text-muted" />
+        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted" />
         <h2 class="text-sm font-medium text-default">Results</h2>
         <span v-if="hasCurrentResults" class="text-xs text-muted"> ({{ rowCountDisplay }}) </span>
       </button>
@@ -110,7 +110,7 @@ const rowCountDisplay = computed(() => {
             size="xs"
             @click="uiStore.setViewMode(mode.value)"
           >
-            <component :is="mode.icon" class="w-3.5 h-3.5" />
+            <component :is="mode.icon" class="h-3.5 w-3.5" />
           </UButton>
         </div>
 
@@ -127,30 +127,30 @@ const rowCountDisplay = computed(() => {
           size="xs"
           @click.stop="resultsStore.exportCsv(uiStore.viewMode === 'pivot' ? 'pivot' : 'table')"
         >
-          <Download class="w-3.5 h-3.5 mr-1" />
+          <Download class="mr-1 h-3.5 w-3.5" />
           Export
         </UButton>
       </div>
     </div>
 
     <!-- Content -->
-    <div v-if="!isCollapsed" class="flex-1 overflow-hidden relative">
+    <div v-if="!isCollapsed" class="relative flex-1 overflow-hidden">
       <!-- Loading overlay -->
       <div
         v-if="resultsStore.loading"
-        class="absolute inset-0 bg-default/80 flex items-center justify-center z-10"
+        class="absolute inset-0 z-10 flex items-center justify-center bg-default/80"
       >
         <div class="flex items-center gap-2 text-muted">
-          <Loader2 class="w-5 h-5 animate-spin" />
+          <Loader2 class="h-5 w-5 animate-spin" />
           <span>Executing query...</span>
         </div>
       </div>
 
       <!-- Error state -->
-      <div v-else-if="resultsStore.error" class="flex items-center justify-center h-full">
-        <div class="text-center p-8 max-w-md">
-          <div class="text-red-500 text-sm font-medium mb-2">Query Error</div>
-          <div class="text-muted text-sm">{{ resultsStore.error }}</div>
+      <div v-else-if="resultsStore.error" class="flex h-full items-center justify-center">
+        <div class="max-w-md p-8 text-center">
+          <div class="mb-2 text-sm font-medium text-red-500">Query Error</div>
+          <div class="text-sm text-muted">{{ resultsStore.error }}</div>
         </div>
       </div>
 
@@ -162,11 +162,11 @@ const rowCountDisplay = computed(() => {
         >
           <PivotTable />
         </div>
-        <div v-else class="flex items-center justify-center h-full">
-          <div class="text-center p-8">
-            <TableProperties class="w-12 h-12 text-muted/50 mx-auto mb-4" />
+        <div v-else class="flex h-full items-center justify-center">
+          <div class="p-8 text-center">
+            <TableProperties class="mx-auto mb-4 h-12 w-12 text-muted/50" />
             <div class="text-muted">Configure your pivot table</div>
-            <div class="text-sm text-muted/70 mt-1">Drag columns into Values to create a pivot</div>
+            <div class="mt-1 text-sm text-muted/70">Drag columns into Values to create a pivot</div>
           </div>
         </div>
       </template>
@@ -174,9 +174,9 @@ const rowCountDisplay = computed(() => {
       <!-- Table view -->
       <template v-else-if="uiStore.viewMode === 'table'">
         <DataTable v-if="resultsStore.hasTableResults" class="h-full" />
-        <div v-else class="flex items-center justify-center h-full">
-          <div class="text-center p-8">
-            <Table class="w-12 h-12 text-muted/50 mx-auto mb-4" />
+        <div v-else class="flex h-full items-center justify-center">
+          <div class="p-8 text-center">
+            <Table class="mx-auto mb-4 h-12 w-12 text-muted/50" />
             <div class="text-muted">No data loaded</div>
             <div class="text-sm text-muted/70">Upload a file to see data</div>
           </div>
@@ -186,9 +186,9 @@ const rowCountDisplay = computed(() => {
       <!-- Number view (BigNumber) -->
       <template v-else-if="uiStore.viewMode === 'number'">
         <BigNumber v-if="resultsStore.hasResults" class="h-full" />
-        <div v-else class="flex items-center justify-center h-full">
-          <div class="text-center p-8">
-            <Hash class="w-12 h-12 text-muted/50 mx-auto mb-4" />
+        <div v-else class="flex h-full items-center justify-center">
+          <div class="p-8 text-center">
+            <Hash class="mx-auto mb-4 h-12 w-12 text-muted/50" />
             <div class="text-muted">No data for display</div>
           </div>
         </div>
@@ -197,9 +197,9 @@ const rowCountDisplay = computed(() => {
       <!-- Chart view -->
       <template v-else-if="uiStore.viewMode === 'chart'">
         <ChartView v-if="resultsStore.hasTableResults" class="h-full" />
-        <div v-else class="flex items-center justify-center h-full">
-          <div class="text-center p-8">
-            <BarChart3 class="w-12 h-12 text-muted/50 mx-auto mb-4" />
+        <div v-else class="flex h-full items-center justify-center">
+          <div class="p-8 text-center">
+            <BarChart3 class="mx-auto mb-4 h-12 w-12 text-muted/50" />
             <div class="text-muted">No data for chart</div>
           </div>
         </div>
@@ -211,9 +211,9 @@ const rowCountDisplay = computed(() => {
           <DataTable class="w-1/2 border-r border-default" />
           <ChartView class="w-1/2" />
         </div>
-        <div v-else class="flex items-center justify-center h-full">
-          <div class="text-center p-8">
-            <Split class="w-12 h-12 text-muted/50 mx-auto mb-4" />
+        <div v-else class="flex h-full items-center justify-center">
+          <div class="p-8 text-center">
+            <Split class="mx-auto mb-4 h-12 w-12 text-muted/50" />
             <div class="text-muted">No data loaded</div>
           </div>
         </div>

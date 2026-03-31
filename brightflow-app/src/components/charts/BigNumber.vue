@@ -166,16 +166,16 @@ const aggregationLabel = computed((): string | null => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center h-full p-8">
+  <div class="flex h-full items-center justify-center p-8">
     <!-- No data state -->
     <div v-if="!displayData" class="text-center text-muted">
-      <div class="text-lg mb-2">No numeric data</div>
+      <div class="mb-2 text-lg">No numeric data</div>
       <div class="text-sm text-muted/70">Add a value field to see metrics</div>
     </div>
 
     <!-- Single value display -->
     <div v-else-if="displayData.type === 'single'" class="text-center">
-      <div class="text-6xl font-bold text-default tabular-nums mb-2">
+      <div class="mb-2 text-6xl font-bold text-default tabular-nums">
         {{ formatPrimary(displayData.value, displayData.dtype) }}
       </div>
       <div class="text-lg text-muted">
@@ -185,8 +185,8 @@ const aggregationLabel = computed((): string | null => {
 
     <!-- Multi-value display (pivot with one row, multiple values) -->
     <div v-else-if="displayData.type === 'multi'" class="flex flex-wrap justify-center gap-8">
-      <div v-for="(item, idx) in displayData.values" :key="idx" class="text-center px-6">
-        <div class="text-5xl font-bold text-default tabular-nums mb-2">
+      <div v-for="(item, idx) in displayData.values" :key="idx" class="px-6 text-center">
+        <div class="mb-2 text-5xl font-bold text-default tabular-nums">
           {{ formatPrimary(item.value, item.dtype) }}
         </div>
         <div class="text-sm text-muted">{{ item.label }}</div>
@@ -197,7 +197,7 @@ const aggregationLabel = computed((): string | null => {
     <div v-else-if="displayData.type === 'aggregate'" class="text-center">
       <!-- Primary metric -->
       <div class="mb-8">
-        <div class="text-6xl font-bold text-default tabular-nums mb-2">
+        <div class="mb-2 text-6xl font-bold text-default tabular-nums">
           {{ formatPrimary(displayData.primary.value, displayData.dtype) }}
         </div>
         <div class="text-lg text-muted">
@@ -207,11 +207,11 @@ const aggregationLabel = computed((): string | null => {
 
       <!-- Secondary metrics -->
       <div class="flex justify-center gap-8">
-        <div v-for="(item, idx) in displayData.secondary" :key="idx" class="text-center px-4">
+        <div v-for="(item, idx) in displayData.secondary" :key="idx" class="px-4 text-center">
           <div class="text-2xl font-semibold text-default tabular-nums">
             {{ formatNumber(item.value, displayData.dtype) }}
           </div>
-          <div class="text-xs text-muted mt-1">{{ item.label }}</div>
+          <div class="mt-1 text-xs text-muted">{{ item.label }}</div>
         </div>
       </div>
     </div>

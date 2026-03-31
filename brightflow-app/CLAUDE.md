@@ -27,8 +27,9 @@ Shared types in `src/types/index.ts`. Generated types from Rust (via ts-rs) in `
 ## Linting & Formatting
 
 - **Vite+** unified toolchain: Oxlint (linter), Oxfmt (formatter), tsgolint (type checker)
-- Formatter config: semicolons: always, trailing commas: all, single quotes, 100 char line width
-- All config in `vite.config.ts` under `lint` and `fmt` blocks
+- Formatter config: semicolons: always, trailing commas: all, single quotes, 100 char line width, Tailwind class sorting enabled
+- All config in `vite.config.ts` under `fmt`, `lint`, and `staged` blocks
+- Path aliases resolved from `tsconfig.json` via `resolve.tsconfigPaths` (single source of truth)
 
 Run `npm run check` to verify all (types + lint + format). Run `npm run check:fix` to auto-fix. Run `npm run fmt` to format only.
 

@@ -358,9 +358,9 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
 </script>
 
 <template>
-  <div class="flex flex-col h-full p-4">
+  <div class="flex h-full flex-col p-4">
     <!-- Chart config -->
-    <div class="flex items-center gap-4 mb-4 flex-wrap">
+    <div class="mb-4 flex flex-wrap items-center gap-4">
       <!-- Chart type -->
       <div class="flex items-center gap-2">
         <label class="text-xs text-muted">Type:</label>
@@ -400,7 +400,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
         />
         <button
           v-if="numericColumns.length > 1 && !allYAxesSelected"
-          class="text-xs text-primary hover:text-primary/80 transition-colors"
+          class="text-xs text-primary transition-colors hover:text-primary/80"
           @click="selectAllYAxes"
         >
           All
@@ -422,24 +422,24 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
       <!-- Horizontal toggle (for bar) -->
       <label
         v-if="showHorizontalOption"
-        class="flex items-center gap-1.5 text-xs text-muted cursor-pointer"
+        class="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
       >
         <USwitch v-model="horizontal" size="xs" />
         Horizontal
       </label>
 
       <!-- Show values toggle -->
-      <label class="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+      <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
         <USwitch v-model="showValues" size="xs" />
         Values
       </label>
     </div>
 
     <!-- Chart -->
-    <div class="flex-1 min-h-0">
-      <VChart v-if="chartOption" :option="chartOption" autoresize class="w-full h-full" />
+    <div class="min-h-0 flex-1">
+      <VChart v-if="chartOption" :option="chartOption" autoresize class="h-full w-full" />
 
-      <div v-else-if="!canShowChart" class="flex items-center justify-center h-full text-muted">
+      <div v-else-if="!canShowChart" class="flex h-full items-center justify-center text-muted">
         <div class="text-center">
           <div class="mb-2">Cannot display chart</div>
           <div class="text-sm text-muted/70">Requires at least one numeric column for Y axis</div>

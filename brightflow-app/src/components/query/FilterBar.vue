@@ -98,10 +98,10 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
   <div class="border-b border-default">
     <!-- Section Header -->
     <button
-      class="flex items-center gap-2 w-full px-4 py-2 bg-muted/30 text-left hover:bg-muted/40 transition-colors"
+      class="flex w-full items-center gap-2 bg-muted/30 px-4 py-2 text-left transition-colors hover:bg-muted/40"
       @click="uiStore.toggleSection('filter')"
     >
-      <component :is="isCollapsed ? ChevronRight : ChevronDown" class="w-4 h-4 text-muted" />
+      <component :is="isCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted" />
       <h2 class="text-sm font-medium text-default">Filters & Options</h2>
       <span v-if="hasActiveFilters" class="text-xs text-muted">
         ({{ queryStore.filters.filter((f) => f.column).length }} active)
@@ -109,14 +109,14 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
     </button>
 
     <!-- Content -->
-    <div v-if="!isCollapsed" class="px-4 py-2 bg-muted/10 border-t border-default space-y-2">
+    <div v-if="!isCollapsed" class="space-y-2 border-t border-default bg-muted/10 px-4 py-2">
       <!-- Filters Row -->
-      <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs text-muted font-medium w-12">Filter:</span>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="w-12 text-xs font-medium text-muted">Filter:</span>
         <div
           v-for="filter in queryStore.filters"
           :key="filter.id"
-          class="flex items-center gap-1 pl-2 pr-1 py-1 rounded-md bg-default border border-default text-xs group"
+          class="group flex items-center gap-1 rounded-md border border-default bg-default py-1 pr-1 pl-2 text-xs"
         >
           <!-- Column selector -->
           <USelectMenu
@@ -156,26 +156,26 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
 
           <!-- Remove button -->
           <button
-            class="p-0.5 rounded hover:bg-muted/50 text-muted hover:text-default transition-colors"
+            class="rounded p-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
             @click="queryStore.removeFilter(filter.id)"
           >
-            <X class="w-3 h-3" />
+            <X class="h-3 w-3" />
           </button>
         </div>
 
         <!-- Add filter button -->
         <button
-          class="flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-default hover:bg-muted/30 rounded-md transition-colors"
+          class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-muted/30 hover:text-default"
           @click="queryStore.addFilter()"
         >
-          <Plus class="w-3.5 h-3.5" />
+          <Plus class="h-3.5 w-3.5" />
           <span>Add</span>
         </button>
       </div>
 
       <!-- Limit Row -->
       <div class="flex items-center gap-2">
-        <span class="text-xs text-muted font-medium w-12">Limit:</span>
+        <span class="w-12 text-xs font-medium text-muted">Limit:</span>
         <USelectMenu
           :model-value="queryStore.limit"
           :items="limitOptions"
