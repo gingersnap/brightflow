@@ -4,7 +4,8 @@ import { usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
-import type { Aggregation as AggFn, FilterOp, Operation } from '@/types/generated';
+import type { AggFn } from '@/types';
+import type { Operation } from '@/types/generated';
 
 /**
  * WebSocket query execution composable
@@ -29,7 +30,7 @@ export function useWsQuery() {
         if (filter.column != null && filter.op !== '') {
           ops.push({
             column: filter.column,
-            op: filter.op as FilterOp,
+            op: filter.op,
             type: 'filter',
             value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
           });
@@ -69,7 +70,8 @@ export function useWsQuery() {
     const unsubscribeError = connectionStore.onMessage(
       'error',
       (message: Record<string, unknown>) => {
-        resultsStore.setError((message['message'] as string) ?? 'Query failed');
+        const msg = message['message'];
+        resultsStore.setError(typeof msg === 'string' ? msg : 'Query failed');
         unsubscribeResult();
         unsubscribeError();
       },
@@ -96,7 +98,7 @@ export function useWsQuery() {
           if (filter.column != null && filter.op !== '') {
             ops.push({
               column: filter.column,
-              op: filter.op as FilterOp,
+              op: filter.op,
               type: 'filter',
               value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
             });
@@ -114,7 +116,7 @@ export function useWsQuery() {
         const rowCols = pivotStore.rowFields.map((f) => f.column);
         const colField =
           pivotStore.columnFields.length > 0 ? (pivotStore.columnFields[0]?.column ?? null) : null;
-        const aggFunc = (valueField.aggregation ?? 'count') as AggFn;
+        const aggFunc: AggFn = valueField.aggregation ?? 'count';
 
         // Determine the best operation based on configuration
         if (rowCols.length === 0 && colField == null) {
@@ -209,7 +211,8 @@ export function useWsQuery() {
     const unsubscribeError = connectionStore.onMessage(
       'error',
       (message: Record<string, unknown>) => {
-        resultsStore.setError((message['message'] as string) ?? 'Query failed');
+        const msg = message['message'];
+        resultsStore.setError(typeof msg === 'string' ? msg : 'Query failed');
         unsubscribeResult();
         unsubscribeError();
       },

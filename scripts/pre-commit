@@ -103,12 +103,14 @@ if [ -d "$ROOT_DIR/brightflow-app" ]; then
         echo "  Run 'npm install' in brightflow-app to enable"
     else
         echo -e "${BLUE}[Frontend]${NC} Running checks (types + lint + format)..."
-        if ! npm run check --silent 2>/dev/null; then
+        if ! npm run check:fix --silent 2>/dev/null; then
             echo -e "${RED}✗ Frontend checks failed${NC}"
             echo "  Run 'npm run check:fix' in brightflow-app to fix"
             FAILED=1
         else
             echo -e "${GREEN}✓ Frontend checks${NC}"
+            # Stage any auto-fixed formatting (auto-imports.d.ts, components.d.ts, etc.)
+            git add "$ROOT_DIR/brightflow-app"/*.d.ts 2>/dev/null || true
         fi
     fi
 fi

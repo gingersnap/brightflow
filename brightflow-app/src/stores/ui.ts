@@ -6,12 +6,24 @@ import type { ChartType, ViewMode } from '@/types';
 export type AppMode = 'explore' | 'insights';
 type SectionName = 'filter' | 'summarize' | 'results';
 
+function isAppMode(s: string): s is AppMode {
+  return s === 'explore' || s === 'insights';
+}
+
+function isViewMode(s: string): s is ViewMode {
+  return ['table', 'pivot', 'chart', 'split', 'number'].includes(s);
+}
+
+function isChartType(s: string): s is ChartType {
+  return ['bar', 'line', 'pie', 'scatter'].includes(s);
+}
+
 export const useUiStore = defineStore('ui', () => {
   // App mode: top-level navigation between Explore and Insights
   const storedMode = localStorage.getItem('brightflow-app-mode');
   const initialConnect = storedMode === 'connect';
   const appMode = ref<AppMode>(
-    initialConnect ? 'explore' : ((storedMode as AppMode | null) ?? 'explore'),
+    !initialConnect && storedMode != null && isAppMode(storedMode) ? storedMode : 'explore',
   );
 
   // Connect is separate from Explore/Insights
@@ -21,13 +33,15 @@ export const useUiStore = defineStore('ui', () => {
   const showSystem = ref(storedMode === 'system');
 
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
+  const storedViewMode = localStorage.getItem('brightflow-view-mode');
   const viewMode = ref<ViewMode>(
-    (localStorage.getItem('brightflow-view-mode') as ViewMode | null) ?? 'table',
+    storedViewMode != null && isViewMode(storedViewMode) ? storedViewMode : 'table',
   );
 
   // Chart type: 'bar' | 'line' | 'pie' | 'scatter'
+  const storedChartType = localStorage.getItem('brightflow-chart-type');
   const chartType = ref<ChartType>(
-    (localStorage.getItem('brightflow-chart-type') as ChartType | null) ?? 'bar',
+    storedChartType != null && isChartType(storedChartType) ? storedChartType : 'bar',
   );
 
   // Section collapsed states (Filter collapsed by default, others open)

@@ -61,12 +61,13 @@ export const useConnectionStore = defineStore('connection', () => {
   const messageHandlers = new Map<string, MessageHandler[]>();
 
   function handleMessage(message: Record<string, unknown>): void {
-    const type = message['type'] as string;
+    const type = String(message['type']);
     console.log('[WS] Received:', type, message);
 
     switch (type) {
       case 'connected': {
-        serverVersion.value = (message['serverVersion'] as string) ?? null;
+        const sv = message['serverVersion'];
+        serverVersion.value = typeof sv === 'string' ? sv : null;
         status.value = 'connected';
         break;
       }

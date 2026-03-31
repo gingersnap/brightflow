@@ -57,23 +57,24 @@ export const useSystemStore = defineStore('system', () => {
 
       ws.onmessage = (event: MessageEvent) => {
         try {
-          const data = JSON.parse(event.data as string) as Record<string, unknown>;
+          // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
+          const data: Record<string, unknown> = JSON.parse(String(event.data));
 
           if (data['type'] === 'systemMetrics') {
             metrics.value = {
-              cpuPercent: data['cpuPercent'] as number,
-              processAnonBytes: data['processAnonBytes'] as number,
-              processRssBytes: data['processRssBytes'] as number,
-              systemTotalBytes: data['systemTotalBytes'] as number,
-              systemUsedBytes: data['systemUsedBytes'] as number,
-              uptimeSecs: data['uptimeSecs'] as number,
+              cpuPercent: Number(data['cpuPercent']),
+              processAnonBytes: Number(data['processAnonBytes']),
+              processRssBytes: Number(data['processRssBytes']),
+              systemTotalBytes: Number(data['systemTotalBytes']),
+              systemUsedBytes: Number(data['systemUsedBytes']),
+              uptimeSecs: Number(data['uptimeSecs']),
             };
           } else if (data['type'] === 'logEntry') {
             const entry: LogEntry = {
-              level: data['level'] as string,
-              message: data['message'] as string,
-              target: data['target'] as string,
-              timestamp: data['timestamp'] as string,
+              level: String(data['level']),
+              message: String(data['message']),
+              target: String(data['target']),
+              timestamp: String(data['timestamp']),
             };
             logs.value.push(entry);
             // Cap the array

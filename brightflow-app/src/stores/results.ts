@@ -19,8 +19,7 @@ function escapeCsvCell(cell: unknown): string {
   if (cell === null || cell === undefined) {
     return '';
   }
-  const str =
-    typeof cell === 'object' ? JSON.stringify(cell) : String(cell as string | number | boolean);
+  const str = typeof cell === 'string' ? cell : JSON.stringify(cell);
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replaceAll('"', '""')}"`;
   }

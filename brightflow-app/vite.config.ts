@@ -28,7 +28,7 @@ export default defineConfig({
       'no-shadow': 'error',
       'require-await': 'error',
       '@typescript-eslint/strict-boolean-expressions': 'error',
-      '@typescript-eslint/no-unsafe-type-assertion': 'off', // Pending: type guards for WS/API data
+      '@typescript-eslint/no-unsafe-type-assertion': 'error',
       'unicorn/consistent-function-scoping': 'error',
       'unicorn/custom-error-definition': 'error',
 

@@ -34,6 +34,7 @@ export const useInsightsStore = defineStore('insights', () => {
     try {
       const result = await insightsApi.runReview(datasetStore.id, selectedCadence);
       if (result) {
+        // oxlint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Backend-generated tree shape
         tree.value = result.tree as AnalysisTree;
         executionTimeMs.value = result.executionTimeMs;
         nodeCount.value = result.nodeCount;
@@ -63,6 +64,7 @@ export const useInsightsStore = defineStore('insights', () => {
     try {
       const result = await insightsApi.runTrends(datasetStore.id);
       if (result) {
+        // oxlint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Backend-generated tree shape
         tree.value = result.tree as AnalysisTree;
         executionTimeMs.value = result.executionTimeMs;
         nodeCount.value = result.nodeCount;

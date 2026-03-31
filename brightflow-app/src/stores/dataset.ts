@@ -134,7 +134,7 @@ export const useDatasetStore = defineStore('dataset', () => {
 
       const result = await datasetApi.query(id.value, ops);
       if (result) {
-        resultsStore.setTableResults(result as unknown as Record<string, unknown>);
+        resultsStore.setTableResults(result);
       }
       // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
     } catch (err) {

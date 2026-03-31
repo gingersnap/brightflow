@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { Aggregation, Filter, PivotState, QuerySections } from '@/types';
-import type { Aggregation as AggFn, FilterOp, Operation } from '@/types/generated';
+import type { Operation } from '@/types/generated';
 
 type SectionKey = keyof QuerySections;
 
@@ -52,7 +52,7 @@ export const useQueryStore = defineStore('query', () => {
         if (filter.column != null && filter.op !== '') {
           ops.push({
             column: filter.column,
-            op: filter.op as FilterOp,
+            op: filter.op,
             type: 'filter',
             value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
           });
@@ -65,7 +65,7 @@ export const useQueryStore = defineStore('query', () => {
       ops.push({
         aggs: aggregations.value.map((agg) => ({
           column: agg.column,
-          function: agg.function as AggFn,
+          function: agg.function,
           alias: agg.alias || `${agg.function}_${agg.column}`,
         })),
         by: groupByColumns.value,
@@ -76,7 +76,7 @@ export const useQueryStore = defineStore('query', () => {
     // Add pivot
     if (sections.value.pivot.enabled && pivot.value.values != null && pivot.value.columns != null) {
       ops.push({
-        agg: pivot.value.agg as AggFn,
+        agg: pivot.value.agg,
         columns: pivot.value.columns,
         index: pivot.value.index,
         type: 'pivot',

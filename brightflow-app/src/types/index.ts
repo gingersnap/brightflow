@@ -2,8 +2,12 @@
  * Shared type definitions for Brightflow
  */
 
+// Import generated types used in interfaces below
+import type { Aggregation as AggFn, FilterOp } from './generated';
+
 // Re-export generated types from Rust backend
 export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './generated';
+export type { AggFn, FilterOp };
 // Also re-export remaining generated types used across the app
 export type {
   DatasetInfo,
@@ -23,7 +27,7 @@ export type {
 export interface Filter {
   id: string;
   column: string | null;
-  op: string;
+  op: FilterOp | '';
   value: unknown;
 }
 
@@ -31,7 +35,7 @@ export interface Filter {
 export interface Aggregation {
   id: string;
   column: string;
-  function: string;
+  function: AggFn;
   alias: string;
 }
 
@@ -55,7 +59,7 @@ export interface PivotState {
   index: string[];
   columns: string | null;
   values: string | null;
-  agg: string;
+  agg: AggFn;
 }
 
 // Pivot field (frontend-only)
@@ -63,7 +67,7 @@ export interface PivotField {
   id: string;
   column: string;
   dtype: string;
-  aggregation?: string;
+  aggregation?: AggFn;
 }
 
 // Frontend-only pivot operation (extends wire format with UI-only fields)

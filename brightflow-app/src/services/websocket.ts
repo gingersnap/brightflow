@@ -83,6 +83,7 @@ export class WebSocketClient {
   }
 
   on<T>(event: WsEventType, handler: WsHandler<T>): () => void {
+    // oxlint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Generics boundary: handlers stored as WsHandler<unknown>
     this.handlers[event].push(handler as WsHandler);
     // Return unsubscribe function
     return () => {
@@ -121,7 +122,8 @@ export class WebSocketClient {
     this.ws.onmessage = (event: MessageEvent): void => {
       console.log('[WebSocket] Raw message:', event.data);
       try {
-        const data = JSON.parse(event.data as string) as Record<string, unknown>;
+        // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
+        const data: Record<string, unknown> = JSON.parse(String(event.data));
 
         // Handle pong silently
         if (data['type'] === 'pong') {
@@ -180,7 +182,7 @@ export class WebSocketClient {
     }
   }
 
-  private emit(event: WsEventType, data: unknown): void {
+  private emit(event: WsEventType, data?: unknown): void {
     this.handlers[event].forEach((handler) => {
       try {
         handler(data);

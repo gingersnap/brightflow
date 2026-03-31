@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import type { PivotField, PivotOperation } from '@/types';
+import type { AggFn, PivotField, PivotOperation } from '@/types';
 
 type BucketName = 'rows' | 'columns' | 'values';
 
@@ -104,11 +104,11 @@ export const usePivotStore = defineStore('pivot', () => {
     columnFields.value = columnFields.value.filter((f) => f.id !== id);
   }
 
-  function addValueField(column: string, dtype: string, aggregation: string | null = null): void {
+  function addValueField(column: string, dtype: string, aggregation: AggFn | null = null): void {
     // Choose default aggregation based on type
     // Numeric types default to sum, strings default to count
     const isNumeric = ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype);
-    const defaultAgg = isNumeric ? 'sum' : 'count';
+    const defaultAgg: AggFn = isNumeric ? 'sum' : 'count';
 
     valueFields.value.push({
       aggregation: aggregation ?? defaultAgg,

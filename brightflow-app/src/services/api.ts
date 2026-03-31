@@ -36,12 +36,18 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const url = `${API_BASE}${endpoint}`;
 
   const { body, ...restOptions } = options;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (
+    restOptions.headers != null &&
+    typeof restOptions.headers === 'object' &&
+    !Array.isArray(restOptions.headers) &&
+    !(restOptions.headers instanceof Headers)
+  ) {
+    Object.assign(headers, restOptions.headers);
+  }
   const config: RequestInit = {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(restOptions.headers as Record<string, string>),
-    },
+    headers,
     ...restOptions,
   };
 
@@ -58,13 +64,15 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
       const authStore = useAuthStore();
       authStore.clearAuth();
     }
-    const data = (await response.json().catch(() => ({}))) as { message?: string };
+    // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
+    const data: { message?: string } = await response.json().catch(() => ({}));
     throw new ApiError(data.message ?? `Request failed: ${response.status}`, response.status, data);
   }
 
   // Handle empty responses
   const text = await response.text();
-  return text ? (JSON.parse(text) as T) : null;
+  // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary: parse returns any
+  return text ? JSON.parse(text) : null;
 }
 
 export const api = {
@@ -169,10 +177,12 @@ export const datasetApi = {
     });
 
     if (!response.ok) {
-      const data = (await response.json().catch(() => ({}))) as { message?: string };
+      // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
+      const data: { message?: string } = await response.json().catch(() => ({}));
       throw new ApiError(data.message ?? 'Upload failed', response.status, data);
     }
 
-    return response.json() as Promise<UploadResponse>;
+    // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary
+    return response.json();
   },
 };
