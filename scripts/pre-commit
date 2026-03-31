@@ -47,8 +47,23 @@ fi
 # cargo audit is optional (requires cargo-audit to be installed)
 if command -v cargo-audit &> /dev/null; then
     echo -e "${BLUE}[Rust]${NC} Running security audit..."
-    if ! cargo audit --quiet 2>/dev/null; then
-        echo -e "${YELLOW}⚠ Security audit found vulnerabilities${NC}"
+    AUDIT_JSON=$(cargo audit --format json --no-fetch 2>/dev/null || true)
+    VULN_COUNT=$(echo "$AUDIT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['vulnerabilities']['count'])" 2>/dev/null || echo "?")
+    if [ "$VULN_COUNT" != "0" ]; then
+        echo -e "${YELLOW}⚠ Security audit: $VULN_COUNT vulnerabilities found${NC}"
+        echo "$AUDIT_JSON" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for v in d['vulnerabilities']['list']:
+    a, p = v['advisory'], v['package']
+    patched = ', '.join(str(x) for x in v.get('versions', {}).get('patched', []))
+    fix = f' (fix: {patched})' if patched else ''
+    print(f\"  {a['id']} {p['name']}@{p['version']}: {a['title'][:70]}{fix}\")
+for wt in ['unmaintained', 'yanked']:
+    items = d.get('warnings', {}).get(wt, [])
+    if items:
+        print(f'  Warnings ({wt}): ' + ', '.join(f\"{w['package']['name']}@{w['package']['version']}\" for w in items))
+" 2>/dev/null
         # Don't fail on audit - just warn
     else
         echo -e "${GREEN}✓ Security audit${NC}"
