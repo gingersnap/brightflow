@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
+
 import type { PivotField, PivotOperation } from '@/types';
 
 type BucketName = 'rows' | 'columns' | 'values';
@@ -29,41 +30,39 @@ export const usePivotStore = defineStore('pivot', () => {
   // === Computed ===
 
   // Check if pivot is configured (has at least values)
-  const isConfigured = computed(() => {
-    return valueFields.value.length > 0;
-  });
+  const isConfigured = computed(() => valueFields.value.length > 0);
 
   // Check if pivot has row grouping
-  const hasRowGroups = computed(() => {
-    return rowFields.value.length > 0;
-  });
+  const hasRowGroups = computed(() => rowFields.value.length > 0);
 
   // Check if pivot has column breakdown
-  const hasColumnBreakdown = computed(() => {
-    return columnFields.value.length > 0;
-  });
+  const hasColumnBreakdown = computed(() => columnFields.value.length > 0);
 
   // Build operations for API
   const pivotOperation = computed((): PivotOperation | null => {
-    if (!isConfigured.value) return null;
+    if (!isConfigured.value) {
+      return null;
+    }
 
     // For multi-value pivot, we need an enhanced format
     const values = valueFields.value.map((v) => ({
-      column: v.column,
       agg: v.aggregation ?? 'count',
+      column: v.column,
     }));
 
     const firstValue = values[0];
-    if (!firstValue) return null;
+    if (!firstValue) {
+      return null;
+    }
 
     return {
-      type: 'pivot',
-      index: rowFields.value.map((f) => f.column),
-      columns: columnFields.value.length > 0 ? (columnFields.value[0]?.column ?? null) : null,
-      values: values.length === 1 ? firstValue.column : values,
       agg: values.length === 1 ? firstValue.agg : values.map((v) => v.agg),
+      columns: columnFields.value.length > 0 ? (columnFields.value[0]?.column ?? null) : null,
       includeSubtotals: showSubtotals.value,
       includeTotals: showRowTotals.value || showColumnTotals.value,
+      index: rowFields.value.map((f) => f.column),
+      type: 'pivot',
+      values: values.length === 1 ? firstValue.column : values,
     };
   });
 
@@ -71,12 +70,14 @@ export const usePivotStore = defineStore('pivot', () => {
 
   function addRowField(column: string, dtype: string): void {
     // Check if already added
-    if (rowFields.value.some((f) => f.column === column)) return;
+    if (rowFields.value.some((f) => f.column === column)) {
+      return;
+    }
 
     rowFields.value.push({
-      id: crypto.randomUUID(),
       column,
       dtype,
+      id: crypto.randomUUID(),
     });
   }
 
@@ -92,9 +93,9 @@ export const usePivotStore = defineStore('pivot', () => {
     // Only allow one column field (Metabase behavior)
     columnFields.value = [
       {
-        id: crypto.randomUUID(),
         column,
         dtype,
+        id: crypto.randomUUID(),
       },
     ];
   }
@@ -110,10 +111,10 @@ export const usePivotStore = defineStore('pivot', () => {
     const defaultAgg = isNumeric ? 'sum' : 'count';
 
     valueFields.value.push({
-      id: crypto.randomUUID(),
+      aggregation: aggregation ?? defaultAgg,
       column,
       dtype,
-      aggregation: aggregation ?? defaultAgg,
+      id: crypto.randomUUID(),
     });
   }
 
@@ -204,23 +205,31 @@ export const usePivotStore = defineStore('pivot', () => {
       const idx = rowFields.value.findIndex((f) => f.id === fieldId);
       if (idx !== -1) {
         const removed = rowFields.value.splice(idx, 1)[0];
-        if (removed) field = removed;
+        if (removed) {
+          field = removed;
+        }
       }
     } else if (fromBucket === 'columns') {
       const idx = columnFields.value.findIndex((f) => f.id === fieldId);
       if (idx !== -1) {
         const removed = columnFields.value.splice(idx, 1)[0];
-        if (removed) field = removed;
+        if (removed) {
+          field = removed;
+        }
       }
     } else if (fromBucket === 'values') {
       const idx = valueFields.value.findIndex((f) => f.id === fieldId);
       if (idx !== -1) {
         const removed = valueFields.value.splice(idx, 1)[0];
-        if (removed) field = removed;
+        if (removed) {
+          field = removed;
+        }
       }
     }
 
-    if (!field) return;
+    if (!field) {
+      return;
+    }
 
     // Add to destination bucket
     if (toBucket === 'rows') {

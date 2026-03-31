@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
 import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts';
 import {
+  GridComponent,
+  LegendComponent,
   TitleComponent,
   TooltipComponent,
-  LegendComponent,
-  GridComponent,
 } from 'echarts/components';
+import { use } from 'echarts/core';
+import { CanvasRenderer } from 'echarts/renderers';
+import { computed, ref, watch } from 'vue';
 import VChart from 'vue-echarts';
+
+import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
-import { usePivotStore } from '@/stores/pivot';
 import type { ChartType } from '@/types';
 
 // Register ECharts components
@@ -92,15 +93,16 @@ const xAxis = ref<string | null>(null);
 const yAxes = ref<string[]>([]);
 
 // Detect if this is pivot data with column breakdown (multiple value columns)
-const isPivotWithColumns = computed(() => {
-  return (
-    pivotStore.isConfigured && pivotStore.columnFields.length > 0 && resultsStore.hasPivotResults
-  );
-});
+const isPivotWithColumns = computed(
+  () =>
+    pivotStore.isConfigured && pivotStore.columnFields.length > 0 && resultsStore.hasPivotResults,
+);
 
 // Get the index/row columns from pivot (these should be X axis candidates)
 const pivotIndexColumns = computed(() => {
-  if (!isPivotWithColumns.value) return [];
+  if (!isPivotWithColumns.value) {
+    return [];
+  }
   return pivotStore.rowFields.map((f) => f.column);
 });
 
@@ -184,18 +186,24 @@ const chartOption = computed(() => {
   }
 
   const xIndex = chartColumns.value.findIndex((c) => c.name === xAxis.value);
-  if (xIndex === -1) return null;
+  if (xIndex === -1) {
+    return null;
+  }
 
   const yIndices = yAxes.value.map((y) => chartColumns.value.findIndex((c) => c.name === y));
-  if (yIndices.some((i) => i === -1)) return null;
+  if (yIndices.some((i) => i === -1)) {
+    return null;
+  }
 
   const xData = chartRows.value.map((row) => row[xIndex]);
 
   const baseOption = {
     color: colors,
-    tooltip: {
-      trigger: 'axis' as const,
-      axisPointer: { type: 'shadow' as const },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: yAxes.value.length > 1 ? '10%' : '3%',
+      containLabel: true,
     },
     legend:
       yAxes.value.length > 1
@@ -204,17 +212,15 @@ const chartOption = computed(() => {
             bottom: 0,
           }
         : undefined,
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: yAxes.value.length > 1 ? '10%' : '3%',
-      containLabel: true,
+    tooltip: {
+      trigger: 'axis' as const,
+      axisPointer: { type: 'shadow' as const },
     },
   };
 
   // Build series for each Y axis
-  const buildSeries = (type: string): SeriesItem[] => {
-    return yIndices.map((yIdx, i) => {
+  const buildSeries = (type: string): SeriesItem[] =>
+    yIndices.map((yIdx, i) => {
       const yData = chartRows.value.map((row) => row[yIdx]);
       const series: SeriesItem = {
         name: yAxes.value[i],
@@ -250,13 +256,12 @@ const chartOption = computed(() => {
 
       return series;
     });
-  };
 
   const firstYIdx = yIndices[0];
   const firstYAxis = yAxes.value[0];
 
   switch (uiStore.chartType) {
-    case 'bar':
+    case 'bar': {
       if (horizontal.value) {
         return {
           ...baseOption,
@@ -279,8 +284,9 @@ const chartOption = computed(() => {
         yAxis: { type: 'value' as const },
         series: buildSeries('bar'),
       };
+    }
 
-    case 'line':
+    case 'line': {
       return {
         ...baseOption,
         xAxis: {
@@ -291,12 +297,12 @@ const chartOption = computed(() => {
         yAxis: { type: 'value' as const },
         series: buildSeries('line'),
       };
+    }
 
     case 'pie': {
       const yData = firstYIdx !== undefined ? chartRows.value.map((row) => row[firstYIdx]) : [];
       return {
         color: colors,
-        tooltip: { trigger: 'item' as const, formatter: '{b}: {c} ({d}%)' },
         legend: { orient: 'vertical' as const, left: 'left' },
         series: [
           {
@@ -314,10 +320,11 @@ const chartOption = computed(() => {
               : { show: false },
           },
         ],
+        tooltip: { trigger: 'item' as const, formatter: '{b}: {c} ({d}%)' },
       };
     }
 
-    case 'scatter':
+    case 'scatter': {
       return {
         ...baseOption,
         xAxis: { type: 'value' as const, name: xAxis.value },
@@ -333,9 +340,11 @@ const chartOption = computed(() => {
           },
         ],
       };
+    }
 
-    default:
+    default: {
       return null;
+    }
   }
 });
 
@@ -374,7 +383,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
           placeholder="X axis"
           class="w-32"
           size="xs"
-          @update:model-value="(val: string) => xAxis = val"
+          @update:model-value="(val: string) => (xAxis = val)"
         />
       </div>
 
@@ -411,7 +420,10 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
       </div>
 
       <!-- Horizontal toggle (for bar) -->
-      <label v-if="showHorizontalOption" class="flex items-center gap-1.5 text-xs text-muted cursor-pointer">
+      <label
+        v-if="showHorizontalOption"
+        class="flex items-center gap-1.5 text-xs text-muted cursor-pointer"
+      >
         <USwitch v-model="horizontal" size="xs" />
         Horizontal
       </label>
@@ -425,19 +437,12 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
 
     <!-- Chart -->
     <div class="flex-1 min-h-0">
-      <VChart
-        v-if="chartOption"
-        :option="chartOption"
-        autoresize
-        class="w-full h-full"
-      />
+      <VChart v-if="chartOption" :option="chartOption" autoresize class="w-full h-full" />
 
       <div v-else-if="!canShowChart" class="flex items-center justify-center h-full text-muted">
         <div class="text-center">
           <div class="mb-2">Cannot display chart</div>
-          <div class="text-sm text-muted/70">
-            Requires at least one numeric column for Y axis
-          </div>
+          <div class="text-sm text-muted/70">Requires at least one numeric column for Y axis</div>
         </div>
       </div>
     </div>

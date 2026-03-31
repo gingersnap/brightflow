@@ -1,24 +1,26 @@
 <script setup lang="ts">
-import { computed, type Component } from 'vue';
 import {
-  Table,
   BarChart3,
-  Split,
-  Download,
-  Loader2,
-  TableProperties,
-  ChevronRight,
   ChevronDown,
+  ChevronRight,
+  Download,
   Hash,
+  Loader2,
+  Split,
+  Table,
+  TableProperties,
 } from 'lucide-vue-next';
+import { type Component, computed } from 'vue';
+
+import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
-import { usePivotStore } from '@/stores/pivot';
-import DataTable from './DataTable.vue';
+import type { ViewMode } from '@/types';
+
+import BigNumber from '../charts/BigNumber.vue';
 import ChartView from '../charts/ChartView.vue';
 import PivotTable from '../pivot/PivotTable.vue';
-import BigNumber from '../charts/BigNumber.vue';
-import type { ViewMode } from '@/types';
+import DataTable from './DataTable.vue';
 
 const resultsStore = useResultsStore();
 const uiStore = useUiStore();
@@ -33,11 +35,11 @@ interface ViewModeOption {
 }
 
 const viewModes: ViewModeOption[] = [
-  { value: 'table', label: 'Table', icon: Table },
-  { value: 'pivot', label: 'Pivot', icon: TableProperties },
-  { value: 'number', label: 'Number', icon: Hash },
-  { value: 'chart', label: 'Chart', icon: BarChart3 },
-  { value: 'split', label: 'Split', icon: Split },
+  { icon: Table, label: 'Table', value: 'table' },
+  { icon: TableProperties, label: 'Pivot', value: 'pivot' },
+  { icon: Hash, label: 'Number', value: 'number' },
+  { icon: BarChart3, label: 'Chart', value: 'chart' },
+  { icon: Split, label: 'Split', value: 'split' },
 ];
 
 // Row count based on view mode
@@ -92,14 +94,9 @@ const rowCountDisplay = computed(() => {
         class="flex items-center gap-2 px-4 py-2 text-left hover:bg-muted/40 transition-colors"
         @click="uiStore.toggleSection('results')"
       >
-        <component
-          :is="isCollapsed ? ChevronRight : ChevronDown"
-          class="w-4 h-4 text-muted"
-        />
+        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="w-4 h-4 text-muted" />
         <h2 class="text-sm font-medium text-default">Results</h2>
-        <span v-if="hasCurrentResults" class="text-xs text-muted">
-          ({{ rowCountDisplay }})
-        </span>
+        <span v-if="hasCurrentResults" class="text-xs text-muted"> ({{ rowCountDisplay }}) </span>
       </button>
 
       <div v-if="!isCollapsed" class="flex items-center gap-4 pr-4">
@@ -150,10 +147,7 @@ const rowCountDisplay = computed(() => {
       </div>
 
       <!-- Error state -->
-      <div
-        v-else-if="resultsStore.error"
-        class="flex items-center justify-center h-full"
-      >
+      <div v-else-if="resultsStore.error" class="flex items-center justify-center h-full">
         <div class="text-center p-8 max-w-md">
           <div class="text-red-500 text-sm font-medium mb-2">Query Error</div>
           <div class="text-muted text-sm">{{ resultsStore.error }}</div>
@@ -162,16 +156,17 @@ const rowCountDisplay = computed(() => {
 
       <!-- Pivot view -->
       <template v-if="uiStore.viewMode === 'pivot'">
-        <div v-if="resultsStore.hasPivotResults && pivotStore.isConfigured" class="h-full overflow-hidden">
+        <div
+          v-if="resultsStore.hasPivotResults && pivotStore.isConfigured"
+          class="h-full overflow-hidden"
+        >
           <PivotTable />
         </div>
         <div v-else class="flex items-center justify-center h-full">
           <div class="text-center p-8">
             <TableProperties class="w-12 h-12 text-muted/50 mx-auto mb-4" />
             <div class="text-muted">Configure your pivot table</div>
-            <div class="text-sm text-muted/70 mt-1">
-              Drag columns into Values to create a pivot
-            </div>
+            <div class="text-sm text-muted/70 mt-1">Drag columns into Values to create a pivot</div>
           </div>
         </div>
       </template>

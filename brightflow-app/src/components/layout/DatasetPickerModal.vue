@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { AlertCircle, Database, Loader2, Table2, X } from 'lucide-vue-next';
 import { ref, watch } from 'vue';
-import { Database, Loader2, AlertCircle, Table2, X } from 'lucide-vue-next';
-import { tableApi, type TableInfo } from '@/services/api';
+
+import { type TableInfo, tableApi } from '@/services/api';
 
 const props = defineProps<{
   open: boolean;
@@ -26,21 +27,25 @@ async function fetchTables(): Promise<void> {
   try {
     const result = await tableApi.listAvailable();
     tables.value = result ?? [];
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to fetch tables';
+  } catch (error) {
+    error.value = error instanceof Error ? error.message : 'Failed to fetch tables';
   } finally {
     fetching.value = false;
   }
 }
 
 function handleSelect(table: TableInfo): void {
-  if (props.loading) return;
+  if (props.loading) {
+    return;
+  }
   selectedTable.value = table.name;
   emit('select', table);
 }
 
 function formatRowCount(count: number | null | undefined): string {
-  if (count === null || count === undefined) return 'Unknown rows';
+  if (count === null || count === undefined) {
+    return 'Unknown rows';
+  }
   return `${count.toLocaleString()} rows`;
 }
 
@@ -65,7 +70,11 @@ watch(
     :dismissible="!loading"
     :ui="{ overlay: 'z-50', content: 'z-50' }"
     class="w-full max-w-lg"
-    @update:open="(val: boolean) => { if (!val) emit('close'); }"
+    @update:open="
+      (val: boolean) => {
+        if (!val) emit('close');
+      }
+    "
   >
     <template #content>
       <div class="p-6">
@@ -96,23 +105,14 @@ watch(
         <div v-else-if="error" class="py-8 text-center">
           <AlertCircle class="w-8 h-8 mx-auto mb-3 text-red-500" />
           <p class="text-sm text-red-500">{{ error }}</p>
-          <UButton
-            variant="ghost"
-            size="sm"
-            class="mt-4"
-            @click="fetchTables"
-          >
-            Try again
-          </UButton>
+          <UButton variant="ghost" size="sm" class="mt-4" @click="fetchTables"> Try again </UButton>
         </div>
 
         <!-- Empty state -->
         <div v-else-if="tables.length === 0" class="py-8 text-center">
           <Table2 class="w-8 h-8 mx-auto mb-3 text-muted" />
           <p class="text-sm text-muted">No tables available</p>
-          <p class="text-xs text-muted mt-1">
-            Run a data sync to populate the data store
-          </p>
+          <p class="text-xs text-muted mt-1">Run a data sync to populate the data store</p>
         </div>
 
         <!-- Table list -->

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
+
 import type { ColumnInfo } from '@/types';
 
 // Flexible type to accept WsMessage data and explicit result data
@@ -49,12 +50,12 @@ export const useResultsStore = defineStore('results', () => {
 
   const columnNames = computed(() => tableColumns.value.map((c) => c.name));
 
-  const columnTypes = computed(() => {
-    return tableColumns.value.reduce<Record<string, string>>((acc, col) => {
+  const columnTypes = computed(() =>
+    tableColumns.value.reduce<Record<string, string>>((acc, col) => {
       acc[col.name] = col.dtype;
       return acc;
-    }, {});
-  });
+    }, {}),
+  );
 
   // Actions
   function setLoading(isLoading: boolean): void {
@@ -126,11 +127,14 @@ export const useResultsStore = defineStore('results', () => {
 
   // Helper to escape CSV cell
   function escapeCsvCell(cell: unknown): string {
-    if (cell === null || cell === undefined) return '';
-    const str = String(cell);
+    if (cell === null || cell === undefined) {
+      return '';
+    }
+    const str =
+      typeof cell === 'object' ? JSON.stringify(cell) : String(cell as string | number | boolean);
     // Escape quotes and wrap in quotes if contains comma, quote, or newline
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
+      return `"${str.replaceAll('"', '""')}"`;
     }
     return str;
   }
@@ -140,7 +144,9 @@ export const useResultsStore = defineStore('results', () => {
     const cols = type === 'pivot' ? pivotColumns.value : tableColumns.value;
     const data = type === 'pivot' ? pivotRows.value : tableRows.value;
 
-    if (cols.length === 0 || data.length === 0) return;
+    if (cols.length === 0 || data.length === 0) {
+      return;
+    }
 
     const headers = cols.map((c) => escapeCsvCell(c.name)).join(',');
     const csvRows = data.map((row) => row.map((cell) => escapeCsvCell(cell)).join(','));

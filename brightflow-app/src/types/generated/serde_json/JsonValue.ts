@@ -4,6 +4,6 @@ export type JsonValue =
   | number
   | string
   | boolean
-  | Array<JsonValue>
-  | { [key in string]?: JsonValue }
+  | JsonValue[]
+  | Partial<Record<string, JsonValue>>
   | null;

@@ -3,4 +3,4 @@
 /**
  * Schedule info for a connector
  */
-export type UnifiedJob = { id: string; intervalSecs: bigint; enabled: boolean };
+export interface UnifiedJob { id: string; intervalSecs: bigint; enabled: boolean }

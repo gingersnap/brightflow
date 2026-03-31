@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+
 import { useResultsStore } from '@/stores/results';
 
 const resultsStore = useResultsStore();
@@ -29,31 +30,30 @@ function formatCell(value: unknown, dtype: string): string {
   }
 
   switch (dtype) {
-    case 'int':
+    case 'int': {
       return Number(value).toLocaleString();
-    case 'float':
+    }
+    case 'float': {
       return Number(value).toLocaleString(undefined, {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
       });
+    }
     case 'string': {
       // Truncate long strings
       const str = String(value);
-      return str.length > 100 ? str.slice(0, 100) + '...' : str;
+      return str.length > 100 ? `${str.slice(0, 100)}...` : str;
     }
-    default:
+    default: {
       return String(value);
+    }
   }
 }
 </script>
 
 <template>
   <div class="overflow-auto h-full">
-    <UTable
-      :data="tableData"
-      :columns="tableColumns"
-      class="w-full"
-    />
+    <UTable :data="tableData" :columns="tableColumns" class="w-full" />
   </div>
 </template>
 

@@ -4,7 +4,7 @@ import type { Operation } from './Operation';
 /**
  * Main query structure - a chain of operations applied sequentially
  */
-export type Query = {
+export interface Query {
   /**
    * ID of the dataset to query (defaults to "default")
    */
@@ -13,4 +13,4 @@ export type Query = {
    * Chain of operations to apply
    */
   operations: Array<Operation>;
-};
+}

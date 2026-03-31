@@ -3,9 +3,9 @@
 /**
  * Response for POST /connectors/:name/schedule
  */
-export type ScheduleResponse = {
+export interface ScheduleResponse {
   jobId: string;
   connectorConfigId: string;
   intervalSecs: bigint;
   enabled: boolean;
-};
+}

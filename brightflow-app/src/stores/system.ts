@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
 
 export interface SystemMetrics {
   processRssBytes: number;
@@ -62,19 +62,19 @@ export const useSystemStore = defineStore('system', () => {
 
           if (data['type'] === 'systemMetrics') {
             metrics.value = {
-              processRssBytes: data['processRssBytes'] as number,
-              processAnonBytes: data['processAnonBytes'] as number,
-              systemUsedBytes: data['systemUsedBytes'] as number,
-              systemTotalBytes: data['systemTotalBytes'] as number,
               cpuPercent: data['cpuPercent'] as number,
+              processAnonBytes: data['processAnonBytes'] as number,
+              processRssBytes: data['processRssBytes'] as number,
+              systemTotalBytes: data['systemTotalBytes'] as number,
+              systemUsedBytes: data['systemUsedBytes'] as number,
               uptimeSecs: data['uptimeSecs'] as number,
             };
           } else if (data['type'] === 'logEntry') {
             const entry: LogEntry = {
-              timestamp: data['timestamp'] as string,
               level: data['level'] as string,
-              target: data['target'] as string,
               message: data['message'] as string,
+              target: data['target'] as string,
+              timestamp: data['timestamp'] as string,
             };
             logs.value.push(entry);
             // Cap the array
@@ -114,8 +114,10 @@ export const useSystemStore = defineStore('system', () => {
   }
 
   function scheduleReconnect(): void {
-    if (reconnectCount >= 10) return;
-    const delay = Math.min(1000 * 2 ** reconnectCount, 30000);
+    if (reconnectCount >= 10) {
+      return;
+    }
+    const delay = Math.min(1000 * 2 ** reconnectCount, 30_000);
     reconnectCount++;
     reconnectTimer = setTimeout(() => {
       connect();
@@ -127,12 +129,12 @@ export const useSystemStore = defineStore('system', () => {
   }
 
   return {
-    metrics,
-    logs,
-    status,
-    isConnected,
+    clearLogs,
     connect,
     disconnect,
-    clearLogs,
+    isConnected,
+    logs,
+    metrics,
+    status,
   };
 });

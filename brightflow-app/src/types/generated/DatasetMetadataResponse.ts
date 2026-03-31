@@ -4,10 +4,10 @@ import type { ColumnInfo } from './ColumnInfo';
 /**
  * Response for dataset metadata
  */
-export type DatasetMetadataResponse = {
+export interface DatasetMetadataResponse {
   id: string;
   name: string;
   rowCount: number | null;
   columnCount: number | null;
   columns: Array<ColumnInfo>;
-};
+}

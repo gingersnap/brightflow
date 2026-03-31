@@ -3,9 +3,9 @@
 /**
  * Optional request body for POST /connectors/:name/run
  */
-export type RunRequest = {
+export interface RunRequest {
   /**
    * Only sync specific endpoints (comma-separated)
    */
   only: string | null;
-};
+}

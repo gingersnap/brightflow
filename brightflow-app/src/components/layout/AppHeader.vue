@@ -1,22 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { useQuery } from '@pinia/colada';
+import { useColorMode } from '@vueuse/core';
 import {
-  Database,
-  ChevronDown,
-  Search,
-  Sparkles,
-  Cable,
   Activity,
-  Sun,
+  Cable,
+  ChevronDown,
+  Database,
+  LogOut,
   Moon,
   Plus,
-  LogOut,
+  Search,
+  Sparkles,
+  Sun,
 } from 'lucide-vue-next';
-import { useColorMode } from '@vueuse/core';
-import { useQuery } from '@pinia/colada';
+import { computed } from 'vue';
+
 import { connectApi } from '@/services/api';
 import { useDatasetStore } from '@/stores/dataset';
-import { useUiStore, type AppMode } from '@/stores/ui';
+import { type AppMode, useUiStore } from '@/stores/ui';
 import type { UnifiedConnector } from '@/types';
 
 const datasetStore = useDatasetStore();
@@ -38,17 +39,25 @@ const lastSyncTime = computed(() => {
       (r): r is NonNullable<typeof r> =>
         r != null && r.status === 'completed' && r.finishedAt != null,
     )
-    .sort((a, b) => new Date(b.finishedAt!).getTime() - new Date(a.finishedAt!).getTime())[0];
+    .toSorted((a, b) => new Date(b.finishedAt!).getTime() - new Date(a.finishedAt!).getTime())[0];
 
-  if (!latest?.finishedAt) return null;
+  if (!latest?.finishedAt) {
+    return null;
+  }
 
   const date = new Date(latest.finishedAt);
   const now = Date.now();
   const diff = now - date.getTime();
 
-  if (diff < 60000) return 'just now';
-  if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.round(diff / 3600000)}h ago`;
+  if (diff < 60_000) {
+    return 'just now';
+  }
+  if (diff < 3_600_000) {
+    return `${Math.round(diff / 60_000)}m ago`;
+  }
+  if (diff < 86_400_000) {
+    return `${Math.round(diff / 3_600_000)}h ago`;
+  }
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 });
 
@@ -171,23 +180,13 @@ function toggleTheme(): void {
       </button>
 
       <!-- Theme toggle -->
-      <UButton
-        variant="ghost"
-        size="sm"
-        square
-        @click="toggleTheme"
-      >
+      <UButton variant="ghost" size="sm" square @click="toggleTheme">
         <Sun v-if="colorMode === 'dark'" class="w-4 h-4" />
         <Moon v-else class="w-4 h-4" />
       </UButton>
 
       <!-- Logout button -->
-      <UButton
-        variant="ghost"
-        size="sm"
-        square
-        @click="emit('logout')"
-      >
+      <UButton variant="ghost" size="sm" square @click="emit('logout')">
         <LogOut class="w-4 h-4" />
       </UButton>
 
@@ -198,14 +197,12 @@ function toggleTheme(): void {
           :class="{
             'bg-green-500': datasetStore.hasData,
             'bg-yellow-500 animate-pulse': datasetStore.loading,
-            'bg-neutral-400': !datasetStore.hasData && !datasetStore.loading
+            'bg-neutral-400': !datasetStore.hasData && !datasetStore.loading,
           }"
         />
         <span class="text-xs text-muted">
           {{ datasetStore.hasData ? (datasetStore.name ?? 'Dataset loaded') : 'No dataset' }}
-          <span v-if="lastSyncTime" class="ml-1 opacity-70">
-            · synced {{ lastSyncTime }}
-          </span>
+          <span v-if="lastSyncTime" class="ml-1 opacity-70"> · synced {{ lastSyncTime }} </span>
         </span>
       </div>
     </div>

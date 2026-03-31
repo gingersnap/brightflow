@@ -36,11 +36,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   const { body, ...restOptions } = options;
   const config: RequestInit = {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...restOptions.headers,
+      ...(restOptions.headers as Record<string, string>),
     },
-    credentials: 'include',
     ...restOptions,
   };
 
@@ -67,14 +67,14 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 }
 
 export const api = {
-  get: <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
-    request<T>(endpoint, { method: 'GET', ...options }),
-  post: <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
-    request<T>(endpoint, { method: 'POST', body, ...options }),
-  put: <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
-    request<T>(endpoint, { method: 'PUT', body, ...options }),
-  delete: <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
+  delete: async <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
     request<T>(endpoint, { method: 'DELETE', ...options }),
+  get: async <T>(endpoint: string, options?: RequestOptions): Promise<T | null> =>
+    request<T>(endpoint, { method: 'GET', ...options }),
+  post: async <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
+    request<T>(endpoint, { method: 'POST', body, ...options }),
+  put: async <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T | null> =>
+    request<T>(endpoint, { method: 'PUT', body, ...options }),
 };
 
 // Re-export generated TableInfo from Rust backend
@@ -84,9 +84,9 @@ export type { TableInfo };
 // Table API - for lazy loading Parquet tables
 export const tableApi = {
   // Get list of available tables (metadata only, nothing loaded)
-  listAvailable: (): Promise<TableInfo[] | null> => api.get<TableInfo[]>('/api/tables'),
+  listAvailable: async (): Promise<TableInfo[] | null> => api.get<TableInfo[]>('/api/tables'),
   // Load a specific table into memory
-  load: (name: string): Promise<LoadTableResponse | null> =>
+  load: async (name: string): Promise<LoadTableResponse | null> =>
     api.post<LoadTableResponse>(`/api/tables/${encodeURIComponent(name)}/load`),
 };
 
@@ -95,27 +95,29 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 // Connector API
 export const connectApi = {
-  listUnified: (): Promise<UnifiedConnector[] | null> =>
-    api.get<UnifiedConnector[]>('/api/connectors/unified'),
-  runConnector: (name: string): Promise<RunTriggerResponse | null> =>
-    api.post<RunTriggerResponse>(`/api/connectors/${encodeURIComponent(name)}/run`),
-  listConnectorRuns: (name: string): Promise<SyncRun[] | null> =>
+  deleteJob: async (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
+  listConnectorRuns: async (name: string): Promise<SyncRun[] | null> =>
     api.get<SyncRun[]>(`/api/connectors/${encodeURIComponent(name)}/runs`),
-  scheduleConnector: (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
+  listUnified: async (): Promise<UnifiedConnector[] | null> =>
+    api.get<UnifiedConnector[]>('/api/connectors/unified'),
+  runConnector: async (name: string): Promise<RunTriggerResponse | null> =>
+    api.post<RunTriggerResponse>(`/api/connectors/${encodeURIComponent(name)}/run`),
+  scheduleConnector: async (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
     api.post<ScheduleResponse>(`/api/connectors/${encodeURIComponent(name)}/schedule`, {
       intervalSecs,
     }),
-  updateToken: (name: string, token: string): Promise<unknown> =>
+  updateJob: async (
+    id: string,
+    data: { intervalSecs?: number; enabled?: boolean },
+  ): Promise<unknown> => api.put(`/api/scheduler/jobs/${id}`, data),
+  updateToken: async (name: string, token: string): Promise<unknown> =>
     api.put(`/api/connectors/${encodeURIComponent(name)}/token`, { token }),
-  updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
-    api.put(`/api/scheduler/jobs/${id}`, data),
-  deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
 };
 
 // Frontend-specific tree types (refinements of the backend's serde_json::Value)
 export interface AnalysisTree {
   nodes: AnalysisNode[];
-  roots: Array<{ '0': number }>;
+  roots: { '0': number }[];
 }
 
 export interface AnalysisNode {
@@ -126,34 +128,38 @@ export interface AnalysisNode {
   description: string;
   summary: string;
   tech_summary: string;
-  children: Array<{ '0': number }>;
+  children: { '0': number }[];
 }
 
-export type AnalysisType = {
+export interface AnalysisType {
   type: string;
   [key: string]: unknown;
-};
+}
 
 // Insights API
 export const insightsApi = {
-  runReview: (datasetId: string, cadence: string = 'weekly'): Promise<InsightsResponse | null> =>
-    api.post<InsightsResponse>('/api/insights/review', { datasetId, cadence }),
-  runTrends: (datasetId: string): Promise<InsightsResponse | null> =>
+  runReview: async (datasetId: string, cadence = 'weekly'): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/review', { cadence, datasetId }),
+  runTrends: async (datasetId: string): Promise<InsightsResponse | null> =>
     api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
 };
 
 // Auth API
 export const authApi = {
-  login: (email: string, password: string): Promise<User | null> =>
+  login: async (email: string, password: string): Promise<User | null> =>
     api.post<User>('/api/auth/login', { email, password }),
-  logout: (): Promise<unknown> => api.post('/api/auth/logout'),
-  me: (): Promise<User | null> => api.get<User>('/api/auth/me'),
+  logout: async (): Promise<unknown> => api.post('/api/auth/logout'),
+  me: async (): Promise<User | null> => api.get<User>('/api/auth/me'),
 };
 
 // Dataset-specific API methods (for loaded datasets)
 export const datasetApi = {
-  list: (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
-  get: (id: string): Promise<DatasetInfo | null> => api.get<DatasetInfo>(`/api/datasets/${id}`),
+  delete: async (id: string): Promise<unknown> => api.delete(`/api/datasets/${id}`),
+  get: async (id: string): Promise<DatasetInfo | null> =>
+    api.get<DatasetInfo>(`/api/datasets/${id}`),
+  list: async (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
+  query: async (datasetId: string, operations: unknown[]): Promise<QueryResponse | null> =>
+    api.post<QueryResponse>('/api/query', { datasetId, operations }),
   upload: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -171,7 +177,4 @@ export const datasetApi = {
 
     return response.json() as Promise<UploadResponse>;
   },
-  delete: (id: string): Promise<unknown> => api.delete(`/api/datasets/${id}`),
-  query: (datasetId: string, operations: unknown[]): Promise<QueryResponse | null> =>
-    api.post<QueryResponse>('/api/query', { datasetId, operations }),
 };

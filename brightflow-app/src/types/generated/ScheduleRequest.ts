@@ -3,4 +3,4 @@
 /**
  * Request body for POST /connectors/:name/schedule
  */
-export type ScheduleRequest = { intervalSecs: bigint };
+export interface ScheduleRequest { intervalSecs: bigint }

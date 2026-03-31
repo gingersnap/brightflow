@@ -4,10 +4,10 @@ import type { ColumnInfo } from './ColumnInfo';
 /**
  * Response for loading a Parquet table on-demand
  */
-export type LoadTableResponse = {
+export interface LoadTableResponse {
   id: string;
   name: string;
   rowCount: number | null;
   columnCount: number | null;
   columns: Array<ColumnInfo>;
-};
+}

@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
 import {
   AlertTriangle,
-  TrendingUp,
   ArrowLeftRight,
   BarChart3,
-  Waves,
-  Target,
-  GitBranch,
   ChevronDown,
   ChevronRight,
+  GitBranch,
+  Target,
+  TrendingUp,
+  Waves,
 } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+
 import type { AnalysisNode, AnalysisTree } from '@/services/api';
 
 const props = defineProps<{
@@ -22,83 +23,93 @@ const props = defineProps<{
 const expanded = ref(false);
 const currentDepth = computed(() => props.depth ?? 0);
 
-const childNodes = computed(() => {
-  return props.node.children
+const childNodes = computed(() =>
+  props.node.children
     .map((childId) => props.tree.nodes.find((n) => n.id['0'] === childId['0']))
     .filter((n): n is AnalysisNode => n !== undefined)
-    .sort((a, b) => b.significance - a.significance);
-});
+    .sort((a, b) => b.significance - a.significance),
+);
 
 const hasChildren = computed(() => childNodes.value.length > 0);
 
 const analysisTypeConfig = computed(() => {
-  const type = props.node.analysis.type;
+  const { type } = props.node.analysis;
   switch (type) {
-    case 'Anomaly':
+    case 'Anomaly': {
       return { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', label: 'Anomaly' };
-    case 'Trend':
+    }
+    case 'Trend': {
       return {
         icon: TrendingUp,
         color: 'text-blue-500',
         bg: 'bg-blue-500/10',
         label: 'Trend',
       };
-    case 'PeriodComparison':
+    }
+    case 'PeriodComparison': {
       return {
         icon: ArrowLeftRight,
         color: 'text-purple-500',
         bg: 'bg-purple-500/10',
         label: 'Period',
       };
-    case 'PeriodAnomaly':
+    }
+    case 'PeriodAnomaly': {
       return {
         icon: AlertTriangle,
         color: 'text-orange-500',
         bg: 'bg-orange-500/10',
         label: 'Period Anomaly',
       };
-    case 'Seasonality':
+    }
+    case 'Seasonality': {
       return {
         icon: Waves,
         color: 'text-teal-500',
         bg: 'bg-teal-500/10',
         label: 'Seasonality',
       };
-    case 'Segment':
+    }
+    case 'Segment': {
       return {
         icon: BarChart3,
         color: 'text-indigo-500',
         bg: 'bg-indigo-500/10',
         label: 'Segment',
       };
-    case 'Correlation':
+    }
+    case 'Correlation': {
       return {
         icon: GitBranch,
         color: 'text-pink-500',
         bg: 'bg-pink-500/10',
         label: 'Correlation',
       };
-    case 'ForecastDeviation':
+    }
+    case 'ForecastDeviation': {
       return {
         icon: Target,
         color: 'text-amber-500',
         bg: 'bg-amber-500/10',
         label: 'Forecast',
       };
-    case 'OutlierCluster':
+    }
+    case 'OutlierCluster': {
       return {
         icon: AlertTriangle,
         color: 'text-red-400',
         bg: 'bg-red-400/10',
         label: 'Outlier Cluster',
       };
-    default:
+    }
+    default: {
       return {
         icon: BarChart3,
         color: 'text-gray-500',
         bg: 'bg-gray-500/10',
         label: type,
       };
+    }
   }
 });
 </script>
@@ -119,7 +130,11 @@ const analysisTypeConfig = computed(() => {
     >
       <!-- Type icon -->
       <div class="flex-shrink-0 p-1.5 rounded-md" :class="analysisTypeConfig.bg">
-        <component :is="analysisTypeConfig.icon" class="w-4 h-4" :class="analysisTypeConfig.color" />
+        <component
+          :is="analysisTypeConfig.icon"
+          class="w-4 h-4"
+          :class="analysisTypeConfig.color"
+        />
       </div>
 
       <!-- Content -->
@@ -137,10 +152,7 @@ const analysisTypeConfig = computed(() => {
       <!-- Expand/collapse indicator -->
       <div v-if="hasChildren" class="flex-shrink-0 mt-0.5">
         <span class="text-xs text-muted mr-1">{{ childNodes.length }}</span>
-        <component
-          :is="expanded ? ChevronDown : ChevronRight"
-          class="w-4 h-4 text-muted inline"
-        />
+        <component :is="expanded ? ChevronDown : ChevronRight" class="w-4 h-4 text-muted inline" />
       </div>
     </button>
 

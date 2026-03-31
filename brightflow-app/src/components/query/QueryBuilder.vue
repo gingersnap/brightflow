@@ -1,27 +1,29 @@
 <script setup lang="ts">
-import { watch, computed, type Component } from 'vue';
 import {
-  Hash,
-  Type,
-  HelpCircle,
-  GripVertical,
-  ArrowUpDown,
-  ArrowUp,
   ArrowDown,
-  RotateCcw,
-  ChevronRight,
-  ChevronDown,
   ArrowLeftRight,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
+  GripVertical,
+  Hash,
+  HelpCircle,
+  RotateCcw,
+  Type,
 } from 'lucide-vue-next';
+import { type Component, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
+
+import { useWsQuery } from '@/composables/useWsQuery';
+import { useConnectionStore } from '@/stores/connection';
+import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
-import { useDatasetStore } from '@/stores/dataset';
-import { useConnectionStore } from '@/stores/connection';
 import { useUiStore } from '@/stores/ui';
-import { useWsQuery } from '@/composables/useWsQuery';
-import BucketDropzone from '../pivot/BucketDropzone.vue';
 import type { PivotField } from '@/types';
+
+import BucketDropzone from '../pivot/BucketDropzone.vue';
 
 interface ColumnItem {
   name: string;
@@ -41,19 +43,23 @@ const { execute, canExecute } = useWsQuery();
 const isCollapsed = computed(() => uiStore.summarizeCollapsed);
 
 // Columns for the sidebar
-const columns = computed((): ColumnItem[] => {
-  return datasetStore.columns.map((col) => ({
+const columns = computed((): ColumnItem[] =>
+  datasetStore.columns.map((col) => ({
     ...col,
     id: col.name,
     isNumeric: ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(col.dtype),
     isString: ['string', 'text', 'varchar'].includes(col.dtype),
-  }));
-});
+  })),
+);
 
 // Get icon for column type
 function getTypeIcon(col: ColumnItem): Component {
-  if (col.isNumeric) return Hash;
-  if (col.isString) return Type;
+  if (col.isNumeric) {
+    return Hash;
+  }
+  if (col.isString) {
+    return Type;
+  }
   return HelpCircle;
 }
 
@@ -68,9 +74,9 @@ function cloneColumn(col: ColumnItem): ColumnItem & { column: string } {
 // Enforce Polars pivot rules
 watch(
   () => ({
-    values: pivotStore.valueFields.length,
-    rows: pivotStore.rowFields.length,
     columns: pivotStore.columnFields.length,
+    rows: pivotStore.rowFields.length,
+    values: pivotStore.valueFields.length,
   }),
   ({ values, rows, columns: colCount }) => {
     // Rule: If columns exist but rows don't, move columns to rows
@@ -121,7 +127,9 @@ watch(
     queryStore.sections.sort.enabled,
   ],
   () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
     debounceTimer = setTimeout(() => {
       if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
         execute();
@@ -171,12 +179,12 @@ function toggleSortDirection() {
 }
 
 // Column options for sort
-const sortColumnOptions = computed(() => {
-  return datasetStore.columns.map((col) => ({
+const sortColumnOptions = computed(() =>
+  datasetStore.columns.map((col) => ({
     label: col.name,
     value: col.name,
-  }));
-});
+  })),
+);
 </script>
 
 <template>
@@ -187,13 +195,12 @@ const sortColumnOptions = computed(() => {
         class="flex items-center gap-2 px-4 py-2 text-left hover:bg-muted/40 transition-colors"
         @click="uiStore.toggleSection('summarize')"
       >
-        <component
-          :is="isCollapsed ? ChevronRight : ChevronDown"
-          class="w-4 h-4 text-muted"
-        />
+        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="w-4 h-4 text-muted" />
         <h2 class="text-sm font-medium text-default">Summarize</h2>
         <span v-if="pivotStore.isConfigured" class="text-xs text-muted">
-          ({{ pivotStore.valueFields.length }} value{{ pivotStore.valueFields.length !== 1 ? 's' : '' }})
+          ({{ pivotStore.valueFields.length }} value{{
+            pivotStore.valueFields.length !== 1 ? 's' : ''
+          }})
         </span>
       </button>
 
@@ -221,7 +228,7 @@ const sortColumnOptions = computed(() => {
               { label: '0', value: 0 },
               { label: '1', value: 1 },
               { label: '2', value: 2 },
-              { label: '3', value: 3 }
+              { label: '3', value: 3 },
             ]"
             value-key="value"
             size="xs"
@@ -254,19 +261,14 @@ const sortColumnOptions = computed(() => {
                 class="flex items-center gap-2 px-2 py-1.5 rounded-md bg-default/50 hover:bg-default cursor-grab active:cursor-grabbing transition-colors text-xs group"
               >
                 <GripVertical class="w-3 h-3 text-muted/30 group-hover:text-muted/60" />
-                <component
-                  :is="getTypeIcon(element)"
-                  class="w-3 h-3 text-muted"
-                />
+                <component :is="getTypeIcon(element)" class="w-3 h-3 text-muted" />
                 <span class="truncate flex-1">{{ element.name }}</span>
               </div>
             </template>
           </draggable>
         </div>
 
-        <div v-else class="text-xs text-muted/60 py-4">
-          No columns loaded
-        </div>
+        <div v-else class="text-xs text-muted/60 py-4">No columns loaded</div>
       </div>
 
       <!-- Buckets (right side) -->

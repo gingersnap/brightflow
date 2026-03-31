@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
-import { useAuthStore } from './stores/auth';
-import { useConnectionStore } from './stores/connection';
-import { useDatasetStore } from './stores/dataset';
-import { useUiStore } from './stores/ui';
-import { useSystemStore } from './stores/system';
-import { resetAllStores } from './stores';
-import { tableApi, type TableInfo } from './services/api';
+import { onMounted, ref, watch } from 'vue';
 
+import LoginPage from './components/auth/LoginPage.vue';
+import ConnectView from './components/connect/ConnectView.vue';
+import InsightsView from './components/insights/InsightsView.vue';
 import AppHeader from './components/layout/AppHeader.vue';
+import DatasetPickerModal from './components/layout/DatasetPickerModal.vue';
+import WelcomeLanding from './components/layout/WelcomeLanding.vue';
 import FilterBar from './components/query/FilterBar.vue';
 import QueryBuilder from './components/query/QueryBuilder.vue';
 import ResultsPanel from './components/results/ResultsPanel.vue';
-import InsightsView from './components/insights/InsightsView.vue';
-import ConnectView from './components/connect/ConnectView.vue';
 import SystemView from './components/system/SystemView.vue';
-import DatasetPickerModal from './components/layout/DatasetPickerModal.vue';
-import WelcomeLanding from './components/layout/WelcomeLanding.vue';
-import LoginPage from './components/auth/LoginPage.vue';
+import { type TableInfo, tableApi } from './services/api';
+import { resetAllStores } from './stores';
+import { useAuthStore } from './stores/auth';
+import { useConnectionStore } from './stores/connection';
+import { useDatasetStore } from './stores/dataset';
+import { useSystemStore } from './stores/system';
+import { useUiStore } from './stores/ui';
 
 const authStore = useAuthStore();
 const connectionStore = useConnectionStore();
@@ -74,8 +74,8 @@ async function handleDatasetSelect(table: TableInfo): Promise<void> {
       showDatasetPicker.value = false;
       uiStore.setShowConnect(false);
     }
-  } catch (e) {
-    console.error('[App] Failed to load table:', e);
+  } catch (error) {
+    console.error('[App] Failed to load table:', error);
   } finally {
     loadingTable.value = false;
   }

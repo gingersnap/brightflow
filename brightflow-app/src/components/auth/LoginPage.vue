@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+
 import { useAuthStore } from '@/stores/auth';
 
 const authStore = useAuthStore();
@@ -9,7 +10,9 @@ const password = ref('');
 const submitting = ref(false);
 
 async function handleSubmit(): Promise<void> {
-  if (!email.value || !password.value) return;
+  if (!email.value || !password.value) {
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -57,12 +60,7 @@ async function handleSubmit(): Promise<void> {
           {{ authStore.error }}
         </p>
 
-        <UButton
-          type="submit"
-          block
-          :loading="submitting"
-          :disabled="!email || !password"
-        >
+        <UButton type="submit" block :loading="submitting" :disabled="!email || !password">
           Sign in
         </UButton>
       </form>

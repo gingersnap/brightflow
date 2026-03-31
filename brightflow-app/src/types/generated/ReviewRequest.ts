@@ -3,10 +3,10 @@
 /**
  * Request to run a review analysis
  */
-export type ReviewRequest = {
+export interface ReviewRequest {
   datasetId: string;
   /**
    * Cadence: "daily", "weekly", or "monthly"
    */
   cadence: string;
-};
+}

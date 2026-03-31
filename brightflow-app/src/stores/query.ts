@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import type { Filter, Aggregation, QuerySections, PivotState } from '@/types';
-import type { Operation, Aggregation as AggFn, FilterOp } from '@/types/generated';
+import { computed, ref } from 'vue';
+
+import type { Aggregation, Filter, PivotState, QuerySections } from '@/types';
+import type { Aggregation as AggFn, FilterOp, Operation } from '@/types/generated';
 
 type SectionKey = keyof QuerySections;
 
@@ -9,11 +10,11 @@ export const useQueryStore = defineStore('query', () => {
   // Section states
   const sections = ref<QuerySections>({
     filter: { enabled: true, collapsed: false },
-    select: { enabled: false, collapsed: true },
     groupBy: { enabled: false, collapsed: true },
-    pivot: { enabled: false, collapsed: true },
-    sort: { enabled: false, collapsed: true },
     limit: { enabled: true, collapsed: false },
+    pivot: { enabled: false, collapsed: true },
+    select: { enabled: false, collapsed: true },
+    sort: { enabled: false, collapsed: true },
   });
 
   // Filter state
@@ -28,10 +29,10 @@ export const useQueryStore = defineStore('query', () => {
 
   // Pivot state
   const pivot = ref<PivotState>({
-    index: [],
-    columns: null,
-    values: null,
     agg: 'count',
+    columns: null,
+    index: [],
+    values: null,
   });
 
   // Sort state
@@ -50,9 +51,9 @@ export const useQueryStore = defineStore('query', () => {
       filters.value.forEach((filter) => {
         if (filter.column && filter.op) {
           ops.push({
-            type: 'filter',
             column: filter.column,
             op: filter.op as FilterOp,
+            type: 'filter',
             value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
           });
         }
@@ -62,49 +63,49 @@ export const useQueryStore = defineStore('query', () => {
     // Add group by
     if (sections.value.groupBy.enabled && groupByColumns.value.length > 0) {
       ops.push({
-        type: 'groupBy',
-        by: groupByColumns.value,
         aggs: aggregations.value.map((agg) => ({
           column: agg.column,
           function: agg.function as AggFn,
           alias: agg.alias || `${agg.function}_${agg.column}`,
         })),
+        by: groupByColumns.value,
+        type: 'groupBy',
       });
     }
 
     // Add pivot
     if (sections.value.pivot.enabled && pivot.value.values && pivot.value.columns) {
       ops.push({
-        type: 'pivot',
-        index: pivot.value.index,
-        columns: pivot.value.columns,
-        values: pivot.value.values,
         agg: pivot.value.agg as AggFn,
+        columns: pivot.value.columns,
+        index: pivot.value.index,
+        type: 'pivot',
+        values: pivot.value.values,
       });
     }
 
     // Add select
     if (sections.value.select.enabled && selectedColumns.value.length > 0) {
       ops.push({
-        type: 'select',
         columns: selectedColumns.value,
+        type: 'select',
       });
     }
 
     // Add sort
     if (sections.value.sort.enabled && sortBy.value) {
       ops.push({
-        type: 'sort',
         by: sortBy.value,
         descending: sortDescending.value,
+        type: 'sort',
       });
     }
 
     // Add limit
     if (sections.value.limit.enabled && limit.value > 0) {
       ops.push({
-        type: 'limit',
         n: limit.value,
+        type: 'limit',
       });
     }
 
@@ -117,21 +118,18 @@ export const useQueryStore = defineStore('query', () => {
       filters.value.length > 0
         ? `${filters.value.length} filter${filters.value.length > 1 ? 's' : ''}`
         : 'No filters',
-    select:
-      selectedColumns.value.length > 0 ? `${selectedColumns.value.length} columns` : 'All columns',
     groupBy:
       groupByColumns.value.length > 0 ? `By: ${groupByColumns.value.join(', ')}` : 'Not grouped',
+    limit: `${limit.value.toLocaleString()} rows`,
     pivot: pivot.value.values
       ? `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`
       : 'Not configured',
+    select:
+      selectedColumns.value.length > 0 ? `${selectedColumns.value.length} columns` : 'All columns',
     sort: sortBy.value ? `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}` : 'Not sorted',
-    limit: `${limit.value.toLocaleString()} rows`,
   }));
 
-  const isValid = computed(() => {
-    // Basic validation - at minimum we need a valid configuration
-    return true;
-  });
+  const isValid = computed(() => true);
 
   // Actions
   function toggleSection(section: SectionKey): void {
@@ -144,8 +142,8 @@ export const useQueryStore = defineStore('query', () => {
 
   function addFilter(): void {
     filters.value.push({
-      id: crypto.randomUUID(),
       column: null,
+      id: crypto.randomUUID(),
       op: 'eq',
       value: null,
     });
@@ -164,10 +162,10 @@ export const useQueryStore = defineStore('query', () => {
 
   function addAggregation(): void {
     aggregations.value.push({
-      id: crypto.randomUUID(),
+      alias: '',
       column: '*',
       function: 'count',
-      alias: '',
+      id: crypto.randomUUID(),
     });
   }
 
@@ -187,7 +185,7 @@ export const useQueryStore = defineStore('query', () => {
     selectedColumns.value = [];
     groupByColumns.value = [];
     aggregations.value = [];
-    pivot.value = { index: [], columns: null, values: null, agg: 'count' };
+    pivot.value = { agg: 'count', columns: null, index: [], values: null };
     sortBy.value = null;
     sortDescending.value = false;
     limit.value = 100;
@@ -195,11 +193,11 @@ export const useQueryStore = defineStore('query', () => {
     // Reset section states
     sections.value = {
       filter: { enabled: true, collapsed: false },
-      select: { enabled: false, collapsed: true },
       groupBy: { enabled: false, collapsed: true },
-      pivot: { enabled: false, collapsed: true },
-      sort: { enabled: false, collapsed: true },
       limit: { enabled: true, collapsed: false },
+      pivot: { enabled: false, collapsed: true },
+      select: { enabled: false, collapsed: true },
+      sort: { enabled: false, collapsed: true },
     };
   }
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useResultsStore } from '@/stores/results';
+
 import { usePivotStore } from '@/stores/pivot';
+import { useResultsStore } from '@/stores/results';
 
 const resultsStore = useResultsStore();
 const pivotStore = usePivotStore();
@@ -28,7 +29,7 @@ interface AggregateDisplay {
   type: 'aggregate';
   label: string;
   primary: { label: string; value: number };
-  secondary: Array<{ label: string; value: number }>;
+  secondary: { label: string; value: number }[];
   dtype: string;
 }
 
@@ -41,22 +42,26 @@ const displayData = computed((): DisplayData => {
   const cols = hasPivot ? resultsStore.pivotColumns : resultsStore.tableColumns;
   const rows = hasPivot ? resultsStore.pivotRows : resultsStore.tableRows;
 
-  if (cols.length === 0 || rows.length === 0) return null;
+  if (cols.length === 0 || rows.length === 0) {
+    return null;
+  }
 
   // Find numeric columns
   const numericIndices = cols
     .map((col, idx) => ({ col, idx }))
     .filter(({ col }) => ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(col.dtype));
 
-  if (numericIndices.length === 0) return null;
+  if (numericIndices.length === 0) {
+    return null;
+  }
 
   // For pivot data with one row, show all numeric values
   const firstRow = rows[0];
   if (hasPivot && rows.length === 1 && firstRow) {
     const values = numericIndices.map(({ col, idx }) => ({
+      dtype: col.dtype,
       label: col.name,
       value: firstRow[idx],
-      dtype: col.dtype,
     }));
     return { type: 'multi', values };
   }
@@ -65,22 +70,26 @@ const displayData = computed((): DisplayData => {
   const firstNumeric = numericIndices[0];
   if (rows.length === 1 && numericIndices.length === 1 && firstNumeric && firstRow) {
     return {
-      type: 'single',
-      label: firstNumeric.col.name,
-      value: firstRow[firstNumeric.idx],
       dtype: firstNumeric.col.dtype,
+      label: firstNumeric.col.name,
+      type: 'single',
+      value: firstRow[firstNumeric.idx],
     };
   }
 
   // For table data, calculate aggregates
   const primaryNumeric = numericIndices[0];
-  if (!primaryNumeric) return null;
+  if (!primaryNumeric) {
+    return null;
+  }
 
   const values = rows
     .map((row) => row[primaryNumeric.idx])
     .filter((v): v is number => typeof v === 'number');
 
-  if (values.length === 0) return null;
+  if (values.length === 0) {
+    return null;
+  }
 
   const sum = values.reduce((a, b) => a + b, 0);
   const avg = sum / values.length;
@@ -88,7 +97,7 @@ const displayData = computed((): DisplayData => {
   const max = Math.max(...values);
 
   return {
-    type: 'aggregate',
+    dtype: primaryNumeric.col.dtype,
     label: primaryNumeric.col.name,
     primary: { label: 'Sum', value: sum },
     secondary: [
@@ -97,34 +106,38 @@ const displayData = computed((): DisplayData => {
       { label: 'Max', value: max },
       { label: 'Count', value: values.length },
     ],
-    dtype: primaryNumeric.col.dtype,
+    type: 'aggregate',
   };
 });
 
 // Format number for display
 function formatNumber(value: unknown, dtype: string, compact = false): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value !== 'number') return String(value);
+  if (value === null || value === undefined) {
+    return '—';
+  }
+  if (typeof value !== 'number') {
+    return String(value);
+  }
 
   const isFloat = ['float', 'decimal', 'f64'].includes(dtype);
 
-  if (compact && Math.abs(value) >= 1000000) {
+  if (compact && Math.abs(value) >= 1_000_000) {
     return new Intl.NumberFormat(undefined, {
-      notation: 'compact',
       maximumFractionDigits: 1,
+      notation: 'compact',
     }).format(value);
   }
 
   if (compact && Math.abs(value) >= 1000) {
     return new Intl.NumberFormat(undefined, {
-      notation: 'compact',
       maximumFractionDigits: 1,
+      notation: 'compact',
     }).format(value);
   }
 
   return value.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
     maximumFractionDigits: isFloat ? 2 : 0,
+    minimumFractionDigits: 0,
   });
 }
 
@@ -139,12 +152,12 @@ const aggregationLabel = computed((): string | null => {
   if (firstValueField) {
     const agg = firstValueField.aggregation;
     const labels: Record<string, string> = {
-      sum: 'Sum',
-      count: 'Count',
       avg: 'Average',
-      min: 'Minimum',
+      count: 'Count',
       max: 'Maximum',
       mean: 'Mean',
+      min: 'Minimum',
+      sum: 'Sum',
     };
     return (agg && labels[agg]) ?? agg ?? null;
   }
@@ -172,11 +185,7 @@ const aggregationLabel = computed((): string | null => {
 
     <!-- Multi-value display (pivot with one row, multiple values) -->
     <div v-else-if="displayData.type === 'multi'" class="flex flex-wrap justify-center gap-8">
-      <div
-        v-for="(item, idx) in displayData.values"
-        :key="idx"
-        class="text-center px-6"
-      >
+      <div v-for="(item, idx) in displayData.values" :key="idx" class="text-center px-6">
         <div class="text-5xl font-bold text-default tabular-nums mb-2">
           {{ formatPrimary(item.value, item.dtype) }}
         </div>
@@ -198,11 +207,7 @@ const aggregationLabel = computed((): string | null => {
 
       <!-- Secondary metrics -->
       <div class="flex justify-center gap-8">
-        <div
-          v-for="(item, idx) in displayData.secondary"
-          :key="idx"
-          class="text-center px-4"
-        >
+        <div v-for="(item, idx) in displayData.secondary" :key="idx" class="text-center px-4">
           <div class="text-2xl font-semibold text-default tabular-nums">
             {{ formatNumber(item.value, displayData.dtype) }}
           </div>

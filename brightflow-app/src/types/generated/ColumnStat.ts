@@ -3,9 +3,9 @@
 /**
  * Column-level statistics
  */
-export type ColumnStat = {
+export interface ColumnStat {
   column_name: string;
   min_value: string | null;
   max_value: string | null;
   null_count: number | null;
-};
+}

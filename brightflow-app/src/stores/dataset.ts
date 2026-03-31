@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { useUiStore } from './ui';
-import { useResultsStore } from './results';
-import { useQueryStore } from './query';
+import { computed, ref } from 'vue';
+
 import { datasetApi } from '@/services/api';
 import type { ColumnInfo, LoadTableResponse } from '@/types';
+
+import { useQueryStore } from './query';
+import { useResultsStore } from './results';
+import { useUiStore } from './ui';
 
 // Dataset summary from list endpoint
 export interface DatasetSummary {
@@ -54,7 +56,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     uiStore.resetForNewDataset();
 
     // Load initial table data via REST
-    loadInitialDataRest();
+    void loadInitialDataRest();
   }
 
   function getColumnByName(columnName: string): ColumnInfo | undefined {
@@ -82,14 +84,14 @@ export const useDatasetStore = defineStore('dataset', () => {
       const datasets = await datasetApi.list();
       if (datasets) {
         availableDatasets.value = datasets.map((d) => ({
+          columnCount: d.columnCount,
           id: d.id,
           name: d.name,
           rowCount: d.rowCount,
-          columnCount: d.columnCount,
         }));
       }
-    } catch (e) {
-      console.error('Failed to fetch datasets:', e);
+    } catch (error) {
+      console.error('Failed to fetch datasets:', error);
     } finally {
       loadingList.value = false;
     }
@@ -97,7 +99,9 @@ export const useDatasetStore = defineStore('dataset', () => {
 
   // Switch to a different dataset
   function switchDataset(datasetId: string): void {
-    if (datasetId === id.value) return;
+    if (datasetId === id.value) {
+      return;
+    }
 
     // Update id immediately for UI responsiveness
     id.value = datasetId;
@@ -115,23 +119,25 @@ export const useDatasetStore = defineStore('dataset', () => {
     const resultsStore = useResultsStore();
     const queryStore = useQueryStore();
 
-    if (columns.value.length === 0) return;
+    if (columns.value.length === 0) {
+      return;
+    }
 
     resultsStore.setLoading(true);
 
     try {
-      const ops: Array<{ type: string; n?: number }> = [];
+      const ops: { type: string; n?: number }[] = [];
       if (queryStore.limit > 0) {
-        ops.push({ type: 'limit', n: queryStore.limit });
+        ops.push({ n: queryStore.limit, type: 'limit' });
       }
 
       const result = await datasetApi.query(id.value, ops);
       if (result) {
         resultsStore.setTableResults(result as unknown as Record<string, unknown>);
       }
-    } catch (e) {
-      console.error('[Dataset] Failed to load initial data:', e);
-      const msg = e instanceof Error ? e.message : 'Failed to load data';
+    } catch (error) {
+      console.error('[Dataset] Failed to load initial data:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to load data';
       resultsStore.setError(msg);
     }
   }

@@ -3,7 +3,7 @@
 /**
  * Response from an insights analysis
  */
-export type InsightsResponse = {
+export interface InsightsResponse {
   datasetId: string;
   reportType: string;
   tree: unknown;
@@ -12,4 +12,4 @@ export type InsightsResponse = {
   firstLevelCount: number;
   deeperCount: number;
   executionTimeMs: number;
-};
+}

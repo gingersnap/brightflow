@@ -71,7 +71,7 @@ export interface PivotOperation {
   type: 'pivot';
   index: string[];
   columns: string | null;
-  values: string | Array<{ column: string; agg: string }>;
+  values: string | { column: string; agg: string }[];
   agg: string | string[];
   includeSubtotals?: boolean;
   includeTotals?: boolean;

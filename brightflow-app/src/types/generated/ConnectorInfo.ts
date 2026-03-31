@@ -3,7 +3,7 @@
 /**
  * Info about a configured connector (from TOML config on disk)
  */
-export type ConnectorInfo = {
+export interface ConnectorInfo {
   /**
    * Name derived from config filename (e.g., "github")
    */
@@ -16,4 +16,4 @@ export type ConnectorInfo = {
    * Whether the matching .lua connector file exists
    */
   valid: boolean;
-};
+}

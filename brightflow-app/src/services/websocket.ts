@@ -14,28 +14,28 @@ interface WebSocketOptions {
 }
 
 export class WebSocketClient {
-  private url: string;
-  private options: WebSocketOptions;
+  private readonly url: string;
+  private readonly options: WebSocketOptions;
   private ws: WebSocket | null = null;
   private reconnectCount = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private messageQueue: string[] = [];
+  private readonly messageQueue: string[] = [];
   private handlers: Record<WsEventType, WsHandler[]> = {
-    open: [],
     close: [],
     error: [],
     message: [],
+    open: [],
   };
 
   constructor(url: string, options: Partial<WebSocketOptions> = {}) {
     this.url = url;
     this.options = {
+      heartbeatInterval: 30_000,
       reconnect: true,
-      reconnectDelay: 1000,
-      reconnectDelayMax: 30000,
       reconnectAttempts: 10,
-      heartbeatInterval: 30000,
+      reconnectDelay: 1000,
+      reconnectDelayMax: 30_000,
       ...options,
     };
   }
@@ -91,14 +91,16 @@ export class WebSocketClient {
   }
 
   private setupEventHandlers(): void {
-    if (!this.ws) return;
+    if (!this.ws) {
+      return;
+    }
 
     this.ws.onopen = (): void => {
       console.log('[WebSocket] Connection opened');
       this.reconnectCount = 0;
       this.startHeartbeat();
       this.flushMessageQueue();
-      this.emit('open', undefined);
+      this.emit('open');
     };
 
     this.ws.onclose = (event: CloseEvent): void => {
@@ -140,7 +142,7 @@ export class WebSocketClient {
     }
 
     const delay = Math.min(
-      this.options.reconnectDelay * Math.pow(2, this.reconnectCount),
+      this.options.reconnectDelay * 2 ** this.reconnectCount,
       this.options.reconnectDelayMax,
     );
 

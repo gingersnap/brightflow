@@ -3,4 +3,4 @@
 /**
  * Response for POST /connectors/:name/run
  */
-export type RunTriggerResponse = { runId: string; connector: string; status: string };
+export interface RunTriggerResponse { runId: string; connector: string; status: string }

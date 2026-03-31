@@ -4,7 +4,7 @@ import type { Aggregation } from './Aggregation';
 /**
  * Aggregation specification for GroupBy
  */
-export type AggSpec = {
+export interface AggSpec {
   /**
    * Column to aggregate ("*" for count)
    */
@@ -17,4 +17,4 @@ export type AggSpec = {
    * Optional output column name
    */
   alias: string | null;
-};
+}

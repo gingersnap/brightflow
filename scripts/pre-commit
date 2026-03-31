@@ -69,7 +69,7 @@ else
     echo -e "${GREEN}✓ Rust tests & type generation${NC}"
     # Format generated types to match project conventions
     if [ -d "$ROOT_DIR/brightflow-app/node_modules" ]; then
-        (cd "$ROOT_DIR/brightflow-app" && npx biome format --write src/types/generated/ 2>/dev/null) || true
+        (cd "$ROOT_DIR/brightflow-app" && npx vp fmt src/types/generated/ 2>/dev/null) || true
     fi
     # Stage updated generated types
     git add "$ROOT_DIR/brightflow-app/src/types/generated/"*.ts 2>/dev/null || true
@@ -87,29 +87,13 @@ if [ -d "$ROOT_DIR/brightflow-app" ]; then
         echo -e "${YELLOW}[Frontend] node_modules not found, skipping checks${NC}"
         echo "  Run 'npm install' in brightflow-app to enable"
     else
-        echo -e "${BLUE}[Frontend]${NC} Type checking..."
-        if ! npm run type-check --silent 2>/dev/null; then
-            echo -e "${RED}✗ TypeScript type check failed${NC}"
+        echo -e "${BLUE}[Frontend]${NC} Running checks (types + lint + format)..."
+        if ! npm run check --silent 2>/dev/null; then
+            echo -e "${RED}✗ Frontend checks failed${NC}"
+            echo "  Run 'npm run check:fix' in brightflow-app to fix"
             FAILED=1
         else
-            echo -e "${GREEN}✓ TypeScript types${NC}"
-        fi
-
-        echo -e "${BLUE}[Frontend]${NC} Linting..."
-        if ! npm run lint --silent 2>/dev/null; then
-            echo -e "${RED}✗ Lint check failed${NC}"
-            FAILED=1
-        else
-            echo -e "${GREEN}✓ Lint${NC}"
-        fi
-
-        echo -e "${BLUE}[Frontend]${NC} Checking formatting..."
-        if ! npm run format:check --silent 2>/dev/null; then
-            echo -e "${RED}✗ Format check failed${NC}"
-            echo "  Run 'npm run format' in brightflow-app to fix"
-            FAILED=1
-        else
-            echo -e "${GREEN}✓ Formatting${NC}"
+            echo -e "${GREEN}✓ Frontend checks${NC}"
         fi
     fi
 fi

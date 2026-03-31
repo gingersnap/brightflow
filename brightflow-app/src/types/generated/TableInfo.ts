@@ -4,7 +4,7 @@ import type { ColumnStat } from './ColumnStat';
 /**
  * Information about a table
  */
-export type TableInfo = {
+export interface TableInfo {
   /**
    * Table name
    */
@@ -41,4 +41,4 @@ export type TableInfo = {
    * Last modified timestamp
    */
   updated_at: string | null;
-};
+}

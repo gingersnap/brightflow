@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
+
 import type { User } from '@/types';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -29,10 +30,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const result = await authApi.login(email, password);
       user.value = result;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Login failed';
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Login failed';
       error.value = msg;
-      throw e;
+      throw error;
     }
   }
 
@@ -51,13 +52,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    user,
-    loading,
+    checkAuth,
+    clearAuth,
     error,
     isAuthenticated,
-    checkAuth,
+    loading,
     login,
     logout,
-    clearAuth,
+    user,
   };
 });

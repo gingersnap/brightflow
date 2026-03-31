@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { ChevronDown, ChevronRight } from 'lucide-vue-next';
 import { computed } from 'vue';
-import { ChevronRight, ChevronDown } from 'lucide-vue-next';
+
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 
@@ -27,7 +28,9 @@ interface PivotData {
 // Process results - the backend already returns pivoted data
 // We just need to display it with proper formatting
 const pivotData = computed((): PivotData | null => {
-  if (!resultsStore.hasPivotResults) return null;
+  if (!resultsStore.hasPivotResults) {
+    return null;
+  }
 
   const columns = resultsStore.pivotColumns;
   const rows = resultsStore.pivotRows;
@@ -36,14 +39,14 @@ const pivotData = computed((): PivotData | null => {
 
   // The first N columns are the index (row labels)
   // The remaining columns are the pivoted values
-  const indexCols = pivotStore.rowFields.map((f) => f.column);
+  const indexCols = new Set(pivotStore.rowFields.map((f) => f.column));
 
   // Determine which columns are index vs values
   const indexColIndices: number[] = [];
   const valueColIndices: number[] = [];
 
   colNames.forEach((name, idx) => {
-    if (indexCols.includes(name)) {
+    if (indexCols.has(name)) {
       indexColIndices.push(idx);
     } else {
       valueColIndices.push(idx);
@@ -61,12 +64,12 @@ const pivotData = computed((): PivotData | null => {
 
   return {
     indexColumns: indexColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
-    valueColumns: valueColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
     rows: rows.map((row, rowIdx) => ({
       id: `row-${rowIdx}`,
       indexValues: indexColIndices.map((i) => row[i]),
       dataValues: valueColIndices.map((i) => row[i]),
     })),
+    valueColumns: valueColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
   };
 });
 
@@ -91,7 +94,9 @@ interface Group {
 
 // Group rows hierarchically when there are multiple row fields
 const groupedRows = computed((): GroupedRow[] => {
-  if (!pivotData.value) return [];
+  if (!pivotData.value) {
+    return [];
+  }
 
   const numIndexCols = pivotData.value.indexColumns.length;
 
@@ -99,9 +104,9 @@ const groupedRows = computed((): GroupedRow[] => {
   if (numIndexCols <= 1) {
     return pivotData.value.rows.map((row) => ({
       ...row,
-      level: 0,
-      isGroup: false,
       groupKey: null,
+      isGroup: false,
+      level: 0,
     }));
   }
 
@@ -140,15 +145,15 @@ const groupedRows = computed((): GroupedRow[] => {
 
     // Add group header row
     result.push({
-      id: groupKey,
-      level: 0,
-      isGroup: true,
+      dataValues: pivotStore.showSubtotals ? group.subtotals : [],
       groupKey: groupKey,
       groupLabel: key,
-      rowCount: group.rows.length,
+      id: groupKey,
       indexValues: [key],
-      dataValues: pivotStore.showSubtotals ? group.subtotals : [],
       isCollapsed,
+      isGroup: true,
+      level: 0,
+      rowCount: group.rows.length,
     });
 
     // Add child rows if not collapsed
@@ -170,13 +175,13 @@ const groupedRows = computed((): GroupedRow[] => {
 });
 
 // Check if we have hierarchical grouping
-const hasGrouping = computed(() => {
-  return pivotData.value && pivotData.value.indexColumns.length > 1;
-});
+const hasGrouping = computed(() => pivotData.value && pivotData.value.indexColumns.length > 1);
 
 // Get all group keys for expand/collapse all
 const allGroupKeys = computed((): string[] => {
-  if (!hasGrouping.value) return [];
+  if (!hasGrouping.value) {
+    return [];
+  }
   return groupedRows.value
     .filter((row) => row.isGroup && row.groupKey !== null)
     .map((row) => row.groupKey as string);
@@ -200,7 +205,9 @@ interface ColumnStat {
 
 // Calculate min/max for each value column (for conditional formatting)
 const columnStats = computed((): (ColumnStat | null)[] => {
-  if (!pivotData.value) return [];
+  if (!pivotData.value) {
+    return [];
+  }
 
   const pData = pivotData.value;
   return pData.valueColumns.map((_col, colIdx) => {
@@ -217,13 +224,15 @@ const columnStats = computed((): (ColumnStat | null)[] => {
       }
     });
 
-    return hasValues ? { min, max, range: max - min } : null;
+    return hasValues ? { max, min, range: max - min } : null;
   });
 });
 
 // Calculate column totals
 const columnTotals = computed((): (number | null)[] | null => {
-  if (!pivotData.value || !pivotStore.showColumnTotals) return null;
+  if (!pivotData.value || !pivotStore.showColumnTotals) {
+    return null;
+  }
 
   const pData = pivotData.value;
   const totals = pData.valueColumns.map((_col, colIdx) => {
@@ -244,10 +253,14 @@ const columnTotals = computed((): (number | null)[] | null => {
 
 // Get cell background color based on value (conditional formatting)
 function getCellStyle(value: unknown, colIdx: number): Record<string, string> {
-  if (!pivotStore.showConditionalFormatting) return {};
+  if (!pivotStore.showConditionalFormatting) {
+    return {};
+  }
 
   const stats = columnStats.value[colIdx];
-  if (!stats || typeof value !== 'number' || stats.range === 0) return {};
+  if (!stats || typeof value !== 'number' || stats.range === 0) {
+    return {};
+  }
 
   // Calculate position in range (0 to 1)
   const position = (value - stats.min) / stats.range;
@@ -265,14 +278,16 @@ function getCellStyle(value: unknown, colIdx: number): Record<string, string> {
 
 // Format cell value
 function formatValue(value: unknown, dtype: string | undefined): string {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined) {
+    return '—';
+  }
   if (typeof value === 'number') {
     const decimals = pivotStore.decimalPlaces;
     // Format based on dtype
     if (dtype === 'float' || dtype === 'decimal' || dtype === 'f64') {
       return value.toLocaleString(undefined, {
-        minimumFractionDigits: 0,
         maximumFractionDigits: decimals,
+        minimumFractionDigits: 0,
       });
     }
     // Integers - no decimals unless value has them
@@ -281,8 +296,8 @@ function formatValue(value: unknown, dtype: string | undefined): string {
     }
     // Non-integer without explicit float type
     return value.toLocaleString(undefined, {
-      minimumFractionDigits: 0,
       maximumFractionDigits: decimals,
+      minimumFractionDigits: 0,
     });
   }
   return String(value);
@@ -290,7 +305,9 @@ function formatValue(value: unknown, dtype: string | undefined): string {
 
 // Check if a value is numeric
 function isNumeric(dtype: string | undefined): boolean {
-  if (!dtype) return false;
+  if (!dtype) {
+    return false;
+  }
   return ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype);
 }
 </script>
@@ -298,10 +315,7 @@ function isNumeric(dtype: string | undefined): boolean {
 <template>
   <div class="h-full flex flex-col">
     <!-- Empty state if no data -->
-    <div
-      v-if="!pivotData"
-      class="flex items-center justify-center h-full text-muted"
-    >
+    <div v-if="!pivotData" class="flex items-center justify-center h-full text-muted">
       <div class="text-center">
         <p class="text-sm">No pivot data</p>
         <p class="text-xs text-muted/70 mt-1">Configure your pivot and run the query</p>
@@ -330,138 +344,135 @@ function isNumeric(dtype: string | undefined): boolean {
 
     <!-- Pivot Table -->
     <div v-if="pivotData" class="flex-1 overflow-auto">
-    <table class="w-full border-collapse text-sm">
-      <!-- Header -->
-      <thead class="sticky top-0 z-1 bg-muted/50 backdrop-blur">
-        <tr>
-          <!-- Index column headers -->
-          <th
-            v-for="col in pivotData.indexColumns"
-            :key="'idx-' + col.name"
-            class="px-3 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wide border-b border-default bg-muted/50"
-          >
-            {{ col.name }}
-          </th>
-
-          <!-- Value column headers -->
-          <th
-            v-for="col in pivotData.valueColumns"
-            :key="'val-' + col.name"
-            class="px-3 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wide border-b border-default bg-muted/50"
-          >
-            {{ col.name }}
-          </th>
-        </tr>
-      </thead>
-
-      <!-- Body -->
-      <tbody>
-        <template v-for="row in groupedRows" :key="row.id">
-          <!-- Group header row -->
-          <tr
-            v-if="row.isGroup && row.groupKey"
-            class="bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors"
-            @click="pivotStore.toggleGroup(row.groupKey)"
-          >
-            <!-- Group label with expand/collapse icon -->
-            <td
-              :colspan="hasGrouping ? pivotData.indexColumns.length : 1"
-              class="px-3 py-2 border-b border-default font-semibold"
+      <table class="w-full border-collapse text-sm">
+        <!-- Header -->
+        <thead class="sticky top-0 z-1 bg-muted/50 backdrop-blur">
+          <tr>
+            <!-- Index column headers -->
+            <th
+              v-for="col in pivotData.indexColumns"
+              :key="'idx-' + col.name"
+              class="px-3 py-2 text-left text-xs font-semibold text-muted uppercase tracking-wide border-b border-default bg-muted/50"
             >
-              <div class="flex items-center gap-2">
-                <component
-                  :is="row.isCollapsed ? ChevronRight : ChevronDown"
-                  class="w-4 h-4 text-muted"
-                />
-                <span>{{ row.groupLabel }}</span>
-                <span class="text-xs text-muted font-normal">({{ row.rowCount }})</span>
-              </div>
-            </td>
+              {{ col.name }}
+            </th>
 
-            <!-- Subtotal values for group -->
+            <!-- Value column headers -->
+            <th
+              v-for="col in pivotData.valueColumns"
+              :key="'val-' + col.name"
+              class="px-3 py-2 text-right text-xs font-semibold text-muted uppercase tracking-wide border-b border-default bg-muted/50"
+            >
+              {{ col.name }}
+            </th>
+          </tr>
+        </thead>
+
+        <!-- Body -->
+        <tbody>
+          <template v-for="row in groupedRows" :key="row.id">
+            <!-- Group header row -->
+            <tr
+              v-if="row.isGroup && row.groupKey"
+              class="bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors"
+              @click="pivotStore.toggleGroup(row.groupKey)"
+            >
+              <!-- Group label with expand/collapse icon -->
+              <td
+                :colspan="hasGrouping ? pivotData.indexColumns.length : 1"
+                class="px-3 py-2 border-b border-default font-semibold"
+              >
+                <div class="flex items-center gap-2">
+                  <component
+                    :is="row.isCollapsed ? ChevronRight : ChevronDown"
+                    class="w-4 h-4 text-muted"
+                  />
+                  <span>{{ row.groupLabel }}</span>
+                  <span class="text-xs text-muted font-normal">({{ row.rowCount }})</span>
+                </div>
+              </td>
+
+              <!-- Subtotal values for group -->
+              <td
+                v-for="(value, idx) in row.dataValues"
+                :key="'subtotal-' + idx"
+                class="px-3 py-2 text-right border-b border-default tabular-nums font-semibold"
+                :class="{
+                  'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype),
+                }"
+              >
+                {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
+              </td>
+              <!-- Empty cells if subtotals disabled -->
+              <td
+                v-if="row.dataValues.length === 0"
+                v-for="idx in pivotData.valueColumns.length"
+                :key="'empty-' + idx"
+                class="px-3 py-2 border-b border-default"
+              />
+            </tr>
+
+            <!-- Regular data row -->
+            <tr
+              v-else
+              class="hover:bg-muted/30 transition-colors"
+              :class="{ 'pl-4': row.level > 0 }"
+            >
+              <!-- Index cells (row labels) -->
+              <template v-if="hasGrouping">
+                <!-- Indent for grouped rows -->
+                <td
+                  v-for="(value, idx) in row.displayIndexValues || row.indexValues"
+                  :key="'idx-' + idx"
+                  class="px-3 py-2 border-b border-default/50"
+                  :class="{ 'pl-8': idx === 0 && row.level > 0 }"
+                >
+                  {{ formatValue(value, pivotData.indexColumns[idx + row.level]?.dtype) }}
+                </td>
+              </template>
+              <template v-else>
+                <td
+                  v-for="(value, idx) in row.indexValues"
+                  :key="'idx-' + idx"
+                  class="px-3 py-2 border-b border-default/50 font-medium"
+                >
+                  {{ formatValue(value, pivotData.indexColumns[idx]?.dtype) }}
+                </td>
+              </template>
+
+              <!-- Data value cells -->
+              <td
+                v-for="(value, idx) in row.dataValues"
+                :key="'val-' + idx"
+                class="px-3 py-2 text-right border-b border-default/50 tabular-nums"
+                :class="{
+                  'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype),
+                }"
+                :style="getCellStyle(value, idx)"
+              >
+                {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
+              </td>
+            </tr>
+          </template>
+
+          <!-- Totals Row -->
+          <tr v-if="columnTotals" class="bg-primary/10 font-bold">
             <td
-              v-for="(value, idx) in row.dataValues"
-              :key="'subtotal-' + idx"
-              class="px-3 py-2 text-right border-b border-default tabular-nums font-semibold"
-              :class="{
-                'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype)
-              }"
+              :colspan="pivotData.indexColumns.length"
+              class="px-3 py-2 border-t-2 border-primary/30"
+            >
+              Total
+            </td>
+            <td
+              v-for="(value, idx) in columnTotals"
+              :key="'total-' + idx"
+              class="px-3 py-2 text-right font-mono tabular-nums border-t-2 border-primary/30"
             >
               {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
             </td>
-            <!-- Empty cells if subtotals disabled -->
-            <td
-              v-if="row.dataValues.length === 0"
-              v-for="idx in pivotData.valueColumns.length"
-              :key="'empty-' + idx"
-              class="px-3 py-2 border-b border-default"
-            />
           </tr>
-
-          <!-- Regular data row -->
-          <tr
-            v-else
-            class="hover:bg-muted/30 transition-colors"
-            :class="{ 'pl-4': row.level > 0 }"
-          >
-            <!-- Index cells (row labels) -->
-            <template v-if="hasGrouping">
-              <!-- Indent for grouped rows -->
-              <td
-                v-for="(value, idx) in (row.displayIndexValues || row.indexValues)"
-                :key="'idx-' + idx"
-                class="px-3 py-2 border-b border-default/50"
-                :class="{ 'pl-8': idx === 0 && row.level > 0 }"
-              >
-                {{ formatValue(value, pivotData.indexColumns[idx + row.level]?.dtype) }}
-              </td>
-            </template>
-            <template v-else>
-              <td
-                v-for="(value, idx) in row.indexValues"
-                :key="'idx-' + idx"
-                class="px-3 py-2 border-b border-default/50 font-medium"
-              >
-                {{ formatValue(value, pivotData.indexColumns[idx]?.dtype) }}
-              </td>
-            </template>
-
-            <!-- Data value cells -->
-            <td
-              v-for="(value, idx) in row.dataValues"
-              :key="'val-' + idx"
-              class="px-3 py-2 text-right border-b border-default/50 tabular-nums"
-              :class="{
-                'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype)
-              }"
-              :style="getCellStyle(value, idx)"
-            >
-              {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
-            </td>
-          </tr>
-        </template>
-
-        <!-- Totals Row -->
-        <tr
-          v-if="columnTotals"
-          class="bg-primary/10 font-bold"
-        >
-          <td
-            :colspan="pivotData.indexColumns.length"
-            class="px-3 py-2 border-t-2 border-primary/30"
-          >
-            Total
-          </td>
-          <td
-            v-for="(value, idx) in columnTotals"
-            :key="'total-' + idx"
-            class="px-3 py-2 text-right font-mono tabular-nums border-t-2 border-primary/30"
-          >
-            {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>

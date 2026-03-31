@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { Play } from 'lucide-vue-next';
-import { useInsightsStore, type Cadence, type ReportType } from '@/stores/insights';
+
+import { type Cadence, type ReportType, useInsightsStore } from '@/stores/insights';
+
 import InsightsPanel from './InsightsPanel.vue';
 
 const insightsStore = useInsightsStore();
 
-const reportTypes: Array<{ value: ReportType; label: string }> = [
-  { value: 'review', label: 'Review' },
-  { value: 'trends', label: 'Trends' },
+const reportTypes: { value: ReportType; label: string }[] = [
+  { label: 'Review', value: 'review' },
+  { label: 'Trends', value: 'trends' },
 ];
 
-const cadences: Array<{ value: Cadence; label: string }> = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
+const cadences: { value: Cadence; label: string }[] = [
+  { label: 'Daily', value: 'daily' },
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
 ];
 
 function runAnalysis(): void {
@@ -78,11 +80,7 @@ function selectCadence(c: Cadence): void {
       <div class="flex-1" />
 
       <!-- Run button -->
-      <UButton
-        size="sm"
-        :loading="insightsStore.loading"
-        @click="runAnalysis"
-      >
+      <UButton size="sm" :loading="insightsStore.loading" @click="runAnalysis">
         <Play class="w-3.5 h-3.5 mr-1.5" />
         Run Analysis
       </UButton>

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+
 import { connectApi } from '@/services/api';
 import type { SyncRun } from '@/types';
 
@@ -23,7 +24,7 @@ export const useConnectStore = defineStore('connect', () => {
       expandedConnector.value = null;
     } else {
       expandedConnector.value = name;
-      fetchRunHistory(name);
+      void fetchRunHistory(name);
     }
   }
 
@@ -33,10 +34,10 @@ export const useConnectStore = defineStore('connect', () => {
   }
 
   return {
-    runHistory,
     expandedConnector,
     fetchRunHistory,
-    toggleHistory,
     reset,
+    runHistory,
+    toggleHistory,
   };
 });

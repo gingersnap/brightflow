@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { insightsApi, type AnalysisTree } from '@/services/api';
+
+import { type AnalysisTree, insightsApi } from '@/services/api';
+
 import { useDatasetStore } from './dataset';
 
 export type ReportType = 'review' | 'trends';
@@ -20,7 +22,9 @@ export const useInsightsStore = defineStore('insights', () => {
 
   async function runReview(selectedCadence: Cadence = cadence.value): Promise<void> {
     const datasetStore = useDatasetStore();
-    if (!datasetStore.id) return;
+    if (!datasetStore.id) {
+      return;
+    }
 
     loading.value = true;
     error.value = null;
@@ -37,8 +41,8 @@ export const useInsightsStore = defineStore('insights', () => {
         firstLevelCount.value = result.firstLevelCount;
         deeperCount.value = result.deeperCount;
       }
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Analysis failed';
+    } catch (error) {
+      error.value = error instanceof Error ? error.message : 'Analysis failed';
       tree.value = null;
     } finally {
       loading.value = false;
@@ -47,7 +51,9 @@ export const useInsightsStore = defineStore('insights', () => {
 
   async function runTrends(): Promise<void> {
     const datasetStore = useDatasetStore();
-    if (!datasetStore.id) return;
+    if (!datasetStore.id) {
+      return;
+    }
 
     loading.value = true;
     error.value = null;
@@ -63,8 +69,8 @@ export const useInsightsStore = defineStore('insights', () => {
         firstLevelCount.value = result.firstLevelCount;
         deeperCount.value = result.deeperCount;
       }
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : 'Analysis failed';
+    } catch (error) {
+      error.value = error instanceof Error ? error.message : 'Analysis failed';
       tree.value = null;
     } finally {
       loading.value = false;
@@ -83,18 +89,18 @@ export const useInsightsStore = defineStore('insights', () => {
   }
 
   return {
-    tree,
-    reportType,
     cadence,
-    loading,
+    deeperCount,
     error,
     executionTimeMs,
-    nodeCount,
     findingCount,
     firstLevelCount,
-    deeperCount,
+    loading,
+    nodeCount,
+    reportType,
+    reset,
     runReview,
     runTrends,
-    reset,
+    tree,
   };
 });

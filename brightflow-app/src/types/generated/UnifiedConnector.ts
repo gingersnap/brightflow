@@ -5,11 +5,11 @@ import type { UnifiedSyncRun } from './UnifiedSyncRun';
 /**
  * Unified connector view — combines file config + DB schedule + latest run
  */
-export type UnifiedConnector = {
+export interface UnifiedConnector {
   name: string;
   connector: string;
   valid: boolean;
   hasToken: boolean;
   job: UnifiedJob | null;
   lastRun: UnifiedSyncRun | null;
-};
+}

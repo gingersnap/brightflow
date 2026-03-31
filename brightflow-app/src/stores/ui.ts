@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
-import type { ViewMode, ChartType } from '@/types';
+
+import type { ChartType, ViewMode } from '@/types';
 
 export type AppMode = 'explore' | 'insights';
 type SectionName = 'filter' | 'summarize' | 'results';
@@ -38,7 +39,9 @@ export const useUiStore = defineStore('ui', () => {
   const hasShownPivotResults = ref(false);
 
   // Persist preferences
-  watch(appMode, (val) => localStorage.setItem('brightflow-app-mode', val));
+  watch(appMode, (val) => {
+    localStorage.setItem('brightflow-app-mode', val);
+  });
   watch(showConnect, (val) => {
     if (val) {
       localStorage.setItem('brightflow-app-mode', 'connect');
@@ -49,8 +52,12 @@ export const useUiStore = defineStore('ui', () => {
       localStorage.setItem('brightflow-app-mode', 'system');
     }
   });
-  watch(viewMode, (val) => localStorage.setItem('brightflow-view-mode', val));
-  watch(chartType, (val) => localStorage.setItem('brightflow-chart-type', val));
+  watch(viewMode, (val) => {
+    localStorage.setItem('brightflow-view-mode', val);
+  });
+  watch(chartType, (val) => {
+    localStorage.setItem('brightflow-chart-type', val);
+  });
 
   // Actions
   function setAppMode(mode: AppMode): void {
@@ -61,12 +68,16 @@ export const useUiStore = defineStore('ui', () => {
 
   function setShowConnect(val: boolean): void {
     showConnect.value = val;
-    if (val) showSystem.value = false;
+    if (val) {
+      showSystem.value = false;
+    }
   }
 
   function setShowSystem(val: boolean): void {
     showSystem.value = val;
-    if (val) showConnect.value = false;
+    if (val) {
+      showConnect.value = false;
+    }
   }
 
   function setViewMode(mode: ViewMode): void {
@@ -78,9 +89,15 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   function toggleSection(section: SectionName): void {
-    if (section === 'filter') filterCollapsed.value = !filterCollapsed.value;
-    if (section === 'summarize') summarizeCollapsed.value = !summarizeCollapsed.value;
-    if (section === 'results') resultsCollapsed.value = !resultsCollapsed.value;
+    if (section === 'filter') {
+      filterCollapsed.value = !filterCollapsed.value;
+    }
+    if (section === 'summarize') {
+      summarizeCollapsed.value = !summarizeCollapsed.value;
+    }
+    if (section === 'results') {
+      resultsCollapsed.value = !resultsCollapsed.value;
+    }
   }
 
   // Called when pivot results are received
@@ -99,21 +116,21 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     appMode,
-    showConnect,
-    showSystem,
-    viewMode,
     chartType,
     filterCollapsed,
-    summarizeCollapsed,
-    resultsCollapsed,
     hasShownPivotResults,
+    onPivotResults,
+    resetForNewDataset,
+    resultsCollapsed,
     setAppMode,
+    setChartType,
     setShowConnect,
     setShowSystem,
     setViewMode,
-    setChartType,
+    showConnect,
+    showSystem,
+    summarizeCollapsed,
     toggleSection,
-    onPivotResults,
-    resetForNewDataset,
+    viewMode,
   };
 });

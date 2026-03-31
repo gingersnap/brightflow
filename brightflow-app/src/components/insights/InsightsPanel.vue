@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { FileSearch } from 'lucide-vue-next';
-import { useInsightsStore } from '@/stores/insights';
+import { computed } from 'vue';
+
 import type { AnalysisNode } from '@/services/api';
+import { useInsightsStore } from '@/stores/insights';
+
 import InsightCard from './InsightCard.vue';
 
 const insightsStore = useInsightsStore();
 
 // Get root nodes sorted by significance
 const rootNodes = computed(() => {
-  if (!insightsStore.tree) return [];
+  if (!insightsStore.tree) {
+    return [];
+  }
   return insightsStore.tree.roots
     .map((rootId) => insightsStore.tree?.nodes.find((n) => n.id['0'] === rootId['0']))
     .filter((n): n is AnalysisNode => n !== undefined)
-    .sort((a, b) => b.significance - a.significance);
+    .toSorted((a, b) => b.significance - a.significance);
 });
 </script>
 
@@ -22,7 +26,9 @@ const rootNodes = computed(() => {
     <!-- Loading state -->
     <div v-if="insightsStore.loading" class="flex items-center justify-center h-64">
       <div class="text-center">
-        <div class="inline-block w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <div
+          class="inline-block w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-3"
+        />
         <p class="text-sm text-muted">Running analysis...</p>
       </div>
     </div>
@@ -53,11 +59,14 @@ const rootNodes = computed(() => {
     <!-- Results -->
     <div v-else class="p-4 space-y-3">
       <!-- Summary bar -->
-      <div class="flex items-center justify-between text-xs text-muted pb-2 border-b border-default">
+      <div
+        class="flex items-center justify-between text-xs text-muted pb-2 border-b border-default"
+      >
         <span>
           {{ insightsStore.firstLevelCount + insightsStore.deeperCount }} analyses
           <template v-if="insightsStore.deeperCount > 0">
-            ({{ insightsStore.firstLevelCount }} first-level, {{ insightsStore.deeperCount }} deeper)
+            ({{ insightsStore.firstLevelCount }} first-level,
+            {{ insightsStore.deeperCount }} deeper)
           </template>
           &rarr; {{ rootNodes.length }} finding{{ rootNodes.length === 1 ? '' : 's' }}
         </span>

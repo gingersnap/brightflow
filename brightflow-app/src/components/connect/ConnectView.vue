@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, watch, onUnmounted } from 'vue';
+import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { RefreshCw } from 'lucide-vue-next';
-import { useQuery, useMutation, useQueryCache } from '@pinia/colada';
+import { computed, onUnmounted, watch } from 'vue';
+
 import { connectApi } from '@/services/api';
 import { useConnectStore } from '@/stores/connect';
-import ConnectorCard from './ConnectorCard.vue';
 import type { UnifiedConnector } from '@/types';
+
+import ConnectorCard from './ConnectorCard.vue';
 
 const connectStore = useConnectStore();
 const queryCache = useQueryCache();
@@ -33,7 +35,9 @@ const activeRunsExist = computed(
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 function startPolling(): void {
-  if (pollTimer) return;
+  if (pollTimer) {
+    return;
+  }
   const poll = (): void => {
     queryCache.invalidateQueries({ key: ['connectors'] });
     if (connectStore.expandedConnector) {
@@ -121,7 +125,8 @@ const { mutate: updateToken } = useMutation({
       >
         <p class="text-muted mb-2">No connector configs found</p>
         <p class="text-xs text-muted">
-          Place TOML config files in the <code class="px-1 py-0.5 bg-elevated rounded">configs/</code> directory
+          Place TOML config files in the
+          <code class="px-1 py-0.5 bg-elevated rounded">configs/</code> directory
         </p>
       </div>
 

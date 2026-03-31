@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { createWebSocketClient, type WebSocketClient } from '@/services/websocket';
+import { computed, ref } from 'vue';
+
+import { type WebSocketClient, createWebSocketClient } from '@/services/websocket';
 import type { ConnectionStatus } from '@/types';
 
 type MessageHandler = (message: Record<string, unknown>) => void;
@@ -21,27 +22,35 @@ export const useConnectionStore = defineStore('connection', () => {
 
   const statusText = computed(() => {
     switch (status.value) {
-      case 'connected':
+      case 'connected': {
         return 'Connected';
-      case 'connecting':
+      }
+      case 'connecting': {
         return 'Connecting...';
-      case 'error':
+      }
+      case 'error': {
         return 'Connection error';
-      default:
+      }
+      case 'disconnected': {
         return 'Disconnected';
+      }
     }
   });
 
   const statusColor = computed(() => {
     switch (status.value) {
-      case 'connected':
+      case 'connected': {
         return 'success';
-      case 'connecting':
+      }
+      case 'connecting': {
         return 'warning';
-      case 'error':
+      }
+      case 'error': {
         return 'error';
-      default:
+      }
+      case 'disconnected': {
         return 'neutral';
+      }
     }
   });
 
@@ -67,12 +76,15 @@ export const useConnectionStore = defineStore('connection', () => {
         // Route to registered handlers
         const handlers = messageHandlers.get(type) ?? [];
         console.log('[WS] Routing to', handlers.length, 'handlers');
-        handlers.forEach((handler) => handler(message));
+        handlers.forEach((handler) => {
+          handler(message);
+        });
         break;
       }
 
-      default:
+      default: {
         console.log('[WS] Unknown message type:', type, message);
+      }
     }
   }
 
@@ -139,7 +151,7 @@ export const useConnectionStore = defineStore('connection', () => {
       const currentHandlers = messageHandlers.get(type);
       if (currentHandlers) {
         const index = currentHandlers.indexOf(handler);
-        if (index > -1) {
+        if (index !== -1) {
           currentHandlers.splice(index, 1);
         }
       }
@@ -147,18 +159,18 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   return {
-    status,
-    serverVersion,
-    lastError,
-    reconnectCount,
+    connect,
+    disconnect,
     isConnected,
     isConnecting,
     isDisconnected,
-    statusText,
-    statusColor,
-    connect,
-    disconnect,
-    send,
+    lastError,
     onMessage,
+    reconnectCount,
+    send,
+    serverVersion,
+    status,
+    statusColor,
+    statusText,
   };
 });

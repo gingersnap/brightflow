@@ -1,12 +1,13 @@
 <script setup lang="ts">
+import { ChevronDown, ChevronRight, Plus, X } from 'lucide-vue-next';
 import { computed, watch } from 'vue';
-import { Plus, X, ChevronRight, ChevronDown } from 'lucide-vue-next';
-import { useQueryStore } from '@/stores/query';
-import { useDatasetStore } from '@/stores/dataset';
-import { useUiStore } from '@/stores/ui';
-import { useConnectionStore } from '@/stores/connection';
+
 import { useOperators } from '@/composables/useOperators';
 import { useWsQuery } from '@/composables/useWsQuery';
+import { useConnectionStore } from '@/stores/connection';
+import { useDatasetStore } from '@/stores/dataset';
+import { useQueryStore } from '@/stores/query';
+import { useUiStore } from '@/stores/ui';
 import type { Filter, Operator } from '@/types';
 
 const queryStore = useQueryStore();
@@ -32,7 +33,9 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => [queryStore.filters.map((f) => `${f.column}:${f.op}:${f.value}`), queryStore.limit],
   () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
     debounceTimer = setTimeout(() => {
       if (connectionStore.isConnected && datasetStore.hasData) {
         loadTableData();
@@ -43,13 +46,13 @@ watch(
 );
 
 // Column options for dropdown
-const columnOptions = computed(() => {
-  return datasetStore.columns.map((col) => ({
+const columnOptions = computed(() =>
+  datasetStore.columns.map((col) => ({
     label: col.name,
     value: col.name,
     dtype: col.dtype,
-  }));
-});
+  })),
+);
 
 // Get dtype for a column
 function getColumnDtype(columnName: string): string {
@@ -59,7 +62,9 @@ function getColumnDtype(columnName: string): string {
 
 // Get operators for a filter's column
 function getOperators(filter: Filter): Operator[] {
-  if (!filter.column) return [];
+  if (!filter.column) {
+    return [];
+  }
   const dtype = getColumnDtype(filter.column);
   return getOperatorsForType(dtype);
 }
@@ -96,13 +101,10 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
       class="flex items-center gap-2 w-full px-4 py-2 bg-muted/30 text-left hover:bg-muted/40 transition-colors"
       @click="uiStore.toggleSection('filter')"
     >
-      <component
-        :is="isCollapsed ? ChevronRight : ChevronDown"
-        class="w-4 h-4 text-muted"
-      />
+      <component :is="isCollapsed ? ChevronRight : ChevronDown" class="w-4 h-4 text-muted" />
       <h2 class="text-sm font-medium text-default">Filters & Options</h2>
       <span v-if="hasActiveFilters" class="text-xs text-muted">
-        ({{ queryStore.filters.filter(f => f.column).length }} active)
+        ({{ queryStore.filters.filter((f) => f.column).length }} active)
       </span>
     </button>
 

@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { AlertTriangle, ChevronDown, ChevronRight, Key, Play } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
-import { Play, AlertTriangle, ChevronRight, ChevronDown, Key } from 'lucide-vue-next';
-import type { UnifiedConnector, SyncRun } from '@/types';
+
+import type { SyncRun, UnifiedConnector } from '@/types';
+
 import SyncStatusBadge from './SyncStatusBadge.vue';
 
 const props = defineProps<{
@@ -28,7 +30,9 @@ function toggleTokenInput(): void {
 }
 
 async function saveToken(): Promise<void> {
-  if (!tokenValue.value.trim()) return;
+  if (!tokenValue.value.trim()) {
+    return;
+  }
   savingToken.value = true;
   emit('updateToken', tokenValue.value.trim());
   savingToken.value = false;
@@ -39,10 +43,10 @@ async function saveToken(): Promise<void> {
 const SCHEDULE_PRESETS = [
   { label: 'Manual', value: 0 },
   { label: 'Every 1h', value: 3600 },
-  { label: 'Every 6h', value: 21600 },
-  { label: 'Every 12h', value: 43200 },
-  { label: 'Daily', value: 86400 },
-  { label: 'Weekly', value: 604800 },
+  { label: 'Every 6h', value: 21_600 },
+  { label: 'Every 12h', value: 43_200 },
+  { label: 'Daily', value: 86_400 },
+  { label: 'Weekly', value: 604_800 },
 ];
 
 const currentInterval = computed(() => props.connector.job?.intervalSecs ?? 0);
@@ -57,10 +61,16 @@ function relativeTime(dateStr: string): string {
   const now = Date.now();
   const diff = now - date.getTime();
 
-  if (diff < 60000) return 'just now';
-  if (diff < 3600000) return `${Math.round(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.round(diff / 3600000)}h ago`;
-  return `${Math.round(diff / 86400000)}d ago`;
+  if (diff < 60_000) {
+    return 'just now';
+  }
+  if (diff < 3_600_000) {
+    return `${Math.round(diff / 60_000)}m ago`;
+  }
+  if (diff < 86_400_000) {
+    return `${Math.round(diff / 3_600_000)}h ago`;
+  }
+  return `${Math.round(diff / 86_400_000)}d ago`;
 }
 
 function duration(startedAt: string, finishedAt: string): string {
@@ -102,10 +112,14 @@ function duration(startedAt: string, finishedAt: string): string {
       <!-- Token status -->
       <button
         class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-        :class="connector.hasToken
-          ? 'text-green-500 hover:text-green-400'
-          : 'text-amber-500 hover:text-amber-400'"
-        :title="connector.hasToken ? 'Token configured — click to update' : 'No token set — click to add'"
+        :class="
+          connector.hasToken
+            ? 'text-green-500 hover:text-green-400'
+            : 'text-amber-500 hover:text-amber-400'
+        "
+        :title="
+          connector.hasToken ? 'Token configured — click to update' : 'No token set — click to add'
+        "
         @click="toggleTokenInput"
       >
         <Key class="w-3 h-3" />
@@ -143,16 +157,13 @@ function duration(startedAt: string, finishedAt: string): string {
         v-model="tokenValue"
         type="password"
         placeholder="Paste API token..."
-        class="flex-1 text-xs bg-elevated border border-default rounded px-2 py-1.5 text-highlighted
-               placeholder-muted focus:outline-none focus:border-blue-500"
+        class="flex-1 text-xs bg-elevated border border-default rounded px-2 py-1.5 text-highlighted placeholder-muted focus:outline-none focus:border-blue-500"
         @keyup.enter="saveToken"
-      >
+      />
       <UButton size="xs" :loading="savingToken" :disabled="!tokenValue.trim()" @click="saveToken">
         Save
       </UButton>
-      <UButton size="xs" variant="ghost" @click="toggleTokenInput">
-        Cancel
-      </UButton>
+      <UButton size="xs" variant="ghost" @click="toggleTokenInput"> Cancel </UButton>
     </div>
 
     <!-- Last sync summary -->
@@ -164,7 +175,9 @@ function duration(startedAt: string, finishedAt: string): string {
         <span class="text-blue-500">Sync in progress...</span>
       </template>
       <template v-else-if="connector.lastRun">
-        <SyncStatusBadge :status="(connector.lastRun.status as 'pending' | 'running' | 'completed' | 'failed')" />
+        <SyncStatusBadge
+          :status="connector.lastRun.status as 'pending' | 'running' | 'completed' | 'failed'"
+        />
         <span>{{ relativeTime(connector.lastRun.startedAt) }}</span>
         <span v-if="connector.lastRun.finishedAt">
           ({{ duration(connector.lastRun.startedAt, connector.lastRun.finishedAt) }})
@@ -183,8 +196,7 @@ function duration(startedAt: string, finishedAt: string): string {
 
     <!-- Run History toggle -->
     <button
-      class="w-full flex items-center gap-1.5 px-4 py-2 text-xs text-muted hover:text-highlighted
-             border-t border-default transition-colors cursor-pointer"
+      class="w-full flex items-center gap-1.5 px-4 py-2 text-xs text-muted hover:text-highlighted border-t border-default transition-colors cursor-pointer"
       @click="emit('toggleHistory')"
     >
       <ChevronDown v-if="expanded" class="w-3 h-3" />
@@ -203,18 +215,13 @@ function duration(startedAt: string, finishedAt: string): string {
           :key="run.id"
           class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2 text-xs"
         >
-          <SyncStatusBadge :status="(run.status as 'pending' | 'running' | 'completed' | 'failed')" />
+          <SyncStatusBadge :status="run.status as 'pending' | 'running' | 'completed' | 'failed'" />
           <span class="text-muted">{{ relativeTime(run.startedAt) }}</span>
           <span v-if="run.finishedAt" class="text-muted">
             ({{ duration(run.startedAt, run.finishedAt) }})
           </span>
-          <span v-if="run.rowsSynced > 0" class="text-muted">
-            {{ run.rowsSynced }} rows
-          </span>
-          <span
-            v-if="run.status === 'failed' && run.error"
-            class="text-red-400 break-all"
-          >
+          <span v-if="run.rowsSynced > 0" class="text-muted"> {{ run.rowsSynced }} rows </span>
+          <span v-if="run.status === 'failed' && run.error" class="text-red-400 break-all">
             {{ run.error }}
           </span>
         </div>

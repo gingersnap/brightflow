@@ -4,10 +4,10 @@ import type { ColumnInfo } from './ColumnInfo';
 /**
  * Query execution response
  */
-export type QueryResponse = {
+export interface QueryResponse {
   columns: Array<ColumnInfo>;
   rows: unknown[][];
   rowCount: number;
   totalRows: number;
   executionTimeMs: number;
-};
+}

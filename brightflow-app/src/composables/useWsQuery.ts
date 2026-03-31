@@ -1,10 +1,10 @@
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
+import { usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
-import { usePivotStore } from '@/stores/pivot';
 import { useUiStore } from '@/stores/ui';
-import type { Operation, Aggregation as AggFn, FilterOp } from '@/types/generated';
+import type { Aggregation as AggFn, FilterOp, Operation } from '@/types/generated';
 
 /**
  * WebSocket query execution composable
@@ -28,9 +28,9 @@ export function useWsQuery() {
       queryStore.filters.forEach((filter) => {
         if (filter.column && filter.op) {
           ops.push({
-            type: 'filter',
             column: filter.column,
             op: filter.op as FilterOp,
+            type: 'filter',
             value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
           });
         }
@@ -39,7 +39,7 @@ export function useWsQuery() {
 
     // Add limit (0 means no limit)
     if (queryStore.limit > 0) {
-      ops.push({ type: 'limit', n: queryStore.limit });
+      ops.push({ n: queryStore.limit, type: 'limit' });
     }
 
     return ops;
@@ -76,9 +76,9 @@ export function useWsQuery() {
     );
 
     connectionStore.send({
-      type: 'query',
       datasetId: datasetStore.id,
       operations,
+      type: 'query',
     });
   }
 
@@ -95,9 +95,9 @@ export function useWsQuery() {
         queryStore.filters.forEach((filter) => {
           if (filter.column && filter.op) {
             ops.push({
-              type: 'filter',
               column: filter.column,
               op: filter.op as FilterOp,
+              type: 'filter',
               value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
             });
           }
@@ -107,7 +107,9 @@ export function useWsQuery() {
       // Add pivot operation
       if (pivotStore.valueFields.length > 0) {
         const valueField = pivotStore.valueFields[0];
-        if (!valueField) return ops;
+        if (!valueField) {
+          return ops;
+        }
 
         const rowCols = pivotStore.rowFields.map((f) => f.column);
         const colField =
@@ -125,44 +127,44 @@ export function useWsQuery() {
         if (!colField) {
           // Only rows, no column pivot - use groupBy
           ops.push({
-            type: 'groupBy',
-            by: rowCols,
             aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
+            by: rowCols,
+            type: 'groupBy',
           });
         } else if (rowCols.length === 0) {
           // Only columns (no rows) - group by the column field
           ops.push({
-            type: 'groupBy',
-            by: [colField],
             aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
+            by: [colField],
+            type: 'groupBy',
           });
         } else {
           // Full pivot with both rows and columns
           ops.push({
-            type: 'pivot',
-            index: rowCols,
-            columns: colField,
-            values: valueField.column,
             agg: aggFunc,
+            columns: colField,
+            index: rowCols,
+            type: 'pivot',
+            values: valueField.column,
           });
         }
 
-        const lastOp = ops[ops.length - 1];
+        const lastOp = ops.at(-1);
         console.log('[useWsQuery] Pivot/GroupBy operation:', lastOp);
       }
 
       // Add sort
       if (queryStore.sections.sort.enabled && queryStore.sortBy) {
         ops.push({
-          type: 'sort',
           by: queryStore.sortBy,
           descending: queryStore.sortDescending,
+          type: 'sort',
         });
       }
 
       // Add limit
       if (queryStore.sections.limit.enabled && queryStore.limit > 0) {
-        ops.push({ type: 'limit', n: queryStore.limit });
+        ops.push({ n: queryStore.limit, type: 'limit' });
       }
 
       return ops;
@@ -214,9 +216,9 @@ export function useWsQuery() {
     );
 
     connectionStore.send({
-      type: 'query',
       datasetId: datasetStore.id,
       operations,
+      type: 'query',
     });
   }
 
@@ -241,11 +243,11 @@ export function useWsQuery() {
   }
 
   return {
-    loadTableData,
-    buildTableOperations,
-    executePivot,
-    execute,
-    canExecute,
     buildOperations,
+    buildTableOperations,
+    canExecute,
+    execute,
+    executePivot,
+    loadTableData,
   };
 }

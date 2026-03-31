@@ -4,10 +4,10 @@ import type { ColumnInfo } from './ColumnInfo';
 /**
  * Response for dataset upload
  */
-export type UploadResponse = {
+export interface UploadResponse {
   id: string;
   name: string;
   rowCount: number;
   columnCount: number;
   columns: Array<ColumnInfo>;
-};
+}

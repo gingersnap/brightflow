@@ -7,7 +7,7 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 ## Tech Stack
 
 - **Backend**: Rust, Axum, Polars, SQLite (Litehouse)
-- **Frontend**: Vite 7, Vue 3, TypeScript, Nuxt UI 4, Tailwind CSS 4, Pinia
+- **Frontend**: Vite+ (Vite 8), Vue 3, TypeScript, Nuxt UI 4, Tailwind CSS 4, Pinia
 
 ## Project Structure
 
@@ -22,12 +22,12 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 ## Code Style
 
 - **Rust**: `cargo fmt`, `cargo clippy`, `cargo audit`
-- **Frontend**: Biome (single quotes, semicolons, trailing commas), oxlint, strict TypeScript
+- **Frontend**: Vite+ unified toolchain (Oxfmt + Oxlint + tsgolint), strict TypeScript
 
 ## Workflow
 
 - When debugging or testing changes, run both backend and frontend as background tasks to monitor output
-- Frontend has `vite-console-forward-plugin` — browser console output forwards to the Vite terminal
+- Vite 8 built-in `server.forwardConsole` forwards browser console output to the Vite terminal
 - After Rust work is complete and debug compilation succeeds, always finish with `cargo build --release`
 
 ## Commands
@@ -41,9 +41,10 @@ cargo clippy                      # lint
 cargo audit                       # check dependencies for vulnerabilities
 
 # Frontend (from brightflow-app/)
-npm run dev                       # vite dev server
-npm run check                     # type-check + lint + format
-npm run format                    # auto-fix formatting
+npm run dev                       # vp dev server
+npm run check                     # type-check + lint + format (vp check)
+npm run check:fix                 # auto-fix lint + format issues
+npm run fmt                       # auto-fix formatting
 
 # Backend dev server
 cargo run -- run-all              # API + WebSocket server

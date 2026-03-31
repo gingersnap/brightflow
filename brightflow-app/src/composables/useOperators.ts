@@ -1,7 +1,7 @@
 /**
  * Filter operators by column type
  */
-import type { OperatorDef, Operator } from '@/types';
+import type { Operator, OperatorDef } from '@/types';
 
 type NormalizedType = 'string' | 'int' | 'float' | 'boolean';
 
@@ -9,8 +9,8 @@ const OPERATORS: Record<string, OperatorDef> = {
   // Universal operators
   eq: { label: 'equals', types: ['string', 'int', 'float', 'boolean'] },
   ne: { label: 'not equals', types: ['string', 'int', 'float', 'boolean'] },
-  isNull: { label: 'is null', types: ['string', 'int', 'float', 'boolean'], noValue: true },
-  isNotNull: { label: 'is not null', types: ['string', 'int', 'float', 'boolean'], noValue: true },
+  isNull: { label: 'is null', noValue: true, types: ['string', 'int', 'float', 'boolean'] },
+  isNotNull: { label: 'is not null', noValue: true, types: ['string', 'int', 'float', 'boolean'] },
 
   // String operators
   contains: { label: 'contains', types: ['string'] },
@@ -22,14 +22,16 @@ const OPERATORS: Record<string, OperatorDef> = {
   lte: { label: 'less or equal', types: ['int', 'float'] },
 
   // Array operator
-  in: { label: 'in list', types: ['string', 'int', 'float'], isArray: true },
+  in: { isArray: true, label: 'in list', types: ['string', 'int', 'float'] },
 };
 
 /**
  * Normalize backend dtype to standard type
  */
 function normalizeType(dtype: string | null | undefined): NormalizedType {
-  if (!dtype) return 'string';
+  if (!dtype) {
+    return 'string';
+  }
 
   const t = dtype.toLowerCase();
 
@@ -59,10 +61,10 @@ export function useOperators() {
     return Object.entries(OPERATORS)
       .filter(([_key, op]) => op.types.includes(normalizedType))
       .map(([key, op]) => ({
-        value: key,
+        isArray: op.isArray ?? false,
         label: op.label,
         noValue: op.noValue ?? false,
-        isArray: op.isArray ?? false,
+        value: key,
       }));
   }
 
@@ -96,23 +98,27 @@ export function useOperators() {
     const normalizedType = normalizeType(dtype);
 
     switch (normalizedType) {
-      case 'string':
+      case 'string': {
         return 'contains';
+      }
       case 'int':
-      case 'float':
+      case 'float': {
         return 'eq';
-      case 'boolean':
+      }
+      case 'boolean': {
         return 'eq';
-      default:
+      }
+      default: {
         return 'eq';
+      }
     }
   }
 
   return {
-    getOperatorsForType,
-    getOperator,
-    operatorNeedsValue,
-    operatorIsArray,
     getDefaultOperator,
+    getOperator,
+    getOperatorsForType,
+    operatorIsArray,
+    operatorNeedsValue,
   };
 }

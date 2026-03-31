@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, type Component } from 'vue';
-import { X, Hash, Type, HelpCircle, GripVertical } from 'lucide-vue-next';
+import { GripVertical, Hash, HelpCircle, Type, X } from 'lucide-vue-next';
+import { type Component, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
+
 import type { PivotField } from '@/types';
 
 interface AggregationOption {
@@ -38,11 +39,6 @@ const props = withDefaults(
     aggregations?: AggregationOption[];
   }>(),
   {
-    fields: () => [],
-    showAggregation: false,
-    maxItems: null,
-    disabled: false,
-    disabledMessage: 'Not available',
     aggregations: () => [
       { value: 'count', label: 'Count' },
       { value: 'sum', label: 'Sum' },
@@ -51,6 +47,11 @@ const props = withDefaults(
       { value: 'max', label: 'Max' },
       { value: 'median', label: 'Median' },
     ],
+    disabled: false,
+    disabledMessage: 'Not available',
+    fields: () => [],
+    maxItems: null,
+    showAggregation: false,
   },
 );
 
@@ -76,16 +77,24 @@ watch(
 
 // Whether we can accept more items
 function canAcceptMore(): boolean {
-  if (props.disabled) return false;
-  if (props.maxItems === null) return true;
+  if (props.disabled) {
+    return false;
+  }
+  if (props.maxItems === null) {
+    return true;
+  }
   return props.fields.length < props.maxItems;
 }
 
 // Get icon for field type
 function getTypeIcon(field: PivotField): Component {
-  const dtype = field.dtype;
-  if (['int', 'float', 'decimal', 'number'].includes(dtype)) return Hash;
-  if (['string', 'text', 'varchar'].includes(dtype)) return Type;
+  const { dtype } = field;
+  if (['int', 'float', 'decimal', 'number'].includes(dtype)) {
+    return Hash;
+  }
+  if (['string', 'text', 'varchar'].includes(dtype)) {
+    return Type;
+  }
   return HelpCircle;
 }
 
@@ -97,12 +106,14 @@ function handleChange(evt: DragEvent): void {
     const addedIndex = evt.added.newIndex;
     localFields.value.splice(addedIndex, 1);
 
-    if (!canAcceptMore()) return;
+    if (!canAcceptMore()) {
+      return;
+    }
 
     const addedElement = evt.added.element;
     if (addedElement) {
       const column = addedElement.column ?? addedElement.name;
-      const dtype = addedElement.dtype;
+      const { dtype } = addedElement;
 
       if (column && dtype) {
         emit('add', { column, dtype });
@@ -131,7 +142,7 @@ function handleChange(evt: DragEvent): void {
       :class="{
         'border-primary bg-primary/5': canAcceptMore(),
         'border-muted/30 bg-muted/5 opacity-50': disabled,
-        'border-muted/50 bg-muted/10': !canAcceptMore() && !disabled
+        'border-muted/50 bg-muted/10': !canAcceptMore() && !disabled,
       }"
       ghost-class="opacity-50"
       drag-class="bg-primary/20"
@@ -142,10 +153,7 @@ function handleChange(evt: DragEvent): void {
           class="flex items-center gap-2 px-2 py-1.5 mb-1 rounded-md bg-default border border-default hover:border-primary/50 cursor-grab active:cursor-grabbing transition-colors group"
         >
           <GripVertical class="w-3 h-3 text-muted/50" />
-          <component
-            :is="getTypeIcon(element)"
-            class="w-3.5 h-3.5 text-muted flex-shrink-0"
-          />
+          <component :is="getTypeIcon(element)" class="w-3.5 h-3.5 text-muted flex-shrink-0" />
           <span class="text-sm text-default truncate flex-1">
             {{ element.column }}
           </span>
