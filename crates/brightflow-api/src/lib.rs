@@ -17,6 +17,7 @@ pub mod auth;
 pub mod connect;
 pub mod ingest;
 pub mod insights;
+pub mod product_analytics;
 pub mod routes;
 pub mod scheduler;
 pub mod shared;

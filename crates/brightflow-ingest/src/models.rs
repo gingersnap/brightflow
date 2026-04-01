@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -33,6 +35,9 @@ pub struct RawEvent {
     /// Custom properties (key-value pairs, optional).
     #[serde(default)]
     pub props: Option<serde_json::Value>,
+    /// Known user ID (optional — empty when anonymous).
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 /// Enriched event (after processing). All fields are strings for flat Parquet columns.
@@ -47,6 +52,7 @@ pub struct Event {
     // Identity
     pub visitor_id: String,
     pub session_id: String,
+    pub user_id: String,
 
     // Page
     pub hostname: String,
@@ -132,4 +138,170 @@ pub struct CreateSourceRequest {
 pub struct UpdateSourceRequest {
     pub name: Option<String>,
     pub timezone: Option<String>,
+}
+
+// ── Product Analytics Types ──────────────────────────────────────
+
+/// Incoming track event from product analytics (server-side or client-side).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawTrackEvent {
+    /// Event name (e.g. "signup", "checkout").
+    pub name: String,
+    /// Known user ID (optional).
+    #[serde(default)]
+    pub user_id: Option<String>,
+    /// Source domain.
+    pub domain: String,
+    /// Page URL (optional for server-side events).
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Custom properties.
+    #[serde(default)]
+    pub props: Option<serde_json::Value>,
+}
+
+/// Incoming identify call — associates traits with a user.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawIdentifyEvent {
+    /// The user ID to identify.
+    pub user_id: String,
+    /// Source domain.
+    pub domain: String,
+    /// Traits to store on the user profile (e.g. name, email, plan).
+    #[serde(default)]
+    pub traits: HashMap<String, serde_json::Value>,
+}
+
+/// User profile stored in the ingest database.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UserProfile {
+    pub user_id: String,
+    pub source_id: String,
+    /// JSON-encoded traits.
+    pub traits: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A single step in a funnel definition.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct FunnelStep {
+    pub name: String,
+}
+
+/// Result for one step in a funnel.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct FunnelResult {
+    pub steps: Vec<FunnelStepResult>,
+}
+
+/// A single step result in a funnel.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct FunnelStepResult {
+    pub name: String,
+    pub count: u64,
+    pub conversion_rate: f64,
+    pub dropoff_rate: f64,
+}
+
+/// A single row in a retention matrix.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionRow {
+    pub cohort: String,
+    pub cohort_size: u64,
+    pub periods: Vec<f64>,
+}
+
+/// Full retention analysis result.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionResult {
+    pub period_type: String,
+    pub rows: Vec<RetentionRow>,
+}
+
+/// A row in the event list (aggregated).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct EventListRow {
+    pub name: String,
+    pub count: u64,
+    pub unique_users: u64,
+}
+
+/// A single event in a user's timeline.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UserTimelineEvent {
+    pub timestamp: String,
+    pub event_name: String,
+    pub page_url: String,
+    pub properties: String,
+}
+
+/// Request body for funnel analysis.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct FunnelRequest {
+    pub steps: Vec<FunnelStep>,
+    /// Time window in seconds for the funnel.
+    #[serde(default = "default_funnel_window")]
+    pub window_seconds: u64,
+    #[serde(default = "default_period")]
+    pub period: String,
+    pub start: Option<String>,
+    pub end: Option<String>,
+}
+
+fn default_funnel_window() -> u64 {
+    86400 * 7 // 7 days
+}
+
+fn default_period() -> String {
+    "30d".to_string()
+}
+
+/// Request body for retention analysis.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct RetentionRequest {
+    /// Event that defines the cohort (e.g. "signup").
+    pub cohort_event: String,
+    /// Event that counts as a return (e.g. "pageview").
+    pub return_event: String,
+    /// Period granularity: "week" or "month".
+    #[serde(default = "default_retention_period_type")]
+    pub period_type: String,
+    /// Number of periods to analyze.
+    #[serde(default = "default_retention_periods")]
+    pub num_periods: usize,
+    #[serde(default = "default_period")]
+    pub period: String,
+    pub start: Option<String>,
+    pub end: Option<String>,
+}
+
+fn default_retention_period_type() -> String {
+    "week".to_string()
+}
+
+fn default_retention_periods() -> usize {
+    8
 }

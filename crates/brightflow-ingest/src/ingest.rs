@@ -2,7 +2,7 @@ use url::Url;
 
 use crate::geo::{self, GeoInfo};
 use crate::identity;
-use crate::models::{Event, RawEvent};
+use crate::models::{Event, RawEvent, RawTrackEvent};
 use crate::ua::{self, UaInfo};
 
 /// Known referrer domain -> source name mappings.
@@ -29,6 +29,7 @@ static REFERRER_SOURCES: &[(&str, &str)] = &[
 ];
 
 /// Parsed UTM parameters.
+#[derive(Default)]
 struct UtmParams {
     source: String,
     medium: String,
@@ -101,11 +102,99 @@ pub fn process_event(
         event_name: raw.name.clone(),
         visitor_id,
         session_id: String::new(), // Filled in by buffer.insert() after session derivation
+        user_id: raw.user_id.clone().unwrap_or_default(),
         hostname: parsed.hostname,
         pathname: parsed.pathname,
         page_url: parsed.clean_url,
         referrer: raw.referrer.clone(),
         referrer_source,
+        utm_source: parsed.utm.source,
+        utm_medium: parsed.utm.medium,
+        utm_campaign: parsed.utm.campaign,
+        utm_content: parsed.utm.content,
+        utm_term: parsed.utm.term,
+        browser,
+        browser_version,
+        os,
+        os_version,
+        device_type,
+        screen_size,
+        country,
+        region,
+        city,
+        properties,
+    }
+}
+
+/// Process a track event (product analytics) into an enriched event.
+///
+/// Similar to `process_event` but with relaxed URL requirements (server-side
+/// events may not have a page URL) and explicit `user_id` support.
+#[allow(clippy::too_many_lines)]
+pub fn process_track_event(
+    raw: &RawTrackEvent,
+    ip: &str,
+    ua_string: &str,
+    source_id: &str,
+    salt: &str,
+    geo_reader: Option<&maxminddb::Reader<Vec<u8>>>,
+    ua_parser: &uaparser::UserAgentParser,
+) -> Event {
+    let id = uuid::Uuid::now_v7().to_string();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+
+    let visitor_id = identity::compute_visitor_id(salt, source_id, ip, ua_string);
+    let user_id = raw.user_id.clone().unwrap_or_default();
+
+    // Parse URL if provided
+    let empty_parsed = ParsedUrl {
+        hostname: String::new(),
+        pathname: String::new(),
+        clean_url: String::new(),
+        utm: UtmParams::default(),
+    };
+    let parsed = raw
+        .url
+        .as_deref()
+        .filter(|u| !u.is_empty())
+        .map_or(empty_parsed, parse_url);
+
+    // Parse User-Agent
+    let UaInfo {
+        browser,
+        browser_version,
+        os,
+        os_version,
+        device_type,
+    } = ua::parse_ua(ua_parser, ua_string, None);
+
+    let screen_size = ua::classify_screen_size(None);
+
+    // GeoIP lookup
+    let GeoInfo {
+        country,
+        region,
+        city,
+    } = geo::lookup_geo(geo_reader, ip);
+
+    let properties = raw
+        .props
+        .as_ref()
+        .map_or_else(|| "{}".to_string(), ToString::to_string);
+
+    Event {
+        id,
+        timestamp,
+        source_id: source_id.to_string(),
+        event_name: raw.name.clone(),
+        visitor_id,
+        session_id: String::new(),
+        user_id,
+        hostname: parsed.hostname,
+        pathname: parsed.pathname,
+        page_url: parsed.clean_url,
+        referrer: String::new(),
+        referrer_source: String::new(),
         utm_source: parsed.utm.source,
         utm_medium: parsed.utm.medium,
         utm_campaign: parsed.utm.campaign,
@@ -131,13 +220,7 @@ fn parse_url(raw_url: &str) -> ParsedUrl {
             hostname: String::new(),
             pathname: raw_url.to_string(),
             clean_url: raw_url.to_string(),
-            utm: UtmParams {
-                source: String::new(),
-                medium: String::new(),
-                campaign: String::new(),
-                content: String::new(),
-                term: String::new(),
-            },
+            utm: UtmParams::default(),
         };
     };
 
@@ -145,13 +228,7 @@ fn parse_url(raw_url: &str) -> ParsedUrl {
     let pathname = parsed.path().to_string();
 
     // Extract UTM params from query string
-    let mut utm = UtmParams {
-        source: String::new(),
-        medium: String::new(),
-        campaign: String::new(),
-        content: String::new(),
-        term: String::new(),
-    };
+    let mut utm = UtmParams::default();
 
     for (key, value) in parsed.query_pairs() {
         match key.as_ref() {

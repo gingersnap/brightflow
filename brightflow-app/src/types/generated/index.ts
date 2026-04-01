@@ -46,3 +46,15 @@ export type { DashboardStats } from './DashboardStats';
 export type { Source } from './Source';
 export type { TimeseriesPoint } from './TimeseriesPoint';
 export type { UpdateSourceRequest } from './UpdateSourceRequest';
+
+// Product analytics types
+export type { EventListRow } from './EventListRow';
+export type { FunnelRequest } from './FunnelRequest';
+export type { FunnelResult } from './FunnelResult';
+export type { FunnelStep } from './FunnelStep';
+export type { FunnelStepResult } from './FunnelStepResult';
+export type { RetentionRequest } from './RetentionRequest';
+export type { RetentionResult } from './RetentionResult';
+export type { RetentionRow } from './RetentionRow';
+export type { UserProfile } from './UserProfile';
+export type { UserTimelineEvent } from './UserTimelineEvent';

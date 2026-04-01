@@ -5,7 +5,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
-use brightflow_ingest::models::{CreateSourceRequest, RawEvent, Source, UpdateSourceRequest};
+use brightflow_ingest::models::{
+    CreateSourceRequest, RawEvent, RawIdentifyEvent, RawTrackEvent, Source, UpdateSourceRequest,
+};
 use brightflow_ingest::script::TRACKING_SCRIPT;
 use brightflow_ingest::IngestState;
 
@@ -67,6 +69,80 @@ pub async fn ingest_event(
         .insert(&mut event)
         .await
         .map_err(|e| AppError::Internal(format!("Buffer error: {e}")))?;
+
+    Ok(StatusCode::ACCEPTED)
+}
+
+/// POST /api/track
+///
+/// Receives product analytics events with explicit user_id support.
+/// Public endpoint — no auth required.
+pub async fn track_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: String,
+) -> AppResult<StatusCode> {
+    let ingest = get_ingest(&state)?;
+
+    let raw: RawTrackEvent = serde_json::from_str(&body)
+        .map_err(|e| AppError::BadRequest(format!("Invalid JSON: {e}")))?;
+
+    let source = ingest
+        .get_source_by_domain(&raw.domain)
+        .ok_or_else(|| AppError::BadRequest(format!("Unknown domain: {}", raw.domain)))?;
+
+    let salt = ingest
+        .get_today_salt()
+        .await
+        .map_err(|e| AppError::Internal(format!("Salt error: {e}")))?;
+
+    let ip = extract_ip(&headers);
+    let ua = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let mut event = brightflow_ingest::ingest::process_track_event(
+        &raw,
+        &ip,
+        ua,
+        &source.id,
+        &salt,
+        ingest.geo_reader.as_ref(),
+        &ingest.ua_parser,
+    );
+
+    ingest
+        .buffer
+        .insert(&mut event)
+        .await
+        .map_err(|e| AppError::Internal(format!("Buffer error: {e}")))?;
+
+    Ok(StatusCode::ACCEPTED)
+}
+
+/// POST /api/identify
+///
+/// Associates traits with a user_id. Public endpoint — called from tracking script.
+pub async fn identify_user(State(state): State<AppState>, body: String) -> AppResult<StatusCode> {
+    let ingest = get_ingest(&state)?;
+
+    let raw: RawIdentifyEvent = serde_json::from_str(&body)
+        .map_err(|e| AppError::BadRequest(format!("Invalid JSON: {e}")))?;
+
+    if raw.user_id.is_empty() {
+        return Err(AppError::BadRequest("user_id is required".to_string()));
+    }
+
+    let source = ingest
+        .get_source_by_domain(&raw.domain)
+        .ok_or_else(|| AppError::BadRequest(format!("Unknown domain: {}", raw.domain)))?;
+
+    ingest
+        .db
+        .upsert_user_profile(&raw.user_id, &source.id, &raw.traits)
+        .await
+        .map_err(|e| AppError::Internal(format!("Profile error: {e}")))?;
 
     Ok(StatusCode::ACCEPTED)
 }

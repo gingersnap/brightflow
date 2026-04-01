@@ -5,20 +5,47 @@ use polars::prelude::*;
 use brightflow_ingest::error::IngestResult;
 use brightflow_ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
 
+/// Minimum size for a valid Parquet file (magic header + footer + some metadata).
+const MIN_PARQUET_SIZE: u64 = 12;
+
 /// Scan event Parquet files for a source. Returns None if no files exist yet.
-fn scan_events(events_path: &Path, source_id: &str) -> Option<LazyFrame> {
+pub fn scan_events(events_path: &Path, source_id: &str) -> Option<LazyFrame> {
     let dir = events_path.join(source_id);
     if !dir.exists() {
         return None;
     }
-    // Check if any parquet files actually exist
-    let has_files = walkdir(dir).any(|p| p.extension().is_some_and(|ext| ext == "parquet"));
-    if !has_files {
+
+    // Remove corrupt/empty parquet files before scanning, then check if any remain
+    let mut has_valid = false;
+    for p in walkdir(dir).filter(|p| p.extension().is_some_and(|ext| ext == "parquet")) {
+        if p.metadata().is_ok_and(|m| m.len() >= MIN_PARQUET_SIZE) {
+            has_valid = true;
+        } else {
+            tracing::warn!("Removing corrupt parquet file: {}", p.display());
+            drop(std::fs::remove_file(&p));
+        }
+    }
+
+    if !has_valid {
         return None;
     }
+
     let pattern = format!("{}/{}/**/*.parquet", events_path.display(), source_id);
     match LazyFrame::scan_parquet(&pattern, ScanArgsParquet::default()) {
-        Ok(lf) => Some(lf),
+        Ok(mut lf) => {
+            // Phase 1 Parquet files lack user_id entirely. Check schema and
+            // either fill nulls (column exists but has nulls) or add the column.
+            let has_user_id = lf
+                .collect_schema()
+                .ok()
+                .is_some_and(|s| s.contains("user_id"));
+            let lf = if has_user_id {
+                lf.with_column(col("user_id").fill_null(lit("")))
+            } else {
+                lf.with_column(lit("").alias("user_id"))
+            };
+            Some(lf)
+        },
         Err(e) => {
             tracing::warn!("Failed to scan parquet at {pattern}: {e}");
             None
@@ -27,7 +54,7 @@ fn scan_events(events_path: &Path, source_id: &str) -> Option<LazyFrame> {
 }
 
 /// Walk a directory recursively, yielding file paths.
-fn walkdir(dir: std::path::PathBuf) -> impl Iterator<Item = std::path::PathBuf> {
+pub fn walkdir(dir: std::path::PathBuf) -> impl Iterator<Item = std::path::PathBuf> {
     let mut stack = vec![dir];
     std::iter::from_fn(move || {
         while let Some(path) = stack.pop() {
@@ -46,7 +73,7 @@ fn walkdir(dir: std::path::PathBuf) -> impl Iterator<Item = std::path::PathBuf> 
 }
 
 /// Apply date range filter to a LazyFrame.
-fn filter_date_range(lf: LazyFrame, start: &str, end: &str) -> LazyFrame {
+pub fn filter_date_range(lf: LazyFrame, start: &str, end: &str) -> LazyFrame {
     lf.filter(
         col("timestamp")
             .gt_eq(lit(start.to_string()))

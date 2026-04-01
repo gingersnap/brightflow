@@ -120,9 +120,6 @@ export function useWsQuery() {
 
         // Determine the best operation based on configuration
         if (rowCols.length === 0 && colField == null) {
-          console.warn(
-            '[useWsQuery] Pivot has values but no rows/columns - waiting for UI to auto-add',
-          );
           return ops;
         }
 
@@ -150,9 +147,6 @@ export function useWsQuery() {
             values: valueField.column,
           });
         }
-
-        const lastOp = ops.at(-1);
-        console.log('[useWsQuery] Pivot/GroupBy operation:', lastOp);
       }
 
       // Add sort

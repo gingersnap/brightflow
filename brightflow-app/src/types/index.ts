@@ -14,8 +14,16 @@ export type {
   CreateSourceRequest,
   DashboardStats,
   DatasetInfo,
+  EventListRow,
+  FunnelRequest,
+  FunnelResult,
+  FunnelStep,
+  FunnelStepResult,
   InsightsResponse,
   LoadTableResponse,
+  RetentionRequest,
+  RetentionResult,
+  RetentionRow,
   RunTriggerResponse,
   ScheduleResponse,
   Source,
@@ -27,6 +35,8 @@ export type {
   UpdateSourceRequest,
   UploadResponse,
   User,
+  UserProfile,
+  UserTimelineEvent,
 } from './generated';
 
 // Filter state (frontend-only)

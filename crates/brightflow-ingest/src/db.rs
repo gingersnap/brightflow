@@ -4,7 +4,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
 use crate::error::{IngestError, IngestResult};
-use crate::models::{CreateSourceRequest, Source, UpdateSourceRequest};
+use crate::models::{CreateSourceRequest, Source, UpdateSourceRequest, UserProfile};
 
 /// Central ingest metadata database (sources + salts).
 #[derive(Debug, Clone)]
@@ -145,5 +145,87 @@ impl IngestDb {
             .await?;
 
         Ok(result.rows_affected())
+    }
+
+    // ── User Profiles ────────────────────────────────────────────
+
+    /// Upsert a user profile, merging new traits with existing ones.
+    pub async fn upsert_user_profile(
+        &self,
+        user_id: &str,
+        source_id: &str,
+        new_traits: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> IngestResult<UserProfile> {
+        // Fetch existing traits
+        let existing = self.get_user_profile(user_id, source_id).await?;
+        let mut merged: std::collections::HashMap<String, serde_json::Value> =
+            if let Some(ref profile) = existing {
+                serde_json::from_str(&profile.traits).unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            };
+
+        // Merge new traits over existing
+        for (k, v) in new_traits {
+            merged.insert(k.clone(), v.clone());
+        }
+
+        let traits_json = serde_json::to_string(&merged)
+            .map_err(|e| IngestError::Other(format!("Failed to serialize traits: {e}")))?;
+
+        sqlx::query(
+            "INSERT INTO user_profiles (user_id, source_id, traits)
+             VALUES (?, ?, ?)
+             ON CONFLICT(user_id, source_id) DO UPDATE SET
+                traits = excluded.traits,
+                updated_at = datetime('now')",
+        )
+        .bind(user_id)
+        .bind(source_id)
+        .bind(&traits_json)
+        .execute(&self.pool)
+        .await?;
+
+        // Return the updated profile
+        self.get_user_profile(user_id, source_id)
+            .await?
+            .ok_or_else(|| IngestError::Other("Profile not found after upsert".to_string()))
+    }
+
+    /// Get a user profile by user_id and source_id.
+    pub async fn get_user_profile(
+        &self,
+        user_id: &str,
+        source_id: &str,
+    ) -> IngestResult<Option<UserProfile>> {
+        let profile = sqlx::query_as::<_, UserProfile>(
+            "SELECT * FROM user_profiles WHERE user_id = ? AND source_id = ?",
+        )
+        .bind(user_id)
+        .bind(source_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(profile)
+    }
+
+    /// Search user profiles by user_id prefix.
+    pub async fn search_user_profiles(
+        &self,
+        source_id: &str,
+        query: &str,
+        limit: u32,
+    ) -> IngestResult<Vec<UserProfile>> {
+        let profiles = sqlx::query_as::<_, UserProfile>(
+            "SELECT * FROM user_profiles
+             WHERE source_id = ? AND user_id LIKE ?
+             ORDER BY updated_at DESC
+             LIMIT ?",
+        )
+        .bind(source_id)
+        .bind(format!("{query}%"))
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(profiles)
     }
 }

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS events (
     event_name TEXT NOT NULL,
     visitor_id TEXT NOT NULL,
     session_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT '',
     hostname TEXT NOT NULL DEFAULT '',
     pathname TEXT NOT NULL DEFAULT '',
     page_url TEXT NOT NULL DEFAULT '',
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_visitor ON events(visitor_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id, timestamp DESC);
 ";
 
 const SESSION_TIMEOUT_MINUTES: i64 = 30;
@@ -89,6 +91,20 @@ impl EventBuffer {
         // Create buffer table if it doesn't exist
         sqlx::query(BUFFER_TABLE_SQL).execute(&pool).await?;
 
+        // Schema migration: if user_id column is missing, drop and recreate (buffer is ephemeral)
+        let has_user_id = sqlx::query_scalar::<_, i32>(
+            "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'user_id'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if has_user_id == 0 {
+            tracing::info!("Buffer schema outdated for {source_id}, recreating table");
+            sqlx::query("DROP TABLE IF EXISTS events")
+                .execute(&pool)
+                .await?;
+            sqlx::query(BUFFER_TABLE_SQL).execute(&pool).await?;
+        }
+
         self.pools.insert(source_id.to_string(), pool.clone());
         Ok(pool)
     }
@@ -97,19 +113,20 @@ impl EventBuffer {
     pub async fn insert(&self, event: &mut Event) -> IngestResult<()> {
         let pool = self.get_pool(&event.source_id).await?;
 
-        // Derive session ID
-        event.session_id = derive_session_id(&pool, &event.visitor_id, &event.timestamp).await?;
+        // Derive session ID (use user_id for session continuity when available)
+        event.session_id =
+            derive_session_id(&pool, &event.visitor_id, &event.user_id, &event.timestamp).await?;
 
         sqlx::query(
             "INSERT INTO events (
-                id, timestamp, source_id, event_name, visitor_id, session_id,
+                id, timestamp, source_id, event_name, visitor_id, session_id, user_id,
                 hostname, pathname, page_url,
                 referrer, referrer_source,
                 utm_source, utm_medium, utm_campaign, utm_content, utm_term,
                 browser, browser_version, os, os_version, device_type, screen_size,
                 country, region, city, properties
             ) VALUES (
-                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?,
                 ?, ?, ?, ?, ?,
@@ -123,6 +140,7 @@ impl EventBuffer {
         .bind(&event.event_name)
         .bind(&event.visitor_id)
         .bind(&event.session_id)
+        .bind(&event.user_id)
         .bind(&event.hostname)
         .bind(&event.pathname)
         .bind(&event.page_url)
@@ -174,20 +192,35 @@ impl EventBuffer {
 
 /// Derive session ID based on gap-based session detection.
 ///
-/// If the last event from this visitor was less than 30 minutes ago,
+/// If a known `user_id` is provided, use it for session lookup (allows session
+/// continuity across daily visitor hash rotation). Otherwise fall back to `visitor_id`.
+///
+/// If the last event from this identity was less than 30 minutes ago,
 /// reuse the same session. Otherwise, start a new session.
 async fn derive_session_id(
     pool: &SqlitePool,
     visitor_id: &str,
+    user_id: &str,
     current_timestamp: &str,
 ) -> IngestResult<String> {
-    let last = sqlx::query_as::<_, (String, String)>(
-        "SELECT session_id, timestamp FROM events
-         WHERE visitor_id = ? ORDER BY timestamp DESC LIMIT 1",
-    )
-    .bind(visitor_id)
-    .fetch_optional(pool)
-    .await?;
+    // When user_id is known, look up by user_id for cross-day session continuity
+    let last = if user_id.is_empty() {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT session_id, timestamp FROM events
+             WHERE visitor_id = ? ORDER BY timestamp DESC LIMIT 1",
+        )
+        .bind(visitor_id)
+        .fetch_optional(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT session_id, timestamp FROM events
+             WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1",
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+    };
 
     if let Some((last_session_id, last_ts)) = last {
         if let (Ok(last_time), Ok(current_time)) = (

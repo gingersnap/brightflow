@@ -5,9 +5,12 @@ import type {
   BreakdownRow,
   DashboardStats,
   DatasetInfo,
+  EventListRow,
+  FunnelResult,
   InsightsResponse,
   LoadTableResponse,
   QueryResponse,
+  RetentionResult,
   RunTriggerResponse,
   ScheduleResponse,
   Source,
@@ -16,6 +19,8 @@ import type {
   UnifiedConnector,
   UploadResponse,
   User,
+  UserProfile,
+  UserTimelineEvent,
 } from '@/types/generated';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
@@ -220,4 +225,36 @@ export const analyticsApi = {
     api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/devices?period=${period}`),
   geo: (sourceId: string, period = '30d'): Promise<BreakdownRow[] | null> =>
     api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/geo?period=${period}`),
+};
+
+// Product Analytics API
+export const productAnalyticsApi = {
+  events: (sourceId: string, period = '30d'): Promise<EventListRow[] | null> =>
+    api.get<EventListRow[]>(`/api/analytics/${sourceId}/events?period=${period}`),
+  funnel: (
+    sourceId: string,
+    body: { steps: { name: string }[]; windowSeconds: number; period: string },
+  ): Promise<FunnelResult | null> =>
+    api.post<FunnelResult>(`/api/analytics/${sourceId}/funnel`, body),
+  retention: (
+    sourceId: string,
+    body: {
+      cohortEvent: string;
+      returnEvent: string;
+      periodType: string;
+      numPeriods: number;
+      period: string;
+    },
+  ): Promise<RetentionResult | null> =>
+    api.post<RetentionResult>(`/api/analytics/${sourceId}/retention`, body),
+  searchUsers: (sourceId: string, q = '', limit = 20): Promise<UserProfile[] | null> =>
+    api.get<UserProfile[]>(
+      `/api/analytics/${sourceId}/users?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+  userTimeline: (sourceId: string, userId: string): Promise<UserTimelineEvent[] | null> =>
+    api.get<UserTimelineEvent[]>(
+      `/api/analytics/${sourceId}/users/${encodeURIComponent(userId)}/timeline`,
+    ),
+  userProfile: (sourceId: string, userId: string): Promise<UserProfile | null> =>
+    api.get<UserProfile>(`/api/analytics/${sourceId}/users/${encodeURIComponent(userId)}/profile`),
 };

@@ -34,10 +34,10 @@ export default defineConfig({
       'unicorn/consistent-function-scoping': 'error',
       'unicorn/custom-error-definition': 'error',
 
-      // --- Advisory: complexity metrics (warn = visible but non-blocking) ---
-      'max-statements': ['warn', { max: 25 }],
-      'max-lines-per-function': ['warn', { max: 150 }],
-      'max-lines': 'warn',
+      // --- Off: complexity metrics incompatible with Pinia's single-function store pattern ---
+      'max-statements': 'off',
+      'max-lines-per-function': 'off',
+      'max-lines': 'off',
 
       // --- Off: Vue/JS idiom conflicts ---
       'func-style': 'off', // Function declarations idiomatic in Vue/Pinia
@@ -86,6 +86,9 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   server: {
-    forwardConsole: true,
+    forwardConsole: {
+      unhandledErrors: true,
+      logLevels: ['warn', 'error', 'info', 'log', 'debug'],
+    },
   },
 });

@@ -138,6 +138,7 @@ fn rows_to_dataframe(rows: &[Event]) -> IngestResult<DataFrame> {
         str_col!(event_name, rows),
         str_col!(visitor_id, rows),
         str_col!(session_id, rows),
+        str_col!(user_id, rows),
         str_col!(hostname, rows),
         str_col!(pathname, rows),
         str_col!(page_url, rows),

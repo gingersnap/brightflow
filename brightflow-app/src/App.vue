@@ -13,6 +13,7 @@ import QueryBuilder from './components/query/QueryBuilder.vue';
 import ResultsPanel from './components/results/ResultsPanel.vue';
 import SystemView from './components/system/SystemView.vue';
 import { type TableInfo, tableApi } from './services/api';
+import { track } from './services/tracking';
 import { resetAllStores } from './stores';
 import { useAuthStore } from './stores/auth';
 import { useConnectionStore } from './stores/connection';
@@ -31,7 +32,6 @@ const currentDataset = ref<string | null>(null);
 const loadingTable = ref(false);
 
 onMounted(() => {
-  console.log('[App] Mounting, checking auth...');
   authStore.checkAuth();
 });
 
@@ -58,7 +58,6 @@ watch(currentDataset, (newVal) => {
 
 // Handle dataset selection from modal
 async function handleDatasetSelect(table: TableInfo): Promise<void> {
-  console.log('[App] Selected table:', table.name);
   loadingTable.value = true;
 
   try {
@@ -74,9 +73,10 @@ async function handleDatasetSelect(table: TableInfo): Promise<void> {
       currentDataset.value = table.name;
       showDatasetPicker.value = false;
       uiStore.setShowConnect(false);
+      track('dataset_load', { table: table.name });
     }
-  } catch (error) {
-    console.error('[App] Failed to load table:', error);
+  } catch {
+    // Table load failed — loading state cleared in finally
   } finally {
     loadingTable.value = false;
   }

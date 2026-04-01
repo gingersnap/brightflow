@@ -97,7 +97,6 @@ export class WebSocketClient {
     }
 
     this.ws.onopen = (): void => {
-      console.log('[WebSocket] Connection opened');
       this.reconnectCount = 0;
       this.startHeartbeat();
       this.flushMessageQueue();
@@ -105,7 +104,6 @@ export class WebSocketClient {
     };
 
     this.ws.onclose = (event: CloseEvent): void => {
-      console.log('[WebSocket] Connection closed', event.code, event.reason);
       this.clearTimers();
       this.emit('close', event);
 
@@ -115,12 +113,10 @@ export class WebSocketClient {
     };
 
     this.ws.onerror = (event: Event): void => {
-      console.error('[WebSocket] Error', event);
       this.emit('error', event);
     };
 
     this.ws.onmessage = (event: MessageEvent): void => {
-      console.log('[WebSocket] Raw message:', event.data);
       try {
         // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
         const data: Record<string, unknown> = JSON.parse(String(event.data));
@@ -139,7 +135,6 @@ export class WebSocketClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectCount >= this.options.reconnectAttempts) {
-      console.warn('WebSocket: Max reconnection attempts reached');
       return;
     }
 
@@ -186,8 +181,8 @@ export class WebSocketClient {
     this.handlers[event].forEach((handler) => {
       try {
         handler(data);
-      } catch (error) {
-        console.error(`WebSocket ${event} handler error:`, error);
+      } catch {
+        // Handler error — silently ignored
       }
     });
   }

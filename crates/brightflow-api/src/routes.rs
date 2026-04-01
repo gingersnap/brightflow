@@ -10,6 +10,7 @@ use crate::auth::handlers as auth_handlers;
 use crate::connect::handlers as connect_handlers;
 use crate::ingest::handlers as ingest_handlers;
 use crate::insights::handlers as insights_handlers;
+use crate::product_analytics::handlers as pa_handlers;
 use crate::scheduler::handlers as scheduler_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
@@ -33,6 +34,8 @@ fn api_routes() -> Router<AppState> {
         // Event ingestion (public — called by tracking script from external domains)
         .route("/event", post(ingest_handlers::ingest_event))
         .route("/collect", post(ingest_handlers::ingest_event))
+        .route("/track", post(ingest_handlers::track_event))
+        .route("/identify", post(ingest_handlers::identify_user))
         .route("/script.js", get(ingest_handlers::serve_script));
 
     let protected = Router::new()
@@ -141,6 +144,31 @@ fn api_routes() -> Router<AppState> {
             get(wa_handlers::devices),
         )
         .route("/analytics/{source_id}/geo", get(wa_handlers::geo))
+        // Product analytics
+        .route(
+            "/analytics/{source_id}/events",
+            get(pa_handlers::event_list),
+        )
+        .route(
+            "/analytics/{source_id}/funnel",
+            post(pa_handlers::funnel),
+        )
+        .route(
+            "/analytics/{source_id}/retention",
+            post(pa_handlers::retention),
+        )
+        .route(
+            "/analytics/{source_id}/users",
+            get(pa_handlers::search_users),
+        )
+        .route(
+            "/analytics/{source_id}/users/{user_id}/timeline",
+            get(pa_handlers::user_timeline),
+        )
+        .route(
+            "/analytics/{source_id}/users/{user_id}/profile",
+            get(pa_handlers::user_profile),
+        )
         .route_layer(middleware::from_fn(require_auth));
 
     public.merge(protected)

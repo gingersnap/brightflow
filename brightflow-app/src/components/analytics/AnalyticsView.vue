@@ -8,10 +8,19 @@ import { BarChart3, Copy, Globe, Plus, Trash2 } from 'lucide-vue-next';
 import { ref, computed, watch } from 'vue';
 import VChart from 'vue-echarts';
 
+import ProductAnalyticsView from '@/components/analytics/ProductAnalyticsView.vue';
 import { sourceApi, analyticsApi } from '@/services/api';
+import { track } from '@/services/tracking';
 import type { Source, DashboardStats, TimeseriesPoint, BreakdownRow } from '@/types';
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent]);
+
+const analyticsTab = ref<'web' | 'product'>('web');
+track('analytics_view', { tab: 'web' });
+
+watch(analyticsTab, (tab) => {
+  track('analytics_view', { tab });
+});
 
 const selectedSourceId = ref<string | null>(null);
 const period = ref('30d');
@@ -109,7 +118,9 @@ const { data: geoData } = useQuery({
 // Add source mutation
 const { mutate: addSource } = useMutation({
   mutation: async () => {
-    await sourceApi.create(newDomain.value, newName.value || newDomain.value);
+    const domain = newDomain.value;
+    await sourceApi.create(domain, newName.value || domain);
+    track('source_create', { domain });
     newDomain.value = '';
     newName.value = '';
     showAddSource.value = false;
@@ -180,11 +191,36 @@ const periods = [
 
 <template>
   <div class="flex h-full flex-col overflow-y-auto p-6">
-    <!-- Header: Source selector + Period -->
+    <!-- Header: Source selector + Tab switcher + Period -->
     <div class="mb-6 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <BarChart3 class="h-5 w-5 text-primary-500" />
-        <h2 class="text-lg font-semibold text-highlighted">Web Analytics</h2>
+
+        <!-- Web / Product tab switcher -->
+        <div class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
+          <button
+            class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            :class="
+              analyticsTab === 'web'
+                ? 'bg-default text-highlighted shadow-sm'
+                : 'cursor-pointer text-muted hover:text-highlighted'
+            "
+            @click="analyticsTab = 'web'"
+          >
+            Web
+          </button>
+          <button
+            class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            :class="
+              analyticsTab === 'product'
+                ? 'bg-default text-highlighted shadow-sm'
+                : 'cursor-pointer text-muted hover:text-highlighted'
+            "
+            @click="analyticsTab = 'product'"
+          >
+            Product
+          </button>
+        </div>
 
         <!-- Source selector -->
         <select
@@ -193,7 +229,7 @@ const periods = [
           class="ml-4 rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
         >
           <option v-for="s in sources" :key="s.id" :value="s.id">
-            {{ s.domain }}
+            {{ s.name || s.domain }}
           </option>
         </select>
 
@@ -202,8 +238,11 @@ const periods = [
         </UButton>
       </div>
 
-      <!-- Period selector -->
-      <div class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
+      <!-- Period selector (web tab only) -->
+      <div
+        v-if="analyticsTab === 'web'"
+        class="flex items-center gap-1 rounded-lg bg-elevated p-0.5"
+      >
         <button
           v-for="p in periods"
           :key="p.value"
@@ -220,9 +259,9 @@ const periods = [
       </div>
     </div>
 
-    <!-- Add source form -->
+    <!-- Add source form (shared across tabs) -->
     <div v-if="showAddSource" class="mb-6 rounded-lg border border-default bg-elevated p-4">
-      <h3 class="mb-3 text-sm font-medium text-highlighted">Add Website</h3>
+      <h3 class="mb-3 text-sm font-medium text-highlighted">Add Source</h3>
       <div class="flex items-end gap-3">
         <div>
           <label class="mb-1 block text-xs text-muted">Domain</label>
@@ -246,180 +285,191 @@ const periods = [
       </div>
     </div>
 
-    <!-- Tracking snippet -->
-    <div v-if="selectedSource && !snippetText" class="mb-6">
-      <button class="text-xs text-primary-500 underline" @click="loadSnippet(selectedSource.id)">
-        Show tracking snippet
-      </button>
-    </div>
-    <div v-if="snippetText" class="mb-6 rounded-lg border border-default bg-elevated p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <span class="text-xs font-medium text-muted">Add this to your website's &lt;head&gt;</span>
-        <UButton size="xs" variant="ghost" @click="copySnippet">
-          <Copy class="h-3.5 w-3.5" />
-        </UButton>
-      </div>
-      <code class="block rounded bg-default p-2 text-xs text-highlighted">{{ snippetText }}</code>
-    </div>
-
-    <!-- Empty state -->
+    <!-- Empty state (no sources at all) -->
     <div
       v-if="!sources || sources.length === 0"
       class="flex flex-1 flex-col items-center justify-center gap-4 text-muted"
     >
       <Globe class="h-12 w-12 opacity-40" />
-      <p>No websites added yet</p>
-      <UButton @click="showAddSource = true">Add your first website</UButton>
+      <p>No sources added yet</p>
+      <UButton @click="showAddSource = true">Add your first source</UButton>
     </div>
 
-    <!-- Dashboard -->
-    <template v-else-if="selectedSourceId">
-      <!-- Stats bar -->
-      <div class="mb-6 grid grid-cols-4 gap-4">
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <p class="text-xs text-muted">Unique Visitors</p>
-          <p class="mt-1 text-2xl font-semibold text-highlighted">
-            {{ stats?.visitors?.toLocaleString() ?? '-' }}
-          </p>
+    <!-- Product analytics tab -->
+    <ProductAnalyticsView
+      v-else-if="analyticsTab === 'product' && selectedSourceId"
+      :source-id="selectedSourceId"
+    />
+
+    <!-- Web analytics tab content -->
+    <template v-else-if="analyticsTab === 'web'">
+      <!-- Tracking snippet -->
+      <div v-if="selectedSource && !snippetText" class="mb-6">
+        <button class="text-xs text-primary-500 underline" @click="loadSnippet(selectedSource.id)">
+          Show tracking snippet
+        </button>
+      </div>
+      <div v-if="snippetText" class="mb-6 rounded-lg border border-default bg-elevated p-4">
+        <div class="mb-2 flex items-center justify-between">
+          <span class="text-xs font-medium text-muted"
+            >Add this to your website's &lt;head&gt;</span
+          >
+          <UButton size="xs" variant="ghost" @click="copySnippet">
+            <Copy class="h-3.5 w-3.5" />
+          </UButton>
         </div>
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <p class="text-xs text-muted">Total Pageviews</p>
-          <p class="mt-1 text-2xl font-semibold text-highlighted">
-            {{ stats?.pageviews?.toLocaleString() ?? '-' }}
-          </p>
-        </div>
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <p class="text-xs text-muted">Bounce Rate</p>
-          <p class="mt-1 text-2xl font-semibold text-highlighted">
-            {{ stats?.bounceRate != null ? `${(stats.bounceRate * 100).toFixed(1)}%` : '-' }}
-          </p>
-        </div>
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <p class="text-xs text-muted">Avg Visit Duration</p>
-          <p class="mt-1 text-2xl font-semibold text-highlighted">
-            {{ stats?.avgVisitDuration != null ? `${stats.avgVisitDuration.toFixed(0)}s` : '-' }}
-          </p>
-        </div>
+        <code class="block rounded bg-default p-2 text-xs text-highlighted">{{ snippetText }}</code>
       </div>
 
-      <!-- Visitors chart -->
-      <div class="mb-6 rounded-lg border border-default bg-elevated p-4">
-        <h3 class="mb-3 text-sm font-medium text-highlighted">Visitors & Pageviews</h3>
-        <v-chart
-          v-if="timeseries && timeseries.length > 0"
-          :option="chartOption"
-          style="height: 250px"
-          autoresize
-        />
-        <p v-else class="py-12 text-center text-sm text-muted">No data for this period</p>
-      </div>
-
-      <!-- Breakdowns grid -->
-      <div class="grid grid-cols-2 gap-6">
-        <!-- Top Pages -->
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <h3 class="mb-3 text-sm font-medium text-highlighted">Top Pages</h3>
-          <table v-if="topPages && topPages.length > 0" class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-default text-xs text-muted">
-                <th class="pb-2 text-left font-medium">Page</th>
-                <th class="pb-2 text-right font-medium">Visitors</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in topPages"
-                :key="row.name"
-                class="border-b border-default last:border-0"
-              >
-                <td class="py-1.5 text-highlighted">{{ row.name || '/' }}</td>
-                <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+      <!-- Dashboard -->
+      <template v-if="selectedSourceId">
+        <!-- Stats bar -->
+        <div class="mb-6 grid grid-cols-4 gap-4">
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <p class="text-xs text-muted">Unique Visitors</p>
+            <p class="mt-1 text-2xl font-semibold text-highlighted">
+              {{ stats?.visitors?.toLocaleString() ?? '-' }}
+            </p>
+          </div>
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <p class="text-xs text-muted">Total Pageviews</p>
+            <p class="mt-1 text-2xl font-semibold text-highlighted">
+              {{ stats?.pageviews?.toLocaleString() ?? '-' }}
+            </p>
+          </div>
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <p class="text-xs text-muted">Bounce Rate</p>
+            <p class="mt-1 text-2xl font-semibold text-highlighted">
+              {{ stats?.bounceRate != null ? `${(stats.bounceRate * 100).toFixed(1)}%` : '-' }}
+            </p>
+          </div>
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <p class="text-xs text-muted">Avg Visit Duration</p>
+            <p class="mt-1 text-2xl font-semibold text-highlighted">
+              {{ stats?.avgVisitDuration != null ? `${stats.avgVisitDuration.toFixed(0)}s` : '-' }}
+            </p>
+          </div>
         </div>
 
-        <!-- Referrers -->
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <h3 class="mb-3 text-sm font-medium text-highlighted">Sources</h3>
-          <table v-if="referrers && referrers.length > 0" class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-default text-xs text-muted">
-                <th class="pb-2 text-left font-medium">Source</th>
-                <th class="pb-2 text-right font-medium">Visitors</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in referrers"
-                :key="row.name"
-                class="border-b border-default last:border-0"
-              >
-                <td class="py-1.5 text-highlighted">{{ row.name }}</td>
-                <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <!-- Visitors chart -->
+        <div class="mb-6 rounded-lg border border-default bg-elevated p-4">
+          <h3 class="mb-3 text-sm font-medium text-highlighted">Visitors & Pageviews</h3>
+          <v-chart
+            v-if="timeseries && timeseries.length > 0"
+            :option="chartOption"
+            style="height: 250px"
+            autoresize
+          />
+          <p v-else class="py-12 text-center text-sm text-muted">No data for this period</p>
         </div>
 
-        <!-- Browsers -->
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <h3 class="mb-3 text-sm font-medium text-highlighted">Browsers</h3>
-          <table v-if="devices && devices.length > 0" class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-default text-xs text-muted">
-                <th class="pb-2 text-left font-medium">Browser</th>
-                <th class="pb-2 text-right font-medium">Visitors</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in devices"
-                :key="row.name"
-                class="border-b border-default last:border-0"
-              >
-                <td class="py-1.5 text-highlighted">{{ row.name }}</td>
-                <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <!-- Breakdowns grid -->
+        <div class="grid grid-cols-2 gap-6">
+          <!-- Top Pages -->
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <h3 class="mb-3 text-sm font-medium text-highlighted">Top Pages</h3>
+            <table v-if="topPages && topPages.length > 0" class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-default text-xs text-muted">
+                  <th class="pb-2 text-left font-medium">Page</th>
+                  <th class="pb-2 text-right font-medium">Visitors</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in topPages"
+                  :key="row.name"
+                  class="border-b border-default last:border-0"
+                >
+                  <td class="py-1.5 text-highlighted">{{ row.name || '/' }}</td>
+                  <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+          </div>
+
+          <!-- Referrers -->
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <h3 class="mb-3 text-sm font-medium text-highlighted">Sources</h3>
+            <table v-if="referrers && referrers.length > 0" class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-default text-xs text-muted">
+                  <th class="pb-2 text-left font-medium">Source</th>
+                  <th class="pb-2 text-right font-medium">Visitors</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in referrers"
+                  :key="row.name"
+                  class="border-b border-default last:border-0"
+                >
+                  <td class="py-1.5 text-highlighted">{{ row.name }}</td>
+                  <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+          </div>
+
+          <!-- Browsers -->
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <h3 class="mb-3 text-sm font-medium text-highlighted">Browsers</h3>
+            <table v-if="devices && devices.length > 0" class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-default text-xs text-muted">
+                  <th class="pb-2 text-left font-medium">Browser</th>
+                  <th class="pb-2 text-right font-medium">Visitors</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in devices"
+                  :key="row.name"
+                  class="border-b border-default last:border-0"
+                >
+                  <td class="py-1.5 text-highlighted">{{ row.name }}</td>
+                  <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+          </div>
+
+          <!-- Countries -->
+          <div class="rounded-lg border border-default bg-elevated p-4">
+            <h3 class="mb-3 text-sm font-medium text-highlighted">Countries</h3>
+            <table v-if="geoData && geoData.length > 0" class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-default text-xs text-muted">
+                  <th class="pb-2 text-left font-medium">Country</th>
+                  <th class="pb-2 text-right font-medium">Visitors</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in geoData"
+                  :key="row.name"
+                  class="border-b border-default last:border-0"
+                >
+                  <td class="py-1.5 text-highlighted">{{ row.name || 'Unknown' }}</td>
+                  <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+          </div>
         </div>
 
-        <!-- Countries -->
-        <div class="rounded-lg border border-default bg-elevated p-4">
-          <h3 class="mb-3 text-sm font-medium text-highlighted">Countries</h3>
-          <table v-if="geoData && geoData.length > 0" class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-default text-xs text-muted">
-                <th class="pb-2 text-left font-medium">Country</th>
-                <th class="pb-2 text-right font-medium">Visitors</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in geoData"
-                :key="row.name"
-                class="border-b border-default last:border-0"
-              >
-                <td class="py-1.5 text-highlighted">{{ row.name || 'Unknown' }}</td>
-                <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <!-- Source management: delete -->
+        <div v-if="selectedSource" class="mt-8 border-t border-default pt-4">
+          <UButton variant="ghost" color="error" size="xs" @click="deleteSource(selectedSource.id)">
+            <Trash2 class="h-3.5 w-3.5" />
+            Delete {{ selectedSource.domain }}
+          </UButton>
         </div>
-      </div>
-
-      <!-- Source management: delete -->
-      <div v-if="selectedSource" class="mt-8 border-t border-default pt-4">
-        <UButton variant="ghost" color="error" size="xs" @click="deleteSource(selectedSource.id)">
-          <Trash2 class="h-3.5 w-3.5" />
-          Delete {{ selectedSource.domain }}
-        </UButton>
-      </div>
+      </template>
     </template>
   </div>
 </template>

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
+import { identify, resetIdentity, track } from '@/services/tracking';
 import type { User } from '@/types';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -17,6 +18,9 @@ export const useAuthStore = defineStore('auth', () => {
       const { authApi } = await import('@/services/api');
       const result = await authApi.me();
       user.value = result;
+      if (result) {
+        identify(result.email, { name: result.displayName });
+      }
     } catch {
       user.value = null;
     } finally {
@@ -30,6 +34,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const result = await authApi.login(email, password);
       user.value = result;
+      if (result) {
+        identify(result.email, { name: result.displayName });
+        track('login');
+      }
       // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Login failed';
@@ -50,6 +58,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearAuth(): void {
     user.value = null;
+    resetIdentity();
   }
 
   return {

@@ -62,7 +62,6 @@ export const useConnectionStore = defineStore('connection', () => {
 
   function handleMessage(message: Record<string, unknown>): void {
     const type = String(message['type']);
-    console.log('[WS] Received:', type, message);
 
     switch (type) {
       case 'connected': {
@@ -76,16 +75,13 @@ export const useConnectionStore = defineStore('connection', () => {
       case 'error': {
         // Route to registered handlers
         const handlers = messageHandlers.get(type) ?? [];
-        console.log('[WS] Routing to', handlers.length, 'handlers');
         handlers.forEach((handler) => {
           handler(message);
         });
         break;
       }
 
-      default: {
-        console.log('[WS] Unknown message type:', type, message);
-      }
+      default:
     }
   }
 
@@ -131,10 +127,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   function send(message: unknown): void {
     if (client && client.isConnected) {
-      console.log('[WS] Sending:', message);
       client.send(message);
-    } else {
-      console.warn('Cannot send message: WebSocket not connected');
     }
   }
 

@@ -90,9 +90,8 @@ export const useDatasetStore = defineStore('dataset', () => {
           rowCount: d.rowCount,
         }));
       }
-      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
-    } catch (err) {
-      console.error('Failed to fetch datasets:', err);
+    } catch {
+      // Dataset fetch failed — silently handled
     } finally {
       loadingList.value = false;
     }
@@ -136,11 +135,8 @@ export const useDatasetStore = defineStore('dataset', () => {
       if (result) {
         resultsStore.setTableResults(result);
       }
-      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
-    } catch (err) {
-      console.error('[Dataset] Failed to load initial data:', err);
-      const msg = err instanceof Error ? err.message : 'Failed to load data';
-      resultsStore.setError(msg);
+    } catch {
+      resultsStore.setError('Failed to load data');
     }
   }
 
