@@ -190,7 +190,7 @@ export class WebSocketClient {
 
 export function createWebSocketClient(): WebSocketClient {
   const wsUrl =
-    import.meta.env.VITE_WS_URL ||
+    import.meta.env.VITE_WS_URL ??
     `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
   return new WebSocketClient(wsUrl);
 }

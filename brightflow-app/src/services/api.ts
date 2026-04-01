@@ -23,7 +23,7 @@ import type {
   UserTimelineEvent,
 } from '@/types/generated';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
 export class ApiError extends Error {
   status: number;

@@ -3,7 +3,7 @@
  * Sends events to the local /api/track and /api/identify endpoints.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const DOMAIN = 'app.brightflow.local';
 
 function post(url: string, data: Record<string, unknown>): void {
