@@ -4,7 +4,7 @@
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
-const DOMAIN = 'app.brightflow.local';
+const DOMAIN = import.meta.env.VITE_ANALYTICS_DOMAIN ?? 'localhost';
 
 function post(url: string, data: Record<string, unknown>): void {
   try {
