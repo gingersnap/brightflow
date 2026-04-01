@@ -5,7 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Brightflow</title>
-    <script defer data-domain="localhost" src="http://localhost:8080/api/script.js"></script>
+    <script
+      defer
+      data-domain="%VITE_ANALYTICS_DOMAIN%"
+      src="%VITE_API_BASE%/api/script.js"
+    ></script>
   </head>
   <body>
     <div id="app"></div>
