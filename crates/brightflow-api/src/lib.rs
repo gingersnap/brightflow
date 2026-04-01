@@ -15,12 +15,14 @@
 pub mod analytics;
 pub mod auth;
 pub mod connect;
+pub mod ingest;
 pub mod insights;
 pub mod routes;
 pub mod scheduler;
 pub mod shared;
 pub mod state;
 pub mod system;
+pub mod web_analytics;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -248,6 +250,27 @@ pub async fn serve(
             scheduler.start().await;
         });
         tracing::info!("Scheduler started with SQLite-backed jobs");
+    }
+
+    // Initialize event ingestion engine
+    match brightflow_ingest::init(&paths.ingest_url(), &paths.events_buffer(), paths.base()).await {
+        Ok(ingest_state) => {
+            let ingest_state = Arc::new(ingest_state);
+            state.ingest = Some(Arc::clone(&ingest_state));
+
+            // Start flush background task
+            let flush_buffer = Arc::clone(&ingest_state.buffer);
+            let flush_events_path = paths.events_store();
+            tokio::spawn(async move {
+                let flush_task =
+                    brightflow_ingest::flush::FlushTask::new(flush_buffer, flush_events_path);
+                flush_task.start().await;
+            });
+            tracing::info!("Event ingestion engine started");
+        },
+        Err(e) => {
+            tracing::warn!("Failed to initialize ingest engine: {e}");
+        },
     }
 
     // Session store: SQLite with Moka in-memory cache

@@ -2,13 +2,17 @@
  * REST API client
  */
 import type {
+  BreakdownRow,
+  DashboardStats,
   DatasetInfo,
   InsightsResponse,
   LoadTableResponse,
   QueryResponse,
   RunTriggerResponse,
   ScheduleResponse,
+  Source,
   SyncRun,
+  TimeseriesPoint,
   UnifiedConnector,
   UploadResponse,
   User,
@@ -185,4 +189,35 @@ export const datasetApi = {
     // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary
     return response.json();
   },
+};
+
+// Analytics Source API
+export const sourceApi = {
+  list: (): Promise<Source[] | null> => api.get<Source[]>('/api/sources'),
+  create: (domain: string, name: string): Promise<Source | null> =>
+    api.post<Source>('/api/sources', { domain, name }),
+  get: (id: string): Promise<Source | null> => api.get<Source>(`/api/sources/${id}`),
+  update: (id: string, data: { name?: string; timezone?: string }): Promise<Source | null> =>
+    api.put<Source>(`/api/sources/${id}`, data),
+  delete: (id: string): Promise<unknown> => api.delete(`/api/sources/${id}`),
+  snippet: (id: string): Promise<{ snippet: string } | null> =>
+    api.get<{ snippet: string }>(`/api/sources/${id}/snippet`),
+};
+
+// Analytics Dashboard API
+export const analyticsApi = {
+  stats: (sourceId: string, period = '30d'): Promise<DashboardStats | null> =>
+    api.get<DashboardStats>(`/api/analytics/${sourceId}/stats?period=${period}`),
+  timeseries: (sourceId: string, period = '30d'): Promise<TimeseriesPoint[] | null> =>
+    api.get<TimeseriesPoint[]>(`/api/analytics/${sourceId}/timeseries?period=${period}`),
+  topPages: (sourceId: string, period = '30d'): Promise<BreakdownRow[] | null> =>
+    api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/top-pages?period=${period}`),
+  referrers: (sourceId: string, period = '30d'): Promise<BreakdownRow[] | null> =>
+    api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/referrers?period=${period}`),
+  utm: (sourceId: string, period = '30d'): Promise<BreakdownRow[] | null> =>
+    api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/utm?period=${period}`),
+  devices: (sourceId: string, period = '30d'): Promise<BreakdownRow[] | null> =>
+    api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/devices?period=${period}`),
+  geo: (sourceId: string, period = '30d'): Promise<BreakdownRow[] | null> =>
+    api.get<BreakdownRow[]>(`/api/analytics/${sourceId}/geo?period=${period}`),
 };

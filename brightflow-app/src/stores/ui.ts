@@ -32,6 +32,9 @@ export const useUiStore = defineStore('ui', () => {
   // System observability view
   const showSystem = ref(storedMode === 'system');
 
+  // Analytics view
+  const showAnalytics = ref(storedMode === 'analytics');
+
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
   const storedViewMode = localStorage.getItem('brightflow-view-mode');
   const viewMode = ref<ViewMode>(
@@ -66,6 +69,11 @@ export const useUiStore = defineStore('ui', () => {
       localStorage.setItem('brightflow-app-mode', 'system');
     }
   });
+  watch(showAnalytics, (val) => {
+    if (val) {
+      localStorage.setItem('brightflow-app-mode', 'analytics');
+    }
+  });
   watch(viewMode, (val) => {
     localStorage.setItem('brightflow-view-mode', val);
   });
@@ -78,12 +86,14 @@ export const useUiStore = defineStore('ui', () => {
     appMode.value = mode;
     showConnect.value = false;
     showSystem.value = false;
+    showAnalytics.value = false;
   }
 
   function setShowConnect(val: boolean): void {
     showConnect.value = val;
     if (val) {
       showSystem.value = false;
+      showAnalytics.value = false;
     }
   }
 
@@ -91,6 +101,15 @@ export const useUiStore = defineStore('ui', () => {
     showSystem.value = val;
     if (val) {
       showConnect.value = false;
+      showAnalytics.value = false;
+    }
+  }
+
+  function setShowAnalytics(val: boolean): void {
+    showAnalytics.value = val;
+    if (val) {
+      showConnect.value = false;
+      showSystem.value = false;
     }
   }
 
@@ -138,8 +157,10 @@ export const useUiStore = defineStore('ui', () => {
     resultsCollapsed,
     setAppMode,
     setChartType,
+    setShowAnalytics,
     setShowConnect,
     setShowSystem,
+    showAnalytics,
     setViewMode,
     showConnect,
     showSystem,

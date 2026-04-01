@@ -10,15 +10,21 @@ export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './ge
 export type { AggFn, FilterOp };
 // Also re-export remaining generated types used across the app
 export type {
+  BreakdownRow,
+  CreateSourceRequest,
+  DashboardStats,
   DatasetInfo,
   InsightsResponse,
   LoadTableResponse,
   RunTriggerResponse,
   ScheduleResponse,
+  Source,
   SyncRun,
+  TimeseriesPoint,
   UnifiedConnector,
   UnifiedJob,
   UnifiedSyncRun,
+  UpdateSourceRequest,
   UploadResponse,
   User,
 } from './generated';

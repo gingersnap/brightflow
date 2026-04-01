@@ -38,6 +38,8 @@ pub struct AppState {
     pub log_sender: broadcast::Sender<LogEntry>,
     /// Server start time (for uptime calculation)
     pub start_time: Instant,
+    /// Event ingestion engine (sources, buffer, geo, UA parser)
+    pub ingest: Option<Arc<brightflow_ingest::IngestState>>,
 }
 
 impl Default for AppState {
@@ -62,6 +64,7 @@ impl AppState {
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
+            ingest: None,
         }
     }
 
@@ -79,6 +82,7 @@ impl AppState {
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
+            ingest: None,
         }
     }
 
@@ -181,6 +185,7 @@ impl AppState {
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
+            ingest: None,
         }
     }
 
@@ -215,6 +220,7 @@ impl AppState {
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
+            ingest: None,
         }
     }
 

@@ -38,3 +38,11 @@ export type { UploadResponse } from './UploadResponse';
 export type { User } from './User';
 export type { WsClientMessage } from './WsClientMessage';
 export type { WsServerMessage } from './WsServerMessage';
+
+// Event ingestion types
+export type { BreakdownRow } from './BreakdownRow';
+export type { CreateSourceRequest } from './CreateSourceRequest';
+export type { DashboardStats } from './DashboardStats';
+export type { Source } from './Source';
+export type { TimeseriesPoint } from './TimeseriesPoint';
+export type { UpdateSourceRequest } from './UpdateSourceRequest';

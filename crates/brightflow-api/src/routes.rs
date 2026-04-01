@@ -8,10 +8,12 @@ use axum::{
 use crate::analytics::handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::connect::handlers as connect_handlers;
+use crate::ingest::handlers as ingest_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::scheduler::handlers as scheduler_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
+use crate::web_analytics::handlers as wa_handlers;
 
 /// Create the main application router
 pub fn create_router() -> Router<AppState> {
@@ -27,7 +29,11 @@ fn api_routes() -> Router<AppState> {
     let public = Router::new()
         .route("/auth/login", post(auth_handlers::login))
         .route("/auth/logout", post(auth_handlers::logout))
-        .route("/auth/me", get(auth_handlers::me));
+        .route("/auth/me", get(auth_handlers::me))
+        // Event ingestion (public — called by tracking script from external domains)
+        .route("/event", post(ingest_handlers::ingest_event))
+        .route("/collect", post(ingest_handlers::ingest_event))
+        .route("/script.js", get(ingest_handlers::serve_script));
 
     let protected = Router::new()
         // Available tables (metadata only, for lazy loading)
@@ -103,6 +109,38 @@ fn api_routes() -> Router<AppState> {
         )
         // System observability
         .route("/system/ws", get(system_handlers::system_ws_handler))
+        // Source management
+        .route(
+            "/sources",
+            get(ingest_handlers::list_sources).post(ingest_handlers::create_source),
+        )
+        .route(
+            "/sources/{id}",
+            get(ingest_handlers::get_source)
+                .put(ingest_handlers::update_source)
+                .delete(ingest_handlers::delete_source),
+        )
+        .route("/sources/{id}/snippet", get(ingest_handlers::get_snippet))
+        // Web analytics dashboard queries
+        .route("/analytics/{source_id}/stats", get(wa_handlers::stats))
+        .route(
+            "/analytics/{source_id}/timeseries",
+            get(wa_handlers::timeseries),
+        )
+        .route(
+            "/analytics/{source_id}/top-pages",
+            get(wa_handlers::top_pages),
+        )
+        .route(
+            "/analytics/{source_id}/referrers",
+            get(wa_handlers::referrers),
+        )
+        .route("/analytics/{source_id}/utm", get(wa_handlers::utm))
+        .route(
+            "/analytics/{source_id}/devices",
+            get(wa_handlers::devices),
+        )
+        .route("/analytics/{source_id}/geo", get(wa_handlers::geo))
         .route_layer(middleware::from_fn(require_auth));
 
     public.merge(protected)

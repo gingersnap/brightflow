@@ -3,6 +3,7 @@ import { useQuery } from '@pinia/colada';
 import { useColorMode } from '@vueuse/core';
 import {
   Activity,
+  BarChart3,
   Cable,
   ChevronDown,
   Database,
@@ -72,6 +73,10 @@ const emit = defineEmits<{
 
 function setMode(mode: AppMode): void {
   uiStore.setAppMode(mode);
+}
+
+function toggleAnalytics(): void {
+  uiStore.setShowAnalytics(!uiStore.showAnalytics);
 }
 
 function toggleConnect(): void {
@@ -151,6 +156,20 @@ function toggleTheme(): void {
 
     <!-- Right: Actions and Status -->
     <div class="flex items-center gap-3">
+      <!-- Analytics button -->
+      <button
+        class="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+        :class="
+          uiStore.showAnalytics
+            ? 'bg-primary-500/10 text-primary-500'
+            : 'text-muted hover:bg-elevated hover:text-highlighted'
+        "
+        @click="toggleAnalytics"
+      >
+        <BarChart3 class="h-3.5 w-3.5" />
+        Analytics
+      </button>
+
       <!-- Connect button -->
       <button
         class="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"

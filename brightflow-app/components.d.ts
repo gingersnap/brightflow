@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnalyticsView: typeof import('./src/components/analytics/AnalyticsView.vue')['default']
     AppHeader: typeof import('./src/components/layout/AppHeader.vue')['default']
     BigNumber: typeof import('./src/components/charts/BigNumber.vue')['default']
     BucketDropzone: typeof import('./src/components/pivot/BucketDropzone.vue')['default']

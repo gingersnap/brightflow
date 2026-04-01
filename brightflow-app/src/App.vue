@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
 
+import AnalyticsView from './components/analytics/AnalyticsView.vue';
 import LoginPage from './components/auth/LoginPage.vue';
 import ConnectView from './components/connect/ConnectView.vue';
 import InsightsView from './components/insights/InsightsView.vue';
@@ -133,6 +134,13 @@ async function handleLogout(): Promise<void> {
         <template v-if="uiStore.showSystem">
           <div class="relative min-h-0 flex-1 overflow-hidden">
             <SystemView />
+          </div>
+        </template>
+
+        <!-- Analytics mode - works without a dataset -->
+        <template v-else-if="uiStore.showAnalytics">
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <AnalyticsView />
           </div>
         </template>
 

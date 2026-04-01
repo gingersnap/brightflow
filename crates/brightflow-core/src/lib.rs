@@ -103,6 +103,26 @@ impl WorkspacePaths {
         })
     }
 
+    /// Event Parquet storage directory (per-source/date).
+    #[must_use]
+    pub fn events_store(&self) -> PathBuf {
+        env_path_or("BRIGHTFLOW_EVENTS_STORE", || self.root().join("events"))
+    }
+
+    /// Event buffer directory (per-source SQLite DBs).
+    #[must_use]
+    pub fn events_buffer(&self) -> PathBuf {
+        env_path_or("BRIGHTFLOW_EVENTS_BUFFER", || {
+            self.root().join("events-buffer")
+        })
+    }
+
+    /// Ingest metadata SQLite URL (sources, salts).
+    #[must_use]
+    pub fn ingest_url(&self) -> String {
+        env_url_or("BRIGHTFLOW_INGEST_URL", || self.root().join("ingest.db"))
+    }
+
     /// Base data directory.
     #[must_use]
     pub fn base(&self) -> &Path {
@@ -114,8 +134,15 @@ impl WorkspacePaths {
         std::fs::create_dir_all(self.store())?;
         std::fs::create_dir_all(self.schemas())?;
         std::fs::create_dir_all(self.connector_configs())?;
+        std::fs::create_dir_all(self.events_store())?;
+        std::fs::create_dir_all(self.events_buffer())?;
         // Ensure parent dirs for DB files exist
-        for url in [self.litehouse_url(), self.auth_url(), self.scheduler_url()] {
+        for url in [
+            self.litehouse_url(),
+            self.auth_url(),
+            self.scheduler_url(),
+            self.ingest_url(),
+        ] {
             if let Some(path) = url.strip_prefix("sqlite:") {
                 let db_path = path.split('?').next().unwrap_or(path);
                 if let Some(parent) = Path::new(db_path).parent() {
