@@ -24,7 +24,7 @@ export default defineConfig({
       typeCheck: true,
     },
     rules: {
-      'no-console': 'warn',
+      'no-console': 'error',
       'no-debugger': 'error',
       eqeqeq: ['error', 'smart'],
       'no-shadow': 'error',

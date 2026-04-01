@@ -2,6 +2,10 @@
  * WebSocket client with automatic reconnection
  */
 
+import { createLogger } from '@/services/logger';
+
+const log = createLogger('WebSocket');
+
 type WsEventType = 'open' | 'close' | 'error' | 'message';
 type WsHandler<T = unknown> = (data: T) => void;
 
@@ -97,6 +101,7 @@ export class WebSocketClient {
     }
 
     this.ws.onopen = (): void => {
+      log.info('Connected');
       this.reconnectCount = 0;
       this.startHeartbeat();
       this.flushMessageQueue();
@@ -104,6 +109,7 @@ export class WebSocketClient {
     };
 
     this.ws.onclose = (event: CloseEvent): void => {
+      log.info('Closed', event.code, event.reason);
       this.clearTimers();
       this.emit('close', event);
 
@@ -113,6 +119,7 @@ export class WebSocketClient {
     };
 
     this.ws.onerror = (event: Event): void => {
+      log.error('Error', event);
       this.emit('error', event);
     };
 
@@ -126,6 +133,7 @@ export class WebSocketClient {
           return;
         }
 
+        log.debug('Message:', data);
         this.emit('message', data);
       } catch {
         this.emit('message', event.data);
@@ -135,6 +143,7 @@ export class WebSocketClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectCount >= this.options.reconnectAttempts) {
+      log.warn('Max reconnection attempts reached');
       return;
     }
 
@@ -181,8 +190,8 @@ export class WebSocketClient {
     this.handlers[event].forEach((handler) => {
       try {
         handler(data);
-      } catch {
-        // Handler error — silently ignored
+      } catch (error) {
+        log.error('Handler error:', error);
       }
     });
   }

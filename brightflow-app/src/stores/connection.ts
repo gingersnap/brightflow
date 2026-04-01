@@ -1,8 +1,11 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
+import { createLogger } from '@/services/logger';
 import { type WebSocketClient, createWebSocketClient } from '@/services/websocket';
 import type { ConnectionStatus } from '@/types';
+
+const log = createLogger('WS');
 
 type MessageHandler = (message: Record<string, unknown>) => void;
 
@@ -62,6 +65,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   function handleMessage(message: Record<string, unknown>): void {
     const type = String(message['type']);
+    log.debug('Received:', type, message);
 
     switch (type) {
       case 'connected': {
@@ -75,13 +79,16 @@ export const useConnectionStore = defineStore('connection', () => {
       case 'error': {
         // Route to registered handlers
         const handlers = messageHandlers.get(type) ?? [];
+        log.debug('Routing to', handlers.length, 'handlers');
         handlers.forEach((handler) => {
           handler(message);
         });
         break;
       }
 
-      default:
+      default: {
+        log.debug('Unknown message type:', type);
+      }
     }
   }
 
@@ -127,6 +134,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   function send(message: unknown): void {
     if (client && client.isConnected) {
+      log.debug('Sending:', message);
       client.send(message);
     }
   }

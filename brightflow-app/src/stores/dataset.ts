@@ -2,7 +2,10 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import { datasetApi } from '@/services/api';
+import { createLogger } from '@/services/logger';
 import type { ColumnInfo, LoadTableResponse } from '@/types';
+
+const log = createLogger('Dataset');
 
 import { useQueryStore } from './query';
 import { useResultsStore } from './results';
@@ -91,7 +94,7 @@ export const useDatasetStore = defineStore('dataset', () => {
         }));
       }
     } catch {
-      // Dataset fetch failed — silently handled
+      log.error('Failed to fetch datasets');
     } finally {
       loadingList.value = false;
     }
@@ -136,6 +139,7 @@ export const useDatasetStore = defineStore('dataset', () => {
         resultsStore.setTableResults(result);
       }
     } catch {
+      log.error('Failed to load initial data');
       resultsStore.setError('Failed to load data');
     }
   }
