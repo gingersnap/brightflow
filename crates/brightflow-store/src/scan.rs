@@ -1,0 +1,118 @@
+//! Scan filters and SQL query builder for file-level pruning.
+
+use std::fmt::Write;
+
+/// Filter applied during catalog-backed scan to prune irrelevant files.
+#[derive(Debug, Clone)]
+pub enum ScanFilter {
+    /// Exact match on a partition key/value
+    PartitionEq { key: String, value: String },
+    /// Range filter on a partition key
+    PartitionRange {
+        key: String,
+        min: Option<String>,
+        max: Option<String>,
+    },
+    /// Range filter on a column's min/max stats
+    ColumnRange {
+        column: String,
+        min: Option<String>,
+        max: Option<String>,
+    },
+}
+
+/// Build a pruning SQL query + bind values from a table_id and list of filters.
+///
+/// Returns `(sql_string, bind_values)` ready for `sqlx::query_as`.
+pub fn build_pruning_query(table_id: &str, filters: &[ScanFilter]) -> (String, Vec<String>) {
+    let mut bind_values: Vec<String> = Vec::new();
+
+    // Collect which partition keys and stat columns we need to join
+    let mut partition_filters: Vec<&ScanFilter> = Vec::new();
+    let mut column_filters: Vec<&ScanFilter> = Vec::new();
+
+    for f in filters {
+        match f {
+            ScanFilter::PartitionEq { .. } | ScanFilter::PartitionRange { .. } => {
+                partition_filters.push(f);
+            },
+            ScanFilter::ColumnRange { .. } => {
+                column_filters.push(f);
+            },
+        }
+    }
+
+    let mut sql = String::from(
+        "SELECT DISTINCT tf.id, tf.table_id, tf.path, tf.num_rows, tf.size_bytes, tf.added_at\nFROM table_files tf\n",
+    );
+
+    // Join file_partitions for each partition filter (use a single join, filter in WHERE)
+    if !partition_filters.is_empty() {
+        sql.push_str("INNER JOIN file_partitions fp ON fp.file_id = tf.id\n");
+    }
+
+    // Join file_column_stats for each column filter with a separate alias
+    for (i, _) in column_filters.iter().enumerate() {
+        let _ = writeln!(
+            sql,
+            "LEFT JOIN file_column_stats fcs{i} ON fcs{i}.file_id = tf.id"
+        );
+    }
+
+    sql.push_str("WHERE tf.table_id = ?\n");
+    bind_values.push(table_id.to_string());
+
+    // Partition filters
+    for f in &partition_filters {
+        match f {
+            ScanFilter::PartitionEq { key, value } => {
+                sql.push_str("  AND fp.partition_key = ? AND fp.partition_value = ?\n");
+                bind_values.push(key.clone());
+                bind_values.push(value.clone());
+            },
+            ScanFilter::PartitionRange { key, min, max } => {
+                sql.push_str("  AND fp.partition_key = ?\n");
+                bind_values.push(key.clone());
+                if let Some(min_val) = min {
+                    sql.push_str("  AND fp.partition_value >= ?\n");
+                    bind_values.push(min_val.clone());
+                }
+                if let Some(max_val) = max {
+                    sql.push_str("  AND fp.partition_value <= ?\n");
+                    bind_values.push(max_val.clone());
+                }
+            },
+            ScanFilter::ColumnRange { .. } => {},
+        }
+    }
+
+    // Column stat filters: use min/max overlap logic
+    // A file's data overlaps the query range [qmin, qmax] if:
+    //   file.max_value >= qmin AND file.min_value <= qmax
+    // NULLs in stats mean "unknown" → don't prune (keep the file)
+    for (i, f) in column_filters.iter().enumerate() {
+        if let ScanFilter::ColumnRange { column, min, max } = f {
+            let _ = writeln!(sql, "  AND fcs{i}.column_name = ?");
+            bind_values.push(column.clone());
+            if let Some(min_val) = min {
+                let _ = writeln!(
+                    sql,
+                    "  AND (fcs{i}.max_value IS NULL OR fcs{i}.max_value >= ?)"
+                );
+                bind_values.push(min_val.clone());
+            }
+            if let Some(max_val) = max {
+                let _ = writeln!(
+                    sql,
+                    "  AND (fcs{i}.min_value IS NULL OR fcs{i}.min_value <= ?)"
+                );
+                bind_values.push(max_val.clone());
+            }
+        }
+    }
+
+    // If no column filters, files without stats should still be returned.
+    // The LEFT JOIN + no WHERE on fcs handles this.
+
+    (sql, bind_values)
+}

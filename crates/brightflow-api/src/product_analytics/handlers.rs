@@ -4,8 +4,8 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 
 use brightflow_ingest::models::{
-    EventListRow, FunnelRequest, FunnelResult, RetentionRequest, RetentionResult, UserProfile,
-    UserTimelineEvent,
+    EventListRow, FunnelRequest, FunnelResult, FunnelStepResult, RetentionRequest, RetentionResult,
+    UserProfile, UserTimelineEvent,
 };
 use brightflow_ingest::IngestState;
 
@@ -20,10 +20,6 @@ fn get_ingest(state: &AppState) -> AppResult<&Arc<IngestState>> {
         .ingest
         .as_ref()
         .ok_or_else(|| AppError::Internal("Ingest engine not initialized".to_string()))
-}
-
-fn get_events_path(_state: &AppState) -> std::path::PathBuf {
-    brightflow_core::WorkspacePaths::from_env().events_store()
 }
 
 /// Resolve period to (start, end) date strings.
@@ -71,21 +67,75 @@ async fn run_query<T: Send + 'static>(
     }
 }
 
+/// Scan events from the store for a source with date filters.
+/// Returns None if the store isn't available or the table doesn't exist.
+async fn scan_source_events(
+    state: &AppState,
+    source_id: &str,
+    start: &str,
+    end: &str,
+) -> AppResult<Option<polars::prelude::LazyFrame>> {
+    let Some(store) = state.store() else {
+        return Ok(None);
+    };
+    let table_name = format!("events_{source_id}");
+    let date_start = &start[..10.min(start.len())];
+    let date_end = &end[..10.min(end.len())];
+    let filters = vec![
+        brightflow_store::ScanFilter::PartitionRange {
+            key: "date".into(),
+            min: Some(date_start.into()),
+            max: Some(date_end.into()),
+        },
+        brightflow_store::ScanFilter::ColumnRange {
+            column: "timestamp".into(),
+            min: Some(start.into()),
+            max: Some(end.into()),
+        },
+    ];
+    let lf = store
+        .scan_table(&table_name, &filters)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(lf.map(crate::web_analytics::queries::scan_events_from_store))
+}
+
+/// Scan all events for a source (no date filter — used for user timeline).
+/// Returns None if the store isn't available.
+async fn scan_source_events_all(
+    state: &AppState,
+    source_id: &str,
+) -> AppResult<Option<polars::prelude::LazyFrame>> {
+    let Some(store) = state.store() else {
+        return Ok(None);
+    };
+    let table_name = format!("events_{source_id}");
+    let lf = store
+        .scan_table(&table_name, &[])
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(lf.map(crate::web_analytics::queries::scan_events_from_store))
+}
+
 /// GET /api/analytics/:source_id/events
 pub async fn event_list(
     State(state): State<AppState>,
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<EventListRow>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(
         &params.period,
         params.start.as_deref(),
         params.end.as_deref(),
     );
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("events", move || {
-        queries::query_event_list(&events_path, &source_id, &start, &end)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_event_list(lf, &start, &end)
     })
     .await?;
 
@@ -104,13 +154,27 @@ pub async fn funnel(
         ));
     }
 
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&req.period, req.start.as_deref(), req.end.as_deref());
     let steps: Vec<String> = req.steps.into_iter().map(|s| s.name).collect();
     let window = req.window_seconds;
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("funnel", move || {
-        queries::query_funnel(&events_path, &source_id, &start, &end, &steps, window)
+        let Some(lf) = lf else {
+            return Ok(FunnelResult {
+                steps: steps
+                    .iter()
+                    .map(|name| FunnelStepResult {
+                        name: name.clone(),
+                        count: 0,
+                        conversion_rate: 0.0,
+                        dropoff_rate: 0.0,
+                    })
+                    .collect(),
+            });
+        };
+        queries::query_funnel(lf, &start, &end, &steps, window)
     })
     .await?;
 
@@ -123,17 +187,23 @@ pub async fn retention(
     Path(source_id): Path<String>,
     Json(req): Json<RetentionRequest>,
 ) -> AppResult<Json<RetentionResult>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&req.period, req.start.as_deref(), req.end.as_deref());
     let cohort_event = req.cohort_event;
     let return_event = req.return_event;
     let period_type = req.period_type;
     let num_periods = req.num_periods;
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("retention", move || {
+        let Some(lf) = lf else {
+            return Ok(RetentionResult {
+                period_type: period_type.clone(),
+                rows: vec![],
+            });
+        };
         queries::query_retention(
-            &events_path,
-            &source_id,
+            lf,
             &start,
             &end,
             &cohort_event,
@@ -180,10 +250,13 @@ pub async fn user_timeline(
     State(state): State<AppState>,
     Path((source_id, user_id)): Path<(String, String)>,
 ) -> AppResult<Json<Vec<UserTimelineEvent>>> {
-    let events_path = get_events_path(&state);
+    let lf = scan_source_events_all(&state, &source_id).await?;
 
     let result = run_query("user-timeline", move || {
-        queries::query_user_timeline(&events_path, &source_id, &user_id)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_user_timeline(lf, &user_id)
     })
     .await?;
 

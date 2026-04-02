@@ -2,7 +2,7 @@
 
 use polars::prelude::*;
 
-use crate::models::ColumnStatRow;
+use crate::models::{ColumnStatRow, FileColumnStatRow};
 
 /// Extract column-level statistics (min, max, null_count) from a DataFrame.
 ///
@@ -37,6 +37,39 @@ pub fn extract_column_stats(df: &DataFrame, table_id: &str) -> Vec<ColumnStatRow
     stats
 }
 
+/// Extract per-file column statistics (min, max, null_count) from a DataFrame.
+///
+/// Same logic as `extract_column_stats` but returns `FileColumnStatRow` with a `file_id` field.
+pub fn extract_file_column_stats(df: &DataFrame, file_id: &str) -> Vec<FileColumnStatRow> {
+    let mut stats = Vec::with_capacity(df.width());
+
+    for col in df.get_columns() {
+        let name = col.name().to_string();
+        let null_count = i64::try_from(col.null_count()).ok();
+
+        let (min_value, max_value) = if supports_min_max(col.dtype()) {
+            let min_scalar = col.min_reduce().ok();
+            let max_scalar = col.max_reduce().ok();
+            (
+                min_scalar.and_then(|s| format_scalar(&s)),
+                max_scalar.and_then(|s| format_scalar(&s)),
+            )
+        } else {
+            (None, None)
+        };
+
+        stats.push(FileColumnStatRow {
+            file_id: file_id.to_string(),
+            column_name: name,
+            min_value,
+            max_value,
+            null_count,
+        });
+    }
+
+    stats
+}
+
 /// Check if a DataType supports min/max reduction
 fn supports_min_max(dtype: &DataType) -> bool {
     matches!(
@@ -59,11 +92,14 @@ fn supports_min_max(dtype: &DataType) -> bool {
     )
 }
 
-/// Format a Polars Scalar to an Option<String> for storage
+/// Format a Polars Scalar to an Option<String> for storage.
+///
+/// Polars' Display trait wraps strings in quotes — extract raw values instead.
 fn format_scalar(scalar: &Scalar) -> Option<String> {
-    let av = scalar.value();
-    if matches!(av, AnyValue::Null) {
-        return None;
+    match scalar.value() {
+        AnyValue::Null => None,
+        AnyValue::String(s) => Some(s.to_string()),
+        AnyValue::StringOwned(s) => Some(s.to_string()),
+        av => Some(format!("{av}")),
     }
-    Some(format!("{av}"))
 }

@@ -2,6 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 
 use brightflow_ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
+use brightflow_store::ScanFilter;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -50,8 +51,22 @@ fn resolve_dates(params: &AnalyticsParams) -> (String, String) {
     (start, end)
 }
 
-fn get_events_path(_state: &AppState) -> std::path::PathBuf {
-    brightflow_core::WorkspacePaths::from_env().events_store()
+/// Build scan filters for a date range query.
+fn date_filters(start: &str, end: &str) -> Vec<ScanFilter> {
+    let date_start = &start[..10.min(start.len())];
+    let date_end = &end[..10.min(end.len())];
+    vec![
+        ScanFilter::PartitionRange {
+            key: "date".into(),
+            min: Some(date_start.into()),
+            max: Some(date_end.into()),
+        },
+        ScanFilter::ColumnRange {
+            column: "timestamp".into(),
+            min: Some(start.into()),
+            max: Some(end.into()),
+        },
+    ]
 }
 
 /// Run an analytics query in a blocking task with proper error logging.
@@ -73,17 +88,48 @@ async fn run_query<T: Send + 'static>(
     }
 }
 
+/// Scan events from the store for a source with date filters.
+/// Returns None if the store isn't available or the table doesn't exist.
+async fn scan_source_events(
+    state: &AppState,
+    source_id: &str,
+    start: &str,
+    end: &str,
+) -> AppResult<Option<polars::prelude::LazyFrame>> {
+    let Some(store) = state.store() else {
+        return Ok(None);
+    };
+    let table_name = format!("events_{source_id}");
+    let filters = date_filters(start, end);
+    let lf = store
+        .scan_table(&table_name, &filters)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(lf.map(queries::scan_events_from_store))
+}
+
 /// GET /api/analytics/:source_id/stats
 pub async fn stats(
     State(state): State<AppState>,
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<DashboardStats>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("stats", move || {
-        queries::query_stats(&events_path, &source_id, &start, &end)
+        let Some(lf) = lf else {
+            return Ok(DashboardStats {
+                visitors: 0,
+                pageviews: 0,
+                bounce_rate: 0.0,
+                avg_visit_duration: 0.0,
+                prev_visitors: None,
+                prev_pageviews: None,
+            });
+        };
+        queries::query_stats(lf, &start, &end)
     })
     .await?;
 
@@ -96,11 +142,15 @@ pub async fn timeseries(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<TimeseriesPoint>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("timeseries", move || {
-        queries::query_timeseries(&events_path, &source_id, &start, &end)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_timeseries(lf, &start, &end)
     })
     .await?;
 
@@ -113,11 +163,15 @@ pub async fn top_pages(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("top-pages", move || {
-        queries::query_breakdown(&events_path, &source_id, &start, &end, "pathname", 20)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_breakdown(lf, &start, &end, "pathname", 20)
     })
     .await?;
 
@@ -130,18 +184,15 @@ pub async fn referrers(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("referrers", move || {
-        queries::query_breakdown(
-            &events_path,
-            &source_id,
-            &start,
-            &end,
-            "referrer_source",
-            20,
-        )
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_breakdown(lf, &start, &end, "referrer_source", 20)
     })
     .await?;
 
@@ -154,11 +205,15 @@ pub async fn utm(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("utm", move || {
-        queries::query_breakdown(&events_path, &source_id, &start, &end, "utm_source", 20)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_breakdown(lf, &start, &end, "utm_source", 20)
     })
     .await?;
 
@@ -171,11 +226,15 @@ pub async fn devices(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("devices", move || {
-        queries::query_breakdown(&events_path, &source_id, &start, &end, "browser", 20)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_breakdown(lf, &start, &end, "browser", 20)
     })
     .await?;
 
@@ -188,11 +247,15 @@ pub async fn geo(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let events_path = get_events_path(&state);
     let (start, end) = resolve_dates(&params);
 
+    let lf = scan_source_events(&state, &source_id, &start, &end).await?;
+
     let result = run_query("geo", move || {
-        queries::query_breakdown(&events_path, &source_id, &start, &end, "country", 20)
+        let Some(lf) = lf else {
+            return Ok(vec![]);
+        };
+        queries::query_breakdown(lf, &start, &end, "country", 20)
     })
     .await?;
 

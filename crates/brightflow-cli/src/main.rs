@@ -164,6 +164,24 @@ enum Commands {
         #[arg(long)]
         database_url: Option<String>,
     },
+
+    /// Register existing event Parquet files in the Litehouse catalog
+    MigrateEvents,
+
+    /// Compact event files in a partition into a single file
+    Compact {
+        /// Table name (e.g., events_<source_id>)
+        #[arg(long)]
+        table: String,
+
+        /// Date partition to compact (YYYY-MM-DD)
+        #[arg(long)]
+        date: Option<String>,
+
+        /// Compact all date partitions
+        #[arg(long)]
+        all_dates: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -433,6 +451,72 @@ async fn main() -> Result<()> {
             let database_url = database_url
                 .unwrap_or_else(|| brightflow_core::WorkspacePaths::from_env().auth_url());
             handle_create_admin(&email, &name, &database_url).await?;
+        },
+
+        Commands::MigrateEvents => {
+            init_tracing_simple("brightflow=info");
+            let paths = brightflow_core::WorkspacePaths::from_env();
+            let store = ParquetStore::new(paths.store(), &paths.litehouse_url()).await?;
+            let events_path = paths.events_store();
+            let count = store.register_existing_events(&events_path).await?;
+            println!("Registered {count} event files in the catalog.");
+        },
+
+        Commands::Compact {
+            table,
+            date,
+            all_dates,
+        } => {
+            init_tracing_simple("brightflow=info");
+            let paths = brightflow_core::WorkspacePaths::from_env();
+            let store = ParquetStore::new(paths.store(), &paths.litehouse_url()).await?;
+
+            if let Some(date) = date {
+                let merged = store.compact_partition(&table, "date", &date).await?;
+                println!("Compacted {merged} files for {table}/date={date}");
+            } else if all_dates {
+                // List all distinct date partitions for this table
+                let table_row = store
+                    .table_info(&table)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                // Query files and extract partition values
+                let files = store
+                    .get_table_parquet_paths(&table)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                // Extract unique dates from file paths (events/{source}/{date}/*.parquet)
+                let mut dates: Vec<String> = files
+                    .iter()
+                    .filter_map(|p| {
+                        p.parent()
+                            .and_then(|parent| parent.file_name())
+                            .and_then(|name| name.to_str())
+                            .map(ToString::to_string)
+                    })
+                    .collect();
+                dates.sort();
+                dates.dedup();
+
+                let mut total = 0usize;
+                for date_val in &dates {
+                    let merged = store.compact_partition(&table, "date", date_val).await?;
+                    if merged > 0 {
+                        println!("Compacted {merged} files for {table}/date={date_val}");
+                        total += merged;
+                    }
+                }
+                println!(
+                    "Done. Compacted {total} files across {} partitions ({} from table '{}')",
+                    dates.len(),
+                    table_row.name,
+                    table
+                );
+            } else {
+                println!("Specify --date <YYYY-MM-DD> or --all-dates");
+            }
         },
     }
 

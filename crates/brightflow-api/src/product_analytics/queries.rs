@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use polars::prelude::*;
 
@@ -8,7 +7,7 @@ use brightflow_ingest::models::{
     EventListRow, FunnelResult, FunnelStepResult, RetentionResult, RetentionRow, UserTimelineEvent,
 };
 
-use crate::web_analytics::queries::{filter_date_range, scan_events};
+use crate::web_analytics::queries::filter_date_range;
 
 /// Polars expression: coalesce user_id and visitor_id into a single identity column.
 fn user_or_visitor() -> Expr {
@@ -19,15 +18,7 @@ fn user_or_visitor() -> Expr {
 }
 
 /// Query the top events by count and unique users.
-pub fn query_event_list(
-    events_path: &Path,
-    source_id: &str,
-    start: &str,
-    end: &str,
-) -> IngestResult<Vec<EventListRow>> {
-    let Some(lf) = scan_events(events_path, source_id) else {
-        return Ok(vec![]);
-    };
+pub fn query_event_list(lf: LazyFrame, start: &str, end: &str) -> IngestResult<Vec<EventListRow>> {
     let lf = filter_date_range(lf, start, end);
 
     let result = lf
@@ -82,8 +73,7 @@ pub fn query_event_list(
 
 /// Funnel analysis: for each step, count how many users reached it within the time window.
 pub fn query_funnel(
-    events_path: &Path,
-    source_id: &str,
+    lf: LazyFrame,
     start: &str,
     end: &str,
     steps: &[String],
@@ -92,20 +82,6 @@ pub fn query_funnel(
     if steps.is_empty() {
         return Ok(FunnelResult { steps: vec![] });
     }
-
-    let Some(lf) = scan_events(events_path, source_id) else {
-        return Ok(FunnelResult {
-            steps: steps
-                .iter()
-                .map(|name| FunnelStepResult {
-                    name: name.clone(),
-                    count: 0,
-                    conversion_rate: 0.0,
-                    dropoff_rate: 0.0,
-                })
-                .collect(),
-        });
-    };
 
     // Filter by date range and only events that appear in the funnel steps
     let lf = filter_date_range(lf, start, end);
@@ -227,8 +203,7 @@ pub fn query_funnel(
 /// Retention analysis: cohort users by when they first did `cohort_event`, then
 /// measure how many returned to do `return_event` in subsequent periods.
 pub fn query_retention(
-    events_path: &Path,
-    source_id: &str,
+    lf: LazyFrame,
     start: &str,
     end: &str,
     cohort_event: &str,
@@ -236,13 +211,6 @@ pub fn query_retention(
     period_type: &str,
     num_periods: usize,
 ) -> IngestResult<RetentionResult> {
-    let Some(lf) = scan_events(events_path, source_id) else {
-        return Ok(RetentionResult {
-            period_type: period_type.to_string(),
-            rows: vec![],
-        });
-    };
-
     let lf = filter_date_range(lf, start, end).with_column(user_or_visitor());
 
     // Step 1: Find first cohort_event per user → assign cohort period
@@ -378,15 +346,7 @@ pub fn query_retention(
 }
 
 /// Query a user's event timeline.
-pub fn query_user_timeline(
-    events_path: &Path,
-    source_id: &str,
-    user_id: &str,
-) -> IngestResult<Vec<UserTimelineEvent>> {
-    let Some(lf) = scan_events(events_path, source_id) else {
-        return Ok(vec![]);
-    };
-
+pub fn query_user_timeline(lf: LazyFrame, user_id: &str) -> IngestResult<Vec<UserTimelineEvent>> {
     // Find events where user_id matches or visitor_id matches
     let df = lf
         .with_column(user_or_visitor())

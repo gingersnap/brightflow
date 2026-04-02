@@ -8,6 +8,8 @@ use crate::buffer::EventBuffer;
 use crate::error::IngestResult;
 use crate::models::Event;
 
+use brightflow_store::ParquetStore;
+
 const DEFAULT_FLUSH_INTERVAL_SECS: u64 = 60;
 const DEFAULT_BATCH_SIZE: i64 = 10_000;
 
@@ -17,16 +19,22 @@ pub struct FlushTask {
     events_store_path: PathBuf,
     flush_interval: Duration,
     batch_size: i64,
+    store: Option<Arc<ParquetStore>>,
 }
 
 impl FlushTask {
     #[must_use]
-    pub fn new(buffer: Arc<EventBuffer>, events_store_path: PathBuf) -> Self {
+    pub fn new(
+        buffer: Arc<EventBuffer>,
+        events_store_path: PathBuf,
+        store: Option<Arc<ParquetStore>>,
+    ) -> Self {
         Self {
             buffer,
             events_store_path,
             flush_interval: Duration::from_secs(DEFAULT_FLUSH_INTERVAL_SECS),
             batch_size: DEFAULT_BATCH_SIZE,
+            store,
         }
     }
 
@@ -58,6 +66,7 @@ impl FlushTask {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn flush_source(&self, source_id: &str) -> IngestResult<()> {
         let pool = self.buffer.get_pool(source_id).await?;
 
@@ -84,8 +93,11 @@ impl FlushTask {
         // Build DataFrame
         let df = rows_to_dataframe(&rows)?;
 
+        // Clone df for stats extraction (Polars clone is cheap — Arc<Vec<Series>>)
+        let df_for_stats = df.clone();
+
         // Write Parquet
-        let dir = self.events_store_path.join(source_id).join(date);
+        let dir = self.events_store_path.join(source_id).join(&date);
         std::fs::create_dir_all(&dir)?;
         let filename = format!("{}.parquet", uuid::Uuid::now_v7());
         let path = dir.join(&filename);
@@ -100,6 +112,24 @@ impl FlushTask {
             Ok(())
         })
         .await??;
+
+        // Register file in the catalog store
+        if let Some(store) = &self.store {
+            let table_name = format!("events_{source_id}");
+            let file_stats = brightflow_store::extract_file_column_stats(&df_for_stats, "");
+            if let Err(e) = store
+                .register_file(
+                    &table_name,
+                    &path,
+                    &[("date", date.as_str())],
+                    Some(&["date"]),
+                    Some(file_stats),
+                )
+                .await
+            {
+                tracing::error!("Failed to register flushed file in catalog: {e}");
+            }
+        }
 
         // Delete flushed rows in batches (SQLite variable limit is 999)
         for chunk in ids.chunks(999) {

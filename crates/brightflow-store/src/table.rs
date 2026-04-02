@@ -118,6 +118,17 @@ pub async fn get_table_info(db: &StoreDb, name: &str, root: &Path) -> StoreResul
     })
 }
 
+/// Resolve a stored file path: absolute paths pass through, relative paths
+/// are resolved against `root`.
+fn resolve_path(root: &Path, stored_path: &str) -> PathBuf {
+    let p = Path::new(stored_path);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(p)
+    }
+}
+
 /// Get paths to all parquet files for a table
 pub async fn get_parquet_paths(db: &StoreDb, name: &str, root: &Path) -> StoreResult<Vec<PathBuf>> {
     let row = db
@@ -126,7 +137,7 @@ pub async fn get_parquet_paths(db: &StoreDb, name: &str, root: &Path) -> StoreRe
         .ok_or_else(|| StoreError::TableNotFound(name.to_string()))?;
 
     let files = db.list_table_files(&row.id).await?;
-    Ok(files.iter().map(|f| root.join(&f.path)).collect())
+    Ok(files.iter().map(|f| resolve_path(root, &f.path)).collect())
 }
 
 /// Read a table as a Polars DataFrame

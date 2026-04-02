@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
+brightflow-store = { path = "../brightflow-store" }
 
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
 polars = { workspace = true }

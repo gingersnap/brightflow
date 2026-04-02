@@ -262,9 +262,13 @@ pub async fn serve(
             // Start flush background task
             let flush_buffer = Arc::clone(&ingest_state.buffer);
             let flush_events_path = paths.events_store();
+            let store_for_flush = state.store().map(Arc::clone);
             tokio::spawn(async move {
-                let flush_task =
-                    brightflow_ingest::flush::FlushTask::new(flush_buffer, flush_events_path);
+                let flush_task = brightflow_ingest::flush::FlushTask::new(
+                    flush_buffer,
+                    flush_events_path,
+                    store_for_flush,
+                );
                 flush_task.start().await;
             });
             tracing::info!("Event ingestion engine started");
