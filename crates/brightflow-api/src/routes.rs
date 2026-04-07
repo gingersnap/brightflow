@@ -54,11 +54,19 @@ fn api_routes() -> Router<AppState> {
         .route("/insights/trends", post(insights_handlers::run_trends))
         // WebSocket
         .route("/ws", get(handlers::ws_handler))
-        // Connectors (file-based config listing + run)
+        // Connectors (DB-backed config + schedule + run)
         .route("/connectors", get(connect_handlers::list_connectors))
+        .route(
+            "/connectors/available",
+            get(connect_handlers::list_available_connectors),
+        )
         .route(
             "/connectors/unified",
             get(connect_handlers::list_unified_connectors),
+        )
+        .route(
+            "/connectors/runs",
+            get(connect_handlers::list_enriched_runs),
         )
         .route(
             "/connectors/{name}/run",
@@ -75,6 +83,19 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/connectors/{name}/token",
             put(connect_handlers::update_connector_token),
+        )
+        // Preset-based endpoints
+        .route(
+            "/presets/{id}/run",
+            post(connect_handlers::run_preset),
+        )
+        .route(
+            "/presets/{id}/schedule",
+            post(connect_handlers::schedule_preset),
+        )
+        .route(
+            "/schedules/{id}",
+            delete(connect_handlers::delete_schedule),
         )
         // Connector Config CRUD (DB-backed)
         .route(

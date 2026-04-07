@@ -1,10 +1,13 @@
--- GitHub Connector for Brightflow
--- Extracts repository, issues, pull requests, and contributors data
--- Config: token, owner, repo, output_path
+--[[ @longbow
+name = "github"
+version = "0.2.0"
+description = "GitHub repository, issues, PRs, and contributors"
+]]
 
 return function(p)
-    local owner = p.config.owner
-    local repo = p.config.repo
+    -- Defaults — will come from SQLite/UI config in the future
+    local owner = p.config.owner or "anthropics"
+    local repo = p.config.repo or "claude-code"
 
     -- Cursor values for incremental sync (injected by Brightflow scheduler)
     local cursors = p.config._cursors or {}
@@ -43,6 +46,7 @@ return function(p)
     -- Repository endpoint (single object)
     p.endpoint("repository", {
         path = "/repos/" .. owner .. "/" .. repo,
+        primary_key = {"id"},
         map = function(r)
             return {
                 id = r.id,
@@ -79,6 +83,8 @@ return function(p)
     -- Issues endpoint (includes both issues and PRs)
     p.endpoint("issues", {
         path = "/repos/" .. owner .. "/" .. repo .. "/issues",
+        primary_key = {"id"},
+        cursor_field = "updated_at",
         params = {
             state = "all",
             per_page = 100,
@@ -137,6 +143,8 @@ return function(p)
     -- Pull Requests endpoint (PR-specific data)
     p.endpoint("pull_requests", {
         path = "/repos/" .. owner .. "/" .. repo .. "/pulls",
+        primary_key = {"id"},
+        cursor_field = "updated_at",
         params = {
             state = "all",
             per_page = 100,
@@ -204,6 +212,7 @@ return function(p)
     -- Contributors endpoint
     p.endpoint("contributors", {
         path = "/repos/" .. owner .. "/" .. repo .. "/contributors",
+        primary_key = {"id"},
         params = {
             per_page = 100,
             anon = "false",
@@ -224,6 +233,8 @@ return function(p)
     -- Issue comments endpoint
     p.endpoint("issue_comments", {
         path = "/repos/" .. owner .. "/" .. repo .. "/issues/comments",
+        primary_key = {"id"},
+        cursor_field = "updated_at",
         params = {
             per_page = 100,
             sort = "updated",

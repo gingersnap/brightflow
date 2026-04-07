@@ -134,6 +134,7 @@ impl Scheduler {
         let running = Arc::clone(&self.running);
         let connector_id_owned = connector_id.to_string();
         let job_id_owned = job_id.map(ToString::to_string);
+        let paths = self.paths.clone();
 
         // Create sync run record
         let run = match db
@@ -164,6 +165,7 @@ impl Scheduler {
                 &connector_id_owned,
                 &run.id,
                 job_id_owned.as_ref(),
+                &paths,
             )
             .await;
 
@@ -194,6 +196,7 @@ async fn execute_sync(
     connector_id: &str,
     run_id: &str,
     _job_id: Option<&String>,
+    paths: &WorkspacePaths,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 1. Load connector config
     let config = db
@@ -214,7 +217,27 @@ async fn execute_sync(
 
     // 3. Parse connector config JSON and expand env vars (e.g. "${GITHUB_TOKEN}")
     let raw_config: serde_json::Value = serde_json::from_str(&config.config_json)?;
-    let config_json = substitute_env_vars_in_json(raw_config);
+    let mut config_json = substitute_env_vars_in_json(raw_config);
+
+    // Inject token from dedicated column (takes precedence over config_json)
+    if let Some(token) = &config.token {
+        if let Some(obj) = config_json.as_object_mut() {
+            obj.insert(
+                "token".to_string(),
+                serde_json::Value::String(token.clone()),
+            );
+        }
+    }
+
+    // Inject output_path from workspace paths
+    let connector_output_dir = paths.connector_output(&config.connector_path);
+    std::fs::create_dir_all(&connector_output_dir)?;
+    if let Some(obj) = config_json.as_object_mut() {
+        obj.insert(
+            "output_path".to_string(),
+            serde_json::Value::String(connector_output_dir.display().to_string()),
+        );
+    }
 
     // 4. Build run options with cursors
     let options = RunOptions {
@@ -237,12 +260,12 @@ async fn execute_sync(
             .map_err(|e| format!("Connector execution failed: {e}"))?
     };
 
-    // 7. For each output parquet, merge into table
+    // 7. For each endpoint result, merge parquet into table
     let output_dir = PathBuf::from(&result.output_path);
     let mut total_rows: i64 = 0;
 
-    for endpoint in &result.endpoints_synced {
-        let parquet_file = output_dir.join(format!("{endpoint}.parquet"));
+    for ep_result in &result.endpoints {
+        let parquet_file = output_dir.join(format!("{}.parquet", ep_result.name));
         if !parquet_file.exists() {
             warn!(
                 "Expected parquet file not found: {}",
@@ -251,29 +274,25 @@ async fn execute_sync(
             continue;
         }
 
-        // Determine primary key for this endpoint
-        let primary_keys = primary_keys_for_endpoint(endpoint);
-
         let metrics = store
-            .merge_parquet(endpoint, &parquet_file, &primary_keys)
+            .merge_parquet(&ep_result.name, &parquet_file, &ep_result.primary_key)
             .await
-            .map_err(|e| format!("Merge failed for {endpoint}: {e}"))?;
+            .map_err(|e| format!("Merge failed for {}: {e}", ep_result.name))?;
 
         let rows = i64::try_from(metrics.rows_inserted + metrics.rows_updated).unwrap_or(i64::MAX);
         total_rows += rows;
 
         info!(
-            "Merged {endpoint}: {} inserted, {} updated",
-            metrics.rows_inserted, metrics.rows_updated
+            "Merged {}: {} inserted, {} updated",
+            ep_result.name, metrics.rows_inserted, metrics.rows_updated
         );
 
-        // 8. Update sync_state with new cursor value (updated_at from synced data)
-        let now = Utc::now().to_rfc3339();
+        // 8. Update sync_state with cursor from result
         db.upsert_sync_state(
             connector_id,
-            endpoint,
-            Some("updated_at"),
-            Some(&now),
+            &ep_result.name,
+            ep_result.cursor_field.as_deref(),
+            ep_result.cursor_value.as_deref(),
             "success",
             rows,
         )
@@ -281,19 +300,14 @@ async fn execute_sync(
     }
 
     // 9. Update sync run as completed
-    let endpoints_json = serde_json::to_string(&result.endpoints_synced)?;
+    let endpoint_names: Vec<&str> = result.endpoints.iter().map(|e| e.name.as_str()).collect();
+    let endpoints_json = serde_json::to_string(&endpoint_names)?;
     db.update_sync_run(run_id, "completed", Some(&endpoints_json), total_rows, None)
         .await?;
 
     info!("Sync run {run_id} completed: {total_rows} total rows");
 
     Ok(())
-}
-
-/// Return the primary keys for a given endpoint (for merge upsert)
-fn primary_keys_for_endpoint(_endpoint: &str) -> Vec<String> {
-    // All known endpoints use "id" as primary key
-    vec!["id".to_string()]
 }
 
 /// Recursively expand `${ENV_VAR}` patterns in JSON string values

@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
-longbow = "0.1"
+longbow = { path = "../../../longbow" }
 tokio = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = "3"
 
 [lints]
 workspace = true

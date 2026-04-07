@@ -11,6 +11,8 @@ import type { SyncRun } from '@/types';
 export const useConnectStore = defineStore('connect', () => {
   const runHistory = ref<Map<string, SyncRun[]>>(new Map());
   const expandedConnector = ref<string | null>(null);
+  const showNewRunDialog = ref(false);
+  const selectedConnector = ref<string | null>(null);
 
   async function fetchRunHistory(name: string): Promise<void> {
     const result = await connectApi.listConnectorRuns(name);
@@ -31,6 +33,8 @@ export const useConnectStore = defineStore('connect', () => {
   function reset(): void {
     expandedConnector.value = null;
     runHistory.value = new Map();
+    showNewRunDialog.value = false;
+    selectedConnector.value = null;
   }
 
   return {
@@ -38,6 +42,8 @@ export const useConnectStore = defineStore('connect', () => {
     fetchRunHistory,
     reset,
     runHistory,
+    selectedConnector,
+    showNewRunDialog,
     toggleHistory,
   };
 });

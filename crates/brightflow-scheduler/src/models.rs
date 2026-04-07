@@ -11,6 +11,7 @@ pub struct ConnectorConfig {
     pub name: String,
     pub connector_path: String,
     pub config_json: String,
+    pub token: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

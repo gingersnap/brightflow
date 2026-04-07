@@ -95,6 +95,12 @@ impl WorkspacePaths {
         env_path_or("BRIGHTFLOW_SCHEMA_DIR", || self.root().join("schemas"))
     }
 
+    /// Connector output directory for a specific connector.
+    #[must_use]
+    pub fn connector_output(&self, connector_name: &str) -> PathBuf {
+        self.root().join("connector-output").join(connector_name)
+    }
+
     /// Connector config directory.
     #[must_use]
     pub fn connector_configs(&self) -> PathBuf {

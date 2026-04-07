@@ -41,17 +41,19 @@ impl SchedulerDb {
         name: &str,
         connector_path: &str,
         config_json: &str,
+        token: Option<&str>,
     ) -> SchedulerResult<ConnectorConfig> {
         let id = uuid::Uuid::new_v4().to_string();
         let row = sqlx::query_as::<_, ConnectorConfig>(
-            r"INSERT INTO connector_configs (id, name, connector_path, config_json)
-              VALUES (?, ?, ?, ?)
+            r"INSERT INTO connector_configs (id, name, connector_path, config_json, token)
+              VALUES (?, ?, ?, ?, ?)
               RETURNING *",
         )
         .bind(&id)
         .bind(name)
         .bind(connector_path)
         .bind(config_json)
+        .bind(token)
         .fetch_one(&self.pool)
         .await?;
         Ok(row)
@@ -92,16 +94,37 @@ impl SchedulerDb {
         name: &str,
         connector_path: &str,
         config_json: &str,
+        token: Option<&str>,
     ) -> SchedulerResult<Option<ConnectorConfig>> {
         let row = sqlx::query_as::<_, ConnectorConfig>(
             r"UPDATE connector_configs
-              SET name = ?, connector_path = ?, config_json = ?, updated_at = datetime('now')
+              SET name = ?, connector_path = ?, config_json = ?, token = COALESCE(?, token),
+                  updated_at = datetime('now')
               WHERE id = ?
               RETURNING *",
         )
         .bind(name)
         .bind(connector_path)
         .bind(config_json)
+        .bind(token)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn update_connector_token(
+        &self,
+        id: &str,
+        token: &str,
+    ) -> SchedulerResult<Option<ConnectorConfig>> {
+        let row = sqlx::query_as::<_, ConnectorConfig>(
+            r"UPDATE connector_configs
+              SET token = ?, updated_at = datetime('now')
+              WHERE id = ?
+              RETURNING *",
+        )
+        .bind(token)
         .bind(id)
         .fetch_optional(&self.pool)
         .await?;

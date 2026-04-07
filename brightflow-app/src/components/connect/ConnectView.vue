@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
-import { RefreshCw } from 'lucide-vue-next';
-import { computed, onUnmounted, watch } from 'vue';
+import { Calendar, Play, RefreshCw } from 'lucide-vue-next';
+import { computed, onUnmounted, ref, watch } from 'vue';
 
 import { connectApi } from '@/services/api';
 import { useConnectStore } from '@/stores/connect';
-import type { UnifiedConnector } from '@/types';
+import type { AvailableConnectorResponse, EnrichedSyncRun, UnifiedConnector } from '@/types';
 
-import ConnectorCard from './ConnectorCard.vue';
+import NewRunDialog from './NewRunDialog.vue';
+import RunHistoryTable from './RunHistoryTable.vue';
+import ScheduleList from './ScheduleList.vue';
 
 const connectStore = useConnectStore();
 const queryCache = useQueryCache();
 
 const {
   data: connectors,
-  isLoading: loading,
-  error,
+  isLoading: loadingUnified,
+  error: unifiedError,
 } = useQuery({
   key: ['connectors'],
   query: async () => {
@@ -24,13 +26,34 @@ const {
   },
 });
 
-// Reactive polling: refetch every 3s when active runs exist
-const activeRunsExist = computed(
-  () =>
-    connectors.value?.some(
-      (c) => c.lastRun && (c.lastRun.status === 'running' || c.lastRun.status === 'pending'),
-    ) ?? false,
+const { data: available } = useQuery({
+  key: ['connectors-available'],
+  query: async () => {
+    const result = await connectApi.listAvailable();
+    return result ?? ([] as AvailableConnectorResponse[]);
+  },
+});
+
+const { data: recentRuns } = useQuery({
+  key: ['sync-runs'],
+  query: async () => {
+    const result = await connectApi.listRuns();
+    return result ?? ([] as EnrichedSyncRun[]);
+  },
+});
+
+// Split runs into active vs history
+const activeRuns = computed(() =>
+  (recentRuns.value ?? []).filter((r) => r.status === 'running' || r.status === 'pending'),
 );
+const historyRuns = computed(() =>
+  (recentRuns.value ?? [])
+    .filter((r) => r.status !== 'running' && r.status !== 'pending')
+    .slice(0, 20),
+);
+
+// Reactive polling: refetch every 3s when active runs exist
+const activeRunsExist = computed(() => activeRuns.value.length > 0);
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -40,9 +63,7 @@ function startPolling(): void {
   }
   const poll = (): void => {
     queryCache.invalidateQueries({ key: ['connectors'] });
-    if (connectStore.expandedConnector) {
-      connectStore.fetchRunHistory(connectStore.expandedConnector);
-    }
+    queryCache.invalidateQueries({ key: ['sync-runs'] });
     pollTimer = setTimeout(poll, 3000);
   };
   pollTimer = setTimeout(poll, 3000);
@@ -66,30 +87,46 @@ watch(activeRunsExist, (hasActive) => {
 onUnmounted(() => stopPolling());
 
 const connectorList = computed(() => connectors.value ?? []);
-const errorMessage = computed(() => (error.value ? String(error.value) : null));
+const availableList = computed(() => available.value ?? []);
+const errorMessage = computed(() => (unifiedError.value ? String(unifiedError.value) : null));
 
-function isRunning(name: string): boolean {
-  const c = connectors.value?.find((conn) => conn.name === name);
-  return c?.lastRun != null && (c.lastRun.status === 'running' || c.lastRun.status === 'pending');
+// Dialog mode
+type DialogMode = 'run' | 'schedule';
+const dialogMode = ref<DialogMode>('run');
+
+function openNewRun(): void {
+  dialogMode.value = 'run';
+  connectStore.showNewRunDialog = true;
+}
+
+function openNewSchedule(): void {
+  dialogMode.value = 'schedule';
+  connectStore.showNewRunDialog = true;
 }
 
 // Mutations
 const { mutate: syncNow } = useMutation({
   mutation: (name: string) => connectApi.runConnector(name),
+  onSettled: () => {
+    queryCache.invalidateQueries({ key: ['connectors'] });
+    queryCache.invalidateQueries({ key: ['sync-runs'] });
+  },
+});
+
+const { mutate: deleteSchedule } = useMutation({
+  mutation: (jobId: string) => connectApi.deleteSchedule(jobId),
   onSettled: () => queryCache.invalidateQueries({ key: ['connectors'] }),
 });
 
-const { mutate: updateSchedule } = useMutation({
-  mutation: ({ name, intervalSecs }: { name: string; intervalSecs: number }) =>
-    connectApi.scheduleConnector(name, intervalSecs),
-  onSettled: () => queryCache.invalidateQueries({ key: ['connectors'] }),
-});
+function refreshAll(): void {
+  queryCache.invalidateQueries({ key: ['connectors'] });
+  queryCache.invalidateQueries({ key: ['connectors-available'] });
+  queryCache.invalidateQueries({ key: ['sync-runs'] });
+}
 
-const { mutate: updateToken } = useMutation({
-  mutation: ({ name, token }: { name: string; token: string }) =>
-    connectApi.updateToken(name, token),
-  onSettled: () => queryCache.invalidateQueries({ key: ['connectors'] }),
-});
+function onDialogDone(): void {
+  refreshAll();
+}
 </script>
 
 <template>
@@ -97,15 +134,8 @@ const { mutate: updateToken } = useMutation({
     <!-- Toolbar -->
     <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
       <h2 class="text-sm font-semibold text-highlighted">Data Connectors</h2>
-
       <div class="flex-1" />
-
-      <UButton
-        variant="ghost"
-        size="sm"
-        :loading="loading"
-        @click="queryCache.invalidateQueries({ key: ['connectors'] })"
-      >
+      <UButton variant="ghost" size="sm" :loading="loadingUnified" @click="refreshAll">
         <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
         Refresh
       </UButton>
@@ -118,33 +148,60 @@ const { mutate: updateToken } = useMutation({
         {{ errorMessage }}
       </div>
 
-      <!-- Empty state -->
-      <div
-        v-if="!loading && connectorList.length === 0"
-        class="flex flex-col items-center justify-center py-16 text-center"
-      >
-        <p class="mb-2 text-muted">No connector configs found</p>
-        <p class="text-xs text-muted">
-          Place TOML config files in the
-          <code class="rounded bg-elevated px-1 py-0.5">configs/</code> directory
-        </p>
-      </div>
+      <div class="mx-auto max-w-3xl space-y-6">
+        <!-- Action buttons — centered, prominent -->
+        <div class="flex items-center justify-center gap-3">
+          <UButton size="lg" @click="openNewRun">
+            <Play class="mr-1.5 h-4 w-4" />
+            New Run
+          </UButton>
+          <UButton size="lg" variant="outline" @click="openNewSchedule">
+            <Calendar class="mr-1.5 h-4 w-4" />
+            New Schedule
+          </UButton>
+        </div>
 
-      <!-- Connector cards -->
-      <div v-else class="max-w-3xl space-y-3">
-        <ConnectorCard
-          v-for="connector in connectorList"
-          :key="connector.name"
-          :connector="connector"
-          :running="isRunning(connector.name)"
-          :expanded="connectStore.expandedConnector === connector.name"
-          :history="connectStore.runHistory.get(connector.name) ?? []"
-          @run="syncNow(connector.name)"
-          @schedule="updateSchedule({ name: connector.name, intervalSecs: $event })"
-          @update-token="updateToken({ name: connector.name, token: $event })"
-          @toggle-history="connectStore.toggleHistory(connector.name)"
-        />
+        <!-- Active Runs section -->
+        <section v-if="activeRuns.length > 0">
+          <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
+            Active Runs
+          </h3>
+          <div class="rounded-lg border border-default bg-default px-3">
+            <RunHistoryTable :runs="activeRuns" />
+          </div>
+        </section>
+
+        <!-- Schedules section -->
+        <section>
+          <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Schedules</h3>
+          <div class="rounded-lg border border-default bg-default px-3">
+            <ScheduleList
+              :connectors="connectorList"
+              @run="syncNow($event)"
+              @delete="deleteSchedule($event)"
+            />
+          </div>
+        </section>
+
+        <!-- Run History section (completed/failed only) -->
+        <section>
+          <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
+            Run History
+          </h3>
+          <div class="rounded-lg border border-default bg-default px-3">
+            <RunHistoryTable :runs="historyRuns" />
+          </div>
+        </section>
       </div>
     </div>
+
+    <!-- New Run / Schedule Dialog -->
+    <NewRunDialog
+      :open="connectStore.showNewRunDialog"
+      :available="availableList"
+      :mode="dialogMode"
+      @close="connectStore.showNewRunDialog = false"
+      @done="onDialogDone"
+    />
   </div>
 </template>

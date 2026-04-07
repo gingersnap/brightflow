@@ -718,12 +718,13 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
 
             if result.dry_run {
                 tracing::info!("Dry run completed. Endpoints that would be synced:");
-                for endpoint in &result.endpoints_synced {
-                    tracing::info!("  - {}", endpoint);
+                for ep in &result.endpoints {
+                    tracing::info!("  - {}", ep.name);
                 }
             } else {
                 tracing::info!("Sync completed successfully!");
-                tracing::info!("Endpoints synced: {:?}", result.endpoints_synced);
+                let names: Vec<&str> = result.endpoints.iter().map(|e| e.name.as_str()).collect();
+                tracing::info!("Endpoints synced: {:?}", names);
                 tracing::info!("Output path: {}", result.output_path);
 
                 // Ingest into store if requested

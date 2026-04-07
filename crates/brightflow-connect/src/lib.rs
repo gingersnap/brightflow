@@ -12,6 +12,70 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 
+/// A connector discovered from builtins or the filesystem.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AvailableConnector {
+    pub name: String,
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub source_type: String, // "builtin" or "custom"
+    pub source_hash: String,
+}
+
+/// Discover all available connectors from builtins and an optional custom directory.
+pub fn discover_connectors(custom_dir: Option<&Path>) -> Vec<AvailableConnector> {
+    let mut result = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // 1. Builtins
+    for (name, source) in BUILTIN_CONNECTORS.iter() {
+        let meta = longbow::pipeline::parse_frontmatter(source);
+        let display_name = meta.name.clone().unwrap_or_else(|| (*name).to_string());
+        seen.insert(display_name.clone());
+        result.push(AvailableConnector {
+            name: display_name,
+            version: meta.version,
+            description: meta.description,
+            source_type: "builtin".to_string(),
+            source_hash: meta.source_hash,
+        });
+    }
+
+    // 2. Custom directory
+    if let Some(dir) = custom_dir {
+        if dir.exists() && dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|ext| ext == "lua") {
+                        if let Ok(source) = std::fs::read_to_string(&path) {
+                            let meta = longbow::pipeline::parse_frontmatter(&source);
+                            let name = meta.name.clone().unwrap_or_else(|| {
+                                path.file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown")
+                                    .to_string()
+                            });
+                            if !seen.contains(&name) {
+                                seen.insert(name.clone());
+                                result.push(AvailableConnector {
+                                    name,
+                                    version: meta.version,
+                                    description: meta.description,
+                                    source_type: "custom".to_string(),
+                                    source_hash: meta.source_hash,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
 /// Built-in connector Lua sources, embedded at compile time.
 static BUILTIN_CONNECTORS: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
     let mut m = HashMap::new();
@@ -30,6 +94,27 @@ pub struct RunOptions {
     pub cursor_values: HashMap<String, String>,
 }
 
+/// Result of running a connector
+#[derive(Debug, Clone)]
+pub struct ConnectorResult {
+    pub endpoints: Vec<EndpointResultInfo>,
+    pub dry_run: bool,
+    pub output_path: String,
+    pub duration_ms: u64,
+}
+
+/// Per-endpoint metadata from a connector run
+#[derive(Debug, Clone)]
+pub struct EndpointResultInfo {
+    pub name: String,
+    pub parquet_path: Option<String>,
+    pub rows: usize,
+    pub primary_key: Vec<String>,
+    pub cursor_field: Option<String>,
+    pub cursor_value: Option<String>,
+    pub duration_ms: u64,
+}
+
 /// Filter pipeline endpoints if --only is specified
 fn apply_endpoint_filter(pipeline: &mut longbow::pipeline::Pipeline, only: Option<&String>) {
     if let Some(only_endpoints) = only {
@@ -40,16 +125,55 @@ fn apply_endpoint_filter(pipeline: &mut longbow::pipeline::Pipeline, only: Optio
     }
 }
 
-/// Extract result metadata from a pipeline
-fn build_result(pipeline: &longbow::pipeline::Pipeline, dry_run: bool) -> ConnectorResult {
+/// Build a dry-run result from a pipeline (no execution happened)
+fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> ConnectorResult {
     ConnectorResult {
-        endpoints_synced: pipeline.endpoints.iter().map(|e| e.name.clone()).collect(),
-        dry_run,
+        endpoints: pipeline
+            .endpoints
+            .iter()
+            .map(|e| EndpointResultInfo {
+                name: e.name.clone(),
+                parquet_path: None,
+                rows: 0,
+                primary_key: e.primary_key.clone(),
+                cursor_field: e.cursor_field.clone(),
+                cursor_value: None,
+                duration_ms: 0,
+            })
+            .collect(),
+        dry_run: true,
         output_path: pipeline
             .output
             .as_ref()
             .map(|o| o.path.clone())
             .unwrap_or_default(),
+        duration_ms: 0,
+    }
+}
+
+/// Map a Longbow `RunResult` into our `ConnectorResult`
+fn map_run_result(
+    run_result: longbow::RunResult,
+    output_path: String,
+    dry_run: bool,
+) -> ConnectorResult {
+    ConnectorResult {
+        endpoints: run_result
+            .endpoints
+            .into_iter()
+            .map(|ep| EndpointResultInfo {
+                name: ep.name,
+                parquet_path: ep.parquet_path,
+                rows: ep.rows,
+                primary_key: ep.primary_key,
+                cursor_field: ep.cursor_field,
+                cursor_value: ep.cursor_value,
+                duration_ms: ep.duration_ms,
+            })
+            .collect(),
+        dry_run,
+        output_path,
+        duration_ms: run_result.duration_ms,
     }
 }
 
@@ -77,15 +201,21 @@ pub async fn run_connector(
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
     if options.dry_run {
-        return Ok(build_result(&pipeline, true));
+        return Ok(build_dry_run_result(&pipeline));
     }
 
+    let output_path = pipeline
+        .output
+        .as_ref()
+        .map(|o| o.path.clone())
+        .unwrap_or_default();
+
     let http = longbow::http::HttpClient::new();
-    longbow::pipeline::execute(&pipeline, &lua, &http)
+    let run_result = longbow::pipeline::execute(&pipeline, &lua, &http)
         .await
         .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
 
-    Ok(build_result(&pipeline, false))
+    Ok(map_run_result(run_result, output_path, false))
 }
 
 /// Run a connector with config passed directly as JSON (no file I/O).
@@ -131,58 +261,37 @@ async fn run_connector_impl(
     let lua = longbow::runtime::create_lua_runtime()
         .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
 
-    // Resolve the connector path — for embedded source, write to a temp file
-    // because Longbow's load_connector reads from disk.
-    let _temp_file; // keep alive for the duration of load_connector
-    let connector_str = match source {
-        ConnectorSource::Path(path) => path
-            .to_str()
-            .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?
-            .to_string(),
-        ConnectorSource::Source(lua_src) => {
-            use std::io::Write;
-            let mut tmp = tempfile::Builder::new()
-                .suffix(".lua")
-                .tempfile()
-                .map_err(|e| BrightflowError::Other(format!("Failed to create temp file: {e}")))?;
-            tmp.write_all(lua_src.as_bytes())
-                .map_err(|e| BrightflowError::Other(format!("Failed to write temp file: {e}")))?;
-            let path_str = tmp
-                .path()
+    let mut pipeline = match source {
+        ConnectorSource::Path(path) => {
+            let connector_str = path
                 .to_str()
-                .ok_or_else(|| BrightflowError::Other("Invalid temp path".to_string()))?
-                .to_string();
-            _temp_file = tmp;
-            path_str
+                .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
+            longbow::pipeline::load_connector(&lua, connector_str, config)
         },
-    };
-
-    let mut pipeline = longbow::pipeline::load_connector(&lua, &connector_str, config)
-        .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
+        ConnectorSource::Source(lua_src) => {
+            longbow::pipeline::load_connector_from_source(&lua, lua_src, config)
+        },
+    }
+    .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
 
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
     if options.dry_run {
-        return Ok(build_result(&pipeline, true));
+        return Ok(build_dry_run_result(&pipeline));
     }
 
+    let output_path = pipeline
+        .output
+        .as_ref()
+        .map(|o| o.path.clone())
+        .unwrap_or_default();
+
     let http = longbow::http::HttpClient::new();
-    longbow::pipeline::execute(&pipeline, &lua, &http)
+    let run_result = longbow::pipeline::execute(&pipeline, &lua, &http)
         .await
         .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
 
-    Ok(build_result(&pipeline, false))
-}
-
-/// Result of running a connector
-#[derive(Debug, Clone)]
-pub struct ConnectorResult {
-    /// Names of endpoints that were synced
-    pub endpoints_synced: Vec<String>,
-    /// Whether this was a dry run
-    pub dry_run: bool,
-    /// Output path where data was written
-    pub output_path: String,
+    Ok(map_run_result(run_result, output_path, false))
 }
 
 /// List available built-in connectors (embedded at compile time).

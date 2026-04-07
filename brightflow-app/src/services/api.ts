@@ -2,7 +2,9 @@
  * REST API client
  */
 import type {
+  AvailableConnectorResponse,
   BreakdownRow,
+  EnrichedSyncRun,
   DashboardStats,
   DatasetInfo,
   EventListRow,
@@ -113,21 +115,41 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 // Connector API
 export const connectApi = {
-  deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
-  listConnectorRuns: (name: string): Promise<SyncRun[] | null> =>
-    api.get<SyncRun[]>(`/api/connectors/${encodeURIComponent(name)}/runs`),
+  // Discovery
+  listAvailable: (): Promise<AvailableConnectorResponse[] | null> =>
+    api.get<AvailableConnectorResponse[]>('/api/connectors/available'),
   listUnified: (): Promise<UnifiedConnector[] | null> =>
     api.get<UnifiedConnector[]>('/api/connectors/unified'),
+  listRuns: (): Promise<EnrichedSyncRun[] | null> =>
+    api.get<EnrichedSyncRun[]>('/api/connectors/runs'),
+  listConnectorRuns: (name: string): Promise<SyncRun[] | null> =>
+    api.get<SyncRun[]>(`/api/connectors/${encodeURIComponent(name)}/runs`),
+
+  // Preset management
+  createPreset: (data: {
+    name: string;
+    connectorPath: string;
+    configJson: unknown;
+    token?: string;
+  }): Promise<unknown> => api.post('/api/connector-configs', data),
+  runPreset: (id: string): Promise<RunTriggerResponse | null> =>
+    api.post<RunTriggerResponse>(`/api/presets/${id}/run`),
+  schedulePreset: (id: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
+    api.post<ScheduleResponse>(`/api/presets/${id}/schedule`, { intervalSecs }),
+
+  // Legacy connector-name-based endpoints (still used)
   runConnector: (name: string): Promise<RunTriggerResponse | null> =>
     api.post<RunTriggerResponse>(`/api/connectors/${encodeURIComponent(name)}/run`),
   scheduleConnector: (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
     api.post<ScheduleResponse>(`/api/connectors/${encodeURIComponent(name)}/schedule`, {
       intervalSecs,
     }),
-  updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
-    api.put(`/api/scheduler/jobs/${id}`, data),
   updateToken: (name: string, token: string): Promise<unknown> =>
     api.put(`/api/connectors/${encodeURIComponent(name)}/token`, { token }),
+  deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
+  deleteSchedule: (id: string): Promise<unknown> => api.delete(`/api/schedules/${id}`),
+  updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
+    api.put(`/api/scheduler/jobs/${id}`, data),
 };
 
 // Frontend-specific tree types (refinements of the backend's serde_json::Value)

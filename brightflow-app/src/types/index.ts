@@ -10,10 +10,12 @@ export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './ge
 export type { AggFn, FilterOp };
 // Also re-export remaining generated types used across the app
 export type {
+  AvailableConnectorResponse,
   BreakdownRow,
   CreateSourceRequest,
   DashboardStats,
   DatasetInfo,
+  EnrichedSyncRun,
   EventListRow,
   FunnelRequest,
   FunnelResult,
@@ -21,6 +23,7 @@ export type {
   FunnelStepResult,
   InsightsResponse,
   LoadTableResponse,
+  PresetInfo,
   RetentionRequest,
   RetentionResult,
   RetentionRow,

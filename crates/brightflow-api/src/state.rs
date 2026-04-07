@@ -8,7 +8,7 @@ use brightflow_scheduler::Scheduler;
 use brightflow_store::{ParquetStore, TableInfo};
 use dashmap::DashMap;
 use polars::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, RwLock};
@@ -26,8 +26,6 @@ pub struct AppState {
     pub schemas: Arc<DashMap<String, DataSchema>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
-    /// Path to connector config directory
-    pub connector_config_dir: Option<PathBuf>,
     /// Authentication database
     pub auth_db: Option<Arc<crate::auth::AuthDb>>,
     /// Scheduler database
@@ -40,6 +38,8 @@ pub struct AppState {
     pub start_time: Instant,
     /// Event ingestion engine (sources, buffer, geo, UA parser)
     pub ingest: Option<Arc<brightflow_ingest::IngestState>>,
+    /// Workspace paths for connector discovery and output
+    pub paths: Option<brightflow_core::WorkspacePaths>,
 }
 
 impl Default for AppState {
@@ -58,13 +58,14 @@ impl AppState {
             store: None,
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
-            connector_config_dir: None,
+
             auth_db: None,
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
             ingest: None,
+            paths: None,
         }
     }
 
@@ -76,13 +77,14 @@ impl AppState {
             store: None,
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
-            connector_config_dir: None,
+
             auth_db: None,
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
             ingest: None,
+            paths: None,
         }
     }
 
@@ -179,13 +181,14 @@ impl AppState {
             store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
-            connector_config_dir: None,
+
             auth_db: None,
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
             ingest: None,
+            paths: None,
         }
     }
 
@@ -214,13 +217,14 @@ impl AppState {
             store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
             scheduler: None,
-            connector_config_dir: None,
+
             auth_db: None,
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
             start_time: Instant::now(),
             ingest: None,
+            paths: None,
         }
     }
 

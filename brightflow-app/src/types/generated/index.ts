@@ -3,6 +3,7 @@
 
 export type { Aggregation } from './Aggregation';
 export type { AggSpec } from './AggSpec';
+export type { AvailableConnectorResponse } from './AvailableConnectorResponse';
 export type { ColumnInfo } from './ColumnInfo';
 export type { ColumnStat } from './ColumnStat';
 export type { ConnectorConfig } from './ConnectorConfig';
@@ -10,11 +11,14 @@ export type { ConnectorInfo } from './ConnectorInfo';
 export type { CreateConnectorConfigRequest } from './CreateConnectorConfigRequest';
 export type { CreateJobRequest } from './CreateJobRequest';
 export type { DatasetInfo } from './DatasetInfo';
+export type { EnrichedSyncRun } from './EnrichedSyncRun';
 export type { DatasetMetadataResponse } from './DatasetMetadataResponse';
 export type { FilterOp } from './FilterOp';
 export type { InsightsResponse } from './InsightsResponse';
 export type { LoadTableResponse } from './LoadTableResponse';
 export type { Operation } from './Operation';
+export type { PresetInfo } from './PresetInfo';
+export type { PresetScheduleRequest } from './PresetScheduleRequest';
 export type { Query } from './Query';
 export type { QueryResponse } from './QueryResponse';
 export type { ReviewRequest } from './ReviewRequest';

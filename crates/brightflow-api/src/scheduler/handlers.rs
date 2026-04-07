@@ -18,6 +18,7 @@ pub struct CreateConnectorConfigRequest {
     pub connector_path: String,
     #[ts(type = "unknown")]
     pub config_json: serde_json::Value,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -28,6 +29,7 @@ pub struct UpdateConnectorConfigRequest {
     pub connector_path: String,
     #[ts(type = "unknown")]
     pub config_json: serde_json::Value,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, TS)]
@@ -72,7 +74,12 @@ pub async fn create_connector_config(
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let config = db
-        .create_connector_config(&body.name, &body.connector_path, &config_json)
+        .create_connector_config(
+            &body.name,
+            &body.connector_path,
+            &config_json,
+            body.token.as_deref(),
+        )
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -130,7 +137,13 @@ pub async fn update_connector_config(
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let config = db
-        .update_connector_config(&id, &body.name, &body.connector_path, &config_json)
+        .update_connector_config(
+            &id,
+            &body.name,
+            &body.connector_path,
+            &config_json,
+            body.token.as_deref(),
+        )
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?
         .ok_or_else(|| AppError::NotFound(format!("Connector config {id} not found")))?;

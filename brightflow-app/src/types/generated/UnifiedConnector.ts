@@ -3,6 +3,6 @@ import type { UnifiedJob } from "./UnifiedJob";
 import type { UnifiedSyncRun } from "./UnifiedSyncRun";
 
 /**
- * Unified connector view — combines file config + DB schedule + latest run
+ * Unified connector view — config + schedule + latest run
  */
 export type UnifiedConnector = { name: string, connector: string, valid: boolean, hasToken: boolean, job: UnifiedJob | null, lastRun: UnifiedSyncRun | null, };

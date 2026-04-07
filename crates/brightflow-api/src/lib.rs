@@ -196,16 +196,11 @@ pub async fn serve(
     let sampler_start = state.start_time;
     tokio::spawn(system::sampler::run_sampler(sampler_metrics, sampler_start));
 
+    // Store workspace paths on state for connector discovery
+    state.paths = Some(paths.clone());
+
     // Load schema configs
     state.load_schemas_from_dir(&paths.schemas());
-
-    // Set connector config directory
-    let connector_config_dir = paths.connector_configs();
-    state.connector_config_dir = Some(connector_config_dir.clone());
-    tracing::info!(
-        "Connector configs directory: {}",
-        connector_config_dir.display()
-    );
 
     // Initialize auth database
     let auth_db_url = paths.auth_url();
@@ -353,7 +348,9 @@ pub async fn serve(
 
     // Bind and serve
     let addr = SocketAddr::from((config.host, config.port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| std::io::Error::new(e.kind(), format!("{e} (addr: {addr})")))?;
 
     tracing::info!("Brightflow API server running on http://{}", addr);
 
