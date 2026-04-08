@@ -4,8 +4,6 @@ import { computed } from 'vue';
 
 import type { UnifiedConnector } from '@/types';
 
-import SyncStatusBadge from './SyncStatusBadge.vue';
-
 const props = defineProps<{
   connectors: UnifiedConnector[];
 }>();
@@ -32,6 +30,58 @@ function intervalLabel(secs: number): string {
 function isRunning(c: UnifiedConnector): boolean {
   return c.lastRun != null && (c.lastRun.status === 'running' || c.lastRun.status === 'pending');
 }
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 60_000) {
+    return 'just now';
+  }
+  if (diff < 3_600_000) {
+    return `${Math.round(diff / 60_000)}m ago`;
+  }
+  if (diff < 86_400_000) {
+    return `${Math.round(diff / 3_600_000)}h ago`;
+  }
+  return `${Math.round(diff / 86_400_000)}d ago`;
+}
+
+function relativeTimeUntil(ms: number): string {
+  if (ms <= 0) {
+    return 'soon';
+  }
+  if (ms < 60_000) {
+    return 'in <1m';
+  }
+  if (ms < 3_600_000) {
+    return `in ${Math.round(ms / 60_000)}m`;
+  }
+  if (ms < 86_400_000) {
+    return `in ${Math.round(ms / 3_600_000)}h`;
+  }
+  return `in ${Math.round(ms / 86_400_000)}d`;
+}
+
+function nextRunLabel(c: UnifiedConnector): string {
+  if (!c.job) {
+    return '';
+  }
+  if (!c.lastRun?.startedAt) {
+    return 'soon';
+  }
+  const lastStart = new Date(c.lastRun.startedAt).getTime();
+  const nextAt = lastStart + c.job.intervalSecs * 1000;
+  const remaining = nextAt - Date.now();
+  return relativeTimeUntil(remaining);
+}
+
+function lastCompletedLabel(c: UnifiedConnector): string | null {
+  if (!c.lastRun || c.lastRun.status !== 'completed') {
+    return null;
+  }
+  const time = relativeTime(c.lastRun.startedAt);
+  const rows = c.lastRun.rowsSynced > 0 ? `, ${c.lastRun.rowsSynced} rows` : '';
+  return `${time}${rows}`;
+}
 </script>
 
 <template>
@@ -40,30 +90,30 @@ function isRunning(c: UnifiedConnector): boolean {
   </div>
   <div v-else class="divide-y divide-default">
     <div v-for="c in scheduled" :key="c.name" class="flex items-center gap-3 px-1 py-2.5 text-sm">
-      <!-- Status dot -->
+      <!-- Status dot: green = active, blue pulse = running -->
       <span
         class="h-2 w-2 shrink-0 rounded-full"
-        :class="{
-          'bg-green-500': c.lastRun?.status === 'completed',
-          'bg-red-500': c.lastRun?.status === 'failed',
-          'animate-pulse bg-blue-500': isRunning(c),
-          'bg-neutral-400': !c.lastRun,
-        }"
+        :class="isRunning(c) ? 'animate-pulse bg-blue-500' : 'bg-green-500'"
       />
 
       <!-- Name -->
-      <span class="min-w-0 flex-1 truncate font-medium text-highlighted">{{ c.name }}</span>
+      <span class="min-w-0 truncate font-medium text-highlighted">{{ c.name }}</span>
 
-      <!-- Interval badge -->
+      <!-- Interval -->
       <span class="rounded bg-elevated px-1.5 py-0.5 text-xs text-muted">
         every {{ intervalLabel(c.job!.intervalSecs) }}
       </span>
 
-      <!-- Last run status -->
-      <SyncStatusBadge
-        v-if="c.lastRun"
-        :status="c.lastRun.status as 'pending' | 'running' | 'completed' | 'failed'"
-      />
+      <!-- Next run / last completed — subtle muted text -->
+      <span class="hidden items-center gap-2 text-xs text-muted sm:flex">
+        <span v-if="!isRunning(c)">Next {{ nextRunLabel(c) }}</span>
+        <span v-if="!isRunning(c) && lastCompletedLabel(c)">
+          &middot; Last {{ lastCompletedLabel(c) }}
+        </span>
+        <span v-if="isRunning(c)">Running&hellip;</span>
+      </span>
+
+      <div class="flex-1" />
 
       <!-- Run Now -->
       <UButton
