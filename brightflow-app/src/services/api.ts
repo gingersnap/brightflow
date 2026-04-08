@@ -219,8 +219,12 @@ export const datasetApi = {
 };
 
 // Analytics Source API
+import type { UnifiedSource } from '@/types';
+
 export const sourceApi = {
   list: (): Promise<Source[] | null> => api.get<Source[]>('/api/sources'),
+  unifiedList: (): Promise<UnifiedSource[] | null> =>
+    api.get<UnifiedSource[]>('/api/sources/unified'),
   create: (domain: string, name: string): Promise<Source | null> =>
     api.post<Source>('/api/sources', { domain, name }),
   get: (id: string): Promise<Source | null> => api.get<Source>(`/api/sources/${id}`),

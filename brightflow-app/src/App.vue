@@ -1,35 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { onMounted, watch } from 'vue';
 
-import AnalyticsView from './components/analytics/AnalyticsView.vue';
 import LoginPage from './components/auth/LoginPage.vue';
 import ConnectView from './components/connect/ConnectView.vue';
-import InsightsView from './components/insights/InsightsView.vue';
 import AppHeader from './components/layout/AppHeader.vue';
-import DatasetPickerModal from './components/layout/DatasetPickerModal.vue';
-import WelcomeLanding from './components/layout/WelcomeLanding.vue';
-import FilterBar from './components/query/FilterBar.vue';
-import QueryBuilder from './components/query/QueryBuilder.vue';
-import ResultsPanel from './components/results/ResultsPanel.vue';
+import SourceLanding from './components/layout/SourceLanding.vue';
+import SourceLayout from './components/layout/SourceLayout.vue';
 import SystemView from './components/system/SystemView.vue';
-import { type TableInfo, tableApi } from './services/api';
-import { track } from './services/tracking';
-import { resetAllStores } from './stores';
+import { resetOnLogout } from './stores';
 import { useAuthStore } from './stores/auth';
 import { useConnectionStore } from './stores/connection';
-import { useDatasetStore } from './stores/dataset';
+import { useSourceStore } from './stores/source';
 import { useSystemStore } from './stores/system';
 import { useUiStore } from './stores/ui';
 
 const authStore = useAuthStore();
 const connectionStore = useConnectionStore();
-const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
 const systemStore = useSystemStore();
-
-const showDatasetPicker = ref(false);
-const currentDataset = ref<string | null>(null);
-const loadingTable = ref(false);
+const sourceStore = useSourceStore();
 
 onMounted(() => {
   authStore.checkAuth();
@@ -47,55 +36,10 @@ watch(
   },
 );
 
-// Connect WS when dataset is loaded, disconnect when cleared
-watch(currentDataset, (newVal) => {
-  if (newVal) {
-    connectionStore.connect();
-  } else {
-    connectionStore.disconnect();
-  }
-});
-
-// Handle dataset selection from modal
-async function handleDatasetSelect(table: TableInfo): Promise<void> {
-  loadingTable.value = true;
-
-  try {
-    // Reset all stores for clean slate
-    resetAllStores();
-
-    // Load the selected table via REST API
-    const result = await tableApi.load(table.name);
-
-    if (result) {
-      // Set dataset state from REST response (no WS needed for metadata)
-      datasetStore.setFromLoadResponse(result);
-      currentDataset.value = table.name;
-      showDatasetPicker.value = false;
-      uiStore.setShowConnect(false);
-      track('dataset_load', { table: table.name });
-    }
-  } catch {
-    // Table load failed — loading state cleared in finally
-  } finally {
-    loadingTable.value = false;
-  }
-}
-
-// Open modal to change dataset
-function handleChangeDataset(): void {
-  showDatasetPicker.value = true;
-}
-
-function handleOpenConnect(): void {
-  uiStore.setShowConnect(true);
-}
-
 async function handleLogout(): Promise<void> {
   connectionStore.disconnect();
   systemStore.disconnect();
-  currentDataset.value = null;
-  resetAllStores();
+  resetOnLogout();
   await authStore.logout();
 }
 </script>
@@ -114,72 +58,33 @@ async function handleLogout(): Promise<void> {
 
     <!-- Main app (authenticated) -->
     <template v-else>
-      <!-- Dataset picker modal -->
-      <DatasetPickerModal
-        :open="showDatasetPicker"
-        :loading="loadingTable"
-        @select="handleDatasetSelect"
-        @close="showDatasetPicker = false"
-      />
-
       <div class="flex h-screen flex-col bg-default">
-        <!-- Header with change dataset action -->
-        <AppHeader
-          :current-dataset="currentDataset"
-          @change-dataset="handleChangeDataset"
-          @logout="handleLogout"
-        />
+        <AppHeader @logout="handleLogout" />
 
-        <!-- System mode - works without a dataset -->
+        <!-- System mode -->
         <template v-if="uiStore.showSystem">
           <div class="relative min-h-0 flex-1 overflow-hidden">
             <SystemView />
           </div>
         </template>
 
-        <!-- Analytics mode - works without a dataset -->
-        <template v-else-if="uiStore.showAnalytics">
-          <div class="min-h-0 flex-1 overflow-hidden">
-            <AnalyticsView />
-          </div>
-        </template>
-
-        <!-- Connect mode - works without a dataset -->
+        <!-- Connect mode -->
         <template v-else-if="uiStore.showConnect">
           <div class="min-h-0 flex-1 overflow-hidden">
             <ConnectView />
           </div>
         </template>
 
-        <!-- Explore / Insights - require a loaded dataset -->
-        <template v-else-if="currentDataset">
-          <!-- Explore mode -->
-          <template v-if="uiStore.appMode === 'explore'">
-            <FilterBar />
-            <QueryBuilder />
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <ResultsPanel />
-            </div>
-          </template>
-
-          <!-- Insights mode -->
-          <template v-else>
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <InsightsView />
-            </div>
-          </template>
+        <!-- Source selected — show sidebar + tools -->
+        <template v-else-if="sourceStore.selectedSource">
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <SourceLayout />
+          </div>
         </template>
 
-        <!-- Welcome landing page when no dataset is loaded -->
+        <!-- No source selected — show landing page -->
         <template v-else>
-          <div v-if="loadingTable" class="flex flex-1 items-center justify-center">
-            <p class="text-muted">Loading dataset...</p>
-          </div>
-          <WelcomeLanding
-            v-else
-            @load-dataset="handleChangeDataset"
-            @open-connect="handleOpenConnect"
-          />
+          <SourceLanding />
         </template>
       </div>
     </template>

@@ -42,6 +42,50 @@ export type {
   UserTimelineEvent,
 } from './generated';
 
+// Unified source types (frontend-only, matching backend SourceKind/SourceTool)
+export type SourceKind = 'web-analytics' | 'connector';
+
+export type ToolId = 'dashboard' | 'funnels' | 'retention' | 'users' | 'explore' | 'insights';
+
+export interface SourceTable {
+  name: string;
+  numRows: number | null;
+}
+
+export interface UnifiedSource {
+  id: string;
+  name: string;
+  kind: SourceKind;
+  connectorName: string | null;
+  domain: string | null;
+  tables: SourceTable[];
+  tools: ToolId[];
+  createdAt: string;
+  ready: boolean;
+}
+
+export interface ToolDef {
+  id: ToolId;
+  label: string;
+  icon: string;
+}
+
+const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
+  dashboard: { label: 'Dashboard', icon: 'BarChart3' },
+  funnels: { label: 'Funnels', icon: 'GitBranch' },
+  retention: { label: 'Retention', icon: 'CalendarCheck' },
+  users: { label: 'Users', icon: 'Users' },
+  explore: { label: 'Explore', icon: 'Search' },
+  insights: { label: 'Insights', icon: 'Sparkles' },
+};
+
+export function toolsForSource(source: UnifiedSource): ToolDef[] {
+  return source.tools.map((id) => ({
+    id,
+    ...TOOL_DEFS[id],
+  }));
+}
+
 // Filter state (frontend-only)
 export interface Filter {
   id: string;

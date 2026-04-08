@@ -3,12 +3,7 @@ import { ref, watch } from 'vue';
 
 import type { ChartType, ViewMode } from '@/types';
 
-export type AppMode = 'explore' | 'insights';
 type SectionName = 'filter' | 'summarize' | 'results';
-
-function isAppMode(s: string): s is AppMode {
-  return s === 'explore' || s === 'insights';
-}
 
 function isViewMode(s: string): s is ViewMode {
   return ['table', 'pivot', 'chart', 'split', 'number'].includes(s);
@@ -19,21 +14,12 @@ function isChartType(s: string): s is ChartType {
 }
 
 export const useUiStore = defineStore('ui', () => {
-  // App mode: top-level navigation between Explore and Insights
+  // Connect view toggle
   const storedMode = localStorage.getItem('brightflow-app-mode');
-  const initialConnect = storedMode === 'connect';
-  const appMode = ref<AppMode>(
-    !initialConnect && storedMode != null && isAppMode(storedMode) ? storedMode : 'explore',
-  );
-
-  // Connect is separate from Explore/Insights
-  const showConnect = ref(initialConnect);
+  const showConnect = ref(storedMode === 'connect');
 
   // System observability view
   const showSystem = ref(storedMode === 'system');
-
-  // Analytics view
-  const showAnalytics = ref(storedMode === 'analytics');
 
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
   const storedViewMode = localStorage.getItem('brightflow-view-mode');
@@ -56,9 +42,6 @@ export const useUiStore = defineStore('ui', () => {
   const hasShownPivotResults = ref(false);
 
   // Persist preferences
-  watch(appMode, (val) => {
-    localStorage.setItem('brightflow-app-mode', val);
-  });
   watch(showConnect, (val) => {
     if (val) {
       localStorage.setItem('brightflow-app-mode', 'connect');
@@ -69,11 +52,6 @@ export const useUiStore = defineStore('ui', () => {
       localStorage.setItem('brightflow-app-mode', 'system');
     }
   });
-  watch(showAnalytics, (val) => {
-    if (val) {
-      localStorage.setItem('brightflow-app-mode', 'analytics');
-    }
-  });
   watch(viewMode, (val) => {
     localStorage.setItem('brightflow-view-mode', val);
   });
@@ -82,18 +60,10 @@ export const useUiStore = defineStore('ui', () => {
   });
 
   // Actions
-  function setAppMode(mode: AppMode): void {
-    appMode.value = mode;
-    showConnect.value = false;
-    showSystem.value = false;
-    showAnalytics.value = false;
-  }
-
   function setShowConnect(val: boolean): void {
     showConnect.value = val;
     if (val) {
       showSystem.value = false;
-      showAnalytics.value = false;
     }
   }
 
@@ -101,15 +71,6 @@ export const useUiStore = defineStore('ui', () => {
     showSystem.value = val;
     if (val) {
       showConnect.value = false;
-      showAnalytics.value = false;
-    }
-  }
-
-  function setShowAnalytics(val: boolean): void {
-    showAnalytics.value = val;
-    if (val) {
-      showConnect.value = false;
-      showSystem.value = false;
     }
   }
 
@@ -148,19 +109,15 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    appMode,
     chartType,
     filterCollapsed,
     hasShownPivotResults,
     onPivotResults,
     resetForNewDataset,
     resultsCollapsed,
-    setAppMode,
     setChartType,
-    setShowAnalytics,
     setShowConnect,
     setShowSystem,
-    showAnalytics,
     setViewMode,
     showConnect,
     showSystem,

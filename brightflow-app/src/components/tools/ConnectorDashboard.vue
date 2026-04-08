@@ -1,0 +1,62 @@
+<script setup lang="ts">
+import { Cable, Search, Table2 } from 'lucide-vue-next';
+
+import { useSourceStore } from '@/stores/source';
+import type { UnifiedSource } from '@/types';
+
+defineProps<{
+  source: UnifiedSource;
+}>();
+
+const sourceStore = useSourceStore();
+
+function openInExplore(tableName: string): void {
+  sourceStore.selectTool('explore');
+}
+</script>
+
+<template>
+  <div class="flex h-full flex-col overflow-y-auto p-6">
+    <div class="mb-6 flex items-center gap-3">
+      <Cable class="h-5 w-5 text-muted" />
+      <div>
+        <h2 class="text-lg font-semibold text-highlighted">{{ source.name }}</h2>
+        <p class="text-sm text-muted">{{ source.connectorName }} connector</p>
+      </div>
+    </div>
+
+    <!-- Tables -->
+    <div class="mb-6">
+      <h3 class="mb-3 text-sm font-medium text-highlighted">Tables</h3>
+      <div v-if="source.tables.length > 0" class="space-y-2">
+        <div
+          v-for="table in source.tables"
+          :key="table.name"
+          class="flex items-center justify-between rounded-lg border border-default bg-elevated p-3"
+        >
+          <div class="flex items-center gap-2">
+            <Table2 class="h-4 w-4 text-muted" />
+            <span class="text-sm font-medium text-highlighted">{{ table.name }}</span>
+            <span v-if="table.numRows != null" class="text-xs text-muted">
+              {{ table.numRows.toLocaleString() }} rows
+            </span>
+          </div>
+          <UButton size="xs" variant="ghost" @click="openInExplore(table.name)">
+            <Search class="h-3.5 w-3.5" />
+            Explore
+          </UButton>
+        </div>
+      </div>
+      <p v-else class="text-sm text-muted">No tables synced yet. Run a sync to populate data.</p>
+    </div>
+
+    <!-- Status -->
+    <div class="rounded-lg border border-default bg-elevated p-4">
+      <h3 class="mb-2 text-sm font-medium text-highlighted">Status</h3>
+      <p class="text-sm text-muted">
+        <template v-if="source.ready"> Data is synced and ready for exploration. </template>
+        <template v-else> Waiting for first sync to complete. </template>
+      </p>
+    </div>
+  </div>
+</template>

@@ -12,6 +12,7 @@ use crate::ingest::handlers as ingest_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::product_analytics::handlers as pa_handlers;
 use crate::scheduler::handlers as scheduler_handlers;
+use crate::sources::handlers as sources_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
 use crate::web_analytics::handlers as wa_handlers;
@@ -133,6 +134,8 @@ fn api_routes() -> Router<AppState> {
         )
         // System observability
         .route("/system/ws", get(system_handlers::system_ws_handler))
+        // Unified sources (must be before /sources/{id})
+        .route("/sources/unified", get(sources_handlers::list_unified_sources))
         // Source management
         .route(
             "/sources",

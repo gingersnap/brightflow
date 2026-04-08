@@ -21,6 +21,7 @@ pub mod product_analytics;
 pub mod routes;
 pub mod scheduler;
 pub mod shared;
+pub mod sources;
 pub mod state;
 pub mod system;
 pub mod web_analytics;

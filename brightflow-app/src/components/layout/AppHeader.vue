@@ -1,28 +1,17 @@
 <script setup lang="ts">
 import { useQuery } from '@pinia/colada';
 import { useColorMode } from '@vueuse/core';
-import {
-  Activity,
-  BarChart3,
-  Cable,
-  ChevronDown,
-  Database,
-  LogOut,
-  Moon,
-  Plus,
-  Search,
-  Sparkles,
-  Sun,
-} from 'lucide-vue-next';
+import { Activity, Cable, LogOut, Moon, Sun } from 'lucide-vue-next';
 import { computed } from 'vue';
 
+import SourceSwitcher from '@/components/layout/SourceSwitcher.vue';
 import { connectApi } from '@/services/api';
-import { useDatasetStore } from '@/stores/dataset';
-import { type AppMode, useUiStore } from '@/stores/ui';
+import { useSourceStore } from '@/stores/source';
+import { useUiStore } from '@/stores/ui';
 import type { UnifiedConnector } from '@/types';
 
-const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
+const sourceStore = useSourceStore();
 const colorMode = useColorMode();
 
 const { data: connectors } = useQuery({
@@ -62,22 +51,23 @@ const lastSyncTime = computed(() => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 });
 
-defineProps<{
-  currentDataset: string | null;
-}>();
-
 const emit = defineEmits<{
-  'change-dataset': [];
   logout: [];
 }>();
 
-function setMode(mode: AppMode): void {
-  uiStore.setAppMode(mode);
-}
+const periods = [
+  { label: 'Today', value: 'today' },
+  { label: '7 days', value: '7d' },
+  { label: '30 days', value: '30d' },
+  { label: 'This month', value: 'month' },
+  { label: '12 months', value: '12m' },
+];
 
-function toggleAnalytics(): void {
-  uiStore.setShowAnalytics(!uiStore.showAnalytics);
-}
+const showPeriod = computed(
+  () =>
+    sourceStore.selectedSource != null &&
+    ['dashboard', 'funnels', 'retention', 'events'].includes(sourceStore.selectedTool),
+);
 
 function toggleConnect(): void {
   uiStore.setShowConnect(!uiStore.showConnect);
@@ -94,82 +84,33 @@ function toggleTheme(): void {
 
 <template>
   <div class="flex h-14 items-center justify-between border-b border-default bg-default px-4">
-    <!-- Left: Logo and Current Dataset -->
+    <!-- Left: Logo and Source Switcher -->
     <div class="flex items-center gap-4">
       <h1 class="text-lg font-semibold text-highlighted">Brightflow</h1>
 
-      <!-- Current dataset display with change button -->
-      <button
-        v-if="currentDataset"
-        class="flex cursor-pointer items-center gap-2 rounded-lg border border-default px-3 py-1.5 transition-colors hover:border-primary-500/50 hover:bg-elevated"
-        @click="emit('change-dataset')"
-      >
-        <Database class="h-4 w-4 text-muted" />
-        <span class="font-medium">{{ datasetStore.name ?? currentDataset }}</span>
-        <span v-if="datasetStore.rowCount" class="text-xs text-muted">
-          ({{ datasetStore.rowCount.toLocaleString() }} rows)
-        </span>
-        <ChevronDown class="h-4 w-4 text-muted" />
-      </button>
+      <!-- Source switcher (when a source is selected) -->
+      <SourceSwitcher v-if="sourceStore.selectedSource" />
 
-      <!-- Select Dataset button when no dataset is loaded -->
-      <button
-        v-else
-        class="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-default px-3 py-1.5 text-muted transition-colors hover:border-primary-500/50 hover:text-highlighted"
-        @click="emit('change-dataset')"
-      >
-        <Plus class="h-4 w-4" />
-        <span class="text-sm">Select Dataset</span>
-      </button>
-
-      <!-- Mode switcher (disabled when no dataset) -->
-      <div
-        class="ml-2 flex items-center gap-1 rounded-lg bg-elevated p-0.5 transition-opacity"
-        :class="{ 'pointer-events-none opacity-40': !currentDataset }"
-      >
+      <!-- Period selector -->
+      <div v-if="showPeriod" class="ml-2 flex items-center gap-1 rounded-lg bg-elevated p-0.5">
         <button
-          class="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors"
+          v-for="p in periods"
+          :key="p.value"
+          class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
           :class="
-            uiStore.appMode === 'explore' && !uiStore.showConnect && !uiStore.showSystem
+            sourceStore.period === p.value
               ? 'bg-default text-highlighted shadow-sm'
-              : 'text-muted hover:text-highlighted'
+              : 'cursor-pointer text-muted hover:text-highlighted'
           "
-          @click="setMode('explore')"
+          @click="sourceStore.period = p.value"
         >
-          <Search class="h-3.5 w-3.5" />
-          Explore
-        </button>
-        <button
-          class="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors"
-          :class="
-            uiStore.appMode === 'insights' && !uiStore.showConnect && !uiStore.showSystem
-              ? 'bg-default text-highlighted shadow-sm'
-              : 'text-muted hover:text-highlighted'
-          "
-          @click="setMode('insights')"
-        >
-          <Sparkles class="h-3.5 w-3.5" />
-          Insights
+          {{ p.label }}
         </button>
       </div>
     </div>
 
     <!-- Right: Actions and Status -->
     <div class="flex items-center gap-3">
-      <!-- Analytics button -->
-      <button
-        class="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
-        :class="
-          uiStore.showAnalytics
-            ? 'bg-primary-500/10 text-primary-500'
-            : 'text-muted hover:bg-elevated hover:text-highlighted'
-        "
-        @click="toggleAnalytics"
-      >
-        <BarChart3 class="h-3.5 w-3.5" />
-        Analytics
-      </button>
-
       <!-- Connect button -->
       <button
         class="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
@@ -209,18 +150,17 @@ function toggleTheme(): void {
         <LogOut class="h-4 w-4" />
       </UButton>
 
-      <!-- Dataset Status Dot -->
+      <!-- Sync status dot -->
       <div class="flex items-center gap-2 border-l border-default pl-3">
         <span
           class="h-2 w-2 rounded-full"
           :class="{
-            'bg-green-500': datasetStore.hasData,
-            'animate-pulse bg-yellow-500': datasetStore.loading,
-            'bg-neutral-400': !datasetStore.hasData && !datasetStore.loading,
+            'bg-green-500': sourceStore.selectedSource != null,
+            'bg-neutral-400': sourceStore.selectedSource == null,
           }"
         />
         <span class="text-xs text-muted">
-          {{ datasetStore.hasData ? (datasetStore.name ?? 'Dataset loaded') : 'No dataset' }}
+          {{ sourceStore.selectedSource?.name ?? 'No source' }}
           <span v-if="lastSyncTime" class="ml-1 opacity-70"> · synced {{ lastSyncTime }} </span>
         </span>
       </div>
