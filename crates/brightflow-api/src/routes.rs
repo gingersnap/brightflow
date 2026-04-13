@@ -12,6 +12,7 @@ use crate::ingest::handlers as ingest_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::product_analytics::handlers as pa_handlers;
 use crate::scheduler::handlers as scheduler_handlers;
+use crate::semantics::handlers as semantics_handlers;
 use crate::sources::handlers as sources_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
@@ -53,6 +54,22 @@ fn api_routes() -> Router<AppState> {
         // Insights
         .route("/insights/review", post(insights_handlers::run_review))
         .route("/insights/trends", post(insights_handlers::run_trends))
+        // Column semantics & table settings
+        .route(
+            "/tables/{name}/semantics",
+            get(semantics_handlers::list_semantics)
+                .put(semantics_handlers::bulk_upsert_semantics),
+        )
+        .route(
+            "/tables/{name}/semantics/{col}",
+            put(semantics_handlers::upsert_column_semantic)
+                .delete(semantics_handlers::delete_column_semantic),
+        )
+        .route(
+            "/tables/{name}/settings",
+            get(semantics_handlers::get_table_settings)
+                .put(semantics_handlers::upsert_table_settings),
+        )
         // WebSocket
         .route("/ws", get(handlers::ws_handler))
         // Connectors (DB-backed config + schedule + run)

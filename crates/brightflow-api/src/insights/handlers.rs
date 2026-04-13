@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use brightflow_insights::analysis::engine::AnalysisEngine;
 use brightflow_insights::analysis::tree::ReviewCadence;
-use brightflow_insights::data::schema::DataSchema;
+use brightflow_insights::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
 use brightflow_insights::debug::DebugLog;
 
 use crate::analytics::session::DatasetData;
@@ -19,7 +19,7 @@ pub async fn run_review(
     Json(req): Json<ReviewRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
     let cadence = parse_cadence(&req.cadence)?;
-    let (data, schema) = get_dataset_data_and_schema(&state, &req.dataset_id)?;
+    let (data, overrides, settings) = get_dataset_data_and_overrides(&state, &req.dataset_id)?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
@@ -27,6 +27,8 @@ pub async fn run_review(
 
     let result = tokio::task::spawn_blocking(move || {
         let df = materialize_data(data)?;
+        let schema = build_schema(&df, &overrides, settings.as_ref())
+            .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
         engine.run_review_with_cadence(&df, &schema, cadence, &DebugLog::disabled())
     })
@@ -57,13 +59,15 @@ pub async fn run_trends(
     State(state): State<AppState>,
     Json(req): Json<TrendsRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
-    let (data, schema) = get_dataset_data_and_schema(&state, &req.dataset_id)?;
+    let (data, overrides, settings) = get_dataset_data_and_overrides(&state, &req.dataset_id)?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         let df = materialize_data(data)?;
+        let schema = build_schema(&df, &overrides, settings.as_ref())
+            .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
         engine.run_trends(&df, &schema)
     })
@@ -88,11 +92,15 @@ pub async fn run_trends(
     }))
 }
 
-/// Get DatasetData and schema for a dataset, returning appropriate errors.
-fn get_dataset_data_and_schema(
+/// Get DatasetData and overrides for a dataset (never-fail: schema built lazily with DataFrame).
+fn get_dataset_data_and_overrides(
     state: &AppState,
     dataset_id: &str,
-) -> AppResult<(DatasetData, DataSchema)> {
+) -> AppResult<(
+    DatasetData,
+    Vec<ColumnOverride>,
+    Option<TableSettingsOverride>,
+)> {
     let dataset = state
         .datasets
         .get_dataset(dataset_id)
@@ -102,14 +110,18 @@ fn get_dataset_data_and_schema(
     let table_name = dataset.name.clone();
     drop(dataset);
 
-    let schema = state.get_schema(&table_name).ok_or_else(|| {
-        AppError::BadRequest(format!(
-            "No schema configured for table '{table_name}'. \
-             Add a TOML schema file to the schemas/ directory."
-        ))
-    })?;
+    let overrides = state
+        .schema_overrides
+        .get(&table_name)
+        .map(|v| v.value().clone())
+        .unwrap_or_default();
 
-    Ok((data, schema))
+    let settings = state
+        .settings_overrides
+        .get(&table_name)
+        .map(|v| v.value().clone());
+
+    Ok((data, overrides, settings))
 }
 
 /// Materialize DatasetData into a DataFrame (safe to call from blocking context)

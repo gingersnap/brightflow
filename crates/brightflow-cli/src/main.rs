@@ -50,9 +50,8 @@ use brightflow_api::ServeConfig;
 use brightflow_connect::list_builtin_connectors;
 use brightflow_insights::analysis::engine::AnalysisEngine;
 use brightflow_insights::analysis::tree::{ReportType, ReviewCadence};
-use brightflow_insights::data::config::SchemaConfig;
 use brightflow_insights::data::loader::load_csv;
-use brightflow_insights::data::schema::{detect_schema, DataSchema};
+use brightflow_insights::data::schema::detect_schema;
 use brightflow_insights::debug::DebugLog;
 use brightflow_insights::output::html::write_html;
 use brightflow_insights::output::json::write_output;
@@ -295,10 +294,6 @@ struct AnalyzeArgs {
     /// Input CSV file path
     #[arg(short, long)]
     input: PathBuf,
-
-    /// Schema config file (YAML) defining column roles
-    #[arg(short, long)]
-    schema: Option<PathBuf>,
 
     /// Z-score threshold for anomaly detection (default: 2.0)
     #[arg(long, default_value = "2.0")]
@@ -562,14 +557,7 @@ fn build_serve_config(
 
 fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
     let df = load_csv(&args.input)?;
-
-    let (data_schema, schema_name) = if let Some(schema_path) = &args.schema {
-        let config = SchemaConfig::load(schema_path)?;
-        let name = config.name.clone();
-        (DataSchema::from_config(&config), name)
-    } else {
-        (detect_schema(&df)?, None)
-    };
+    let data_schema = detect_schema(&df)?;
 
     let suffix = format!("review_{}", cadence.suffix());
     tracing::info!("[{}] Running...", suffix);
@@ -579,7 +567,7 @@ fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
         engine.run_review_with_cadence(&df, &data_schema, cadence, &DebugLog::disabled())?;
     let tree = result.tree;
 
-    write_outputs(args, &tree, &suffix, &schema_name, cadence.title())?;
+    write_outputs(args, &tree, &suffix, cadence.title())?;
 
     tracing::info!(
         "[{}] {} root findings, {} total nodes",
@@ -593,14 +581,7 @@ fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
 
 fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
     let df = load_csv(&args.input)?;
-
-    let (data_schema, schema_name) = if let Some(schema_path) = &args.schema {
-        let config = SchemaConfig::load(schema_path)?;
-        let name = config.name.clone();
-        (DataSchema::from_config(&config), name)
-    } else {
-        (detect_schema(&df)?, None)
-    };
+    let data_schema = detect_schema(&df)?;
 
     let suffix = report_type.suffix();
     tracing::info!("[{}] Running...", suffix);
@@ -609,7 +590,7 @@ fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
     let result = engine.run_report(&df, &data_schema, report_type, &DebugLog::disabled())?;
     let tree = result.tree;
 
-    write_outputs(args, &tree, suffix, &schema_name, report_type.title())?;
+    write_outputs(args, &tree, suffix, report_type.title())?;
 
     tracing::info!(
         "[{}] {} root findings, {} total nodes",
@@ -625,7 +606,6 @@ fn write_outputs(
     args: &AnalyzeArgs,
     tree: &brightflow_insights::analysis::tree::AnalysisTree,
     suffix: &str,
-    schema_name: &Option<String>,
     type_title: &str,
 ) -> Result<()> {
     let input_stem = args
@@ -639,14 +619,9 @@ fn write_outputs(
     let md_path = input_dir.join(format!("{input_stem}_{suffix}.md"));
     let html_path = input_dir.join(format!("{input_stem}_{suffix}.html"));
 
-    let title = match schema_name {
-        Some(name) => format!("{name} - {type_title}"),
-        None => type_title.to_string(),
-    };
-
     write_output(&json_path, tree, args.pretty)?;
-    write_markdown(&md_path, tree, Some(&title))?;
-    write_html(&html_path, tree, Some(&title))?;
+    write_markdown(&md_path, tree, Some(type_title))?;
+    write_html(&html_path, tree, Some(type_title))?;
 
     Ok(())
 }

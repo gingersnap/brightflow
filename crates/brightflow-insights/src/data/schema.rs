@@ -5,10 +5,10 @@ use crate::data::config::{SchemaConfig, TimeGranularity};
 
 #[derive(Debug, Clone)]
 pub struct DataSchema {
-    /// Primary business outcomes (KPIs) - highest priority for analysis
+    /// All numeric measure columns (both KPIs and supporting metrics)
+    pub measure_columns: Vec<String>,
+    /// Subset of measure_columns that are KPIs (highest priority)
     pub kpi_columns: Vec<String>,
-    /// Supporting metrics - secondary priority
-    pub metric_columns: Vec<String>,
     /// Categorical columns for segmentation
     pub dimension_columns: Vec<String>,
     /// Time columns for temporal analysis
@@ -26,8 +26,8 @@ impl DataSchema {
         let time_column = time_columns.first().cloned();
 
         Self {
+            measure_columns: config.measure_columns(),
             kpi_columns: config.kpi_columns(),
-            metric_columns: config.metric_columns(),
             dimension_columns: config.dimension_columns(),
             time_columns,
             time_column,
@@ -35,11 +35,9 @@ impl DataSchema {
         }
     }
 
-    /// All numeric columns that should be analyzed (KPIs + metrics)
+    /// All numeric columns that should be analyzed
     pub fn analyzable_columns(&self) -> Vec<String> {
-        let mut cols = self.kpi_columns.clone();
-        cols.extend(self.metric_columns.clone());
-        cols
+        self.measure_columns.clone()
     }
 
     /// Check if a column is a KPI (higher priority)
@@ -50,7 +48,7 @@ impl DataSchema {
 
 /// Auto-detect schema from DataFrame (fallback when no config provided)
 pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
-    let mut kpi_columns = Vec::new();
+    let mut measure_columns = Vec::new();
     let mut dimension_columns = Vec::new();
     let mut time_columns = Vec::new();
     let mut time_column = None;
@@ -84,8 +82,7 @@ pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
                 if unique_count < 20 && cardinality_ratio < 0.05 {
                     dimension_columns.push(name);
                 } else {
-                    // Without config, treat all numeric as metrics (not KPIs)
-                    kpi_columns.push(name);
+                    measure_columns.push(name);
                 }
             },
             DataType::String => {
@@ -115,8 +112,8 @@ pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
     }
 
     Ok(DataSchema {
-        kpi_columns,
-        metric_columns: Vec::new(), // Auto-detect doesn't distinguish KPI vs metric
+        measure_columns,
+        kpi_columns: Vec::new(), // Auto-detect doesn't distinguish KPIs
         dimension_columns,
         time_columns,
         time_column,

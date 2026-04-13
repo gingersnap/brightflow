@@ -238,6 +238,9 @@ fn extract_column_info(df: &DataFrame) -> Vec<ColumnInfo> {
         .map(|col| ColumnInfo {
             name: col.name().to_string(),
             dtype: dtype_to_string(col.dtype()),
+            role: None,
+            is_kpi: None,
+            label: None,
         })
         .collect()
 }

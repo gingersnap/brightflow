@@ -55,3 +55,26 @@ pub struct FileColumnStatRow {
     pub max_value: Option<String>,
     pub null_count: Option<i64>,
 }
+
+/// Column-level semantic override (user-defined role for insights analysis)
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ColumnSemanticRow {
+    pub table_id: String,
+    pub column_name: String,
+    pub role: String,
+    pub is_kpi: bool,
+    pub label: Option<String>,
+    pub description: Option<String>,
+    pub updated_at: String,
+}
+
+/// Table-level analysis settings override
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct TableAnalysisSettingsRow {
+    pub table_id: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub time_granularity: Option<String>,
+    pub comparison_periods: Option<i32>,
+    pub updated_at: String,
+}

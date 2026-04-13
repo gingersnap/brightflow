@@ -2,10 +2,11 @@ use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
-use brightflow_insights::data::config::SchemaConfig;
+use brightflow_insights::data::config::{ColumnRole, TimeGranularity};
+use brightflow_insights::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
 use brightflow_insights::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
-use brightflow_store::{ParquetStore, TableInfo};
+use brightflow_store::{ColumnSemanticRow, ParquetStore, TableAnalysisSettingsRow, TableInfo};
 use dashmap::DashMap;
 use polars::prelude::*;
 use std::path::Path;
@@ -22,8 +23,12 @@ pub struct AppState {
     pub table_index: Arc<RwLock<Vec<TableInfo>>>,
     /// Reference to the Parquet store for lazy loading
     store: Option<Arc<ParquetStore>>,
-    /// Global schema configs keyed by table name
+    /// Schema cache keyed by table name (invalidated on override changes)
     pub schemas: Arc<DashMap<String, DataSchema>>,
+    /// Column semantic overrides keyed by table name
+    pub schema_overrides: Arc<DashMap<String, Vec<ColumnOverride>>>,
+    /// Table analysis settings overrides keyed by table name
+    pub settings_overrides: Arc<DashMap<String, TableSettingsOverride>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
     /// Authentication database
@@ -57,6 +62,8 @@ impl AppState {
             table_index: Arc::new(RwLock::new(Vec::new())),
             store: None,
             schemas: Arc::new(DashMap::new()),
+            schema_overrides: Arc::new(DashMap::new()),
+            settings_overrides: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -76,6 +83,8 @@ impl AppState {
             table_index: Arc::new(RwLock::new(Vec::new())),
             store: None,
             schemas: Arc::new(DashMap::new()),
+            schema_overrides: Arc::new(DashMap::new()),
+            settings_overrides: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -88,53 +97,84 @@ impl AppState {
         }
     }
 
-    /// Load schema configs from TOML files in a directory
-    pub fn load_schemas_from_dir(&self, dir: &Path) {
-        if !dir.exists() || !dir.is_dir() {
-            tracing::debug!("Schema directory not found: {}", dir.display());
+    /// Load column semantic overrides from SQLite into memory (DashMaps).
+    pub async fn load_overrides_from_store(&self) {
+        let Some(store) = &self.store else {
             return;
-        }
+        };
 
-        let entries = match std::fs::read_dir(dir) {
-            Ok(e) => e,
+        let tables = match store.list_tables().await {
+            Ok(t) => t,
             Err(e) => {
-                tracing::warn!("Failed to read schema directory {}: {}", dir.display(), e);
+                tracing::warn!("Failed to list tables for override loading: {e}");
                 return;
             },
         };
 
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "toml") {
-                let table_name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default()
-                    .to_string();
+        for table_ref in tables {
+            let table_name = &table_ref.name;
 
-                match SchemaConfig::load(&path) {
-                    Ok(config) => {
-                        let schema = DataSchema::from_config(&config);
-                        tracing::info!(
-                            "Loaded schema for '{}': {} KPIs, {} metrics, {} dimensions",
-                            table_name,
-                            schema.kpi_columns.len(),
-                            schema.metric_columns.len(),
-                            schema.dimension_columns.len(),
-                        );
-                        self.schemas.insert(table_name, schema);
-                    },
-                    Err(e) => {
-                        tracing::warn!("Failed to load schema from {}: {}", path.display(), e);
-                    },
-                }
+            match store.get_column_semantics(table_name).await {
+                Ok(rows) if !rows.is_empty() => {
+                    let overrides: Vec<ColumnOverride> =
+                        rows.iter().filter_map(convert_semantic_row).collect();
+                    let kpi_count = overrides.iter().filter(|o| o.is_kpi).count();
+                    tracing::info!(
+                        "Loaded {} column overrides for '{}' ({} KPIs)",
+                        overrides.len(),
+                        table_name,
+                        kpi_count,
+                    );
+                    self.schema_overrides.insert(table_name.clone(), overrides);
+                },
+                Ok(_) => {},
+                Err(e) => {
+                    tracing::warn!("Failed to load column semantics for '{}': {e}", table_name);
+                },
+            }
+
+            match store.get_table_settings(table_name).await {
+                Ok(Some(row)) => {
+                    if let Some(settings) = convert_settings_row(&row) {
+                        self.settings_overrides.insert(table_name.clone(), settings);
+                    }
+                },
+                Ok(None) => {},
+                Err(e) => {
+                    tracing::warn!("Failed to load table settings for '{}': {e}", table_name);
+                },
             }
         }
     }
 
-    /// Get schema for a table by name
-    pub fn get_schema(&self, table_name: &str) -> Option<DataSchema> {
-        self.schemas.get(table_name).map(|s| s.clone())
+    /// Get a cached schema, or build one on-demand from a DataFrame + overrides.
+    pub fn get_or_build_schema(
+        &self,
+        table_name: &str,
+        df: &DataFrame,
+    ) -> Result<DataSchema, anyhow::Error> {
+        if let Some(cached) = self.schemas.get(table_name) {
+            return Ok(cached.clone());
+        }
+
+        let overrides = self
+            .schema_overrides
+            .get(table_name)
+            .map(|v| v.value().clone())
+            .unwrap_or_default();
+        let settings = self
+            .settings_overrides
+            .get(table_name)
+            .map(|v| v.value().clone());
+
+        let schema = build_schema(df, &overrides, settings.as_ref())?;
+        self.schemas.insert(table_name.to_string(), schema.clone());
+        Ok(schema)
+    }
+
+    /// Invalidate the cached schema for a table (call after override mutations).
+    pub fn invalidate_schema_cache(&self, table_name: &str) {
+        self.schemas.remove(table_name);
     }
 
     /// Get a reference to the Parquet store
@@ -180,6 +220,8 @@ impl AppState {
             table_index: Arc::new(RwLock::new(index)),
             store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
+            schema_overrides: Arc::new(DashMap::new()),
+            settings_overrides: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -216,6 +258,8 @@ impl AppState {
             table_index: Arc::new(RwLock::new(index)),
             store: Some(Arc::new(store)),
             schemas: Arc::new(DashMap::new()),
+            schema_overrides: Arc::new(DashMap::new()),
+            settings_overrides: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -385,4 +429,202 @@ impl AppState {
         }
         results
     }
+}
+
+/// Convert a `ColumnSemanticRow` to a `ColumnOverride`.
+fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
+    let role = match row.role.as_str() {
+        "measure" => ColumnRole::Measure,
+        "dimension" => ColumnRole::Dimension,
+        "time" => ColumnRole::Time,
+        "entity" => ColumnRole::Entity,
+        "ignored" => ColumnRole::Ignored,
+        other => {
+            tracing::warn!("Unknown column role '{}' for '{}'", other, row.column_name);
+            return None;
+        },
+    };
+    Some(ColumnOverride {
+        column_name: row.column_name.clone(),
+        role,
+        is_kpi: row.is_kpi,
+        label: row.label.clone(),
+        description: row.description.clone(),
+    })
+}
+
+/// Convert a `TableAnalysisSettingsRow` to a `TableSettingsOverride`.
+/// Seed known TOML schema data into SQLite if `column_semantics` is empty.
+pub async fn seed_column_semantics(store: &ParquetStore) {
+    // Only seed if we have tables but no semantics yet
+    let has_semantics = store.has_any_column_semantics().await.unwrap_or(true);
+    if has_semantics {
+        return;
+    }
+
+    let tables = store.list_tables().await.unwrap_or_default();
+    if tables.is_empty() {
+        return;
+    }
+
+    let table_names: Vec<String> = tables.iter().map(|t| t.name.clone()).collect();
+    tracing::info!(
+        "Seeding column semantics for {} tables: {:?}",
+        table_names.len(),
+        table_names
+    );
+
+    // Define seed data for known GitHub tables
+    #[allow(clippy::type_complexity)]
+    let seed_data: &[(&str, &[(&str, &str, bool)], &str, i32)] = &[
+        // (table_name, [(column, role, is_kpi)], time_granularity, comparison_periods)
+        (
+            "issues",
+            &[
+                ("created_at", "time", false),
+                ("comments", "measure", true),
+                ("reactions_total", "measure", true),
+                ("state", "dimension", false),
+                ("author_association", "dimension", false),
+                ("user_login", "dimension", false),
+                ("label_names", "dimension", false),
+                ("is_pull_request", "dimension", false),
+                ("locked", "dimension", false),
+                ("state_reason", "dimension", false),
+                ("id", "ignored", false),
+                ("number", "ignored", false),
+                ("title", "ignored", false),
+                ("body", "ignored", false),
+                ("html_url", "ignored", false),
+                ("updated_at", "ignored", false),
+                ("closed_at", "ignored", false),
+                ("user_id", "ignored", false),
+                ("assignee_logins", "ignored", false),
+                ("milestone_number", "ignored", false),
+                ("milestone_title", "ignored", false),
+                ("active_lock_reason", "ignored", false),
+            ],
+            "week",
+            4,
+        ),
+        (
+            "pull_requests",
+            &[
+                ("created_at", "time", false),
+                ("additions", "measure", true),
+                ("deletions", "measure", true),
+                ("changed_files", "measure", true),
+                ("commits", "measure", false),
+                ("comments", "measure", false),
+                ("review_comments", "measure", false),
+                ("state", "dimension", false),
+                ("draft", "dimension", false),
+                ("author_association", "dimension", false),
+                ("user_login", "dimension", false),
+                ("base_ref", "dimension", false),
+                ("merged_by_login", "dimension", false),
+                ("label_names", "dimension", false),
+                ("id", "ignored", false),
+                ("number", "ignored", false),
+                ("title", "ignored", false),
+                ("body", "ignored", false),
+                ("html_url", "ignored", false),
+                ("updated_at", "ignored", false),
+                ("closed_at", "ignored", false),
+                ("merged_at", "ignored", false),
+                ("head_ref", "ignored", false),
+                ("head_sha", "ignored", false),
+                ("base_sha", "ignored", false),
+                ("merge_commit_sha", "ignored", false),
+                ("milestone_title", "ignored", false),
+                ("reviewer_logins", "ignored", false),
+                ("user_id", "ignored", false),
+            ],
+            "week",
+            4,
+        ),
+        (
+            "issue_comments",
+            &[
+                ("created_at", "time", false),
+                ("reactions_total", "measure", true),
+                ("author_association", "dimension", false),
+                ("user_login", "dimension", false),
+                ("id", "ignored", false),
+                ("issue_number", "ignored", false),
+                ("body", "ignored", false),
+                ("html_url", "ignored", false),
+                ("updated_at", "ignored", false),
+                ("user_id", "ignored", false),
+            ],
+            "week",
+            4,
+        ),
+    ];
+
+    let db = store.db();
+
+    for (table_name, columns, granularity, periods) in seed_data {
+        // Check if table exists in the store
+        let Ok(Some(table)) = db.get_table_by_name(table_name).await else {
+            continue;
+        };
+
+        // Seed column semantics
+        let rows: Vec<ColumnSemanticRow> = columns
+            .iter()
+            .map(|(col, role, is_kpi)| ColumnSemanticRow {
+                table_id: table.id.clone(),
+                column_name: (*col).to_string(),
+                role: (*role).to_string(),
+                is_kpi: *is_kpi,
+                label: None,
+                description: None,
+                updated_at: String::new(),
+            })
+            .collect();
+
+        if let Err(e) = db.upsert_column_semantics_batch(&table.id, &rows).await {
+            tracing::warn!("Failed to seed column semantics for '{}': {e}", table_name);
+            continue;
+        }
+
+        // Seed table settings
+        if let Err(e) = db
+            .upsert_table_settings(&table.id, None, None, Some(granularity), Some(*periods))
+            .await
+        {
+            tracing::warn!("Failed to seed table settings for '{}': {e}", table_name);
+            continue;
+        }
+
+        tracing::info!(
+            "Seeded {} column overrides for '{}' (granularity={}, periods={})",
+            columns.len(),
+            table_name,
+            granularity,
+            periods
+        );
+    }
+}
+
+fn convert_settings_row(row: &TableAnalysisSettingsRow) -> Option<TableSettingsOverride> {
+    let time_granularity = row.time_granularity.as_deref().and_then(|g| match g {
+        "day" => Some(TimeGranularity::Day),
+        "week" => Some(TimeGranularity::Week),
+        "month" => Some(TimeGranularity::Month),
+        "quarter" => Some(TimeGranularity::Quarter),
+        "year" => Some(TimeGranularity::Year),
+        _ => None,
+    });
+    let comparison_periods = row.comparison_periods.and_then(|p| usize::try_from(p).ok());
+
+    if time_granularity.is_none() && comparison_periods.is_none() {
+        return None;
+    }
+
+    Some(TableSettingsOverride {
+        time_granularity,
+        comparison_periods,
+    })
 }

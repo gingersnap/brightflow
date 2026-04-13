@@ -89,12 +89,6 @@ impl WorkspacePaths {
         })
     }
 
-    /// Schema config directory.
-    #[must_use]
-    pub fn schemas(&self) -> PathBuf {
-        env_path_or("BRIGHTFLOW_SCHEMA_DIR", || self.root().join("schemas"))
-    }
-
     /// Connector output directory for a specific connector.
     #[must_use]
     pub fn connector_output(&self, connector_name: &str) -> PathBuf {
@@ -138,7 +132,6 @@ impl WorkspacePaths {
     /// Create all workspace directories and parent dirs for DB files.
     pub fn ensure_dirs(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(self.store())?;
-        std::fs::create_dir_all(self.schemas())?;
         std::fs::create_dir_all(self.connector_configs())?;
         std::fs::create_dir_all(self.events_store())?;
         std::fs::create_dir_all(self.events_buffer())?;

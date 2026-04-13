@@ -32,7 +32,7 @@ mod table;
 
 pub use error::{StoreError, StoreResult};
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
-pub use models::FileColumnStatRow;
+pub use models::{ColumnSemanticRow, FileColumnStatRow, TableAnalysisSettingsRow};
 pub use scan::ScanFilter;
 pub use stats::extract_file_column_stats;
 pub use table::{TableInfo, TableRef};
@@ -380,6 +380,129 @@ impl ParquetStore {
         );
 
         Ok(file_count)
+    }
+
+    // =====================================================
+    // Column Semantics (high-level, resolves table name → id)
+    // =====================================================
+
+    /// Get column semantics overrides for a table by name.
+    pub async fn get_column_semantics(
+        &self,
+        table_name: &str,
+    ) -> StoreResult<Vec<ColumnSemanticRow>> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db.get_column_semantics(&table.id).await
+    }
+
+    /// Upsert a single column semantic override by table name.
+    pub async fn upsert_column_semantic(
+        &self,
+        table_name: &str,
+        column_name: &str,
+        role: &str,
+        is_kpi: bool,
+        label: Option<&str>,
+        description: Option<&str>,
+    ) -> StoreResult<ColumnSemanticRow> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db
+            .upsert_column_semantic(&table.id, column_name, role, is_kpi, label, description)
+            .await
+    }
+
+    /// Batch upsert column semantics for a table by name.
+    pub async fn upsert_column_semantics_batch(
+        &self,
+        table_name: &str,
+        rows: &[ColumnSemanticRow],
+    ) -> StoreResult<()> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db.upsert_column_semantics_batch(&table.id, rows).await
+    }
+
+    /// Delete a single column semantic override by table name.
+    pub async fn delete_column_semantic(
+        &self,
+        table_name: &str,
+        column_name: &str,
+    ) -> StoreResult<bool> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db.delete_column_semantic(&table.id, column_name).await
+    }
+
+    /// Delete all column semantic overrides for a table by name.
+    pub async fn delete_all_column_semantics(&self, table_name: &str) -> StoreResult<u64> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db.delete_all_column_semantics(&table.id).await
+    }
+
+    /// Get table analysis settings by table name.
+    pub async fn get_table_settings(
+        &self,
+        table_name: &str,
+    ) -> StoreResult<Option<TableAnalysisSettingsRow>> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db.get_table_settings(&table.id).await
+    }
+
+    /// Upsert table analysis settings by table name.
+    pub async fn upsert_table_settings(
+        &self,
+        table_name: &str,
+        display_name: Option<&str>,
+        description: Option<&str>,
+        time_granularity: Option<&str>,
+        comparison_periods: Option<i32>,
+    ) -> StoreResult<TableAnalysisSettingsRow> {
+        let table = self
+            .db
+            .get_table_by_name(table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        self.db
+            .upsert_table_settings(
+                &table.id,
+                display_name,
+                description,
+                time_granularity,
+                comparison_periods,
+            )
+            .await
+    }
+
+    /// Check if any column_semantics rows exist.
+    pub async fn has_any_column_semantics(&self) -> StoreResult<bool> {
+        self.db.has_any_column_semantics().await
+    }
+
+    /// Get the internal StoreDb (for seeding operations that need direct access).
+    pub fn db(&self) -> &StoreDb {
+        &self.db
     }
 
     /// One-time migration: walk an events directory and register all Parquet files.

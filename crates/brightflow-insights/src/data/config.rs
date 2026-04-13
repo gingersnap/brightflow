@@ -1,21 +1,40 @@
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ColumnRole {
-    /// Primary business outcomes - what leadership monitors
-    Kpi,
-    /// Supporting metrics that help explain KPIs
-    Metric,
+    /// Numeric columns for analysis (both KPIs and supporting metrics)
+    Measure,
     /// Categorical columns for slicing/segmentation
     Dimension,
     /// Temporal columns for time-series analysis
     Time,
+    /// Entity/identifier columns (user, org, etc.)
+    Entity,
     /// Columns to skip (IDs, internal fields, PII)
     Ignored,
+}
+
+/// Custom deserializer that accepts legacy "kpi"/"metric" as aliases for "measure"
+impl<'de> Deserialize<'de> for ColumnRole {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "measure" | "kpi" | "metric" => Ok(Self::Measure),
+            "dimension" => Ok(Self::Dimension),
+            "time" => Ok(Self::Time),
+            "entity" => Ok(Self::Entity),
+            "ignored" => Ok(Self::Ignored),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["measure", "dimension", "time", "entity", "ignored"],
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -34,10 +53,24 @@ pub struct ColumnConfig {
     pub name: String,
     #[serde(rename = "type")]
     pub role: ColumnRole,
+    /// Whether this measure is a KPI (only meaningful when role == Measure)
+    #[serde(default)]
+    pub is_kpi: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+/// When deserializing legacy TOML, detect "kpi" type and set is_kpi=true.
+/// This is handled via a post-processing step in SchemaConfig deserialization.
+impl ColumnConfig {
+    /// Fix up is_kpi for legacy "kpi"/"metric" type values.
+    /// Called after raw deserialization where the custom ColumnRole deserializer
+    /// already mapped "kpi" → Measure, but we need to also set is_kpi.
+    pub fn fixup_legacy_kpi(raw_type: &str) -> bool {
+        raw_type == "kpi"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -66,14 +99,6 @@ pub struct SchemaConfig {
 }
 
 impl SchemaConfig {
-    pub fn load(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read schema config from {}", path.display()))?;
-        let config: Self = toml::from_str(&content)
-            .with_context(|| format!("Failed to parse schema config from {}", path.display()))?;
-        Ok(config)
-    }
-
     pub fn to_role_map(&self) -> HashMap<String, ColumnRole> {
         self.columns
             .iter()
@@ -81,18 +106,20 @@ impl SchemaConfig {
             .collect()
     }
 
-    pub fn kpi_columns(&self) -> Vec<String> {
+    /// All measure columns (both KPIs and non-KPI metrics)
+    pub fn measure_columns(&self) -> Vec<String> {
         self.columns
             .iter()
-            .filter(|c| c.role == ColumnRole::Kpi)
+            .filter(|c| c.role == ColumnRole::Measure)
             .map(|c| c.name.clone())
             .collect()
     }
 
-    pub fn metric_columns(&self) -> Vec<String> {
+    /// Only KPI columns (measures with is_kpi=true)
+    pub fn kpi_columns(&self) -> Vec<String> {
         self.columns
             .iter()
-            .filter(|c| c.role == ColumnRole::Metric)
+            .filter(|c| c.role == ColumnRole::Measure && c.is_kpi)
             .map(|c| c.name.clone())
             .collect()
     }

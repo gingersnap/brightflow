@@ -71,6 +71,9 @@ impl Dataset {
                 .map(|col| ColumnInfo {
                     name: col.name().to_string(),
                     dtype: dtype_to_string(col.dtype()),
+                    role: None,
+                    is_kpi: None,
+                    label: None,
                 })
                 .collect(),
             DatasetData::Parquet { files } => {
@@ -82,6 +85,9 @@ impl Dataset {
                                 .map(|(name, dtype)| ColumnInfo {
                                     name: name.to_string(),
                                     dtype: dtype_to_string(dtype),
+                                    role: None,
+                                    is_kpi: None,
+                                    label: None,
                                 })
                                 .collect();
                         }
@@ -100,6 +106,15 @@ impl Dataset {
 pub struct ColumnInfo {
     pub name: String,
     pub dtype: String,
+    /// Semantic role override (if configured)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// Whether this column is a KPI (only meaningful for measures)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_kpi: Option<bool>,
+    /// Display label override
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// Summary info for a dataset

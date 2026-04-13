@@ -33,11 +33,7 @@ impl ColumnCache {
         let mut dimension = HashMap::new();
 
         // Extract all numeric columns (KPIs + metrics)
-        for col in schema
-            .kpi_columns
-            .iter()
-            .chain(schema.metric_columns.iter())
-        {
+        for col in &schema.measure_columns {
             if let Ok(series) = df.column(col) {
                 let values: Vec<f64> = series
                     .cast(&DataType::Float64)?
@@ -266,11 +262,7 @@ impl AnalysisEngine {
         debug.kv("Previous period", &previous_period);
 
         // Compare each KPI between current and previous period
-        for col in schema
-            .kpi_columns
-            .iter()
-            .chain(schema.metric_columns.iter())
-        {
+        for col in &schema.measure_columns {
             let Some(metric_values) = cache.numeric.get(col) else {
                 continue;
             };
@@ -459,11 +451,7 @@ impl AnalysisEngine {
         let setup_time = start_time.elapsed();
 
         // Queue anomaly detection for KPIs and metrics
-        for col in schema
-            .kpi_columns
-            .iter()
-            .chain(schema.metric_columns.iter())
-        {
+        for col in &schema.measure_columns {
             queue.push_back(AnalysisTask::DetectAnomalies {
                 column: col.clone(),
             });
@@ -626,11 +614,7 @@ impl AnalysisEngine {
         };
 
         // Queue trend analyses for KPIs and metrics
-        for col in schema
-            .kpi_columns
-            .iter()
-            .chain(schema.metric_columns.iter())
-        {
+        for col in &schema.measure_columns {
             queue.push_back(AnalysisTask::DetectTrend {
                 column: col.clone(),
             });

@@ -5,7 +5,10 @@ use sqlx::SqlitePool;
 use std::str::FromStr;
 
 use crate::error::StoreResult;
-use crate::models::{ColumnStatRow, FileColumnStatRow, TableFileRow, TableRow};
+use crate::models::{
+    ColumnSemanticRow, ColumnStatRow, FileColumnStatRow, TableAnalysisSettingsRow, TableFileRow,
+    TableRow,
+};
 use crate::scan::ScanFilter;
 
 #[derive(Clone)]
@@ -349,5 +352,169 @@ impl StoreDb {
                 .await?;
         }
         Ok(())
+    }
+
+    // =====================================================
+    // Column Semantics CRUD
+    // =====================================================
+
+    pub async fn get_column_semantics(
+        &self,
+        table_id: &str,
+    ) -> StoreResult<Vec<ColumnSemanticRow>> {
+        let rows = sqlx::query_as::<_, ColumnSemanticRow>(
+            "SELECT * FROM column_semantics WHERE table_id = ? ORDER BY column_name",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn upsert_column_semantic(
+        &self,
+        table_id: &str,
+        column_name: &str,
+        role: &str,
+        is_kpi: bool,
+        label: Option<&str>,
+        description: Option<&str>,
+    ) -> StoreResult<ColumnSemanticRow> {
+        let row = sqlx::query_as::<_, ColumnSemanticRow>(
+            r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, label, description)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT (table_id, column_name) DO UPDATE SET
+                role = excluded.role,
+                is_kpi = excluded.is_kpi,
+                label = excluded.label,
+                description = excluded.description,
+                updated_at = datetime('now')
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(column_name)
+        .bind(role)
+        .bind(is_kpi)
+        .bind(label)
+        .bind(description)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn upsert_column_semantics_batch(
+        &self,
+        table_id: &str,
+        rows: &[ColumnSemanticRow],
+    ) -> StoreResult<()> {
+        let mut tx = self.pool.begin().await?;
+
+        for row in rows {
+            sqlx::query(
+                r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, label, description)
+                  VALUES (?, ?, ?, ?, ?, ?)
+                  ON CONFLICT (table_id, column_name) DO UPDATE SET
+                    role = excluded.role,
+                    is_kpi = excluded.is_kpi,
+                    label = excluded.label,
+                    description = excluded.description,
+                    updated_at = datetime('now')",
+            )
+            .bind(table_id)
+            .bind(&row.column_name)
+            .bind(&row.role)
+            .bind(row.is_kpi)
+            .bind(&row.label)
+            .bind(&row.description)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn delete_column_semantic(
+        &self,
+        table_id: &str,
+        column_name: &str,
+    ) -> StoreResult<bool> {
+        let result =
+            sqlx::query("DELETE FROM column_semantics WHERE table_id = ? AND column_name = ?")
+                .bind(table_id)
+                .bind(column_name)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn delete_all_column_semantics(&self, table_id: &str) -> StoreResult<u64> {
+        let result = sqlx::query("DELETE FROM column_semantics WHERE table_id = ?")
+            .bind(table_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Check if any column_semantics rows exist for any table.
+    pub async fn has_any_column_semantics(&self) -> StoreResult<bool> {
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM column_semantics")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.0 > 0)
+    }
+
+    // =====================================================
+    // Table Analysis Settings CRUD
+    // =====================================================
+
+    pub async fn get_table_settings(
+        &self,
+        table_id: &str,
+    ) -> StoreResult<Option<TableAnalysisSettingsRow>> {
+        let row = sqlx::query_as::<_, TableAnalysisSettingsRow>(
+            "SELECT * FROM table_analysis_settings WHERE table_id = ?",
+        )
+        .bind(table_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn upsert_table_settings(
+        &self,
+        table_id: &str,
+        display_name: Option<&str>,
+        description: Option<&str>,
+        time_granularity: Option<&str>,
+        comparison_periods: Option<i32>,
+    ) -> StoreResult<TableAnalysisSettingsRow> {
+        let row = sqlx::query_as::<_, TableAnalysisSettingsRow>(
+            r"INSERT INTO table_analysis_settings (table_id, display_name, description, time_granularity, comparison_periods)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT (table_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                description = excluded.description,
+                time_granularity = excluded.time_granularity,
+                comparison_periods = excluded.comparison_periods,
+                updated_at = datetime('now')
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(display_name)
+        .bind(description)
+        .bind(time_granularity)
+        .bind(comparison_periods)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn delete_table_settings(&self, table_id: &str) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM table_analysis_settings WHERE table_id = ?")
+            .bind(table_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 }

@@ -154,6 +154,9 @@ pub async fn upload_dataset(
         .map(|col| session::ColumnInfo {
             name: col.name().to_string(),
             dtype: dtype_to_string(col.dtype()),
+            role: None,
+            is_kpi: None,
+            label: None,
         })
         .collect();
 

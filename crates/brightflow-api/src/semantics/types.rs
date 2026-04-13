@@ -1,0 +1,60 @@
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+/// A column semantic override (request/response)
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnSemantic {
+    pub column_name: String,
+    /// One of: measure, dimension, time, entity, ignored
+    pub role: String,
+    #[serde(default)]
+    pub is_kpi: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Bulk upsert request for column semantics
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkColumnSemanticsRequest {
+    pub columns: Vec<ColumnSemantic>,
+}
+
+/// Response listing all column semantics for a table
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnSemanticsResponse {
+    pub table_name: String,
+    pub columns: Vec<ColumnSemantic>,
+}
+
+/// Table analysis settings (request/response)
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TableSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_granularity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparison_periods: Option<i32>,
+}
+
+/// Response for table analysis settings
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TableSettingsResponse {
+    pub table_name: String,
+    #[serde(flatten)]
+    pub settings: TableSettings,
+}

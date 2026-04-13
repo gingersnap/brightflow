@@ -20,6 +20,7 @@ pub mod insights;
 pub mod product_analytics;
 pub mod routes;
 pub mod scheduler;
+pub mod semantics;
 pub mod shared;
 pub mod sources;
 pub mod state;
@@ -200,8 +201,13 @@ pub async fn serve(
     // Store workspace paths on state for connector discovery
     state.paths = Some(paths.clone());
 
-    // Load schema configs
-    state.load_schemas_from_dir(&paths.schemas());
+    // Seed column semantics from known schemas (one-time migration from TOML)
+    if let Some(store) = state.store() {
+        state::seed_column_semantics(store).await;
+    }
+
+    // Load column semantic overrides from SQLite
+    state.load_overrides_from_store().await;
 
     // Initialize auth database
     let auth_db_url = paths.auth_url();

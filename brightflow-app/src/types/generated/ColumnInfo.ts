@@ -3,4 +3,16 @@
 /**
  * Column metadata
  */
-export type ColumnInfo = { name: string, dtype: string, };
+export type ColumnInfo = { name: string, dtype: string, 
+/**
+ * Semantic role override (if configured)
+ */
+role: string | null, 
+/**
+ * Whether this column is a KPI (only meaningful for measures)
+ */
+isKpi: boolean | null, 
+/**
+ * Display label override
+ */
+label: string | null, };
