@@ -9,6 +9,7 @@ import { ref, computed, watch } from 'vue';
 import VChart from 'vue-echarts';
 
 import ProductAnalyticsView from '@/components/analytics/ProductAnalyticsView.vue';
+import PeriodSelector from '@/components/layout/PeriodSelector.vue';
 import { sourceApi, analyticsApi } from '@/services/api';
 import { track } from '@/services/tracking';
 import type { Source, DashboardStats, TimeseriesPoint, BreakdownRow } from '@/types';
@@ -179,14 +180,6 @@ const chartOption = computed(() => {
     ],
   };
 });
-
-const periods = [
-  { label: 'Today', value: 'today' },
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
-  { label: 'This month', value: 'month' },
-  { label: '12 months', value: '12m' },
-];
 </script>
 
 <template>
@@ -239,24 +232,7 @@ const periods = [
       </div>
 
       <!-- Period selector (web tab only) -->
-      <div
-        v-if="analyticsTab === 'web'"
-        class="flex items-center gap-1 rounded-lg bg-elevated p-0.5"
-      >
-        <button
-          v-for="p in periods"
-          :key="p.value"
-          class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-          :class="
-            period === p.value
-              ? 'bg-default text-highlighted shadow-sm'
-              : 'cursor-pointer text-muted hover:text-highlighted'
-          "
-          @click="period = p.value"
-        >
-          {{ p.label }}
-        </button>
-      </div>
+      <PeriodSelector v-if="analyticsTab === 'web'" v-model="period" />
     </div>
 
     <!-- Add source form (shared across tabs) -->

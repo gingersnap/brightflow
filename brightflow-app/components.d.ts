@@ -32,6 +32,7 @@ declare module 'vue' {
     InsightsView: typeof import('./src/components/insights/InsightsView.vue')['default']
     LoginPage: typeof import('./src/components/auth/LoginPage.vue')['default']
     NewRunDialog: typeof import('./src/components/connect/NewRunDialog.vue')['default']
+    PeriodSelector: typeof import('./src/components/layout/PeriodSelector.vue')['default']
     PivotTable: typeof import('./src/components/pivot/PivotTable.vue')['default']
     PresetForm: typeof import('./src/components/connect/PresetForm.vue')['default']
     ProductAnalyticsView: typeof import('./src/components/analytics/ProductAnalyticsView.vue')['default']

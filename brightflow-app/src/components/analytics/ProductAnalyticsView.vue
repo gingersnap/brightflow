@@ -6,6 +6,7 @@ import EventListPanel from '@/components/analytics/EventListPanel.vue';
 import FunnelPanel from '@/components/analytics/FunnelPanel.vue';
 import RetentionPanel from '@/components/analytics/RetentionPanel.vue';
 import UserExplorerPanel from '@/components/analytics/UserExplorerPanel.vue';
+import PeriodSelector from '@/components/layout/PeriodSelector.vue';
 import { productAnalyticsApi } from '@/services/api';
 
 const props = defineProps<{
@@ -20,12 +21,6 @@ const tabs = [
   { label: 'Funnels', value: 'funnels' as const },
   { label: 'Retention', value: 'retention' as const },
   { label: 'Users', value: 'users' as const },
-];
-
-const periods = [
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
-  { label: '90 days', value: '12m' },
 ];
 
 // Fetch event names for funnel/retention dropdowns
@@ -57,21 +52,15 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
         </button>
       </div>
 
-      <div v-if="tab !== 'users'" class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
-        <button
-          v-for="p in periods"
-          :key="p.value"
-          class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
-          :class="
-            period === p.value
-              ? 'bg-default text-highlighted shadow-sm'
-              : 'cursor-pointer text-muted hover:text-highlighted'
-          "
-          @click="period = p.value"
-        >
-          {{ p.label }}
-        </button>
-      </div>
+      <PeriodSelector
+        v-if="tab !== 'users'"
+        v-model="period"
+        :periods="[
+          { label: '7 days', value: '7d' },
+          { label: '30 days', value: '30d' },
+          { label: '90 days', value: '12m' },
+        ]"
+      />
     </div>
 
     <!-- Tab content -->
