@@ -3,7 +3,7 @@ import { onMounted, watch } from 'vue';
 
 import LoginPage from './components/auth/LoginPage.vue';
 import ConnectView from './components/connect/ConnectView.vue';
-import AppHeader from './components/layout/AppHeader.vue';
+import AppSidebar from './components/layout/AppSidebar.vue';
 import SourceLanding from './components/layout/SourceLanding.vue';
 import SourceLayout from './components/layout/SourceLayout.vue';
 import SystemView from './components/system/SystemView.vue';
@@ -57,36 +57,20 @@ async function handleLogout(): Promise<void> {
     </div>
 
     <!-- Main app (authenticated) -->
-    <template v-else>
-      <div class="flex h-screen flex-col bg-default">
-        <AppHeader @logout="handleLogout" />
+    <UDashboardGroup
+      v-else
+      unit="rem"
+      storage="local"
+      storage-key="brightflow-dashboard"
+      class="h-screen bg-default"
+    >
+      <AppSidebar @logout="handleLogout" />
 
-        <!-- System mode -->
-        <template v-if="uiStore.showSystem">
-          <div class="relative min-h-0 flex-1 overflow-hidden">
-            <SystemView />
-          </div>
-        </template>
-
-        <!-- Connect mode -->
-        <template v-else-if="uiStore.showConnect">
-          <div class="min-h-0 flex-1 overflow-hidden">
-            <ConnectView />
-          </div>
-        </template>
-
-        <!-- Source selected — show sidebar + tools -->
-        <template v-else-if="sourceStore.selectedSource">
-          <div class="min-h-0 flex-1 overflow-hidden">
-            <SourceLayout />
-          </div>
-        </template>
-
-        <!-- No source selected — show landing page -->
-        <template v-else>
-          <SourceLanding />
-        </template>
-      </div>
-    </template>
+      <!-- Each view owns its own UDashboardPanel -->
+      <SystemView v-if="uiStore.showSystem" />
+      <ConnectView v-else-if="uiStore.showConnect" />
+      <SourceLayout v-else-if="sourceStore.selectedSource" />
+      <SourceLanding v-else />
+    </UDashboardGroup>
   </UApp>
 </template>

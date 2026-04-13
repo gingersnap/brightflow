@@ -130,78 +130,82 @@ function onDialogDone(): void {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <!-- Toolbar -->
-    <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
-      <h2 class="text-sm font-semibold text-highlighted">Data Connectors</h2>
-      <div class="flex-1" />
-      <UButton variant="ghost" size="sm" :loading="loadingUnified" @click="refreshAll">
-        <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
-        Refresh
-      </UButton>
-    </div>
-
-    <!-- Content -->
-    <div class="min-h-0 flex-1 overflow-y-auto p-4">
-      <!-- Error -->
-      <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">
-        {{ errorMessage }}
-      </div>
-
-      <div class="mx-auto max-w-3xl space-y-6">
-        <!-- Action buttons — centered, prominent -->
-        <div class="flex items-center justify-center gap-3">
-          <UButton size="lg" @click="openNewRun">
-            <Play class="mr-1.5 h-4 w-4" />
-            New Run
+  <UDashboardPanel id="connect">
+    <template #header>
+      <UDashboardNavbar title="Connect">
+        <template #trailing>
+          <UButton variant="ghost" size="sm" :loading="loadingUnified" @click="refreshAll">
+            <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
+            Refresh
           </UButton>
-          <UButton size="lg" variant="outline" @click="openNewSchedule">
-            <Calendar class="mr-1.5 h-4 w-4" />
-            New Schedule
-          </UButton>
+        </template>
+      </UDashboardNavbar>
+    </template>
+
+    <template #body>
+      <div class="p-4">
+        <!-- Error -->
+        <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">
+          {{ errorMessage }}
         </div>
 
-        <!-- Active Runs section -->
-        <section v-if="activeRuns.length > 0">
-          <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
-            Active Runs
-          </h3>
-          <div class="rounded-lg border border-default bg-default px-3">
-            <RunHistoryTable :runs="activeRuns" />
+        <div class="mx-auto max-w-3xl space-y-6">
+          <!-- Action buttons — centered, prominent -->
+          <div class="flex items-center justify-center gap-3">
+            <UButton size="lg" @click="openNewRun">
+              <Play class="mr-1.5 h-4 w-4" />
+              New Run
+            </UButton>
+            <UButton size="lg" variant="outline" @click="openNewSchedule">
+              <Calendar class="mr-1.5 h-4 w-4" />
+              New Schedule
+            </UButton>
           </div>
-        </section>
 
-        <!-- Schedules section -->
-        <section>
-          <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Schedules</h3>
-          <div class="rounded-lg border border-default bg-default px-3">
-            <ScheduleList
-              :connectors="connectorList"
-              @run="syncNow($event)"
-              @delete="deleteSchedule($event)"
-            />
-          </div>
-        </section>
+          <!-- Active Runs section -->
+          <section v-if="activeRuns.length > 0">
+            <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
+              Active Runs
+            </h3>
+            <div class="rounded-lg border border-default bg-default px-3">
+              <RunHistoryTable :runs="activeRuns" />
+            </div>
+          </section>
 
-        <!-- Run History section (completed/failed only) -->
-        <section>
-          <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
-            Run History
-          </h3>
-          <div class="rounded-lg border border-default bg-default px-3">
-            <RunHistoryTable :runs="historyRuns" />
-          </div>
-        </section>
+          <!-- Schedules section -->
+          <section>
+            <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
+              Schedules
+            </h3>
+            <div class="rounded-lg border border-default bg-default px-3">
+              <ScheduleList
+                :connectors="connectorList"
+                @run="syncNow($event)"
+                @delete="deleteSchedule($event)"
+              />
+            </div>
+          </section>
+
+          <!-- Run History section (completed/failed only) -->
+          <section>
+            <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
+              Run History
+            </h3>
+            <div class="rounded-lg border border-default bg-default px-3">
+              <RunHistoryTable :runs="historyRuns" />
+            </div>
+          </section>
+        </div>
       </div>
-    </div>
 
-    <!-- New Run / Schedule Dialog -->
-    <NewRunDialog
-      :open="connectStore.showNewRunDialog"
-      :available="availableList"
-      :mode="dialogMode"
-      @close="connectStore.showNewRunDialog = false"
-      @done="onDialogDone"
-    />
-  </div>
+      <!-- New Run / Schedule Dialog -->
+      <NewRunDialog
+        :open="connectStore.showNewRunDialog"
+        :available="availableList"
+        :mode="dialogMode"
+        @close="connectStore.showNewRunDialog = false"
+        @done="onDialogDone"
+      />
+    </template>
+  </UDashboardPanel>
 </template>

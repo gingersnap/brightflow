@@ -70,13 +70,13 @@ export interface ToolDef {
   icon: string;
 }
 
-const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
-  dashboard: { label: 'Dashboard', icon: 'BarChart3' },
-  funnels: { label: 'Funnels', icon: 'GitBranch' },
-  retention: { label: 'Retention', icon: 'CalendarCheck' },
-  users: { label: 'Users', icon: 'Users' },
-  explore: { label: 'Explore', icon: 'Search' },
-  insights: { label: 'Insights', icon: 'Sparkles' },
+export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
+  dashboard: { label: 'Dashboard', icon: 'i-lucide-bar-chart-3' },
+  funnels: { label: 'Funnels', icon: 'i-lucide-git-branch' },
+  retention: { label: 'Retention', icon: 'i-lucide-calendar-check' },
+  users: { label: 'Users', icon: 'i-lucide-users' },
+  explore: { label: 'Explore', icon: 'i-lucide-search' },
+  insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
 };
 
 export function toolsForSource(source: UnifiedSource): ToolDef[] {

@@ -1,62 +1,186 @@
 <script setup lang="ts">
-import {
-  ArrowLeft,
-  BarChart3,
-  CalendarCheck,
-  GitBranch,
-  Search,
-  Sparkles,
-  Users,
-} from 'lucide-vue-next';
-import { type Component } from 'vue';
+import { useQuery } from '@pinia/colada';
+import { useColorMode } from '@vueuse/core';
+import { computed, ref } from 'vue';
 
+import { sourceApi } from '@/services/api';
+import { useAuthStore } from '@/stores/auth';
 import { useSourceStore } from '@/stores/source';
-import type { ToolId } from '@/types';
+import { useUiStore } from '@/stores/ui';
+import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 
+const uiStore = useUiStore();
 const sourceStore = useSourceStore();
+const authStore = useAuthStore();
+const colorMode = useColorMode();
 
-const iconMap: Record<string, Component> = {
-  BarChart3,
-  GitBranch,
-  CalendarCheck,
-  Users,
-  Search,
-  Sparkles,
-};
+const open = ref(false);
+
+const emit = defineEmits<{
+  logout: [];
+}>();
+
+// Fetch sources so sidebar always has them
+useQuery({
+  key: ['unified-sources'],
+  query: async () => {
+    const result = await sourceApi.unifiedList();
+    const data = result ?? ([] as UnifiedSource[]);
+    sourceStore.setSourcesData(data);
+    return data;
+  },
+});
+
+// Build source nav items with collapsible tool children
+const sourceNavItems = computed(() =>
+  sourceStore.sourcesData.map((source) => {
+    const tools = toolsForSource(source);
+    return {
+      label: source.name,
+      icon: source.kind === 'web-analytics' ? 'i-lucide-globe' : 'i-lucide-cable',
+      value: source.id,
+      type: 'trigger' as const,
+      defaultOpen: source.id === sourceStore.selectedSourceId,
+      children: tools.map((tool) => ({
+        label: tool.label,
+        icon: tool.icon,
+        value: `${source.id}:${tool.id}`,
+        onSelect: () => {
+          handleSourceToolSelect(source.id, tool.id as ToolId);
+          open.value = false;
+        },
+      })),
+    };
+  }),
+);
+
+// Bottom navigation items
+const bottomNavItems = computed(() => [
+  {
+    label: 'Sources',
+    icon: 'i-lucide-layers',
+    value: 'sources',
+    onSelect: () => {
+      goToSources();
+      open.value = false;
+    },
+  },
+  {
+    label: 'System',
+    icon: 'i-lucide-activity',
+    value: 'system',
+    onSelect: () => {
+      toggleSystem();
+      open.value = false;
+    },
+  },
+]);
+
+// Active bottom nav value
+function bottomNavValue(): string | undefined {
+  if (!sourceStore.selectedSource && !uiStore.showConnect && !uiStore.showSystem) {
+    return 'sources';
+  }
+  if (uiStore.showSystem) {
+    return 'system';
+  }
+}
+const activeBottomValue = computed(() => bottomNavValue());
+
+// User dropdown menu items
+const userMenuItems = computed(() => [
+  [
+    {
+      label: colorMode.value === 'dark' ? 'Light mode' : 'Dark mode',
+      icon: colorMode.value === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon',
+      onSelect: () => {
+        colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
+      },
+    },
+  ],
+  [
+    {
+      label: 'Logout',
+      icon: 'i-lucide-log-out',
+      onSelect: () => emit('logout'),
+    },
+  ],
+]);
+
+function handleSourceToolSelect(sourceId: string, toolId: ToolId): void {
+  uiStore.setShowConnect(false);
+  uiStore.setShowSystem(false);
+  if (sourceStore.selectedSourceId !== sourceId) {
+    sourceStore.selectSource(sourceId);
+  }
+  sourceStore.selectTool(toolId);
+}
+
+function goToSources(): void {
+  uiStore.setShowConnect(false);
+  uiStore.setShowSystem(false);
+  sourceStore.clearSource();
+}
+
+function toggleSystem(): void {
+  uiStore.setShowSystem(!uiStore.showSystem);
+}
 </script>
 
 <template>
-  <nav class="flex w-48 shrink-0 flex-col border-r border-default bg-default">
-    <!-- Tool nav items -->
-    <div class="flex flex-1 flex-col gap-0.5 p-2">
-      <button
-        v-for="tool in sourceStore.availableTools"
-        :key="tool.id"
-        class="flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-        :class="
-          sourceStore.selectedTool === tool.id
-            ? 'bg-primary-500/10 text-primary-500'
-            : 'text-muted hover:bg-elevated hover:text-highlighted'
-        "
-        @click="sourceStore.selectTool(tool.id as ToolId)"
-      >
-        <component :is="iconMap[tool.icon]" class="h-4 w-4" />
-        {{ tool.label }}
-      </button>
-    </div>
+  <UDashboardSidebar
+    id="default"
+    v-model:open="open"
+    collapsible
+    resizable
+    class="bg-elevated/25"
+    :ui="{ footer: 'lg:border-t lg:border-default' }"
+  >
+    <!-- Header: logo -->
+    <template #header="{ collapsed }">
+      <div class="flex items-center gap-2" :class="collapsed ? 'justify-center' : ''">
+        <UIcon name="i-lucide-zap" class="h-5 w-5 shrink-0 text-primary-500" />
+        <span v-if="!collapsed" class="text-lg font-semibold text-highlighted">Brightflow</span>
+      </div>
+    </template>
 
-    <!-- Bottom: source info + back link -->
-    <div class="border-t border-default p-3">
-      <p class="truncate text-xs font-medium text-highlighted">
-        {{ sourceStore.selectedSource?.name }}
-      </p>
-      <button
-        class="mt-1 flex cursor-pointer items-center gap-1 text-xs text-muted transition-colors hover:text-highlighted"
-        @click="sourceStore.clearSource()"
-      >
-        <ArrowLeft class="h-3 w-3" />
-        All sources
-      </button>
-    </div>
-  </nav>
+    <!-- Body: source tree + bottom nav -->
+    <template #default="{ collapsed }">
+      <!-- Sources with collapsible tool children -->
+      <UNavigationMenu
+        :collapsed="collapsed"
+        :items="sourceNavItems"
+        orientation="vertical"
+        highlight
+        tooltip
+        popover
+      />
+
+      <!-- Bottom nav (pushed down) -->
+      <UNavigationMenu
+        :collapsed="collapsed"
+        :items="bottomNavItems"
+        orientation="vertical"
+        color="neutral"
+        :model-value="activeBottomValue"
+        tooltip
+        class="mt-auto"
+      />
+    </template>
+
+    <!-- Footer: user menu -->
+    <template #footer="{ collapsed }">
+      <UDropdownMenu :items="userMenuItems" :content="{ side: 'right', align: 'end' }">
+        <button
+          class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-elevated"
+          :class="collapsed ? 'justify-center' : ''"
+        >
+          <UAvatar :text="authStore.user?.displayName?.charAt(0) ?? '?'" size="2xs" />
+          <span v-if="!collapsed" class="truncate text-sm text-highlighted">
+            {{ authStore.user?.displayName ?? 'User' }}
+          </span>
+        </button>
+      </UDropdownMenu>
+    </template>
+  </UDashboardSidebar>
 </template>

@@ -104,5 +104,6 @@ export const useSourceStore = defineStore('source', () => {
     selectedTableName,
     selectedTool,
     setSourcesData,
+    sourcesData,
   };
 });

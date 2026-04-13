@@ -38,10 +38,17 @@ export const useUiStore = defineStore('ui', () => {
   const summarizeCollapsed = ref(false);
   const resultsCollapsed = ref(false);
 
+  // Sidebar collapsed state
+  const storedSidebarCollapsed = localStorage.getItem('brightflow-sidebar-collapsed');
+  const sidebarCollapsed = ref(storedSidebarCollapsed === 'true');
+
   // Track if we've shown pivot results yet (for auto-switch)
   const hasShownPivotResults = ref(false);
 
   // Persist preferences
+  watch(sidebarCollapsed, (val) => {
+    localStorage.setItem('brightflow-sidebar-collapsed', String(val));
+  });
   watch(showConnect, (val) => {
     if (val) {
       localStorage.setItem('brightflow-app-mode', 'connect');
@@ -116,6 +123,7 @@ export const useUiStore = defineStore('ui', () => {
     resetForNewDataset,
     resultsCollapsed,
     setChartType,
+    sidebarCollapsed,
     setShowConnect,
     setShowSystem,
     setViewMode,
