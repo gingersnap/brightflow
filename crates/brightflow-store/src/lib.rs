@@ -32,7 +32,7 @@ mod table;
 
 pub use error::{StoreError, StoreResult};
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
-pub use models::{ColumnSemanticRow, FileColumnStatRow, TableAnalysisSettingsRow};
+pub use models::{ColumnSemanticRow, FileColumnStatRow, TableAnalysisSettingsRow, TableRow};
 pub use scan::ScanFilter;
 pub use stats::extract_file_column_stats;
 pub use table::{TableInfo, TableRef};
@@ -74,6 +74,11 @@ impl ParquetStore {
         table::list_tables(&self.db, &self.root_path).await
     }
 
+    /// List tables belonging to a specific source
+    pub async fn list_tables_by_source(&self, source_id: &str) -> StoreResult<Vec<TableRow>> {
+        self.db.list_tables_by_source(source_id).await
+    }
+
     /// Check if a table exists
     pub async fn table_exists(&self, name: &str) -> StoreResult<bool> {
         table::table_exists(&self.db, name).await
@@ -104,6 +109,7 @@ impl ParquetStore {
         table_name: &str,
         parquet_path: impl AsRef<Path>,
         options: Option<IngestOptions>,
+        source_id: Option<&str>,
     ) -> StoreResult<TableInfo> {
         let ingest_options = options.unwrap_or_default();
 
@@ -119,6 +125,7 @@ impl ParquetStore {
             table_name,
             parquet_path.as_ref(),
             &ingest_options,
+            source_id,
         )
         .await?;
         self.table_info(table_name).await
@@ -131,6 +138,7 @@ impl ParquetStore {
         table_name: &str,
         parquet_path: impl AsRef<Path>,
         primary_keys: &[String],
+        source_id: Option<&str>,
     ) -> StoreResult<MergeMetrics> {
         info!(
             "Merging parquet {:?} into table '{}' with PKs {:?}",
@@ -144,6 +152,7 @@ impl ParquetStore {
             table_name,
             parquet_path.as_ref(),
             primary_keys,
+            source_id,
         )
         .await
     }
@@ -179,11 +188,12 @@ impl ParquetStore {
         partition_values: &[(&str, &str)],
         partition_columns: Option<&[&str]>,
         stats: Option<Vec<FileColumnStatRow>>,
+        source_id: Option<&str>,
     ) -> StoreResult<()> {
         let pc_json = partition_columns.map(|cols| serde_json::to_string(cols).unwrap_or_default());
         let table = self
             .db
-            .get_or_create_table(table_name, pc_json.as_deref())
+            .get_or_create_table(table_name, pc_json.as_deref(), source_id)
             .await?;
 
         let abs_path = std::fs::canonicalize(file_path)?;
@@ -544,6 +554,7 @@ impl ParquetStore {
                             &[("date", &date)],
                             Some(&["date"]),
                             None,
+                            Some(&format!("web:{source_id}")),
                         )
                         .await?;
                         count += 1;

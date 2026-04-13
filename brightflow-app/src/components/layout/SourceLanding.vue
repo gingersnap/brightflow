@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { useQuery } from '@pinia/colada';
 import { Plus } from 'lucide-vue-next';
+import { useRouter } from 'vue-router';
 
 import SourceCard from '@/components/layout/SourceCard.vue';
 import { sourceApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
-import { useUiStore } from '@/stores/ui';
 import type { UnifiedSource } from '@/types';
 
+const router = useRouter();
 const sourceStore = useSourceStore();
-const uiStore = useUiStore();
 
 const { data: sources, isPending } = useQuery({
   key: ['unified-sources'],
@@ -22,7 +22,7 @@ const { data: sources, isPending } = useQuery({
 });
 
 function handleSelect(id: string): void {
-  sourceStore.selectSource(id);
+  router.push({ name: 'source-tool', params: { sourceId: id, tool: 'dashboard' } });
 }
 </script>
 
@@ -48,7 +48,7 @@ function handleSelect(id: string): void {
         <!-- Add Source card -->
         <button
           class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-default p-5 text-muted transition-all hover:border-primary-500/50 hover:text-highlighted"
-          @click="uiStore.setShowConnect(true)"
+          @click="router.push({ name: 'connect' })"
         >
           <Plus class="h-6 w-6" />
           <span class="text-sm font-medium">Add Source</span>

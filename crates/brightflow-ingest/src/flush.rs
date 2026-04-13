@@ -124,6 +124,7 @@ impl FlushTask {
                     &[("date", date.as_str())],
                     Some(&["date"]),
                     Some(file_stats),
+                    Some(&format!("web:{source_id}")),
                 )
                 .await
             {

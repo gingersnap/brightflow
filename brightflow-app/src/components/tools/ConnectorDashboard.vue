@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { Cable, Search, Table2 } from 'lucide-vue-next';
+import { useRouter } from 'vue-router';
 
-import { useSourceStore } from '@/stores/source';
 import type { UnifiedSource } from '@/types';
 
-defineProps<{
+const props = defineProps<{
   source: UnifiedSource;
+  sourceId: string;
 }>();
 
-const sourceStore = useSourceStore();
+const router = useRouter();
 
 function openInExplore(tableName: string): void {
-  sourceStore.selectTool('explore');
+  router.push({ name: 'explore-table', params: { sourceId: props.sourceId, table: tableName } });
 }
 </script>
 

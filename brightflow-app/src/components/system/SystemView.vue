@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { Trash2 } from 'lucide-vue-next';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useSystemStore } from '@/stores/system';
 
 const systemStore = useSystemStore();
 const logContainer = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
+
+onMounted(() => {
+  systemStore.connect();
+});
+
+onUnmounted(() => {
+  systemStore.disconnect();
+});
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) {

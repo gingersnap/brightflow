@@ -60,6 +60,7 @@ pub async fn ingest_parquet(
     table_name: &str,
     parquet_path: &Path,
     options: &IngestOptions,
+    source_id: Option<&str>,
 ) -> StoreResult<()> {
     if !parquet_path.exists() {
         return Err(StoreError::FileNotFound(parquet_path.to_path_buf()));
@@ -118,6 +119,9 @@ pub async fn ingest_parquet(
 
     // Create or update table record
     let table_row = if let Some(row) = existing {
+        if let Some(sid) = source_id {
+            db.backfill_source_id(&row.id, sid).await?;
+        }
         if options.mode == IngestMode::Overwrite {
             db.update_table_meta(&row.id, Some(&schema_str), None, num_rows)
                 .await?
@@ -129,7 +133,7 @@ pub async fn ingest_parquet(
                 .ok_or_else(|| StoreError::Other("Failed to update table".into()))?
         }
     } else {
-        let row = db.create_table(table_name).await?;
+        let row = db.create_table(table_name, source_id).await?;
         db.update_table_meta(&row.id, Some(&schema_str), None, num_rows)
             .await?
             .ok_or_else(|| StoreError::Other("Failed to update table".into()))?
@@ -154,6 +158,7 @@ pub async fn merge_parquet(
     table_name: &str,
     parquet_path: &Path,
     primary_keys: &[String],
+    source_id: Option<&str>,
 ) -> StoreResult<MergeMetrics> {
     if primary_keys.is_empty() {
         return Err(StoreError::Other(
@@ -167,9 +172,12 @@ pub async fn merge_parquet(
 
     // Get or create table record
     let table_row = if let Some(row) = db.get_table_by_name(table_name).await? {
+        if let Some(sid) = source_id {
+            db.backfill_source_id(&row.id, sid).await?;
+        }
         row
     } else {
-        let row = db.create_table(table_name).await?;
+        let row = db.create_table(table_name, source_id).await?;
         let pks_json =
             serde_json::to_string(primary_keys).map_err(|e| StoreError::Other(e.to_string()))?;
         db.update_table_meta(&row.id, None, Some(&pks_json), 0)

@@ -706,7 +706,9 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             };
 
             tracing::info!("Ingesting {} into table '{}'", input.display(), table);
-            let info = store.ingest_parquet(&table, &input, Some(options)).await?;
+            let info = store
+                .ingest_parquet(&table, &input, Some(options), None)
+                .await?;
 
             println!("Ingested into table '{}'", info.name);
             println!("Version: {}", info.version);

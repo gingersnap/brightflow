@@ -1,40 +1,20 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue';
+import { onMounted } from 'vue';
 
 import LoginPage from './components/auth/LoginPage.vue';
-import ConnectView from './components/connect/ConnectView.vue';
 import AppSidebar from './components/layout/AppSidebar.vue';
-import SourceLanding from './components/layout/SourceLanding.vue';
-import SourceLayout from './components/layout/SourceLayout.vue';
-import SystemView from './components/system/SystemView.vue';
 import { resetOnLogout } from './stores';
 import { useAuthStore } from './stores/auth';
 import { useConnectionStore } from './stores/connection';
-import { useSourceStore } from './stores/source';
 import { useSystemStore } from './stores/system';
-import { useUiStore } from './stores/ui';
 
 const authStore = useAuthStore();
 const connectionStore = useConnectionStore();
-const uiStore = useUiStore();
 const systemStore = useSystemStore();
-const sourceStore = useSourceStore();
 
 onMounted(() => {
   authStore.checkAuth();
 });
-
-// Connect/disconnect system WS when toggling system view
-watch(
-  () => uiStore.showSystem,
-  (show) => {
-    if (show) {
-      systemStore.connect();
-    } else {
-      systemStore.disconnect();
-    }
-  },
-);
 
 async function handleLogout(): Promise<void> {
   connectionStore.disconnect();
@@ -65,12 +45,7 @@ async function handleLogout(): Promise<void> {
       class="h-screen bg-default"
     >
       <AppSidebar @logout="handleLogout" />
-
-      <!-- Each view owns its own UDashboardPanel -->
-      <SystemView v-if="uiStore.showSystem" />
-      <ConnectView v-else-if="uiStore.showConnect" />
-      <SourceLayout v-else-if="sourceStore.selectedSource" />
-      <SourceLanding v-else />
+      <router-view />
     </UDashboardGroup>
   </UApp>
 </template>

@@ -42,15 +42,16 @@ impl StoreDb {
     // Tables CRUD
     // =====================================================
 
-    pub async fn create_table(&self, name: &str) -> StoreResult<TableRow> {
+    pub async fn create_table(&self, name: &str, source_id: Option<&str>) -> StoreResult<TableRow> {
         let id = uuid::Uuid::now_v7().to_string();
         let row = sqlx::query_as::<_, TableRow>(
-            r"INSERT INTO tables (id, name)
-              VALUES (?, ?)
+            r"INSERT INTO tables (id, name, source_id)
+              VALUES (?, ?, ?)
               RETURNING *",
         )
         .bind(&id)
         .bind(name)
+        .bind(source_id)
         .fetch_one(&self.pool)
         .await?;
         Ok(row)
@@ -68,6 +69,15 @@ impl StoreDb {
         let rows = sqlx::query_as::<_, TableRow>("SELECT * FROM tables ORDER BY name")
             .fetch_all(&self.pool)
             .await?;
+        Ok(rows)
+    }
+
+    pub async fn list_tables_by_source(&self, source_id: &str) -> StoreResult<Vec<TableRow>> {
+        let rows =
+            sqlx::query_as::<_, TableRow>("SELECT * FROM tables WHERE source_id = ? ORDER BY name")
+                .bind(source_id)
+                .fetch_all(&self.pool)
+                .await?;
         Ok(rows)
     }
 
@@ -95,6 +105,16 @@ impl StoreDb {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)
+    }
+
+    /// Set source_id on an existing table if it is currently NULL.
+    pub async fn backfill_source_id(&self, id: &str, source_id: &str) -> StoreResult<()> {
+        sqlx::query("UPDATE tables SET source_id = ? WHERE id = ? AND source_id IS NULL")
+            .bind(source_id)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn delete_table(&self, name: &str) -> StoreResult<bool> {
@@ -237,19 +257,21 @@ impl StoreDb {
         &self,
         name: &str,
         partition_columns: Option<&str>,
+        source_id: Option<&str>,
     ) -> StoreResult<TableRow> {
         if let Some(row) = self.get_table_by_name(name).await? {
             return Ok(row);
         }
         let id = uuid::Uuid::now_v7().to_string();
         let row = sqlx::query_as::<_, TableRow>(
-            r"INSERT INTO tables (id, name, partition_columns)
-              VALUES (?, ?, ?)
+            r"INSERT INTO tables (id, name, partition_columns, source_id)
+              VALUES (?, ?, ?, ?)
               RETURNING *",
         )
         .bind(&id)
         .bind(name)
         .bind(partition_columns)
+        .bind(source_id)
         .fetch_one(&self.pool)
         .await?;
         Ok(row)

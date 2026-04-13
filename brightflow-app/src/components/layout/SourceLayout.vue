@@ -13,24 +13,33 @@ import ConnectorDashboard from '@/components/tools/ConnectorDashboard.vue';
 import WebDashboard from '@/components/tools/WebDashboard.vue';
 import { productAnalyticsApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
-import { TOOL_DEFS } from '@/types';
+import { TOOL_DEFS, type ToolId } from '@/types';
+
+const props = defineProps<{
+  sourceId: string;
+  tool: string;
+  table?: string;
+}>();
 
 const sourceStore = useSourceStore();
 
+const source = computed(() => sourceStore.getSourceById(props.sourceId));
+const activeTool = computed(() => (props.tool || 'dashboard') as ToolId);
+
 const toolLabel = computed(() => {
-  const def = TOOL_DEFS[sourceStore.selectedTool];
-  return def?.label ?? sourceStore.selectedTool;
+  const def = TOOL_DEFS[activeTool.value];
+  return def?.label ?? activeTool.value;
 });
 
 const showPeriod = computed(
   () =>
-    sourceStore.selectedSource?.kind === 'web-analytics' &&
-    ['dashboard', 'funnels', 'retention'].includes(sourceStore.selectedTool),
+    source.value?.kind === 'web-analytics' &&
+    ['dashboard', 'funnels', 'retention'].includes(activeTool.value),
 );
 
 // Extract the raw event source ID (strip "web:" prefix) for analytics API calls
 const eventSourceId = computed(() => {
-  const id = sourceStore.selectedSource?.id ?? '';
+  const id = source.value?.id ?? '';
   return id.startsWith('web:') ? id.slice(4) : id;
 });
 
@@ -39,8 +48,8 @@ const { data: eventList } = useQuery({
   key: () => ['pa-event-names', eventSourceId.value, sourceStore.period],
   query: async () => await productAnalyticsApi.events(eventSourceId.value, sourceStore.period),
   enabled: () =>
-    sourceStore.selectedSource?.kind === 'web-analytics' &&
-    ['funnels', 'retention', 'events'].includes(sourceStore.selectedTool),
+    source.value?.kind === 'web-analytics' &&
+    ['funnels', 'retention', 'events'].includes(activeTool.value),
 });
 
 const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
@@ -59,20 +68,17 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
 
     <template #body>
       <!-- Dashboard -->
-      <template v-if="sourceStore.selectedTool === 'dashboard'">
+      <template v-if="activeTool === 'dashboard'">
         <WebDashboard
-          v-if="sourceStore.selectedSource?.kind === 'web-analytics'"
+          v-if="source?.kind === 'web-analytics'"
           :source-id="eventSourceId"
           :period="sourceStore.period"
         />
-        <ConnectorDashboard
-          v-else-if="sourceStore.selectedSource"
-          :source="sourceStore.selectedSource"
-        />
+        <ConnectorDashboard v-else-if="source" :source="source" :source-id="sourceId" />
       </template>
 
       <!-- Funnels -->
-      <div v-else-if="sourceStore.selectedTool === 'funnels'" class="p-6">
+      <div v-else-if="activeTool === 'funnels'" class="p-6">
         <div class="rounded-lg border border-default bg-elevated p-4">
           <FunnelPanel
             :source-id="eventSourceId"
@@ -83,7 +89,7 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       </div>
 
       <!-- Retention -->
-      <div v-else-if="sourceStore.selectedTool === 'retention'" class="p-6">
+      <div v-else-if="activeTool === 'retention'" class="p-6">
         <div class="rounded-lg border border-default bg-elevated p-4">
           <RetentionPanel
             :source-id="eventSourceId"
@@ -94,17 +100,17 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       </div>
 
       <!-- Users -->
-      <div v-else-if="sourceStore.selectedTool === 'users'" class="p-6">
+      <div v-else-if="activeTool === 'users'" class="p-6">
         <div class="rounded-lg border border-default bg-elevated p-4">
           <UserExplorerPanel :source-id="eventSourceId" />
         </div>
       </div>
 
       <!-- Explore -->
-      <ExploreTool v-else-if="sourceStore.selectedTool === 'explore'" />
+      <ExploreTool v-else-if="activeTool === 'explore'" :source-id="sourceId" :table="table" />
 
       <!-- Insights -->
-      <InsightsView v-else-if="sourceStore.selectedTool === 'insights'" />
+      <InsightsView v-else-if="activeTool === 'insights'" :source-id="sourceId" :table="table" />
     </template>
   </UDashboardPanel>
 </template>

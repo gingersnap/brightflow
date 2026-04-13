@@ -14,13 +14,6 @@ function isChartType(s: string): s is ChartType {
 }
 
 export const useUiStore = defineStore('ui', () => {
-  // Connect view toggle
-  const storedMode = localStorage.getItem('brightflow-app-mode');
-  const showConnect = ref(storedMode === 'connect');
-
-  // System observability view
-  const showSystem = ref(storedMode === 'system');
-
   // View mode: 'table' | 'pivot' | 'chart' | 'split'
   const storedViewMode = localStorage.getItem('brightflow-view-mode');
   const viewMode = ref<ViewMode>(
@@ -49,16 +42,6 @@ export const useUiStore = defineStore('ui', () => {
   watch(sidebarCollapsed, (val) => {
     localStorage.setItem('brightflow-sidebar-collapsed', String(val));
   });
-  watch(showConnect, (val) => {
-    if (val) {
-      localStorage.setItem('brightflow-app-mode', 'connect');
-    }
-  });
-  watch(showSystem, (val) => {
-    if (val) {
-      localStorage.setItem('brightflow-app-mode', 'system');
-    }
-  });
   watch(viewMode, (val) => {
     localStorage.setItem('brightflow-view-mode', val);
   });
@@ -67,20 +50,6 @@ export const useUiStore = defineStore('ui', () => {
   });
 
   // Actions
-  function setShowConnect(val: boolean): void {
-    showConnect.value = val;
-    if (val) {
-      showSystem.value = false;
-    }
-  }
-
-  function setShowSystem(val: boolean): void {
-    showSystem.value = val;
-    if (val) {
-      showConnect.value = false;
-    }
-  }
-
   function setViewMode(mode: ViewMode): void {
     viewMode.value = mode;
   }
@@ -124,11 +93,7 @@ export const useUiStore = defineStore('ui', () => {
     resultsCollapsed,
     setChartType,
     sidebarCollapsed,
-    setShowConnect,
-    setShowSystem,
     setViewMode,
-    showConnect,
-    showSystem,
     summarizeCollapsed,
     toggleSection,
     viewMode,

@@ -275,7 +275,12 @@ async fn execute_sync(
         }
 
         let metrics = store
-            .merge_parquet(&ep_result.name, &parquet_file, &ep_result.primary_key)
+            .merge_parquet(
+                &ep_result.name,
+                &parquet_file,
+                &ep_result.primary_key,
+                Some(&format!("connector:{connector_id}")),
+            )
             .await
             .map_err(|e| format!("Merge failed for {}: {e}", ep_result.name))?;
 

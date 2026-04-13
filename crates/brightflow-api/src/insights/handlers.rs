@@ -1,4 +1,5 @@
 use axum::{extract::State, Json};
+use std::path::PathBuf;
 use std::time::Instant;
 
 use brightflow_insights::analysis::engine::AnalysisEngine;
@@ -6,7 +7,6 @@ use brightflow_insights::analysis::tree::ReviewCadence;
 use brightflow_insights::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
 use brightflow_insights::debug::DebugLog;
 
-use crate::analytics::session::DatasetData;
 use crate::insights::types::{InsightsResponse, ReviewRequest, TrendsRequest};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -19,14 +19,14 @@ pub async fn run_review(
     Json(req): Json<ReviewRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
     let cadence = parse_cadence(&req.cadence)?;
-    let (data, overrides, settings) = get_dataset_data_and_overrides(&state, &req.dataset_id)?;
+    let (files, table_name, overrides, settings) = resolve_dataset(&state, &req.dataset_id).await?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
     let cadence_str = req.cadence.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let df = materialize_data(data)?;
+        let df = scan_parquet_files(files)?;
         let schema = build_schema(&df, &overrides, settings.as_ref())
             .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
@@ -40,6 +40,13 @@ pub async fn run_review(
 
     let tree_json = serde_json::to_value(&result.tree)
         .map_err(|e| AppError::Internal(format!("Failed to serialize analysis tree: {e}")))?;
+
+    tracing::info!(
+        "Review analysis on '{}' completed in {:.0}ms ({} nodes)",
+        table_name,
+        execution_time_ms,
+        node_count,
+    );
 
     Ok(Json(InsightsResponse {
         dataset_id,
@@ -59,13 +66,13 @@ pub async fn run_trends(
     State(state): State<AppState>,
     Json(req): Json<TrendsRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
-    let (data, overrides, settings) = get_dataset_data_and_overrides(&state, &req.dataset_id)?;
+    let (files, table_name, overrides, settings) = resolve_dataset(&state, &req.dataset_id).await?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let df = materialize_data(data)?;
+        let df = scan_parquet_files(files)?;
         let schema = build_schema(&df, &overrides, settings.as_ref())
             .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
         let engine = AnalysisEngine::new(2.0, 0.05, 3);
@@ -80,6 +87,13 @@ pub async fn run_trends(
     let tree_json = serde_json::to_value(&result.tree)
         .map_err(|e| AppError::Internal(format!("Failed to serialize analysis tree: {e}")))?;
 
+    tracing::info!(
+        "Trends analysis on '{}' completed in {:.0}ms ({} nodes)",
+        table_name,
+        execution_time_ms,
+        node_count,
+    );
+
     Ok(Json(InsightsResponse {
         dataset_id,
         report_type: "trends".to_string(),
@@ -92,23 +106,38 @@ pub async fn run_trends(
     }))
 }
 
-/// Get DatasetData and overrides for a dataset (never-fail: schema built lazily with DataFrame).
-fn get_dataset_data_and_overrides(
+/// Resolve a dataset ID to Parquet file paths, table name, and schema overrides.
+///
+/// Loads directly from the Parquet store — no in-memory DatasetManager needed.
+/// Accepts dataset IDs in `"store:{table_name}"` format or plain table names.
+async fn resolve_dataset(
     state: &AppState,
     dataset_id: &str,
 ) -> AppResult<(
-    DatasetData,
+    Vec<PathBuf>,
+    String,
     Vec<ColumnOverride>,
     Option<TableSettingsOverride>,
 )> {
-    let dataset = state
-        .datasets
-        .get_dataset(dataset_id)
-        .ok_or_else(|| AppError::NotFound(format!("Dataset '{dataset_id}' not found")))?;
+    let table_name = dataset_id
+        .strip_prefix("store:")
+        .unwrap_or(dataset_id)
+        .to_string();
 
-    let data = dataset.data.clone();
-    let table_name = dataset.name.clone();
-    drop(dataset);
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+
+    let files = store
+        .get_table_parquet_paths(&table_name)
+        .await
+        .map_err(|e| AppError::NotFound(format!("Table '{table_name}' not found in store: {e}")))?;
+
+    if files.is_empty() {
+        return Err(AppError::NotFound(format!(
+            "Table '{table_name}' has no data files"
+        )));
+    }
 
     let overrides = state
         .schema_overrides
@@ -121,19 +150,16 @@ fn get_dataset_data_and_overrides(
         .get(&table_name)
         .map(|v| v.value().clone());
 
-    Ok((data, overrides, settings))
+    Ok((files, table_name, overrides, settings))
 }
 
-/// Materialize DatasetData into a DataFrame (safe to call from blocking context)
-fn materialize_data(data: DatasetData) -> AppResult<polars::prelude::DataFrame> {
-    Ok(match data {
-        DatasetData::Uploaded(df) => df,
-        DatasetData::Parquet { files } => polars::prelude::LazyFrame::scan_parquet_files(
-            files.into(),
-            polars::prelude::ScanArgsParquet::default(),
-        )?
-        .collect()?,
-    })
+/// Scan Parquet files into a collected DataFrame (safe to call from blocking context)
+fn scan_parquet_files(files: Vec<PathBuf>) -> AppResult<polars::prelude::DataFrame> {
+    Ok(polars::prelude::LazyFrame::scan_parquet_files(
+        files.into(),
+        polars::prelude::ScanArgsParquet::default(),
+    )?
+    .collect()?)
 }
 
 /// Parse cadence string to ReviewCadence enum

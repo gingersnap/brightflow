@@ -76,8 +76,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
       authStore.clearAuth();
     }
     // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
-    const data: { message?: string } = await response.json().catch(() => ({}));
-    throw new ApiError(data.message ?? `Request failed: ${response.status}`, response.status, data);
+    const data: { message?: string; error?: { message?: string } } = await response
+      .json()
+      .catch(() => ({}));
+    const message = data.error?.message ?? data.message ?? `Request failed: ${response.status}`;
+    throw new ApiError(message, response.status, data);
   }
 
   // Handle empty responses

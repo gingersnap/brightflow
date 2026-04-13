@@ -1,44 +1,33 @@
 <script setup lang="ts">
-import { useQuery } from '@pinia/colada';
 import { Table2 } from 'lucide-vue-next';
 import { computed } from 'vue';
 
-import { tableApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
 import type { SourceTable } from '@/types';
 
-const sourceStore = useSourceStore();
+const props = defineProps<{
+  sourceId: string;
+}>();
 
 defineEmits<{
   'select-table': [table: SourceTable];
 }>();
 
-// Fallback: fetch full table list if source has no tables
-const { data: allTables } = useQuery({
-  key: ['available-tables'],
-  query: async () => {
-    const result = await tableApi.listAvailable();
-    return result ?? [];
-  },
-  enabled: () => (sourceStore.selectedSource?.tables.length ?? 0) === 0,
-});
+const sourceStore = useSourceStore();
 
 const sourceTables = computed(() => {
-  const src = sourceStore.selectedSource;
-  if (src && src.tables.length > 0) {
-    return src.tables;
-  }
-  return (allTables.value ?? []).map((t) => ({
-    name: t.name,
-    numRows: t.numRows ?? null,
-  }));
+  const src = sourceStore.getSourceById(props.sourceId);
+  return src?.tables ?? [];
 });
 </script>
 
 <template>
   <div class="p-6">
     <h2 class="mb-4 text-lg font-semibold text-highlighted">Select a table to explore</h2>
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div
+      v-if="sourceTables.length > 0"
+      class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+    >
       <button
         v-for="table in sourceTables"
         :key="table.name"
@@ -54,5 +43,6 @@ const sourceTables = computed(() => {
         </div>
       </button>
     </div>
+    <p v-else class="text-muted">No tables available for this source.</p>
   </div>
 </template>

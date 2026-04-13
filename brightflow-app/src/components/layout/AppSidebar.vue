@@ -2,14 +2,15 @@
 import { useQuery } from '@pinia/colada';
 import { useColorMode } from '@vueuse/core';
 import { computed, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { sourceApi } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useSourceStore } from '@/stores/source';
-import { useUiStore } from '@/stores/ui';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 
-const uiStore = useUiStore();
+const router = useRouter();
+const route = useRoute();
 const sourceStore = useSourceStore();
 const authStore = useAuthStore();
 const colorMode = useColorMode();
@@ -35,18 +36,19 @@ useQuery({
 const sourceNavItems = computed(() =>
   sourceStore.sourcesData.map((source) => {
     const tools = toolsForSource(source);
+    const currentSourceId = route.params.sourceId as string | undefined;
     return {
       label: source.name,
       icon: source.kind === 'web-analytics' ? 'i-lucide-globe' : 'i-lucide-cable',
       value: source.id,
       type: 'trigger' as const,
-      defaultOpen: source.id === sourceStore.selectedSourceId,
+      defaultOpen: source.id === currentSourceId,
       children: tools.map((tool) => ({
         label: tool.label,
         icon: tool.icon,
         value: `${source.id}:${tool.id}`,
         onSelect: () => {
-          handleSourceToolSelect(source.id, tool.id as ToolId);
+          handleSourceToolSelect(source.id, tool.id);
           open.value = false;
         },
       })),
@@ -77,15 +79,11 @@ const bottomNavItems = computed(() => [
 ]);
 
 // Active bottom nav value
-function bottomNavValue(): string | undefined {
-  if (!sourceStore.selectedSource && !uiStore.showConnect && !uiStore.showSystem) {
-    return 'sources';
-  }
-  if (uiStore.showSystem) {
-    return 'system';
-  }
-}
-const activeBottomValue = computed(() => bottomNavValue());
+const BOTTOM_NAV_NAMES = new Set(['sources', 'system']);
+const activeBottomValue = computed(() => {
+  const name = typeof route.name === 'string' ? route.name : '';
+  return BOTTOM_NAV_NAMES.has(name) ? name : undefined; // oxlint-disable-line no-useless-undefined
+});
 
 // User dropdown menu items
 const userMenuItems = computed(() => [
@@ -108,22 +106,19 @@ const userMenuItems = computed(() => [
 ]);
 
 function handleSourceToolSelect(sourceId: string, toolId: ToolId): void {
-  uiStore.setShowConnect(false);
-  uiStore.setShowSystem(false);
-  if (sourceStore.selectedSourceId !== sourceId) {
-    sourceStore.selectSource(sourceId);
-  }
-  sourceStore.selectTool(toolId);
+  router.push({ name: 'source-tool', params: { sourceId, tool: toolId } });
 }
 
 function goToSources(): void {
-  uiStore.setShowConnect(false);
-  uiStore.setShowSystem(false);
-  sourceStore.clearSource();
+  router.push({ name: 'sources' });
 }
 
 function toggleSystem(): void {
-  uiStore.setShowSystem(!uiStore.showSystem);
+  if (route.name === 'system') {
+    router.push({ name: 'sources' });
+  } else {
+    router.push({ name: 'system' });
+  }
 }
 </script>
 

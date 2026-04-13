@@ -1,3 +1,5 @@
+import router from '@/router';
+
 import { useDatasetStore } from './dataset';
 import { useInsightsStore } from './insights';
 import { usePivotStore } from './pivot';
@@ -37,6 +39,7 @@ export function resetOnLogout(): void {
   resetAllStores();
   const sourceStore = useSourceStore();
   sourceStore.reset();
+  void router.push('/');
 }
 
 // Re-export stores for convenience
