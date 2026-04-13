@@ -654,7 +654,6 @@ dependencies = [
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
- "toml",
  "tracing",
  "tracing-subscriber",
 ]

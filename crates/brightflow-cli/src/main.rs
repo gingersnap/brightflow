@@ -47,9 +47,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use brightflow_api::system::log_layer::{LogBroadcastLayer, LogEntry};
 use brightflow_api::ServeConfig;
-use brightflow_connect::{
-    get_builtin_connector_source, list_builtin_connectors, run_connector, RunOptions,
-};
+use brightflow_connect::list_builtin_connectors;
 use brightflow_insights::analysis::engine::AnalysisEngine;
 use brightflow_insights::analysis::tree::{ReportType, ReviewCadence};
 use brightflow_insights::data::config::SchemaConfig;
@@ -222,32 +220,6 @@ enum CadenceArg {
 
 #[derive(Subcommand, Debug)]
 enum ConnectCommands {
-    /// Run a data connector to sync data from an API
-    Run {
-        /// Connector name (e.g., "github") or path to Lua file
-        connector: String,
-
-        /// Path to config YAML file
-        #[arg(short, long)]
-        config: PathBuf,
-
-        /// Only sync specific endpoints (comma-separated)
-        #[arg(long)]
-        only: Option<String>,
-
-        /// Dry run - show what would be synced without fetching
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Ingest output into Parquet store
-        #[arg(long)]
-        ingest: bool,
-
-        /// Store path for ingestion (derived from BRIGHTFLOW_DATA_DIR)
-        #[arg(long)]
-        store_path: Option<PathBuf>,
-    },
-
     /// List available built-in connectors
     List,
 }
@@ -435,7 +407,7 @@ async fn main() -> Result<()> {
 
         Commands::Connect(connect_cmd) => {
             init_tracing_simple("brightflow=info");
-            handle_connect_command(connect_cmd).await?;
+            handle_connect_command(&connect_cmd);
         },
 
         Commands::Store(store_cmd) => {
@@ -679,101 +651,8 @@ fn write_outputs(
     Ok(())
 }
 
-async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
+fn handle_connect_command(cmd: &ConnectCommands) {
     match cmd {
-        ConnectCommands::Run {
-            connector,
-            config,
-            only,
-            dry_run,
-            ingest,
-            store_path,
-        } => {
-            if !config.exists() {
-                anyhow::bail!("Config file not found: {}", config.display());
-            }
-
-            tracing::info!("Running connector: {}", connector);
-            tracing::info!("Config: {}", config.display());
-
-            let options = RunOptions {
-                only,
-                dry_run,
-                cursor_values: std::collections::HashMap::new(),
-            };
-
-            // Use embedded source for builtins, filesystem path for .lua files
-            let result = if let Some(lua_source) = get_builtin_connector_source(&connector) {
-                let config_content = std::fs::read_to_string(&config)?;
-                let config_value: serde_json::Value = toml::from_str(&config_content)?;
-                brightflow_connect::run_connector_from_source(lua_source, config_value, &options)
-                    .await?
-            } else {
-                let connector_path = PathBuf::from(&connector);
-                if !connector_path.exists() {
-                    anyhow::bail!("Connector file not found: {}", connector_path.display());
-                }
-                run_connector(&connector_path, &config, &options).await?
-            };
-
-            if result.dry_run {
-                tracing::info!("Dry run completed. Endpoints that would be synced:");
-                for ep in &result.endpoints {
-                    tracing::info!("  - {}", ep.name);
-                }
-            } else {
-                tracing::info!("Sync completed successfully!");
-                let names: Vec<&str> = result.endpoints.iter().map(|e| e.name.as_str()).collect();
-                tracing::info!("Endpoints synced: {:?}", names);
-                tracing::info!("Output path: {}", result.output_path);
-
-                // Ingest into store if requested
-                if ingest {
-                    let paths = brightflow_core::WorkspacePaths::from_env();
-                    let resolved_store = store_path.unwrap_or_else(|| paths.store());
-                    let litehouse_url = paths.litehouse_url();
-                    tracing::info!("Ingesting output into Parquet store...");
-                    let store = ParquetStore::new(&resolved_store, &litehouse_url).await?;
-
-                    // Create store directory if it doesn't exist
-                    std::fs::create_dir_all(&resolved_store)?;
-
-                    // Find and ingest all parquet files from output
-                    let output_dir = PathBuf::from(&result.output_path);
-                    if output_dir.exists() && output_dir.is_dir() {
-                        for dir_entry in std::fs::read_dir(&output_dir)? {
-                            let path = dir_entry?.path();
-                            if path.extension().is_some_and(|ext| ext == "parquet") {
-                                let table_name = path
-                                    .file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("unknown");
-
-                                tracing::info!(
-                                    "Ingesting {} into table '{}'",
-                                    path.display(),
-                                    table_name
-                                );
-                                let info = store
-                                    .ingest_parquet(
-                                        table_name,
-                                        &path,
-                                        Some(IngestOptions::default()),
-                                    )
-                                    .await?;
-                                tracing::info!(
-                                    "  Table '{}' now at version {}, {} files",
-                                    info.name,
-                                    info.version,
-                                    info.num_files
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        },
-
         ConnectCommands::List => {
             let connectors = list_builtin_connectors();
             if connectors.is_empty() {
@@ -786,8 +665,6 @@ async fn handle_connect_command(cmd: ConnectCommands) -> Result<()> {
             }
         },
     }
-
-    Ok(())
 }
 
 async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
