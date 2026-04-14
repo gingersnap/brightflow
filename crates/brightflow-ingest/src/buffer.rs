@@ -91,20 +91,6 @@ impl EventBuffer {
         // Create buffer table if it doesn't exist
         sqlx::query(BUFFER_TABLE_SQL).execute(&pool).await?;
 
-        // Schema migration: if user_id column is missing, drop and recreate (buffer is ephemeral)
-        let has_user_id = sqlx::query_scalar::<_, i32>(
-            "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'user_id'",
-        )
-        .fetch_one(&pool)
-        .await?;
-        if has_user_id == 0 {
-            tracing::info!("Buffer schema outdated for {source_id}, recreating table");
-            sqlx::query("DROP TABLE IF EXISTS events")
-                .execute(&pool)
-                .await?;
-            sqlx::query(BUFFER_TABLE_SQL).execute(&pool).await?;
-        }
-
         self.pools.insert(source_id.to_string(), pool.clone());
         Ok(pool)
     }
