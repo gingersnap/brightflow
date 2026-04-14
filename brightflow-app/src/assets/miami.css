@@ -1,0 +1,345 @@
+/* ============================================================================
+   MIAMI — Design Tokens v2.1.0
+   ============================================================================
+
+   Colors:
+     brand (pink)      — Logo, identity, marketing CTAs, gradients
+     primary (purple)  — UI actions, buttons, focus rings
+     secondary (teal)  — Supporting actions, highlights
+     sand              — Neutral backgrounds, borders, text (custom color)
+     info/success/warning/error — Semantic UI states
+
+   Fonts:
+     font-sans (Inter)    — UI and body text
+     font-brand (Poppins) — Logo and marketing headings
+
+   App vs marketing use the same names, different emphasis:
+     App — primary (purple) driven, dense, Linear-style. font-sans only.
+     Marketing — brand (pink) driven, roomy, gradients. font-brand for display.
+
+   Import:
+     App:       @import "tailwindcss"; @import "@nuxt/ui"; @import "./miami.css";
+     Marketing: @import "tailwindcss"; @import "./miami.css";
+
+   Nuxt UI (app.config.ts):
+     ui.colors: { primary: 'purple', secondary: 'teal', neutral: 'sand',
+                  info: 'info', success: 'success', warning: 'warning',
+                  error: 'error' }
+
+   Marketing utilities (included below):
+     text-default / text-subtle / text-dimmed — text hierarchy
+     bg-main / bg-sidebar / bg-card / border-main — layout
+
+   Font loading is the consumer's responsibility.
+   Sand is the only custom color — everything else is a Tailwind default.
+
+   ============================================================================ */
+
+/* ============================================================================
+   TOKENS
+   ============================================================================ */
+
+@theme static {
+  /* ── Sand — Custom neutral (the only non-Tailwind color) ────────────────── */
+
+  --color-sand-50: #fdfcfa;
+  --color-sand-100: #f7f6f3;
+  --color-sand-200: #efeee9;
+  --color-sand-300: #e7e5e0;
+  --color-sand-400: #d4d2cc;
+  --color-sand-500: #a8a29e;
+  --color-sand-600: #78716c;
+  --color-sand-700: #57534e;
+  --color-sand-800: #44403c;
+  --color-sand-900: #292524;
+  --color-sand-950: #1c1917;
+
+  /* ── Brand (→ pink) — Identity, energy, marketing CTAs ──────────────── */
+
+  --color-brand-50: var(--color-pink-50);
+  --color-brand-100: var(--color-pink-100);
+  --color-brand-200: var(--color-pink-200);
+  --color-brand-300: var(--color-pink-300);
+  --color-brand-400: var(--color-pink-400);
+  --color-brand-500: var(--color-pink-500);
+  --color-brand-600: var(--color-pink-600);
+  --color-brand-700: var(--color-pink-700);
+  --color-brand-800: var(--color-pink-800);
+  --color-brand-900: var(--color-pink-900);
+  --color-brand-950: var(--color-pink-950);
+
+  /* ── Primary (→ purple) — Main UI actions, buttons, focus ─────────────── */
+
+  --color-primary-50: var(--color-purple-50);
+  --color-primary-100: var(--color-purple-100);
+  --color-primary-200: var(--color-purple-200);
+  --color-primary-300: var(--color-purple-300);
+  --color-primary-400: var(--color-purple-400);
+  --color-primary-500: var(--color-purple-500);
+  --color-primary-600: var(--color-purple-600);
+  --color-primary-700: var(--color-purple-700);
+  --color-primary-800: var(--color-purple-800);
+  --color-primary-900: var(--color-purple-900);
+  --color-primary-950: var(--color-purple-950);
+
+  /* ── Secondary (→ teal) — Supporting actions, highlights ──────────────── */
+
+  --color-secondary-50: var(--color-teal-50);
+  --color-secondary-100: var(--color-teal-100);
+  --color-secondary-200: var(--color-teal-200);
+  --color-secondary-300: var(--color-teal-300);
+  --color-secondary-400: var(--color-teal-400);
+  --color-secondary-500: var(--color-teal-500);
+  --color-secondary-600: var(--color-teal-600);
+  --color-secondary-700: var(--color-teal-700);
+  --color-secondary-800: var(--color-teal-800);
+  --color-secondary-900: var(--color-teal-900);
+  --color-secondary-950: var(--color-teal-950);
+
+  /* ── Info (→ sky) ──────────────────────────────────────────────────────── */
+
+  --color-info-50: var(--color-sky-50);
+  --color-info-100: var(--color-sky-100);
+  --color-info-200: var(--color-sky-200);
+  --color-info-300: var(--color-sky-300);
+  --color-info-400: var(--color-sky-400);
+  --color-info-500: var(--color-sky-500);
+  --color-info-600: var(--color-sky-600);
+  --color-info-700: var(--color-sky-700);
+  --color-info-800: var(--color-sky-800);
+  --color-info-900: var(--color-sky-900);
+  --color-info-950: var(--color-sky-950);
+
+  /* ── Success (→ green) ─────────────────────────────────────────────────── */
+
+  --color-success-50: var(--color-green-50);
+  --color-success-100: var(--color-green-100);
+  --color-success-200: var(--color-green-200);
+  --color-success-300: var(--color-green-300);
+  --color-success-400: var(--color-green-400);
+  --color-success-500: var(--color-green-500);
+  --color-success-600: var(--color-green-600);
+  --color-success-700: var(--color-green-700);
+  --color-success-800: var(--color-green-800);
+  --color-success-900: var(--color-green-900);
+  --color-success-950: var(--color-green-950);
+
+  /* ── Warning (→ orange) ────────────────────────────────────────────────── */
+
+  --color-warning-50: var(--color-orange-50);
+  --color-warning-100: var(--color-orange-100);
+  --color-warning-200: var(--color-orange-200);
+  --color-warning-300: var(--color-orange-300);
+  --color-warning-400: var(--color-orange-400);
+  --color-warning-500: var(--color-orange-500);
+  --color-warning-600: var(--color-orange-600);
+  --color-warning-700: var(--color-orange-700);
+  --color-warning-800: var(--color-orange-800);
+  --color-warning-900: var(--color-orange-900);
+  --color-warning-950: var(--color-orange-950);
+
+  /* ── Error (→ red) ─────────────────────────────────────────────────────── */
+
+  --color-error-50: var(--color-red-50);
+  --color-error-100: var(--color-red-100);
+  --color-error-200: var(--color-red-200);
+  --color-error-300: var(--color-red-300);
+  --color-error-400: var(--color-red-400);
+  --color-error-500: var(--color-red-500);
+  --color-error-600: var(--color-red-600);
+  --color-error-700: var(--color-red-700);
+  --color-error-800: var(--color-red-800);
+  --color-error-900: var(--color-red-900);
+  --color-error-950: var(--color-red-950);
+
+  /* ── Data Visualization ────────────────────────────────────────────────── */
+
+  --color-data-1: var(--color-pink-500);
+  --color-data-2: var(--color-violet-600);
+  --color-data-3: var(--color-teal-500);
+  --color-data-4: var(--color-blue-600);
+  --color-data-5: var(--color-orange-500);
+  --color-data-6: var(--color-yellow-500);
+  --color-data-7: var(--color-indigo-900);
+  --color-data-8: var(--color-fuchsia-700);
+  --color-data-9: var(--color-cyan-500);
+  --color-data-10: var(--color-amber-800);
+  --color-data-11: var(--color-slate-600);
+  --color-data-12: var(--color-blue-900);
+
+  /* ── Typography ────────────────────────────────────────────────────────── */
+
+  --font-brand: 'Poppins', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+/* ============================================================================
+   NUXT UI TOKENS — Light & Dark
+   ============================================================================
+   These map Nuxt UI's semantic variables to the Miami palette.
+   Harmless when Nuxt UI isn't loaded — just unused CSS variables.
+   ============================================================================ */
+
+:root {
+  --ui-radius: 0.5rem;
+  --ui-bg: var(--color-sand-50);
+  --ui-bg-muted: var(--color-sand-100);
+  --ui-bg-elevated: #ffffff;
+  --ui-bg-accented: var(--color-sand-200);
+  --ui-bg-inverted: var(--color-sand-950);
+  --ui-text: var(--color-sand-900);
+  --ui-text-muted: var(--color-sand-600);
+  --ui-text-dimmed: var(--color-sand-500);
+  --ui-text-toned: var(--color-sand-700);
+  --ui-text-highlighted: var(--color-sand-950);
+  --ui-text-inverted: #ffffff;
+  --ui-border: var(--color-sand-200);
+  --ui-border-muted: var(--color-sand-100);
+  --ui-border-accented: var(--color-sand-300);
+  --ui-border-inverted: var(--color-sand-900);
+  --ui-primary: var(--color-purple-500);
+}
+
+.dark {
+  --ui-bg: var(--color-sand-950);
+  --ui-bg-muted: #0c0a09;
+  --ui-bg-elevated: var(--color-sand-900);
+  --ui-bg-accented: var(--color-sand-800);
+  --ui-bg-inverted: var(--color-sand-50);
+  --ui-text: var(--color-sand-50);
+  --ui-text-muted: var(--color-sand-400);
+  --ui-text-dimmed: var(--color-sand-500);
+  --ui-text-toned: var(--color-sand-300);
+  --ui-text-highlighted: #ffffff;
+  --ui-text-inverted: var(--color-sand-950);
+  --ui-border: var(--color-sand-800);
+  --ui-border-muted: var(--color-sand-900);
+  --ui-border-accented: var(--color-sand-700);
+  --ui-border-inverted: var(--color-sand-100);
+  --ui-primary: var(--color-purple-500);
+}
+
+/* ============================================================================
+   BRAND — Gradients
+   ============================================================================
+   The Miami identity. For hero sections, decorative cards, and accents.
+   Never use gradients in app UI or on buttons.
+   All gradients flow 135° (top-left to bottom-right).
+   ============================================================================ */
+
+.bg-gradient-sunset {
+  background: linear-gradient(
+    135deg,
+    var(--color-amber-400) 0%,
+    var(--color-orange-400) 25%,
+    var(--color-rose-400) 50%,
+    var(--color-pink-500) 75%,
+    var(--color-purple-500) 100%
+  );
+}
+
+.bg-gradient-sunset-soft {
+  background: linear-gradient(
+    135deg,
+    var(--color-orange-400) 0%,
+    var(--color-rose-500) 50%,
+    var(--color-pink-600) 100%
+  );
+}
+
+.bg-gradient-flamingo {
+  background: linear-gradient(
+    135deg,
+    var(--color-rose-300) 0%,
+    var(--color-rose-400) 50%,
+    var(--color-pink-500) 100%
+  );
+}
+
+.bg-gradient-dusk {
+  background: linear-gradient(
+    135deg,
+    var(--color-fuchsia-400) 0%,
+    var(--color-purple-500) 50%,
+    var(--color-violet-600) 100%
+  );
+}
+
+.bg-gradient-ocean {
+  background: linear-gradient(
+    135deg,
+    var(--color-teal-400) 0%,
+    var(--color-cyan-500) 50%,
+    var(--color-sky-600) 100%
+  );
+}
+
+.bg-gradient-neon {
+  background: linear-gradient(135deg, var(--color-pink-500) 0%, var(--color-teal-500) 100%);
+}
+
+.bg-gradient-brand {
+  background: linear-gradient(135deg, var(--color-brand-500) 0%, var(--color-primary-500) 100%);
+}
+
+.text-gradient-sunset-soft {
+  background: linear-gradient(
+    135deg,
+    var(--color-orange-400) 0%,
+    var(--color-rose-500) 50%,
+    var(--color-pink-600) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-sunset {
+  background: linear-gradient(
+    135deg,
+    var(--color-amber-400) 0%,
+    var(--color-orange-400) 25%,
+    var(--color-rose-400) 50%,
+    var(--color-pink-500) 75%,
+    var(--color-purple-500) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============================================================================
+   BRAND — Marketing Utilities
+   ============================================================================
+   Convenience utilities for brand/marketing pages. These reference --ui-*
+   tokens so they stay in sync with the app. Not needed in Nuxt UI apps
+   (components use --ui-* tokens directly).
+   ============================================================================ */
+
+@utility text-default {
+  color: var(--ui-text);
+}
+
+@utility text-subtle {
+  color: var(--ui-text-muted);
+}
+
+@utility text-dimmed {
+  color: var(--ui-text-dimmed);
+}
+
+@utility bg-main {
+  background-color: var(--ui-bg);
+}
+
+@utility bg-sidebar {
+  background-color: var(--ui-bg-muted);
+}
+
+@utility bg-card {
+  background-color: var(--ui-bg-elevated);
+}
+
+@utility border-main {
+  border-color: var(--ui-border);
+}

@@ -17,17 +17,17 @@ function openInExplore(tableName: string): void {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-y-auto p-6">
-    <div class="mb-6 flex items-center gap-3">
+  <div class="flex h-full flex-col overflow-y-auto p-4">
+    <div class="mb-4 flex items-center gap-3">
       <Cable class="h-5 w-5 text-muted" />
       <div>
-        <h2 class="text-lg font-semibold text-highlighted">{{ source.name }}</h2>
+        <h2 class="text-sm font-semibold text-highlighted">{{ source.name }}</h2>
         <p class="text-sm text-muted">{{ source.connectorName }} connector</p>
       </div>
     </div>
 
     <!-- Tables -->
-    <div class="mb-6">
+    <div class="mb-4">
       <h3 class="mb-3 text-sm font-medium text-highlighted">Tables</h3>
       <div v-if="source.tables.length > 0" class="space-y-2">
         <div

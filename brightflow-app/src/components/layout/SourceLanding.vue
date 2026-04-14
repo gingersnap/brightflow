@@ -33,11 +33,11 @@ function handleSelect(id: string): void {
     </template>
 
     <template #body>
-      <div v-if="isPending" class="flex flex-1 items-center justify-center p-6">
+      <div v-if="isPending" class="flex flex-1 items-center justify-center p-4">
         <p class="text-muted">Loading sources...</p>
       </div>
 
-      <div v-else class="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div v-else class="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <SourceCard
           v-for="source in sources"
           :key="source.id"
@@ -47,7 +47,7 @@ function handleSelect(id: string): void {
 
         <!-- Add Source card -->
         <button
-          class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-default p-5 text-muted transition-all hover:border-primary-500/50 hover:text-highlighted"
+          class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-default p-4 text-muted transition-all hover:border-primary-500/50 hover:text-highlighted"
           @click="router.push({ name: 'connect' })"
         >
           <Plus class="h-6 w-6" />

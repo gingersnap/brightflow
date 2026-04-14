@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 
-import type { ChartType, ViewMode } from '@/types';
+import type { ChartType, TextSize, ViewMode } from '@/types';
 
 type SectionName = 'filter' | 'summarize' | 'results';
 
@@ -11,6 +11,10 @@ function isViewMode(s: string): s is ViewMode {
 
 function isChartType(s: string): s is ChartType {
   return ['bar', 'line', 'pie', 'scatter'].includes(s);
+}
+
+function isTextSize(s: string): s is TextSize {
+  return ['compact', 'comfortable'].includes(s);
 }
 
 export const useUiStore = defineStore('ui', () => {
@@ -24,6 +28,12 @@ export const useUiStore = defineStore('ui', () => {
   const storedChartType = localStorage.getItem('brightflow-chart-type');
   const chartType = ref<ChartType>(
     storedChartType != null && isChartType(storedChartType) ? storedChartType : 'bar',
+  );
+
+  // Text size preference
+  const storedTextSize = localStorage.getItem('brightflow-text-size');
+  const textSize = ref<TextSize>(
+    storedTextSize != null && isTextSize(storedTextSize) ? storedTextSize : 'compact',
   );
 
   // Section collapsed states (Filter collapsed by default, others open)
@@ -42,6 +52,13 @@ export const useUiStore = defineStore('ui', () => {
   watch(sidebarCollapsed, (val) => {
     localStorage.setItem('brightflow-sidebar-collapsed', String(val));
   });
+  watch(textSize, (val) => {
+    localStorage.setItem('brightflow-text-size', val);
+    document.documentElement.classList.toggle('text-comfortable', val === 'comfortable');
+  });
+  // Apply on init
+  document.documentElement.classList.toggle('text-comfortable', textSize.value === 'comfortable');
+
   watch(viewMode, (val) => {
     localStorage.setItem('brightflow-view-mode', val);
   });
@@ -84,6 +101,10 @@ export const useUiStore = defineStore('ui', () => {
     viewMode.value = 'table';
   }
 
+  function toggleTextSize(): void {
+    textSize.value = textSize.value === 'compact' ? 'comfortable' : 'compact';
+  }
+
   return {
     chartType,
     filterCollapsed,
@@ -95,7 +116,9 @@ export const useUiStore = defineStore('ui', () => {
     sidebarCollapsed,
     setViewMode,
     summarizeCollapsed,
+    textSize,
     toggleSection,
+    toggleTextSize,
     viewMode,
   };
 });

@@ -154,17 +154,20 @@ const allYAxesSelected = computed(
     numericColumns.value.length > 0 && numericColumns.value.every((c) => yAxes.value.includes(c)),
 );
 
-// Color palette
+// Miami theme data visualization palette (matches --color-data-1…12 in miami.css)
 const colors = [
-  '#5470c6',
-  '#91cc75',
-  '#fac858',
-  '#ee6666',
-  '#73c0de',
-  '#3ba272',
-  '#fc8452',
-  '#9a60b4',
-  '#ea7ccc',
+  '#ec4899', // Pink-500
+  '#7c3aed', // Violet-600
+  '#14b8a6', // Teal-500
+  '#2563eb', // Blue-600
+  '#f97316', // Orange-500
+  '#eab308', // Yellow-500
+  '#312e81', // Indigo-900
+  '#a21caf', // Fuchsia-700
+  '#06b6d4', // Cyan-500
+  '#92400e', // Amber-800
+  '#475569', // Slate-600
+  '#1e3a8a', // Blue-900
 ];
 
 interface SeriesItem {

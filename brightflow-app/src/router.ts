@@ -5,6 +5,11 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      name: 'home',
+      component: () => import('./components/layout/WelcomePage.vue'),
+    },
+    {
+      path: '/sources',
       name: 'sources',
       component: () => import('./components/layout/SourceLanding.vue'),
     },

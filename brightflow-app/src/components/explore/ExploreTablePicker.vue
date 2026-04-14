@@ -22,8 +22,8 @@ const sourceTables = computed(() => {
 </script>
 
 <template>
-  <div class="p-6">
-    <h2 class="mb-4 text-lg font-semibold text-highlighted">Select a table to explore</h2>
+  <div class="p-4">
+    <h2 class="mb-3 text-sm font-semibold text-highlighted">Select a table to explore</h2>
     <div
       v-if="sourceTables.length > 0"
       class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"

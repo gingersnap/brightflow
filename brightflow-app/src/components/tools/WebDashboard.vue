@@ -78,9 +78,9 @@ const chartOption = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-y-auto p-6">
+  <div class="flex h-full flex-col overflow-y-auto p-4">
     <!-- Stats bar -->
-    <div class="mb-6 grid grid-cols-4 gap-4">
+    <div class="mb-4 grid grid-cols-4 gap-3">
       <div class="rounded-lg border border-default bg-elevated p-4">
         <p class="text-xs text-muted">Unique Visitors</p>
         <p class="mt-1 text-2xl font-semibold text-highlighted">
@@ -108,7 +108,7 @@ const chartOption = computed(() => {
     </div>
 
     <!-- Visitors chart -->
-    <div class="mb-6 rounded-lg border border-default bg-elevated p-4">
+    <div class="mb-4 rounded-lg border border-default bg-elevated p-4">
       <h3 class="mb-3 text-sm font-medium text-highlighted">Visitors & Pageviews</h3>
       <v-chart
         v-if="timeseries && timeseries.length > 0"
@@ -120,7 +120,7 @@ const chartOption = computed(() => {
     </div>
 
     <!-- Breakdowns grid -->
-    <div class="grid grid-cols-2 gap-6">
+    <div class="grid grid-cols-2 gap-3">
       <!-- Top Pages -->
       <div class="rounded-lg border border-default bg-elevated p-4">
         <h3 class="mb-3 text-sm font-medium text-highlighted">Top Pages</h3>

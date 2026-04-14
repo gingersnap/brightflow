@@ -74,7 +74,8 @@ export default defineConfig({
       ui: {
         colors: {
           primary: 'purple',
-          neutral: 'stone',
+          secondary: 'teal',
+          neutral: 'sand',
         },
       },
     }),

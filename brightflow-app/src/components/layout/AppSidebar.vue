@@ -7,12 +7,14 @@ import { useRoute, useRouter } from 'vue-router';
 import { sourceApi } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useSourceStore } from '@/stores/source';
+import { useUiStore } from '@/stores/ui';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 
 const router = useRouter();
 const route = useRoute();
 const sourceStore = useSourceStore();
 const authStore = useAuthStore();
+const uiStore = useUiStore();
 const colorMode = useColorMode();
 
 const open = ref(false);
@@ -33,10 +35,11 @@ useQuery({
 });
 
 // Build source nav items with collapsible tool children
-const sourceNavItems = computed(() =>
-  sourceStore.sourcesData.map((source) => {
+const sourceNavItems = computed(() => {
+  const currentSourceId = route.params.sourceId as string | undefined;
+  const currentTool = route.params.tool as string | undefined;
+  return sourceStore.sourcesData.map((source) => {
     const tools = toolsForSource(source);
-    const currentSourceId = route.params.sourceId as string | undefined;
     return {
       label: source.name,
       icon: source.kind === 'web-analytics' ? 'i-lucide-globe' : 'i-lucide-cable',
@@ -47,14 +50,15 @@ const sourceNavItems = computed(() =>
         label: tool.label,
         icon: tool.icon,
         value: `${source.id}:${tool.id}`,
+        active: source.id === currentSourceId && tool.id === currentTool,
         onSelect: () => {
           handleSourceToolSelect(source.id, tool.id);
           open.value = false;
         },
       })),
     };
-  }),
-);
+  });
+});
 
 // Bottom navigation items
 const bottomNavItems = computed(() => [
@@ -95,6 +99,13 @@ const userMenuItems = computed(() => [
         colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
       },
     },
+    {
+      label: uiStore.textSize === 'compact' ? 'Comfortable text' : 'Compact text',
+      icon: uiStore.textSize === 'compact' ? 'i-lucide-a-large-small' : 'i-lucide-a-large-small',
+      onSelect: () => {
+        uiStore.toggleTextSize();
+      },
+    },
   ],
   [
     {
@@ -128,19 +139,25 @@ function toggleSystem(): void {
     v-model:open="open"
     collapsible
     resizable
-    class="bg-elevated/25"
-    :ui="{ footer: 'lg:border-t lg:border-default' }"
+    class="bg-muted"
+    :ui="{ footer: 'lg:border-t lg:border-accented dark:lg:border-default' }"
   >
     <!-- Header: logo -->
     <template #header="{ collapsed }">
-      <div class="flex items-center gap-2" :class="collapsed ? 'justify-center' : ''">
-        <UIcon name="i-lucide-zap" class="h-5 w-5 shrink-0 text-primary-500" />
-        <span v-if="!collapsed" class="text-lg font-semibold text-highlighted">Brightflow</span>
-      </div>
+      <RouterLink
+        to="/"
+        class="flex items-center gap-2 px-2.5"
+        :class="collapsed ? 'justify-center' : ''"
+      >
+        <UIcon name="i-lucide-layers" class="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
+        <span v-if="!collapsed" class="font-brand font-semibold text-brand-600 dark:text-brand-400"
+          >Brightflow</span
+        >
+      </RouterLink>
     </template>
 
     <!-- Body: source tree + bottom nav -->
-    <template #default="{ collapsed }">
+    <template #default="{ collapsed, collapse }">
       <!-- Sources with collapsible tool children -->
       <UNavigationMenu
         :collapsed="collapsed"
@@ -161,6 +178,18 @@ function toggleSystem(): void {
         tooltip
         class="mt-auto"
       />
+
+      <button
+        class="flex w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-elevated"
+        :class="collapsed ? 'justify-center' : ''"
+        @click="collapse(!collapsed)"
+      >
+        <UIcon
+          :name="collapsed ? 'i-lucide-panel-left-open' : 'i-lucide-panel-left-close'"
+          class="h-4 w-4 shrink-0"
+        />
+        <span v-if="!collapsed">Collapse</span>
+      </button>
     </template>
 
     <!-- Footer: user menu -->
@@ -170,7 +199,7 @@ function toggleSystem(): void {
           class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-elevated"
           :class="collapsed ? 'justify-center' : ''"
         >
-          <UAvatar :text="authStore.user?.displayName?.charAt(0) ?? '?'" size="2xs" />
+          <UIcon name="i-lucide-user" class="h-4 w-4 shrink-0 text-muted" />
           <span v-if="!collapsed" class="truncate text-sm text-highlighted">
             {{ authStore.user?.displayName ?? 'User' }}
           </span>

@@ -12,7 +12,6 @@ export {};
 declare module 'vue' {
   export interface GlobalComponents {
     AnalyticsView: typeof import('./src/components/analytics/AnalyticsView.vue')['default']
-    AppHeader: typeof import('./src/components/layout/AppHeader.vue')['default']
     AppSidebar: typeof import('./src/components/layout/AppSidebar.vue')['default']
     BigNumber: typeof import('./src/components/charts/BigNumber.vue')['default']
     BucketDropzone: typeof import('./src/components/pivot/BucketDropzone.vue')['default']
@@ -46,7 +45,6 @@ declare module 'vue' {
     SourceCard: typeof import('./src/components/layout/SourceCard.vue')['default']
     SourceLanding: typeof import('./src/components/layout/SourceLanding.vue')['default']
     SourceLayout: typeof import('./src/components/layout/SourceLayout.vue')['default']
-    SourceSwitcher: typeof import('./src/components/layout/SourceSwitcher.vue')['default']
     SyncStatusBadge: typeof import('./src/components/connect/SyncStatusBadge.vue')['default']
     SystemView: typeof import('./src/components/system/SystemView.vue')['default']
     UApp: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/App.vue')['default']
@@ -62,14 +60,12 @@ declare module 'vue' {
     UFormField: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/FormField.vue')['default']
     UIcon: typeof import('./node_modules/@nuxt/ui/dist/runtime/vue/components/Icon.vue')['default']
     UInput: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Input.vue')['default']
-    UModal: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Modal.vue')['default']
     UNavigationMenu: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/NavigationMenu.vue')['default']
     USelectMenu: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/SelectMenu.vue')['default']
-    USeparator: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Separator.vue')['default']
     UserExplorerPanel: typeof import('./src/components/analytics/UserExplorerPanel.vue')['default']
     USwitch: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Switch.vue')['default']
     UTable: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Table.vue')['default']
     WebDashboard: typeof import('./src/components/tools/WebDashboard.vue')['default']
-    WelcomeLanding: typeof import('./src/components/layout/WelcomeLanding.vue')['default']
+    WelcomePage: typeof import('./src/components/layout/WelcomePage.vue')['default']
   }
 }

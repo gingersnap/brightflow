@@ -1,7 +1,20 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource/poppins';
 @import 'tailwindcss';
 @import '@nuxt/ui';
+@import './miami.css';
 
 @layer base {
+  /* Compact density (default): 14px root scales all rem-based sizes */
+  :root {
+    font-size: 14px;
+  }
+
+  /* Comfortable: browser default 16px */
+  .text-comfortable {
+    font-size: 16px;
+  }
+
   button:not(:disabled),
   [role='button']:not(:disabled) {
     cursor: pointer;

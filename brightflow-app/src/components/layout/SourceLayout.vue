@@ -78,7 +78,7 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       </template>
 
       <!-- Funnels -->
-      <div v-else-if="activeTool === 'funnels'" class="p-6">
+      <div v-else-if="activeTool === 'funnels'" class="p-4">
         <div class="rounded-lg border border-default bg-elevated p-4">
           <FunnelPanel
             :source-id="eventSourceId"
@@ -89,7 +89,7 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       </div>
 
       <!-- Retention -->
-      <div v-else-if="activeTool === 'retention'" class="p-6">
+      <div v-else-if="activeTool === 'retention'" class="p-4">
         <div class="rounded-lg border border-default bg-elevated p-4">
           <RetentionPanel
             :source-id="eventSourceId"
@@ -100,7 +100,7 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       </div>
 
       <!-- Users -->
-      <div v-else-if="activeTool === 'users'" class="p-6">
+      <div v-else-if="activeTool === 'users'" class="p-4">
         <div class="rounded-lg border border-default bg-elevated p-4">
           <UserExplorerPanel :source-id="eventSourceId" />
         </div>
