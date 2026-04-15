@@ -25,7 +25,7 @@ const currentDepth = computed(() => props.depth ?? 0);
 
 const childNodes = computed(() =>
   props.node.children
-    .map((childId) => props.tree.nodes.find((n) => n.id['0'] === childId['0']))
+    .map((childId) => props.tree.nodes.find((n) => n.id === childId))
     .filter((n): n is AnalysisNode => n !== undefined)
     .sort((a, b) => b.significance - a.significance),
 );
@@ -160,7 +160,7 @@ const analysisTypeConfig = computed(() => {
     <div v-if="expanded && hasChildren" class="space-y-2 px-4 pb-4">
       <InsightCard
         v-for="child in childNodes"
-        :key="child.id['0']"
+        :key="child.id"
         :node="child"
         :tree="tree"
         :depth="currentDepth + 1"

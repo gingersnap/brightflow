@@ -15,7 +15,7 @@ const rootNodes = computed(() => {
     return [];
   }
   return insightsStore.tree.roots
-    .map((rootId) => insightsStore.tree?.nodes.find((n) => n.id['0'] === rootId['0']))
+    .map((rootId) => insightsStore.tree?.nodes.find((n) => n.id === rootId))
     .filter((n): n is AnalysisNode => n !== undefined)
     .toSorted((a, b) => b.significance - a.significance);
 });
@@ -78,7 +78,7 @@ const rootNodes = computed(() => {
       <!-- Finding cards -->
       <InsightCard
         v-for="node in rootNodes"
-        :key="node.id['0']"
+        :key="node.id"
         :node="node"
         :tree="insightsStore.tree"
       />

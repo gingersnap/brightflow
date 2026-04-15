@@ -158,18 +158,18 @@ export const connectApi = {
 // Frontend-specific tree types (refinements of the backend's serde_json::Value)
 export interface AnalysisTree {
   nodes: AnalysisNode[];
-  roots: { '0': number }[];
+  roots: number[];
 }
 
 export interface AnalysisNode {
-  id: { '0': number };
-  parent_id: { '0': number } | null;
+  id: number;
+  parent_id: number | null;
   analysis: AnalysisType;
   significance: number;
   description: string;
   summary: string;
   tech_summary: string;
-  children: { '0': number }[];
+  children: number[];
 }
 
 export interface AnalysisType {
