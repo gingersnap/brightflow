@@ -651,6 +651,7 @@ dependencies = [
  "polars",
  "rpassword",
  "serde_json",
+ "subtext",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -712,6 +713,7 @@ dependencies = [
  "serde",
  "serde_json",
  "statrs",
+ "subtext",
  "thiserror 2.0.18",
 ]
 
@@ -724,9 +726,11 @@ dependencies = [
  "brightflow-insights",
  "brightflow-store",
  "chrono",
+ "polars",
  "serde",
  "serde_json",
  "sqlx",
+ "subtext",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4613,6 +4617,19 @@ dependencies = [
  "quote",
  "rustversion",
  "syn",
+]
+
+[[package]]
+name = "subtext"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "polars",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "unicode-segmentation",
 ]
 
 [[package]]

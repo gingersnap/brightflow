@@ -8,6 +8,8 @@ brightflow-core = { path = "../brightflow-core" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-insights = { path = "../brightflow-insights" }
 brightflow-store = { path = "../brightflow-store" }
+subtext = { path = "../subtext", features = ["polars"] }
+polars = { workspace = true }
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }

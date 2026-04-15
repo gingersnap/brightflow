@@ -21,3 +21,4 @@ pub mod data;
 pub mod debug;
 pub mod output;
 pub mod stats;
+pub mod text;

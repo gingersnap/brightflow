@@ -27,6 +27,8 @@ use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
+mod text_enrichment;
+
 /// The scheduler reads job definitions from SQLite and manages execution.
 #[derive(Clone)]
 pub struct Scheduler {
@@ -272,6 +274,18 @@ async fn execute_sync(
                 parquet_file.display()
             );
             continue;
+        }
+
+        // Enrich with text-derived columns if applicable (issues, pull_requests)
+        let workspace_root = paths.root();
+        let store_root = paths.store();
+        if let Err(e) = text_enrichment::maybe_enrich_parquet(
+            &parquet_file,
+            &ep_result.name,
+            &workspace_root,
+            &store_root,
+        ) {
+            warn!("Text enrichment skipped for {}: {e}", ep_result.name);
         }
 
         let metrics = store

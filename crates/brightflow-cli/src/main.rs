@@ -162,6 +162,17 @@ enum Commands {
         database_url: Option<String>,
     },
 
+    /// Enrich existing store tables with text-derived columns
+    Enrich {
+        /// Table name to enrich (e.g., "issues", "pull_requests"). If omitted, enriches all supported tables.
+        #[arg(long)]
+        table: Option<String>,
+
+        /// Number of topic clusters (0 = skip clustering, faster)
+        #[arg(long, default_value = "0")]
+        clusters: usize,
+    },
+
     /// Register existing event Parquet files in the Litehouse catalog
     MigrateEvents,
 
@@ -418,6 +429,11 @@ async fn main() -> Result<()> {
             let database_url = database_url
                 .unwrap_or_else(|| brightflow_core::WorkspacePaths::from_env().auth_url());
             handle_create_admin(&email, &name, &database_url).await?;
+        },
+
+        Commands::Enrich { table, clusters } => {
+            init_tracing_simple("brightflow=info");
+            handle_enrich(table.as_deref(), clusters).await?;
         },
 
         Commands::MigrateEvents => {
@@ -788,5 +804,99 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
     println!("  Email: {}", user.email);
     println!("  Name:  {}", user.display_name);
 
+    Ok(())
+}
+
+async fn handle_enrich(table: Option<&str>, num_clusters: usize) -> Result<()> {
+    use subtext::polars::enrichment::enrich_github_issues;
+
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+
+    let enrichable = ["issues", "pull_requests"];
+    let tables_to_process: Vec<&str> = match table {
+        Some(t) => {
+            if !enrichable.contains(&t) {
+                anyhow::bail!(
+                    "Table '{t}' is not enrichable. Supported: {}",
+                    enrichable.join(", ")
+                );
+            }
+            vec![t]
+        },
+        None => enrichable.to_vec(),
+    };
+
+    let models_dir = wp.root().join("models");
+    std::fs::create_dir_all(&models_dir)?;
+
+    for table_name in &tables_to_process {
+        println!("Enriching table: {table_name}");
+
+        // Load the full table from the store
+        let df = match store.read_table(table_name).await {
+            Ok(df) => df,
+            Err(e) => {
+                println!("  Skipping {table_name}: {e}");
+                continue;
+            },
+        };
+
+        // Check required columns
+        if df.column("title").is_err() || df.column("body").is_err() {
+            println!("  Skipping {table_name}: missing title or body column");
+            continue;
+        }
+
+        println!("  Loaded {} rows", df.height());
+
+        let model_path = models_dir.join(format!("{table_name}-tfidf.bin"));
+
+        let (enriched, model) = enrich_github_issues(&df, Some(&model_path), num_clusters)?;
+
+        println!("  Vocabulary: {} terms", model.fitted.vocabulary.len());
+        println!("  Label centroids: {}", model.label_centroids.len());
+        println!("  Topic clusters: {}", model.cluster_names.len());
+        for (i, name) in model.cluster_names.iter().enumerate() {
+            println!("    cluster {i}: {name}");
+        }
+
+        // Write the enriched table back to the store
+        // We need to write a new parquet file and re-register it
+        let table_dir = wp.store().join(table_name);
+        std::fs::create_dir_all(&table_dir)?;
+
+        let output_path = table_dir.join("enriched.parquet");
+        let file = std::fs::File::create(&output_path)?;
+        polars::prelude::ParquetWriter::new(file).finish(&mut enriched.clone())?;
+
+        // Re-ingest the enriched file (this replaces the existing table data)
+        let info = store
+            .ingest_parquet(
+                table_name,
+                &output_path,
+                Some(IngestOptions {
+                    mode: IngestMode::Overwrite,
+                    ..Default::default()
+                }),
+                None,
+            )
+            .await?;
+
+        println!(
+            "  Written: {} rows, {} columns",
+            info.num_rows.unwrap_or(0),
+            enriched.width()
+        );
+
+        // Clean up the temporary enriched.parquet if ingest copied it
+        if output_path.exists() {
+            drop(std::fs::remove_file(&output_path));
+        }
+
+        println!("  Done enriching {table_name}");
+    }
+
+    println!("Enrichment complete.");
     Ok(())
 }

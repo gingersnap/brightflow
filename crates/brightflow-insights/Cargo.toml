@@ -17,6 +17,7 @@ statrs = "0.18"
 chrono = { workspace = true }
 anyhow = "1.0"
 thiserror = { workspace = true }
+subtext = { path = "../subtext", features = ["polars"] }
 
 [lints]
 workspace = true
