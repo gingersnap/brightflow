@@ -10,11 +10,14 @@ import VChart from 'vue-echarts';
 
 import ProductAnalyticsView from '@/components/analytics/ProductAnalyticsView.vue';
 import PeriodSelector from '@/components/layout/PeriodSelector.vue';
+import { useChartColors } from '@/composables/useChartColors';
 import { sourceApi, analyticsApi } from '@/services/api';
 import { track } from '@/services/tracking';
 import type { Source, DashboardStats, TimeseriesPoint, BreakdownRow } from '@/types';
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent]);
+
+const colors = useChartColors();
 
 const analyticsTab = ref<'web' | 'product'>('web');
 track('analytics_view', { tab: 'web' });
@@ -155,6 +158,7 @@ function copySnippet(): void {
 const chartOption = computed(() => {
   const data = timeseries.value ?? [];
   return {
+    color: colors,
     tooltip: { trigger: 'axis' },
     grid: { left: 50, right: 20, top: 20, bottom: 30 },
     xAxis: {

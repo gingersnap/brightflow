@@ -7,10 +7,13 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
+import { useChartColors } from '@/composables/useChartColors';
 import { analyticsApi } from '@/services/api';
 import type { TimeseriesPoint } from '@/types';
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent]);
+
+const colors = useChartColors();
 
 const props = defineProps<{
   sourceId: string;
@@ -50,6 +53,7 @@ const { data: geoData } = useQuery({
 const chartOption = computed(() => {
   const data = timeseries.value ?? [];
   return {
+    color: colors,
     tooltip: { trigger: 'axis' },
     grid: { left: 50, right: 20, top: 20, bottom: 30 },
     xAxis: {

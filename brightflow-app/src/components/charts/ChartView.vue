@@ -11,6 +11,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { computed, ref, watch } from 'vue';
 import VChart from 'vue-echarts';
 
+import { useChartColors } from '@/composables/useChartColors';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
@@ -32,6 +33,7 @@ use([
 const resultsStore = useResultsStore();
 const uiStore = useUiStore();
 const pivotStore = usePivotStore();
+const colors = useChartColors();
 
 // Use pivot data when available, otherwise table data
 const chartColumns = computed(() => {
@@ -153,22 +155,6 @@ const allYAxesSelected = computed(
   () =>
     numericColumns.value.length > 0 && numericColumns.value.every((c) => yAxes.value.includes(c)),
 );
-
-// Miami theme data visualization palette (matches --color-data-1…12 in miami.css)
-const colors = [
-  '#ec4899', // Pink-500
-  '#7c3aed', // Violet-600
-  '#14b8a6', // Teal-500
-  '#2563eb', // Blue-600
-  '#f97316', // Orange-500
-  '#eab308', // Yellow-500
-  '#312e81', // Indigo-900
-  '#a21caf', // Fuchsia-700
-  '#06b6d4', // Cyan-500
-  '#92400e', // Amber-800
-  '#475569', // Slate-600
-  '#1e3a8a', // Blue-900
-];
 
 interface SeriesItem {
   name: string | undefined;
