@@ -6,9 +6,8 @@ edition = "2021"
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
 brightflow-connect = { path = "../brightflow-connect" }
-brightflow-insights = { path = "../brightflow-insights" }
+brightflow-engine = { path = "../brightflow-engine" }
 brightflow-store = { path = "../brightflow-store" }
-subtext = { path = "../subtext", features = ["polars"] }
 polars = { workspace = true }
 
 # Database

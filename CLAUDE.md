@@ -15,8 +15,9 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 - `crates/brightflow-core` - Shared types (TenantId, DatasetId, errors)
 - `crates/brightflow-connect` - Data connectors
 - `crates/brightflow-store` - SQLite-backed Parquet storage (Litehouse)
-- `crates/brightflow-insights` - Statistical analysis engine
-- `crates/brightflow-api` - HTTP API server (Axum + Polars)
+- `crates/brightflow-engine` - Analysis engine, NLP primitives, enrichment orchestration
+- `crates/brightflow-scheduler` - Background job runner for connector syncs
+- `crates/brightflow-api` - HTTP API server (Axum + Polars) with integrated event ingestion
 - `brightflow-app/` - Vue 3 frontend (see its CLAUDE.md for detailed style rules and conventions)
 
 ## Code Style

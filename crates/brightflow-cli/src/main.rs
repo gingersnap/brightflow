@@ -48,14 +48,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use brightflow_api::system::log_layer::{LogBroadcastLayer, LogEntry};
 use brightflow_api::ServeConfig;
 use brightflow_connect::list_builtin_connectors;
-use brightflow_insights::analysis::engine::AnalysisEngine;
-use brightflow_insights::analysis::tree::{ReportType, ReviewCadence};
-use brightflow_insights::data::loader::load_csv;
-use brightflow_insights::data::schema::detect_schema;
-use brightflow_insights::debug::DebugLog;
-use brightflow_insights::output::html::write_html;
-use brightflow_insights::output::json::write_output;
-use brightflow_insights::output::markdown::write_markdown;
+use brightflow_engine::analysis::engine::AnalysisEngine;
+use brightflow_engine::analysis::tree::{ReportType, ReviewCadence};
+use brightflow_engine::data::loader::load_csv;
+use brightflow_engine::data::schema::detect_schema;
+use brightflow_engine::debug::DebugLog;
+use brightflow_engine::output::html::write_html;
+use brightflow_engine::output::json::write_output;
+use brightflow_engine::output::markdown::write_markdown;
 // Scheduler is now integrated into the API server
 use brightflow_store::{IngestMode, IngestOptions, ParquetStore};
 
@@ -620,7 +620,7 @@ fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
 
 fn write_outputs(
     args: &AnalyzeArgs,
-    tree: &brightflow_insights::analysis::tree::AnalysisTree,
+    tree: &brightflow_engine::analysis::tree::AnalysisTree,
     suffix: &str,
     type_title: &str,
 ) -> Result<()> {
@@ -808,23 +808,23 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
 }
 
 async fn handle_enrich(table: Option<&str>, num_clusters: usize) -> Result<()> {
-    use subtext::polars::enrichment::enrich_github_issues;
+    use brightflow_engine::enrichment::{enrich_github_issues, is_enrichable, ENRICHABLE_TABLES};
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
 
-    let enrichable = ["issues", "pull_requests"];
+    let all_names: Vec<&str> = ENRICHABLE_TABLES.iter().map(|(name, _)| *name).collect();
     let tables_to_process: Vec<&str> = match table {
         Some(t) => {
-            if !enrichable.contains(&t) {
+            if !is_enrichable(t) {
                 anyhow::bail!(
                     "Table '{t}' is not enrichable. Supported: {}",
-                    enrichable.join(", ")
+                    all_names.join(", ")
                 );
             }
             vec![t]
         },
-        None => enrichable.to_vec(),
+        None => all_names,
     };
 
     let models_dir = wp.root().join("models");

@@ -10,8 +10,8 @@ use crate::semantics::types::{
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
-use brightflow_insights::data::config::{ColumnRole, TimeGranularity};
-use brightflow_insights::data::merge::{ColumnOverride, TableSettingsOverride};
+use brightflow_engine::data::config::{ColumnRole, TimeGranularity};
+use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
 
 const VALID_ROLES: &[&str] = &["measure", "dimension", "time", "entity", "ignored"];
 

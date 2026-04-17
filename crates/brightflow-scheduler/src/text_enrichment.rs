@@ -1,31 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use polars::prelude::*;
 use tracing::info;
 
-use subtext::polars::enrichment::{enrich_github_issues, TextEnrichmentModel};
-
-/// Tables that support text enrichment and their required columns.
-const ENRICHABLE_TABLES: &[(&str, &[&str])] = &[
-    ("issues", &["title", "body", "label_names"]),
-    ("pull_requests", &["title", "body", "label_names"]),
-];
-
-/// Number of topic clusters for k-means.
-const DEFAULT_NUM_CLUSTERS: usize = 10;
-
-/// Check if a table name supports text enrichment.
-fn is_enrichable(table_name: &str) -> bool {
-    ENRICHABLE_TABLES
-        .iter()
-        .any(|(name, _)| *name == table_name)
-}
-
-/// Get the model file path for a given table in the workspace.
-fn model_path(workspace_root: &Path, table_name: &str) -> PathBuf {
-    let models_dir = workspace_root.join("models");
-    models_dir.join(format!("{table_name}-tfidf.bin"))
-}
+use brightflow_engine::enrichment::{
+    enrich_github_issues, enrich_with_existing_model, is_enrichable, model_path,
+    TextEnrichmentModel, DEFAULT_NUM_CLUSTERS,
+};
 
 /// Enrich a Parquet file with text-derived columns if the table supports it.
 ///
@@ -51,11 +32,7 @@ pub fn maybe_enrich_parquet(
     let df = read_parquet(parquet_path)?;
 
     // Verify required columns exist
-    let empty: &[&str] = &[];
-    let required = ENRICHABLE_TABLES
-        .iter()
-        .find(|(name, _)| *name == table_name)
-        .map_or(empty, |(_, cols)| *cols);
+    let required = brightflow_engine::enrichment::required_columns(table_name);
 
     for col in required {
         if df.column(col).is_err() {
@@ -99,37 +76,6 @@ pub fn maybe_enrich_parquet(
     );
 
     Ok(true)
-}
-
-/// Enrich a DataFrame using an already-fitted model.
-fn enrich_with_existing_model(
-    df: &DataFrame,
-    model: &TextEnrichmentModel,
-) -> Result<DataFrame, Box<dyn std::error::Error + Send + Sync>> {
-    // Combine title + body
-    let title = df.column("title")?.as_materialized_series().str()?;
-    let body = df.column("body")?.as_materialized_series().str()?;
-
-    let combined: StringChunked = title
-        .into_iter()
-        .zip(body)
-        .map(|(t, b)| {
-            let title_str = t.unwrap_or("");
-            let body_str = b.unwrap_or("");
-            Some(format!("{title_str} {body_str}"))
-        })
-        .collect();
-
-    let mut work_df = df.clone();
-    work_df.with_column(combined.with_name("_combined_text".into()).into_series())?;
-
-    let enriched =
-        subtext::polars::enrichment::enrich_dataframe(&work_df, "_combined_text", model, 5)?;
-
-    let mut result = enriched;
-    drop(result.drop_in_place("_combined_text"));
-
-    Ok(result)
 }
 
 /// Load the full table data from the store, combining with new data.

@@ -3,11 +3,11 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 
-use brightflow_ingest::models::{
+use crate::ingest::models::{
     EventListRow, FunnelRequest, FunnelResult, FunnelStepResult, RetentionRequest, RetentionResult,
     UserProfile, UserTimelineEvent,
 };
-use brightflow_ingest::IngestState;
+use crate::ingest::IngestState;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -51,7 +51,7 @@ fn resolve_dates(period: &str, start: Option<&str>, end: Option<&str>) -> (Strin
 /// Run a product analytics query in a blocking task.
 async fn run_query<T: Send + 'static>(
     label: &str,
-    f: impl FnOnce() -> brightflow_ingest::error::IngestResult<T> + Send + 'static,
+    f: impl FnOnce() -> crate::ingest::error::IngestResult<T> + Send + 'static,
 ) -> AppResult<T> {
     let label = label.to_string();
     match tokio::task::spawn_blocking(f).await {

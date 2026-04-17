@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 
-use brightflow_ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
+use crate::ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
 use brightflow_store::ScanFilter;
 
 use crate::shared::{AppError, AppResult};
@@ -72,7 +72,7 @@ fn date_filters(start: &str, end: &str) -> Vec<ScanFilter> {
 /// Run an analytics query in a blocking task with proper error logging.
 async fn run_query<T: Send + 'static>(
     label: &str,
-    f: impl FnOnce() -> brightflow_ingest::error::IngestResult<T> + Send + 'static,
+    f: impl FnOnce() -> crate::ingest::error::IngestResult<T> + Send + 'static,
 ) -> AppResult<T> {
     let label = label.to_string();
     match tokio::task::spawn_blocking(f).await {

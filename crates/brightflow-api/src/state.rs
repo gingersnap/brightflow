@@ -2,9 +2,9 @@ use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
-use brightflow_insights::data::config::{ColumnRole, TimeGranularity};
-use brightflow_insights::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
-use brightflow_insights::data::schema::DataSchema;
+use brightflow_engine::data::config::{ColumnRole, TimeGranularity};
+use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
+use brightflow_engine::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
 use brightflow_store::{ColumnSemanticRow, ParquetStore, TableAnalysisSettingsRow, TableInfo};
 use dashmap::DashMap;
@@ -42,7 +42,7 @@ pub struct AppState {
     /// Server start time (for uptime calculation)
     pub start_time: Instant,
     /// Event ingestion engine (sources, buffer, geo, UA parser)
-    pub ingest: Option<Arc<brightflow_ingest::IngestState>>,
+    pub ingest: Option<Arc<crate::ingest::IngestState>>,
     /// Workspace paths for connector discovery and output
     pub paths: Option<brightflow_core::WorkspacePaths>,
 }

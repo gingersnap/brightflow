@@ -1,7 +1,7 @@
 use polars::prelude::*;
 
-use brightflow_ingest::error::IngestResult;
-use brightflow_ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
+use crate::ingest::error::IngestResult;
+use crate::ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
 
 /// Apply user_id backward-compat fix to a store-backed LazyFrame.
 ///

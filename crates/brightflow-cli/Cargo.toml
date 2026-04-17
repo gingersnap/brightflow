@@ -11,10 +11,9 @@ path = "src/main.rs"
 brightflow-core = { path = "../brightflow-core" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-store = { path = "../brightflow-store" }
-brightflow-insights = { path = "../brightflow-insights" }
+brightflow-engine = { path = "../brightflow-engine" }
 brightflow-api = { path = "../brightflow-api" }
 brightflow-scheduler = { path = "../brightflow-scheduler" }
-subtext = { path = "../subtext", features = ["polars"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }

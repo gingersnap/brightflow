@@ -5,11 +5,11 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
-use brightflow_ingest::models::{
+use super::models::{
     CreateSourceRequest, RawEvent, RawIdentifyEvent, RawTrackEvent, Source, UpdateSourceRequest,
 };
-use brightflow_ingest::script::TRACKING_SCRIPT;
-use brightflow_ingest::IngestState;
+use super::script::TRACKING_SCRIPT;
+use super::IngestState;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -53,7 +53,7 @@ pub async fn ingest_event(
         .unwrap_or("");
 
     // Process event: hash visitor ID, parse UA, lookup geo, parse URL/UTMs
-    let mut event = brightflow_ingest::ingest::process_event(
+    let mut event = super::process::process_event(
         &raw,
         &ip,
         ua,
@@ -102,7 +102,7 @@ pub async fn track_event(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    let mut event = brightflow_ingest::ingest::process_track_event(
+    let mut event = super::process::process_track_event(
         &raw,
         &ip,
         ua,

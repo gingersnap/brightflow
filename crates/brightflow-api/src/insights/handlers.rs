@@ -2,10 +2,10 @@ use axum::{extract::State, Json};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use brightflow_insights::analysis::engine::AnalysisEngine;
-use brightflow_insights::analysis::tree::ReviewCadence;
-use brightflow_insights::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
-use brightflow_insights::debug::DebugLog;
+use brightflow_engine::analysis::engine::AnalysisEngine;
+use brightflow_engine::analysis::tree::ReviewCadence;
+use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
+use brightflow_engine::debug::DebugLog;
 
 use crate::insights::types::{InsightsResponse, ReviewRequest, TrendsRequest};
 use crate::shared::{AppError, AppResult};

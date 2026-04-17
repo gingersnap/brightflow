@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use polars::prelude::*;
 
-use brightflow_ingest::error::IngestResult;
-use brightflow_ingest::models::{
+use crate::ingest::error::IngestResult;
+use crate::ingest::models::{
     EventListRow, FunnelResult, FunnelStepResult, RetentionResult, RetentionRow, UserTimelineEvent,
 };
 

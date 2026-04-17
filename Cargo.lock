@@ -608,16 +608,17 @@ dependencies = [
  "argon2",
  "axum",
  "axum-login",
+ "blake3",
  "brightflow-connect",
  "brightflow-core",
- "brightflow-ingest",
- "brightflow-insights",
+ "brightflow-engine",
  "brightflow-scheduler",
  "brightflow-store",
  "chrono",
  "dashmap",
  "dotenvy",
  "futures",
+ "maxminddb",
  "password-hash",
  "polars",
  "serde",
@@ -632,6 +633,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ts-rs",
+ "uaparser",
+ "url",
  "uuid",
 ]
 
@@ -643,7 +646,7 @@ dependencies = [
  "brightflow-api",
  "brightflow-connect",
  "brightflow-core",
- "brightflow-insights",
+ "brightflow-engine",
  "brightflow-scheduler",
  "brightflow-store",
  "clap",
@@ -651,7 +654,6 @@ dependencies = [
  "polars",
  "rpassword",
  "serde_json",
- "subtext",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -679,42 +681,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "brightflow-ingest"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "brightflow-core",
- "brightflow-store",
- "chrono",
- "dashmap",
- "maxminddb",
- "polars",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "ts-rs",
- "uaparser",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "brightflow-insights"
+name = "brightflow-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "brightflow-core",
  "chrono",
  "polars",
+ "regex",
  "serde",
  "serde_json",
  "statrs",
- "subtext",
  "thiserror 2.0.18",
+ "tracing",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -723,14 +704,13 @@ version = "0.1.0"
 dependencies = [
  "brightflow-connect",
  "brightflow-core",
- "brightflow-insights",
+ "brightflow-engine",
  "brightflow-store",
  "chrono",
  "polars",
  "serde",
  "serde_json",
  "sqlx",
- "subtext",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4617,19 +4597,6 @@ dependencies = [
  "quote",
  "rustversion",
  "syn",
-]
-
-[[package]]
-name = "subtext"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "polars",
- "regex",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "unicode-segmentation",
 ]
 
 [[package]]

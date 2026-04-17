@@ -11,9 +11,8 @@ path = "src/lib.rs"
 brightflow-core = { path = "../brightflow-core" }
 brightflow-store = { path = "../brightflow-store" }
 brightflow-connect = { path = "../brightflow-connect" }
-brightflow-insights = { path = "../brightflow-insights" }
+brightflow-engine = { path = "../brightflow-engine" }
 brightflow-scheduler = { path = "../brightflow-scheduler" }
-brightflow-ingest = { path = "../brightflow-ingest" }
 
 # Web framework
 axum = { workspace = true }
@@ -38,6 +37,12 @@ polars = { workspace = true }
 
 # Concurrency
 dashmap = "6"
+
+# Ingest dependencies
+blake3 = "1"
+maxminddb = "0.24"
+uaparser = "0.6"
+url = "2"
 
 # Serialization
 serde = { workspace = true }
