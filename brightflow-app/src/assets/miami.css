@@ -6,7 +6,7 @@
      brand (pink)      — Logo, identity, marketing CTAs, gradients
      primary (purple)  — UI actions, buttons, focus rings
      secondary (teal)  — Supporting actions, highlights
-     sand              — Neutral backgrounds, borders, text (custom color)
+     neutral (mauve)   — Neutral backgrounds, borders, text
      info/success/warning/error — Semantic UI states
 
    Fonts:
@@ -21,8 +21,8 @@
      App:       @import "tailwindcss"; @import "@nuxt/ui"; @import "./miami.css";
      Marketing: @import "tailwindcss"; @import "./miami.css";
 
-   Nuxt UI (app.config.ts):
-     ui.colors: { primary: 'purple', secondary: 'teal', neutral: 'sand',
+   Nuxt UI (vite.config.ts):
+     ui.colors: { primary: 'purple', secondary: 'teal', neutral: 'mauve',
                   info: 'info', success: 'success', warning: 'warning',
                   error: 'error' }
 
@@ -31,7 +31,7 @@
      bg-main / bg-sidebar / bg-card / border-main — layout
 
    Font loading is the consumer's responsibility.
-   Sand is the only custom color — everything else is a Tailwind default.
+   Neutral uses Tailwind's mauve palette — all other colors are Tailwind defaults.
 
    ============================================================================ */
 
@@ -40,34 +40,6 @@
    ============================================================================ */
 
 @theme static {
-  /* ── Sand — Custom neutral (the only non-Tailwind color) ────────────────── */
-/*
-  --color-sand-50: #fdfcfa;
-  --color-sand-100: #f7f6f3;
-  --color-sand-200: #efeee9;
-  --color-sand-300: #e7e5e0;
-  --color-sand-400: #d4d2cc;
-  --color-sand-500: #a8a29e;
-  --color-sand-600: #78716c;
-  --color-sand-700: #57534e;
-  --color-sand-800: #44403c;
-  --color-sand-900: #292524;
-  --color-sand-950: #1c1917;
-*/
-
-  --color-sand-50: var(--color-mauve-50);
-  --color-sand-100: var(--color-mauve-100);
-  --color-sand-200: var(--color-mauve-200);
-  --color-sand-300: var(--color-mauve-300);
-  --color-sand-400: var(--color-mauve-400);
-  --color-sand-500: var(--color-mauve-500);
-  --color-sand-600: var(--color-mauve-600);
-  --color-sand-700: var(--color-mauve-700);
-  --color-sand-800: var(--color-mauve-800);
-  --color-sand-900: var(--color-mauve-900);
-  --color-sand-950: var(--color-mauve-950);
-
-
   /* ── Brand (→ pink) — Identity, energy, marketing CTAs ──────────────── */
 
   --color-brand-50: var(--color-pink-50);
@@ -196,41 +168,17 @@
 
 :root {
   --ui-radius: 0.5rem;
-  --ui-bg: var(--color-sand-50);
-  --ui-bg-muted: var(--color-sand-100);
-  --ui-bg-elevated: #ffffff;
-  --ui-bg-accented: var(--color-sand-200);
-  --ui-bg-inverted: var(--color-sand-950);
-  --ui-text: var(--color-sand-900);
-  --ui-text-muted: var(--color-sand-600);
-  --ui-text-dimmed: var(--color-sand-500);
-  --ui-text-toned: var(--color-sand-700);
-  --ui-text-highlighted: var(--color-sand-950);
-  --ui-text-inverted: #ffffff;
-  --ui-border: var(--color-sand-200);
-  --ui-border-muted: var(--color-sand-100);
-  --ui-border-accented: var(--color-sand-300);
-  --ui-border-inverted: var(--color-sand-900);
-  --ui-primary: var(--color-purple-500);
+  --ui-bg: var(--ui-color-neutral-50);
+  --ui-bg-muted: var(--ui-color-neutral-100);
+  --ui-bg-elevated: #fff;
+  --ui-brand: oklch(76.45% 0.1545 354.5); /* ~pink-350 / #fd86b8 */
 }
 
 .dark {
-  --ui-bg: var(--color-sand-950);
+  --ui-bg: var(--ui-color-neutral-950);
   --ui-bg-muted: #0c0a09;
-  --ui-bg-elevated: var(--color-sand-900);
-  --ui-bg-accented: var(--color-sand-800);
-  --ui-bg-inverted: var(--color-sand-50);
-  --ui-text: var(--color-sand-50);
-  --ui-text-muted: var(--color-sand-400);
-  --ui-text-dimmed: var(--color-sand-500);
-  --ui-text-toned: var(--color-sand-300);
-  --ui-text-highlighted: #ffffff;
-  --ui-text-inverted: var(--color-sand-950);
-  --ui-border: var(--color-sand-800);
-  --ui-border-muted: var(--color-sand-900);
-  --ui-border-accented: var(--color-sand-700);
-  --ui-border-inverted: var(--color-sand-100);
-  --ui-primary: var(--color-purple-500);
+  --ui-bg-elevated: var(--ui-color-neutral-900);
+  --ui-brand: oklch(76.45% 0.1545 354.5); /* ~pink-350 / #fd86b8 */
 }
 
 /* ============================================================================
@@ -356,4 +304,8 @@
 
 @utility border-main {
   border-color: var(--ui-border);
+}
+
+@utility text-brand {
+  color: var(--ui-brand);
 }

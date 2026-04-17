@@ -75,7 +75,11 @@ export default defineConfig({
         colors: {
           primary: 'purple',
           secondary: 'teal',
-          neutral: 'sand',
+          neutral: 'mauve',
+          info: 'info',
+          success: 'success',
+          warning: 'warning',
+          error: 'error',
         },
       },
     }),
