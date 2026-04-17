@@ -41,7 +41,7 @@
 
 @theme static {
   /* ── Sand — Custom neutral (the only non-Tailwind color) ────────────────── */
-
+/*
   --color-sand-50: #fdfcfa;
   --color-sand-100: #f7f6f3;
   --color-sand-200: #efeee9;
@@ -53,6 +53,20 @@
   --color-sand-800: #44403c;
   --color-sand-900: #292524;
   --color-sand-950: #1c1917;
+*/
+
+  --color-sand-50: var(--color-mauve-50);
+  --color-sand-100: var(--color-mauve-100);
+  --color-sand-200: var(--color-mauve-200);
+  --color-sand-300: var(--color-mauve-300);
+  --color-sand-400: var(--color-mauve-400);
+  --color-sand-500: var(--color-mauve-500);
+  --color-sand-600: var(--color-mauve-600);
+  --color-sand-700: var(--color-mauve-700);
+  --color-sand-800: var(--color-mauve-800);
+  --color-sand-900: var(--color-mauve-900);
+  --color-sand-950: var(--color-mauve-950);
+
 
   /* ── Brand (→ pink) — Identity, energy, marketing CTAs ──────────────── */
 

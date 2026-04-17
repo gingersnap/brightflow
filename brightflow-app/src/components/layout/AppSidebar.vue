@@ -149,8 +149,8 @@ function toggleSystem(): void {
         class="flex items-center gap-2 px-2.5"
         :class="collapsed ? 'justify-center' : ''"
       >
-        <UIcon name="i-lucide-layers" class="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
-        <span v-if="!collapsed" class="font-brand font-semibold text-brand-600 dark:text-brand-400"
+        <UIcon name="i-lucide-layers" class="h-5 w-5 shrink-0 text-brand-400 dark:text-brand-300" />
+        <span v-if="!collapsed" class="font-brand font-semibold text-brand-400 dark:text-brand-300"
           >Brightflow</span
         >
       </RouterLink>
