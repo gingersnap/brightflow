@@ -58,7 +58,11 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
 <template>
   <UDashboardPanel id="source">
     <template #header>
-      <UDashboardNavbar :title="toolLabel" />
+      <UDashboardNavbar :title="toolLabel">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
       <UDashboardToolbar v-if="showPeriod">
         <template #left>
           <PeriodSelector v-model="sourceStore.period" />

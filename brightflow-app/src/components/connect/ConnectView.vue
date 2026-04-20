@@ -133,6 +133,9 @@ function onDialogDone(): void {
   <UDashboardPanel id="connect">
     <template #header>
       <UDashboardNavbar title="Connect">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #trailing>
           <UButton variant="ghost" size="sm" :loading="loadingUnified" @click="refreshAll">
             <RefreshCw class="mr-1.5 h-3.5 w-3.5" />

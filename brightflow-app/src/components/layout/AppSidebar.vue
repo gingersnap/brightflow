@@ -60,37 +60,26 @@ const sourceNavItems = computed(() => {
   });
 });
 
-// Bottom navigation items
-const bottomNavItems = computed(() => [
-  {
-    label: 'Sources',
-    icon: 'i-lucide-layers',
-    value: 'sources',
-    onSelect: () => {
-      goToSources();
-      open.value = false;
-    },
-  },
-  {
-    label: 'System',
-    icon: 'i-lucide-activity',
-    value: 'system',
-    onSelect: () => {
-      toggleSystem();
-      open.value = false;
-    },
-  },
-]);
-
-// Active bottom nav value
-const BOTTOM_NAV_NAMES = new Set(['sources', 'system']);
-const activeBottomValue = computed(() => {
-  const name = typeof route.name === 'string' ? route.name : '';
-  return BOTTOM_NAV_NAMES.has(name) ? name : undefined; // oxlint-disable-line no-useless-undefined
-});
-
 // User dropdown menu items
 const userMenuItems = computed(() => [
+  [
+    {
+      label: 'Sources',
+      icon: 'i-lucide-layers',
+      onSelect: () => {
+        goToSources();
+        open.value = false;
+      },
+    },
+    {
+      label: 'System',
+      icon: 'i-lucide-activity',
+      onSelect: () => {
+        toggleSystem();
+        open.value = false;
+      },
+    },
+  ],
   [
     {
       label: colorMode.value === 'dark' ? 'Light mode' : 'Dark mode',
@@ -149,13 +138,15 @@ function toggleSystem(): void {
         class="flex items-center gap-2 px-2.5"
         :class="collapsed ? 'justify-center' : ''"
       >
-        <UIcon name="i-lucide-layers" class="h-5 w-5 shrink-0 text-brand" />
-        <span v-if="!collapsed" class="font-brand font-semibold text-brand">Brightflow</span>
+        <UIcon name="i-lucide-layers" class="h-5 w-5 shrink-0 text-lg text-brand" />
+        <span v-if="!collapsed" class="font-brand text-lg font-semibold text-brand"
+          >Brightflow</span
+        >
       </RouterLink>
     </template>
 
-    <!-- Body: source tree + bottom nav -->
-    <template #default="{ collapsed, collapse }">
+    <!-- Body: source tree -->
+    <template #default="{ collapsed }">
       <!-- Sources with collapsible tool children -->
       <UNavigationMenu
         :collapsed="collapsed"
@@ -165,29 +156,6 @@ function toggleSystem(): void {
         tooltip
         popover
       />
-
-      <!-- Bottom nav (pushed down) -->
-      <UNavigationMenu
-        :collapsed="collapsed"
-        :items="bottomNavItems"
-        orientation="vertical"
-        color="neutral"
-        :model-value="activeBottomValue"
-        tooltip
-        class="mt-auto"
-      />
-
-      <button
-        class="flex w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-elevated"
-        :class="collapsed ? 'justify-center' : ''"
-        @click="collapse(!collapsed)"
-      >
-        <UIcon
-          :name="collapsed ? 'i-lucide-panel-left-open' : 'i-lucide-panel-left-close'"
-          class="h-4 w-4 shrink-0"
-        />
-        <span v-if="!collapsed">Collapse</span>
-      </button>
     </template>
 
     <!-- Footer: user menu -->

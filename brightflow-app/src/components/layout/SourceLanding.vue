@@ -29,7 +29,11 @@ function handleSelect(id: string): void {
 <template>
   <UDashboardPanel id="sources">
     <template #header>
-      <UDashboardNavbar title="Sources" />
+      <UDashboardNavbar title="Sources">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
     </template>
 
     <template #body>

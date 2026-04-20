@@ -167,18 +167,40 @@
    ============================================================================ */
 
 :root {
-  --ui-radius: 0.5rem;
+  /* --ui-radius: 0.5rem; */
   --ui-bg: var(--ui-color-neutral-50);
   --ui-bg-muted: var(--ui-color-neutral-100);
-  --ui-bg-elevated: #fff;
-  --ui-brand: oklch(76.45% 0.1545 354.5); /* ~pink-350 / #fd86b8 */
+  --ui-bg-elevated: var(--color-white);
+  --ui-brand: oklch(0.72 0.16 348);
+
+  /*--ui-brand: oklch(80.2% 0.136 347);*/
+
+  /*  --ui-brand: oklch(76.45% 0.1545 354.5); /* ~pink-350 / #fd86b8 */
+  /*
+  oklch(82.3% 0.12 346.018)
+  oklch(71.8% 0.202 349.761)
+10,5
+0,082
+3,743
+
+80,2
+0,1364
+346,766
+  */
 }
 
 .dark {
-  --ui-bg: var(--ui-color-neutral-950);
-  --ui-bg-muted: #0c0a09;
+  --ui-bg: var(--color-black);
+  --ui-bg-muted: var(--ui-color-neutral-950);
   --ui-bg-elevated: var(--ui-color-neutral-900);
-  --ui-brand: oklch(76.45% 0.1545 354.5); /* ~pink-350 / #fd86b8 */
+
+  /*  
+300 
+oklch(0.823 0.12 346.018)
+
+400
+oklch(71.8% 0.202 349.761)
+*/
 }
 
 /* ============================================================================

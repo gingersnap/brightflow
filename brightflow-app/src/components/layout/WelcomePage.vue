@@ -3,7 +3,11 @@
 <template>
   <UDashboardPanel id="welcome">
     <template #header>
-      <UDashboardNavbar title="Welcome" />
+      <UDashboardNavbar title="Welcome">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
     </template>
 
     <template #body>

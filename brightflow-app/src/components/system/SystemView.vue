@@ -103,6 +103,9 @@ function handleScroll(): void {
   <UDashboardPanel id="system">
     <template #header>
       <UDashboardNavbar title="System">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #trailing>
           <span
             class="h-2 w-2 rounded-full"
