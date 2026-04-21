@@ -34,11 +34,12 @@ useQuery({
   },
 });
 
-// Build source nav items with collapsible tool children
-const sourceNavItems = computed(() => {
+// Build nav items: Sources group + Settings group
+const navItems = computed(() => {
   const currentSourceId = route.params.sourceId as string | undefined;
   const currentTool = route.params.tool as string | undefined;
-  return sourceStore.sourcesData.map((source) => {
+
+  const sourceItems = sourceStore.sourcesData.map((source) => {
     const tools = toolsForSource(source);
     return {
       label: source.name,
@@ -58,28 +59,35 @@ const sourceNavItems = computed(() => {
       })),
     };
   });
+
+  return [
+    [{ label: 'Sources', type: 'label' as const }, ...sourceItems],
+    [
+      { label: 'Settings', type: 'label' as const },
+      {
+        label: 'Sources',
+        icon: 'i-lucide-layers',
+        active: route.name === 'sources',
+        onSelect: () => {
+          goToSources();
+          open.value = false;
+        },
+      },
+      {
+        label: 'System',
+        icon: 'i-lucide-activity',
+        active: route.name === 'system',
+        onSelect: () => {
+          router.push({ name: 'system' });
+          open.value = false;
+        },
+      },
+    ],
+  ];
 });
 
 // User dropdown menu items
 const userMenuItems = computed(() => [
-  [
-    {
-      label: 'Sources',
-      icon: 'i-lucide-layers',
-      onSelect: () => {
-        goToSources();
-        open.value = false;
-      },
-    },
-    {
-      label: 'System',
-      icon: 'i-lucide-activity',
-      onSelect: () => {
-        toggleSystem();
-        open.value = false;
-      },
-    },
-  ],
   [
     {
       label: colorMode.value === 'dark' ? 'Light mode' : 'Dark mode',
@@ -90,7 +98,7 @@ const userMenuItems = computed(() => [
     },
     {
       label: uiStore.textSize === 'compact' ? 'Comfortable text' : 'Compact text',
-      icon: uiStore.textSize === 'compact' ? 'i-lucide-a-large-small' : 'i-lucide-a-large-small',
+      icon: 'i-lucide-a-large-small',
       onSelect: () => {
         uiStore.toggleTextSize();
       },
@@ -111,14 +119,6 @@ function handleSourceToolSelect(sourceId: string, toolId: ToolId): void {
 
 function goToSources(): void {
   router.push({ name: 'sources' });
-}
-
-function toggleSystem(): void {
-  if (route.name === 'system') {
-    router.push({ name: 'sources' });
-  } else {
-    router.push({ name: 'system' });
-  }
 }
 </script>
 
@@ -147,10 +147,10 @@ function toggleSystem(): void {
 
     <!-- Body: source tree -->
     <template #default="{ collapsed }">
-      <!-- Sources with collapsible tool children -->
+      <!-- Sources + Settings groups -->
       <UNavigationMenu
         :collapsed="collapsed"
-        :items="sourceNavItems"
+        :items="navItems"
         orientation="vertical"
         highlight
         tooltip
