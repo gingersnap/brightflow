@@ -14,9 +14,18 @@ const router = createRouter({
       component: () => import('./components/layout/SourceLanding.vue'),
     },
     {
+      path: '/sources/new',
+      name: 'sources-new',
+      component: () => import('./components/sources/NewSourcePage.vue'),
+    },
+    {
       path: '/connect',
-      name: 'connect',
-      component: () => import('./components/connect/ConnectView.vue'),
+      redirect: { name: 'sources-new' },
+    },
+    {
+      path: '/schedules',
+      name: 'schedules',
+      component: () => import('./components/schedules/SchedulesView.vue'),
     },
     {
       path: '/system',

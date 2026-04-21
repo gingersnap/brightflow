@@ -74,6 +74,15 @@ const navItems = computed(() => {
         },
       },
       {
+        label: 'Schedules',
+        icon: 'i-lucide-calendar-clock',
+        active: route.name === 'schedules',
+        onSelect: () => {
+          router.push({ name: 'schedules' });
+          open.value = false;
+        },
+      },
+      {
         label: 'System',
         icon: 'i-lucide-activity',
         active: route.name === 'system',

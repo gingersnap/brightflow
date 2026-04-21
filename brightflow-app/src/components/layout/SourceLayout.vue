@@ -9,6 +9,8 @@ import UserExplorerPanel from '@/components/analytics/UserExplorerPanel.vue';
 import ExploreTool from '@/components/explore/ExploreTool.vue';
 import InsightsView from '@/components/insights/InsightsView.vue';
 import PeriodSelector from '@/components/layout/PeriodSelector.vue';
+import ConnectorSourceSettings from '@/components/settings/ConnectorSourceSettings.vue';
+import WebSourceSettings from '@/components/settings/WebSourceSettings.vue';
 import ConnectorDashboard from '@/components/tools/ConnectorDashboard.vue';
 import WebDashboard from '@/components/tools/WebDashboard.vue';
 import { productAnalyticsApi } from '@/services/api';
@@ -115,6 +117,12 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
 
       <!-- Insights -->
       <InsightsView v-else-if="activeTool === 'insights'" :source-id="sourceId" :table="table" />
+
+      <!-- Settings -->
+      <template v-else-if="activeTool === 'settings'">
+        <WebSourceSettings v-if="source?.kind === 'web-analytics'" :source="source" />
+        <ConnectorSourceSettings v-else-if="source" :source="source" />
+      </template>
     </template>
   </UDashboardPanel>
 </template>

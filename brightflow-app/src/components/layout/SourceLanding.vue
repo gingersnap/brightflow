@@ -22,7 +22,7 @@ const { data: sources, isPending } = useQuery({
 });
 
 function handleSelect(id: string): void {
-  router.push({ name: 'source-tool', params: { sourceId: id, tool: 'dashboard' } });
+  router.push({ name: 'source-tool', params: { sourceId: id, tool: 'settings' } });
 }
 </script>
 
@@ -52,7 +52,7 @@ function handleSelect(id: string): void {
         <!-- Add Source card -->
         <button
           class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-default p-4 text-muted transition-all hover:border-primary-500/50 hover:text-highlighted"
-          @click="router.push({ name: 'connect' })"
+          @click="router.push({ name: 'sources-new' })"
         >
           <Plus class="h-6 w-6" />
           <span class="text-sm font-medium">Add Source</span>

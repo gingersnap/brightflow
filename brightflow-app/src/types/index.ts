@@ -45,7 +45,14 @@ export type {
 // Unified source types (frontend-only, matching backend SourceKind/SourceTool)
 export type SourceKind = 'web-analytics' | 'connector';
 
-export type ToolId = 'dashboard' | 'funnels' | 'retention' | 'users' | 'explore' | 'insights';
+export type ToolId =
+  | 'dashboard'
+  | 'funnels'
+  | 'retention'
+  | 'users'
+  | 'explore'
+  | 'insights'
+  | 'settings';
 
 export interface SourceTable {
   name: string;
@@ -77,13 +84,15 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
   users: { label: 'Users', icon: 'i-lucide-users' },
   explore: { label: 'Explore', icon: 'i-lucide-search' },
   insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
+  settings: { label: 'Settings', icon: 'i-lucide-settings' },
 };
 
 export function toolsForSource(source: UnifiedSource): ToolDef[] {
-  return source.tools.map((id) => ({
-    id,
-    ...TOOL_DEFS[id],
-  }));
+  const ids: ToolId[] = [...source.tools.filter((id) => id !== 'settings'), 'settings'];
+  return ids.map((id) => {
+    const def = TOOL_DEFS[id];
+    return { icon: def.icon, id, label: def.label };
+  });
 }
 
 // Filter state (frontend-only)
