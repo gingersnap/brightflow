@@ -51,6 +51,8 @@ export default defineConfig({
       'no-ternary': 'off', // Bans a core language feature
       'no-inline-comments': 'off', // Marginal style preference
       'prefer-destructuring': 'off', // Splice()[0] reads more clearly
+      '@typescript-eslint/prefer-readonly-parameter-types': 'off', // Noisy on DOM/framework types and Pinia actions
+      '@typescript-eslint/consistent-return': 'off', // Fights TS exhaustive-switch narrowing
 
       // --- Off: handled elsewhere or not applicable ---
       'sort-imports': 'off', // Handled by Oxfmt sortImports

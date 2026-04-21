@@ -42,7 +42,7 @@ function handleSubmit(): void {
         v-model="name"
         type="text"
         :placeholder="`${connectorName}-default`"
-        class="w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted placeholder-muted focus:border-blue-500 focus:outline-none"
+        class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
       />
     </div>
 
@@ -53,7 +53,7 @@ function handleSubmit(): void {
         v-model="token"
         type="password"
         placeholder="Paste API token..."
-        class="w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted placeholder-muted focus:border-blue-500 focus:outline-none"
+        class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
       />
     </div>
 
@@ -74,13 +74,13 @@ function handleSubmit(): void {
           v-model="entry.key"
           type="text"
           placeholder="key"
-          class="w-1/3 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted placeholder-muted focus:border-blue-500 focus:outline-none"
+          class="placeholder-muted w-1/3 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted focus:border-blue-500 focus:outline-none"
         />
         <input
           v-model="entry.value"
           type="text"
           placeholder="value"
-          class="flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted placeholder-muted focus:border-blue-500 focus:outline-none"
+          class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted focus:border-blue-500 focus:outline-none"
         />
         <button
           type="button"

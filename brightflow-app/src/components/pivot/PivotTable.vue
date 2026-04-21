@@ -146,7 +146,7 @@ const groupedRows = computed((): GroupedRow[] => {
     // Add group header row
     result.push({
       dataValues: pivotStore.showSubtotals ? group.subtotals : [],
-      groupKey: groupKey,
+      groupKey,
       groupLabel: key,
       id: groupKey,
       indexValues: [key],

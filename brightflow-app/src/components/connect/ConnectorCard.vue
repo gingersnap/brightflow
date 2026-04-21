@@ -157,7 +157,7 @@ function duration(startedAt: string, finishedAt: string): string {
         v-model="tokenValue"
         type="password"
         placeholder="Paste API token..."
-        class="flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted placeholder-muted focus:border-blue-500 focus:outline-none"
+        class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted focus:border-blue-500 focus:outline-none"
         @keyup.enter="saveToken"
       />
       <UButton size="xs" :loading="savingToken" :disabled="!tokenValue.trim()" @click="saveToken">
