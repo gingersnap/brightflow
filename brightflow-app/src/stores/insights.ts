@@ -7,6 +7,7 @@ export type ReportType = 'review' | 'trends';
 export type Cadence = 'daily' | 'weekly' | 'monthly';
 
 export const useInsightsStore = defineStore('insights', () => {
+  const selectedSourceId = ref<string | null>(null);
   const selectedTable = ref<string | null>(null);
   const tree = ref<AnalysisTree | null>(null);
   const reportType = ref<ReportType>('review');
@@ -19,10 +20,11 @@ export const useInsightsStore = defineStore('insights', () => {
   const firstLevelCount = ref(0);
   const deeperCount = ref(0);
 
-  function selectTable(name: string): void {
-    if (name === selectedTable.value) {
+  function selectTable(sourceId: string, name: string): void {
+    if (sourceId === selectedSourceId.value && name === selectedTable.value) {
       return;
     }
+    selectedSourceId.value = sourceId;
     selectedTable.value = name;
     tree.value = null;
     error.value = null;
@@ -34,7 +36,7 @@ export const useInsightsStore = defineStore('insights', () => {
   }
 
   async function runReview(selectedCadence: Cadence = cadence.value): Promise<void> {
-    if (selectedTable.value == null) {
+    if (selectedSourceId.value == null || selectedTable.value == null) {
       error.value = 'No table selected';
       return;
     }
@@ -45,7 +47,11 @@ export const useInsightsStore = defineStore('insights', () => {
     reportType.value = 'review';
 
     try {
-      const result = await insightsApi.runReview(selectedTable.value, selectedCadence);
+      const result = await insightsApi.runReview(
+        selectedSourceId.value,
+        selectedTable.value,
+        selectedCadence,
+      );
       if (result) {
         // oxlint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Backend-generated tree shape
         tree.value = result.tree as AnalysisTree;
@@ -65,7 +71,7 @@ export const useInsightsStore = defineStore('insights', () => {
   }
 
   async function runTrends(): Promise<void> {
-    if (selectedTable.value == null) {
+    if (selectedSourceId.value == null || selectedTable.value == null) {
       error.value = 'No table selected';
       return;
     }
@@ -75,7 +81,7 @@ export const useInsightsStore = defineStore('insights', () => {
     reportType.value = 'trends';
 
     try {
-      const result = await insightsApi.runTrends(selectedTable.value);
+      const result = await insightsApi.runTrends(selectedSourceId.value, selectedTable.value);
       if (result) {
         // oxlint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Backend-generated tree shape
         tree.value = result.tree as AnalysisTree;
@@ -95,6 +101,7 @@ export const useInsightsStore = defineStore('insights', () => {
   }
 
   function reset(): void {
+    selectedSourceId.value = null;
     selectedTable.value = null;
     tree.value = null;
     error.value = null;
@@ -120,6 +127,7 @@ export const useInsightsStore = defineStore('insights', () => {
     runReview,
     runTrends,
     selectTable,
+    selectedSourceId,
     selectedTable,
     tree,
   };

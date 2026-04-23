@@ -8,23 +8,23 @@ use crate::semantics::types::{
     TableSettingsResponse,
 };
 use crate::shared::{AppError, AppResult};
-use crate::state::AppState;
+use crate::state::{cache_key, AppState};
 
 use brightflow_engine::data::config::{ColumnRole, TimeGranularity};
 use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
 
 const VALID_ROLES: &[&str] = &["measure", "dimension", "time", "entity", "ignored"];
 
-/// GET /api/tables/{name}/semantics — list all overrides for a table
+/// GET /api/sources/{source_id}/tables/{name}/semantics — list all overrides for a table
 pub async fn list_semantics(
     State(state): State<AppState>,
-    Path(name): Path<String>,
+    Path((source_id, name)): Path<(String, String)>,
 ) -> AppResult<Json<ColumnSemanticsResponse>> {
     let store = state
         .store()
         .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
 
-    let rows = store.get_column_semantics(&name).await?;
+    let rows = store.get_column_semantics(&source_id, &name).await?;
 
     let columns: Vec<ColumnSemantic> = rows
         .into_iter()
@@ -43,10 +43,10 @@ pub async fn list_semantics(
     }))
 }
 
-/// PUT /api/tables/{name}/semantics — bulk upsert overrides
+/// PUT /api/sources/{source_id}/tables/{name}/semantics — bulk upsert overrides
 pub async fn bulk_upsert_semantics(
     State(state): State<AppState>,
-    Path(name): Path<String>,
+    Path((source_id, name)): Path<(String, String)>,
     Json(req): Json<BulkColumnSemanticsRequest>,
 ) -> AppResult<Json<ColumnSemanticsResponse>> {
     let store = state
@@ -68,7 +68,7 @@ pub async fn bulk_upsert_semantics(
     // Resolve table_id
     let table = store
         .db()
-        .get_table_by_name(&name)
+        .get_table(&source_id, &name)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Table '{name}' not found")))?;
 
@@ -93,7 +93,8 @@ pub async fn bulk_upsert_semantics(
         .await?;
 
     // Invalidate cache and update in-memory overrides
-    state.invalidate_schema_cache(&name);
+    let key = cache_key(&source_id, &name);
+    state.invalidate_schema_cache(&key);
     let overrides: Vec<ColumnOverride> = req
         .columns
         .iter()
@@ -108,7 +109,7 @@ pub async fn bulk_upsert_semantics(
             })
         })
         .collect();
-    state.schema_overrides.insert(name.clone(), overrides);
+    state.schema_overrides.insert(key, overrides);
 
     Ok(Json(ColumnSemanticsResponse {
         table_name: name,
@@ -116,10 +117,10 @@ pub async fn bulk_upsert_semantics(
     }))
 }
 
-/// PUT /api/tables/{name}/semantics/{col} — upsert single column
+/// PUT /api/sources/{source_id}/tables/{name}/semantics/{col} — upsert single column
 pub async fn upsert_column_semantic(
     State(state): State<AppState>,
-    Path((name, col)): Path<(String, String)>,
+    Path((source_id, name, col)): Path<(String, String, String)>,
     Json(req): Json<ColumnSemantic>,
 ) -> AppResult<Json<ColumnSemantic>> {
     let store = state
@@ -136,6 +137,7 @@ pub async fn upsert_column_semantic(
 
     let row = store
         .upsert_column_semantic(
+            &source_id,
             &name,
             &col,
             &req.role,
@@ -146,11 +148,12 @@ pub async fn upsert_column_semantic(
         .await?;
 
     // Invalidate cache and update in-memory overrides
-    state.invalidate_schema_cache(&name);
+    let key = cache_key(&source_id, &name);
+    state.invalidate_schema_cache(&key);
     if let Some(role) = parse_role(&req.role) {
         let mut overrides = state
             .schema_overrides
-            .get(&name)
+            .get(&key)
             .map(|v| v.value().clone())
             .unwrap_or_default();
         overrides.retain(|o| o.column_name != col);
@@ -161,7 +164,7 @@ pub async fn upsert_column_semantic(
             label: req.label.clone(),
             description: req.description.clone(),
         });
-        state.schema_overrides.insert(name, overrides);
+        state.schema_overrides.insert(key, overrides);
     }
 
     Ok(Json(ColumnSemantic {
@@ -173,16 +176,18 @@ pub async fn upsert_column_semantic(
     }))
 }
 
-/// DELETE /api/tables/{name}/semantics/{col} — delete override (revert to auto)
+/// DELETE /api/sources/{source_id}/tables/{name}/semantics/{col} — delete override (revert to auto)
 pub async fn delete_column_semantic(
     State(state): State<AppState>,
-    Path((name, col)): Path<(String, String)>,
+    Path((source_id, name, col)): Path<(String, String, String)>,
 ) -> AppResult<Json<serde_json::Value>> {
     let store = state
         .store()
         .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
 
-    let deleted = store.delete_column_semantic(&name, &col).await?;
+    let deleted = store
+        .delete_column_semantic(&source_id, &name, &col)
+        .await?;
 
     if !deleted {
         return Err(AppError::NotFound(format!(
@@ -191,24 +196,25 @@ pub async fn delete_column_semantic(
     }
 
     // Invalidate cache and update in-memory overrides
-    state.invalidate_schema_cache(&name);
-    if let Some(mut overrides) = state.schema_overrides.get_mut(&name) {
+    let key = cache_key(&source_id, &name);
+    state.invalidate_schema_cache(&key);
+    if let Some(mut overrides) = state.schema_overrides.get_mut(&key) {
         overrides.retain(|o| o.column_name != col);
     }
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
-/// GET /api/tables/{name}/settings — get table analysis settings
+/// GET /api/sources/{source_id}/tables/{name}/settings — get table analysis settings
 pub async fn get_table_settings(
     State(state): State<AppState>,
-    Path(name): Path<String>,
+    Path((source_id, name)): Path<(String, String)>,
 ) -> AppResult<Json<TableSettingsResponse>> {
     let store = state
         .store()
         .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
 
-    let row = store.get_table_settings(&name).await?;
+    let row = store.get_table_settings(&source_id, &name).await?;
 
     let settings = row.map_or_else(
         || TableSettings {
@@ -231,10 +237,10 @@ pub async fn get_table_settings(
     }))
 }
 
-/// PUT /api/tables/{name}/settings — upsert settings
+/// PUT /api/sources/{source_id}/tables/{name}/settings — upsert settings
 pub async fn upsert_table_settings(
     State(state): State<AppState>,
-    Path(name): Path<String>,
+    Path((source_id, name)): Path<(String, String)>,
     Json(req): Json<TableSettings>,
 ) -> AppResult<Json<TableSettingsResponse>> {
     let store = state
@@ -252,6 +258,7 @@ pub async fn upsert_table_settings(
 
     let row = store
         .upsert_table_settings(
+            &source_id,
             &name,
             req.display_name.as_deref(),
             req.description.as_deref(),
@@ -261,12 +268,13 @@ pub async fn upsert_table_settings(
         .await?;
 
     // Invalidate schema cache and update in-memory settings
-    state.invalidate_schema_cache(&name);
+    let key = cache_key(&source_id, &name);
+    state.invalidate_schema_cache(&key);
     let time_granularity = req.time_granularity.as_deref().and_then(parse_granularity);
     let comparison_periods = req.comparison_periods.and_then(|p| usize::try_from(p).ok());
     if time_granularity.is_some() || comparison_periods.is_some() {
         state.settings_overrides.insert(
-            name.clone(),
+            key,
             TableSettingsOverride {
                 time_granularity,
                 comparison_periods,

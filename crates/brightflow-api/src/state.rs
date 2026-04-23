@@ -112,36 +112,51 @@ impl AppState {
         };
 
         for table_ref in tables {
-            let table_name = &table_ref.name;
+            let key = cache_key(&table_ref.source_id, &table_ref.name);
 
-            match store.get_column_semantics(table_name).await {
+            match store
+                .get_column_semantics(&table_ref.source_id, &table_ref.name)
+                .await
+            {
                 Ok(rows) if !rows.is_empty() => {
                     let overrides: Vec<ColumnOverride> =
                         rows.iter().filter_map(convert_semantic_row).collect();
                     let kpi_count = overrides.iter().filter(|o| o.is_kpi).count();
                     tracing::info!(
-                        "Loaded {} column overrides for '{}' ({} KPIs)",
+                        "Loaded {} column overrides for '{}/{}' ({} KPIs)",
                         overrides.len(),
-                        table_name,
+                        table_ref.source_id,
+                        table_ref.name,
                         kpi_count,
                     );
-                    self.schema_overrides.insert(table_name.clone(), overrides);
+                    self.schema_overrides.insert(key.clone(), overrides);
                 },
                 Ok(_) => {},
                 Err(e) => {
-                    tracing::warn!("Failed to load column semantics for '{}': {e}", table_name);
+                    tracing::warn!(
+                        "Failed to load column semantics for '{}/{}': {e}",
+                        table_ref.source_id,
+                        table_ref.name
+                    );
                 },
             }
 
-            match store.get_table_settings(table_name).await {
+            match store
+                .get_table_settings(&table_ref.source_id, &table_ref.name)
+                .await
+            {
                 Ok(Some(row)) => {
                     if let Some(settings) = convert_settings_row(&row) {
-                        self.settings_overrides.insert(table_name.clone(), settings);
+                        self.settings_overrides.insert(key, settings);
                     }
                 },
                 Ok(None) => {},
                 Err(e) => {
-                    tracing::warn!("Failed to load table settings for '{}': {e}", table_name);
+                    tracing::warn!(
+                        "Failed to load table settings for '{}/{}': {e}",
+                        table_ref.source_id,
+                        table_ref.name
+                    );
                 },
             }
         }
@@ -150,31 +165,30 @@ impl AppState {
     /// Get a cached schema, or build one on-demand from a DataFrame + overrides.
     pub fn get_or_build_schema(
         &self,
+        source_id: &str,
         table_name: &str,
         df: &DataFrame,
     ) -> Result<DataSchema, anyhow::Error> {
-        if let Some(cached) = self.schemas.get(table_name) {
+        let key = cache_key(source_id, table_name);
+        if let Some(cached) = self.schemas.get(&key) {
             return Ok(cached.clone());
         }
 
         let overrides = self
             .schema_overrides
-            .get(table_name)
+            .get(&key)
             .map(|v| v.value().clone())
             .unwrap_or_default();
-        let settings = self
-            .settings_overrides
-            .get(table_name)
-            .map(|v| v.value().clone());
+        let settings = self.settings_overrides.get(&key).map(|v| v.value().clone());
 
         let schema = build_schema(df, &overrides, settings.as_ref())?;
-        self.schemas.insert(table_name.to_string(), schema.clone());
+        self.schemas.insert(key, schema.clone());
         Ok(schema)
     }
 
-    /// Invalidate the cached schema for a table (call after override mutations).
-    pub fn invalidate_schema_cache(&self, table_name: &str) {
-        self.schemas.remove(table_name);
+    /// Invalidate the cached schema for a composite key (call after override mutations).
+    pub fn invalidate_schema_cache(&self, key: &str) {
+        self.schemas.remove(key);
     }
 
     /// Get a reference to the Parquet store
@@ -188,7 +202,10 @@ impl AppState {
             let tables = store.list_tables().await.unwrap_or_default();
             let mut index = Vec::with_capacity(tables.len());
             for table_ref in tables {
-                if let Ok(info) = store.table_info(&table_ref.name).await {
+                if let Ok(info) = store
+                    .table_info(&table_ref.source_id, &table_ref.name)
+                    .await
+                {
                     index.push(info);
                 }
             }
@@ -204,7 +221,10 @@ impl AppState {
         // Load metadata for each table (does NOT load actual data)
         let mut index = Vec::with_capacity(tables.len());
         for table_ref in tables {
-            if let Ok(info) = store.table_info(&table_ref.name).await {
+            if let Ok(info) = store
+                .table_info(&table_ref.source_id, &table_ref.name)
+                .await
+            {
                 index.push(info);
             }
         }
@@ -243,7 +263,10 @@ impl AppState {
 
         let mut index = Vec::with_capacity(tables.len());
         for table_ref in tables {
-            if let Ok(info) = store.table_info(&table_ref.name).await {
+            if let Ok(info) = store
+                .table_info(&table_ref.source_id, &table_ref.name)
+                .await
+            {
                 index.push(info);
             }
         }
@@ -326,15 +349,27 @@ impl AppState {
         Ok(state)
     }
 
-    /// Get the list of available tables (metadata only)
+    /// Get the list of available tables (metadata only). Queries the store live
+    /// so freshly-synced connector tables show up without a server restart.
     pub async fn get_available_tables(&self) -> Vec<TableInfo> {
-        self.table_index.read().await.clone()
+        let Some(store) = &self.store else {
+            return self.table_index.read().await.clone();
+        };
+        let refs = store.list_tables().await.unwrap_or_default();
+        let mut out = Vec::with_capacity(refs.len());
+        for r in refs {
+            if let Ok(info) = store.table_info(&r.source_id, &r.name).await {
+                out.push(info);
+            }
+        }
+        (*self.table_index.write().await).clone_from(&out);
+        out
     }
 
     /// Load a specific table on-demand (lazy parquet scan).
     ///
     /// This unloads any previously loaded store tables first.
-    pub async fn load_table(&self, table_name: &str) -> AppResult<String> {
+    pub async fn load_table(&self, source_id: &str, table_name: &str) -> AppResult<String> {
         let store = self.store.as_ref().ok_or_else(|| {
             crate::shared::AppError::BadRequest("No store configured".to_string())
         })?;
@@ -347,11 +382,16 @@ impl AppState {
             version: -1,
         };
 
-        tracing::info!("Loading table '{}' (lazy parquet scan)", table_name);
-        let files = store.get_table_parquet_paths(table_name).await?;
         tracing::info!(
-            "Registered {} parquet file(s) for '{}'",
+            "Loading table '{}/{}' (lazy parquet scan)",
+            source_id,
+            table_name
+        );
+        let files = store.get_table_parquet_paths(source_id, table_name).await?;
+        tracing::info!(
+            "Registered {} parquet file(s) for '{}/{}'",
             files.len(),
+            source_id,
             table_name
         );
         let id = self.datasets.add_dataset(
@@ -382,19 +422,22 @@ impl AppState {
         }
     }
 
-    /// Check if a table exists in the index
-    pub async fn table_exists(&self, table_name: &str) -> bool {
+    /// Check if a table exists in the index for the given source
+    pub async fn table_exists(&self, source_id: &str, table_name: &str) -> bool {
         let index = self.table_index.read().await;
-        index.iter().any(|t| t.name == table_name)
+        index
+            .iter()
+            .any(|t| t.source_id == source_id && t.name == table_name)
     }
 
     /// Load a table directly from a store (lazy parquet scan)
     pub async fn load_store_table(
         &self,
         store: &ParquetStore,
+        source_id: &str,
         table_name: &str,
     ) -> AppResult<String> {
-        let files = store.get_table_parquet_paths(table_name).await?;
+        let files = store.get_table_parquet_paths(source_id, table_name).await?;
 
         let source = DatasetSource::StoreTable {
             table_name: table_name.to_string(),
@@ -421,7 +464,10 @@ impl AppState {
 
         let mut results = Vec::with_capacity(tables.len());
         for table_ref in tables {
-            let result = match self.load_store_table(store, &table_ref.name).await {
+            let result = match self
+                .load_store_table(store, &table_ref.source_id, &table_ref.name)
+                .await
+            {
                 Ok(id) => Ok(id),
                 Err(e) => Err(e.to_string()),
             };
@@ -429,6 +475,11 @@ impl AppState {
         }
         results
     }
+}
+
+/// Build a composite DashMap key for source/table-keyed caches.
+pub(crate) fn cache_key(source_id: &str, table_name: &str) -> String {
+    format!("{source_id}|{table_name}")
 }
 
 /// Convert a `ColumnSemanticRow` to a `ColumnOverride`.
@@ -564,13 +615,21 @@ pub async fn seed_column_semantics(store: &ParquetStore) {
 
     let db = store.db();
 
-    for (table_name, columns, granularity, periods) in seed_data {
-        // Check if table exists in the store
-        let Ok(Some(table)) = db.get_table_by_name(table_name).await else {
+    // Seed data is keyed by table name only; apply each preset to every matching
+    // (source_id, table_name) pair so two GitHub presets both get sensible defaults.
+    let seed_map: std::collections::HashMap<&str, (_, _, _)> = seed_data
+        .iter()
+        .map(|(name, columns, granularity, periods)| (*name, (*columns, *granularity, *periods)))
+        .collect();
+
+    for table_ref in &tables {
+        let Some((columns, granularity, periods)) = seed_map.get(table_ref.name.as_str()) else {
+            continue;
+        };
+        let Ok(Some(table)) = db.get_table(&table_ref.source_id, &table_ref.name).await else {
             continue;
         };
 
-        // Seed column semantics
         let rows: Vec<ColumnSemanticRow> = columns
             .iter()
             .map(|(col, role, is_kpi)| ColumnSemanticRow {
@@ -585,23 +644,31 @@ pub async fn seed_column_semantics(store: &ParquetStore) {
             .collect();
 
         if let Err(e) = db.upsert_column_semantics_batch(&table.id, &rows).await {
-            tracing::warn!("Failed to seed column semantics for '{}': {e}", table_name);
+            tracing::warn!(
+                "Failed to seed column semantics for '{}/{}': {e}",
+                table_ref.source_id,
+                table_ref.name
+            );
             continue;
         }
 
-        // Seed table settings
         if let Err(e) = db
-            .upsert_table_settings(&table.id, None, None, Some(granularity), Some(*periods))
+            .upsert_table_settings(&table.id, None, None, Some(*granularity), Some(*periods))
             .await
         {
-            tracing::warn!("Failed to seed table settings for '{}': {e}", table_name);
+            tracing::warn!(
+                "Failed to seed table settings for '{}/{}': {e}",
+                table_ref.source_id,
+                table_ref.name
+            );
             continue;
         }
 
         tracing::info!(
-            "Seeded {} column overrides for '{}' (granularity={}, periods={})",
+            "Seeded {} column overrides for '{}/{}' (granularity={}, periods={})",
             columns.len(),
-            table_name,
+            table_ref.source_id,
+            table_ref.name,
             granularity,
             periods
         );

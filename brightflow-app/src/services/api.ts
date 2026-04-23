@@ -4,6 +4,7 @@
 import type {
   AvailableConnectorResponse,
   BreakdownRow,
+  ConnectorConfigResponse,
   EnrichedSyncRun,
   DashboardStats,
   DatasetInfo,
@@ -109,8 +110,44 @@ export const tableApi = {
   // Get list of available tables (metadata only, nothing loaded)
   listAvailable: (): Promise<TableInfo[] | null> => api.get<TableInfo[]>('/api/tables'),
   // Load a specific table into memory
-  load: (name: string): Promise<LoadTableResponse | null> =>
-    api.post<LoadTableResponse>(`/api/tables/${encodeURIComponent(name)}/load`),
+  load: (sourceId: string, name: string): Promise<LoadTableResponse | null> =>
+    api.post<LoadTableResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/load`,
+    ),
+};
+
+// Column semantics / table settings API (source-scoped)
+export const semanticsApi = {
+  listSemantics: (sourceId: string, name: string): Promise<unknown> =>
+    api.get(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/semantics`,
+    ),
+  bulkUpsertSemantics: (sourceId: string, name: string, body: unknown): Promise<unknown> =>
+    api.put(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/semantics`,
+      body,
+    ),
+  upsertColumnSemantic: (
+    params: { sourceId: string; name: string; col: string },
+    body: unknown,
+  ): Promise<unknown> =>
+    api.put(
+      `/api/sources/${encodeURIComponent(params.sourceId)}/tables/${encodeURIComponent(params.name)}/semantics/${encodeURIComponent(params.col)}`,
+      body,
+    ),
+  deleteColumnSemantic: (sourceId: string, name: string, col: string): Promise<unknown> =>
+    api.delete(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/semantics/${encodeURIComponent(col)}`,
+    ),
+  getTableSettings: (sourceId: string, name: string): Promise<unknown> =>
+    api.get(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/settings`,
+    ),
+  upsertTableSettings: (sourceId: string, name: string, body: unknown): Promise<unknown> =>
+    api.put(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/settings`,
+      body,
+    ),
 };
 
 // Connector types
@@ -128,13 +165,21 @@ export const connectApi = {
   listConnectorRuns: (name: string): Promise<SyncRun[] | null> =>
     api.get<SyncRun[]>(`/api/connectors/${encodeURIComponent(name)}/runs`),
 
-  // Preset management
+  // Preset / connector config management
   createPreset: (data: {
     name: string;
     connectorPath: string;
     configJson: unknown;
     token?: string;
-  }): Promise<unknown> => api.post('/api/connector-configs', data),
+  }): Promise<{ id: string } | null> => api.post<{ id: string }>('/api/connector-configs', data),
+  getConfig: (id: string): Promise<ConnectorConfigResponse | null> =>
+    api.get<ConnectorConfigResponse>(`/api/connector-configs/${id}`),
+  updateConfig: (
+    id: string,
+    data: { name?: string; connectorPath?: string; configJson?: unknown; token?: string },
+  ): Promise<ConnectorConfigResponse | null> =>
+    api.put<ConnectorConfigResponse>(`/api/connector-configs/${id}`, data),
+  deleteConfig: (id: string): Promise<unknown> => api.delete(`/api/connector-configs/${id}`),
   runPreset: (id: string): Promise<RunTriggerResponse | null> =>
     api.post<RunTriggerResponse>(`/api/presets/${id}/run`),
   schedulePreset: (id: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
@@ -179,10 +224,14 @@ export interface AnalysisType {
 
 // Insights API
 export const insightsApi = {
-  runReview: (datasetId: string, cadence = 'weekly'): Promise<InsightsResponse | null> =>
-    api.post<InsightsResponse>('/api/insights/review', { cadence, datasetId }),
-  runTrends: (datasetId: string): Promise<InsightsResponse | null> =>
-    api.post<InsightsResponse>('/api/insights/trends', { datasetId }),
+  runReview: (
+    sourceId: string,
+    datasetId: string,
+    cadence = 'weekly',
+  ): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/review', { cadence, datasetId, sourceId }),
+  runTrends: (sourceId: string, datasetId: string): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/trends', { datasetId, sourceId }),
 };
 
 // Auth API

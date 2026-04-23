@@ -434,7 +434,7 @@ pub async fn list_enriched_runs(
             let connector_name = configs
                 .iter()
                 .find(|c| c.id == r.connector_id)
-                .map_or_else(|| r.connector_id.clone(), |c| c.connector_path.clone());
+                .map_or_else(|| r.connector_id.clone(), |c| c.name.clone());
             EnrichedSyncRun {
                 id: r.id,
                 connector_name,

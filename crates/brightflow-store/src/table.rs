@@ -17,6 +17,8 @@ use crate::ingest::concat_df;
 pub struct TableRef {
     /// Table name
     pub name: String,
+    /// Owning source (e.g. `web:<uuid>` or `connector:<uuid>`)
+    pub source_id: String,
     /// Path to the table
     pub path: String,
 }
@@ -38,6 +40,8 @@ pub struct ColumnStat {
 pub struct TableInfo {
     /// Table name
     pub name: String,
+    /// Owning source (e.g. `web:<uuid>` or `connector:<uuid>`)
+    pub source_id: String,
     /// Path to the table
     pub path: String,
     /// Current version
@@ -60,9 +64,9 @@ pub struct TableInfo {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-/// Check if a table exists in the database
-pub async fn table_exists(db: &StoreDb, name: &str) -> StoreResult<bool> {
-    Ok(db.get_table_by_name(name).await?.is_some())
+/// Check if a table exists in the database for the given source
+pub async fn table_exists(db: &StoreDb, source_id: &str, name: &str) -> StoreResult<bool> {
+    Ok(db.get_table(source_id, name).await?.is_some())
 }
 
 /// List all tables from the database
@@ -71,16 +75,26 @@ pub async fn list_tables(db: &StoreDb, root: &Path) -> StoreResult<Vec<TableRef>
     Ok(rows
         .into_iter()
         .map(|row| TableRef {
-            path: root.join(&row.name).to_string_lossy().to_string(),
+            path: root
+                .join(&row.source_id)
+                .join(&row.name)
+                .to_string_lossy()
+                .to_string(),
+            source_id: row.source_id,
             name: row.name,
         })
         .collect())
 }
 
 /// Get information about a table
-pub async fn get_table_info(db: &StoreDb, name: &str, root: &Path) -> StoreResult<TableInfo> {
+pub async fn get_table_info(
+    db: &StoreDb,
+    source_id: &str,
+    name: &str,
+    root: &Path,
+) -> StoreResult<TableInfo> {
     let row = db
-        .get_table_by_name(name)
+        .get_table(source_id, name)
         .await?
         .ok_or_else(|| StoreError::TableNotFound(name.to_string()))?;
 
@@ -105,9 +119,15 @@ pub async fn get_table_info(db: &StoreDb, name: &str, root: &Path) -> StoreResul
         })
         .collect();
 
+    let path = root
+        .join(&row.source_id)
+        .join(&row.name)
+        .to_string_lossy()
+        .to_string();
     Ok(TableInfo {
         name: row.name.clone(),
-        path: root.join(&row.name).to_string_lossy().to_string(),
+        source_id: row.source_id,
+        path,
         version: row.version,
         num_rows: Some(row.total_rows),
         num_files: files.len(),
@@ -130,9 +150,14 @@ fn resolve_path(root: &Path, stored_path: &str) -> PathBuf {
 }
 
 /// Get paths to all parquet files for a table
-pub async fn get_parquet_paths(db: &StoreDb, name: &str, root: &Path) -> StoreResult<Vec<PathBuf>> {
+pub async fn get_parquet_paths(
+    db: &StoreDb,
+    source_id: &str,
+    name: &str,
+    root: &Path,
+) -> StoreResult<Vec<PathBuf>> {
     let row = db
-        .get_table_by_name(name)
+        .get_table(source_id, name)
         .await?
         .ok_or_else(|| StoreError::TableNotFound(name.to_string()))?;
 
@@ -141,8 +166,13 @@ pub async fn get_parquet_paths(db: &StoreDb, name: &str, root: &Path) -> StoreRe
 }
 
 /// Read a table as a Polars DataFrame
-pub async fn read_table(db: &StoreDb, name: &str, root: &Path) -> StoreResult<DataFrame> {
-    let file_paths = get_parquet_paths(db, name, root).await?;
+pub async fn read_table(
+    db: &StoreDb,
+    source_id: &str,
+    name: &str,
+    root: &Path,
+) -> StoreResult<DataFrame> {
+    let file_paths = get_parquet_paths(db, source_id, name, root).await?;
 
     if file_paths.is_empty() {
         return Ok(DataFrame::empty());
@@ -171,13 +201,18 @@ pub async fn read_table(db: &StoreDb, name: &str, root: &Path) -> StoreResult<Da
 }
 
 /// Delete a table (db record + files on disk)
-pub async fn delete_table(db: &StoreDb, name: &str, root: &Path) -> StoreResult<()> {
-    let existed = db.delete_table(name).await?;
+pub async fn delete_table(
+    db: &StoreDb,
+    source_id: &str,
+    name: &str,
+    root: &Path,
+) -> StoreResult<()> {
+    let existed = db.delete_table(source_id, name).await?;
     if !existed {
         return Err(StoreError::TableNotFound(name.to_string()));
     }
 
-    let table_dir = root.join(name);
+    let table_dir = root.join(source_id).join(name);
     if table_dir.exists() {
         std::fs::remove_dir_all(&table_dir)?;
     }

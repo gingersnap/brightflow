@@ -14,7 +14,7 @@ pub struct TableRow {
     pub created_at: String,
     pub updated_at: String,
     pub partition_columns: Option<String>,
-    pub source_id: Option<String>,
+    pub source_id: String,
 }
 
 /// A file entry row from the `table_files` SQLite table

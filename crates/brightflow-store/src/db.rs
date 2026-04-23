@@ -42,7 +42,7 @@ impl StoreDb {
     // Tables CRUD
     // =====================================================
 
-    pub async fn create_table(&self, name: &str, source_id: Option<&str>) -> StoreResult<TableRow> {
+    pub async fn create_table(&self, name: &str, source_id: &str) -> StoreResult<TableRow> {
         let id = uuid::Uuid::now_v7().to_string();
         let row = sqlx::query_as::<_, TableRow>(
             r"INSERT INTO tables (id, name, source_id)
@@ -57,11 +57,13 @@ impl StoreDb {
         Ok(row)
     }
 
-    pub async fn get_table_by_name(&self, name: &str) -> StoreResult<Option<TableRow>> {
-        let row = sqlx::query_as::<_, TableRow>("SELECT * FROM tables WHERE name = ?")
-            .bind(name)
-            .fetch_optional(&self.pool)
-            .await?;
+    pub async fn get_table(&self, source_id: &str, name: &str) -> StoreResult<Option<TableRow>> {
+        let row =
+            sqlx::query_as::<_, TableRow>("SELECT * FROM tables WHERE source_id = ? AND name = ?")
+                .bind(source_id)
+                .bind(name)
+                .fetch_optional(&self.pool)
+                .await?;
         Ok(row)
     }
 
@@ -107,22 +109,24 @@ impl StoreDb {
         Ok(row)
     }
 
-    /// Set source_id on an existing table if it is currently NULL.
-    pub async fn backfill_source_id(&self, id: &str, source_id: &str) -> StoreResult<()> {
-        sqlx::query("UPDATE tables SET source_id = ? WHERE id = ? AND source_id IS NULL")
+    pub async fn delete_table(&self, source_id: &str, name: &str) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM tables WHERE source_id = ? AND name = ?")
             .bind(source_id)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn delete_table(&self, name: &str) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM tables WHERE name = ?")
             .bind(name)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    /// Delete all tables belonging to a source. Cascades to table_files,
+    /// column_stats, file_partitions, file_column_stats, column_semantics,
+    /// and table_analysis_settings via `ON DELETE CASCADE`.
+    pub async fn delete_tables_by_source(&self, source_id: &str) -> StoreResult<u64> {
+        let result = sqlx::query("DELETE FROM tables WHERE source_id = ?")
+            .bind(source_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
     }
 
     // =====================================================
@@ -257,9 +261,9 @@ impl StoreDb {
         &self,
         name: &str,
         partition_columns: Option<&str>,
-        source_id: Option<&str>,
+        source_id: &str,
     ) -> StoreResult<TableRow> {
-        if let Some(row) = self.get_table_by_name(name).await? {
+        if let Some(row) = self.get_table(source_id, name).await? {
             return Ok(row);
         }
         let id = uuid::Uuid::now_v7().to_string();

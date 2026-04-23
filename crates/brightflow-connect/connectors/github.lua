@@ -5,9 +5,10 @@ description = "GitHub repository, issues, PRs, and contributors"
 ]]
 
 return function(p)
-    -- Defaults — will come from SQLite/UI config in the future
-    local owner = p.config.owner or "anthropics"
-    local repo = p.config.repo or "claude-code"
+    -- Config: single "owner/repo" slug
+    local repo_slug = p.config.repo or "anthropics/claude-code"
+    local owner, repo = repo_slug:match("^([^/]+)/(.+)$")
+    assert(owner and repo, "github connector: 'repo' must be 'owner/repo' (got " .. tostring(repo_slug) .. ")")
 
     -- Cursor values for incremental sync (injected by Brightflow scheduler)
     local cursors = p.config._cursors or {}

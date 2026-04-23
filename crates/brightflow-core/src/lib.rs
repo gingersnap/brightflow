@@ -89,10 +89,11 @@ impl WorkspacePaths {
         })
     }
 
-    /// Connector output directory for a specific connector.
+    /// Connector output directory keyed by preset id.
+    /// Two presets of the same connector type get isolated output directories.
     #[must_use]
-    pub fn connector_output(&self, connector_name: &str) -> PathBuf {
-        self.root().join("connector-output").join(connector_name)
+    pub fn connector_output_for_preset(&self, preset_id: &str) -> PathBuf {
+        self.root().join("connector-output").join(preset_id)
     }
 
     /// Connector config directory.

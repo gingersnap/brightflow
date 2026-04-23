@@ -6,12 +6,11 @@ import type { SyncRun } from '@/types';
 
 /**
  * Thin store for connect UI state only.
- * Data fetching is handled by Pinia Colada in ConnectView.vue.
+ * Data fetching is handled by Pinia Colada in views.
  */
 export const useConnectStore = defineStore('connect', () => {
   const runHistory = ref<Map<string, SyncRun[]>>(new Map());
   const expandedConnector = ref<string | null>(null);
-  const showNewRunDialog = ref(false);
   const selectedConnector = ref<string | null>(null);
 
   async function fetchRunHistory(name: string): Promise<void> {
@@ -33,7 +32,6 @@ export const useConnectStore = defineStore('connect', () => {
   function reset(): void {
     expandedConnector.value = null;
     runHistory.value = new Map();
-    showNewRunDialog.value = false;
     selectedConnector.value = null;
   }
 
@@ -43,7 +41,6 @@ export const useConnectStore = defineStore('connect', () => {
     reset,
     runHistory,
     selectedConnector,
-    showNewRunDialog,
     toggleHistory,
   };
 });

@@ -43,7 +43,10 @@ fn api_routes() -> Router<AppState> {
     let protected = Router::new()
         // Available tables (metadata only, for lazy loading)
         .route("/tables", get(handlers::list_available_tables))
-        .route("/tables/{name}/load", post(handlers::load_table))
+        .route(
+            "/sources/{source_id}/tables/{name}/load",
+            post(handlers::load_table),
+        )
         // Dataset management (loaded datasets)
         .route("/datasets", get(handlers::list_datasets))
         .route("/datasets/{id}", get(handlers::get_dataset))
@@ -54,19 +57,19 @@ fn api_routes() -> Router<AppState> {
         // Insights
         .route("/insights/review", post(insights_handlers::run_review))
         .route("/insights/trends", post(insights_handlers::run_trends))
-        // Column semantics & table settings
+        // Column semantics & table settings (source-scoped)
         .route(
-            "/tables/{name}/semantics",
+            "/sources/{source_id}/tables/{name}/semantics",
             get(semantics_handlers::list_semantics)
                 .put(semantics_handlers::bulk_upsert_semantics),
         )
         .route(
-            "/tables/{name}/semantics/{col}",
+            "/sources/{source_id}/tables/{name}/semantics/{col}",
             put(semantics_handlers::upsert_column_semantic)
                 .delete(semantics_handlers::delete_column_semantic),
         )
         .route(
-            "/tables/{name}/settings",
+            "/sources/{source_id}/tables/{name}/settings",
             get(semantics_handlers::get_table_settings)
                 .put(semantics_handlers::upsert_table_settings),
         )

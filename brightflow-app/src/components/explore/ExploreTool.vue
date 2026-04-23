@@ -28,7 +28,7 @@ async function loadTable(name: string): Promise<void> {
   loadingTable.value = true;
   try {
     resetAllStores();
-    const result = await tableApi.load(name);
+    const result = await tableApi.load(props.sourceId, name);
     if (result) {
       datasetStore.setFromLoadResponse(result);
       connectionStore.connect();

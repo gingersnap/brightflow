@@ -3,7 +3,7 @@
 /**
  * Request to run a review analysis
  */
-export type ReviewRequest = { datasetId: string, 
+export type ReviewRequest = { sourceId: string, datasetId: string, 
 /**
  * Cadence: "daily", "weekly", or "monthly"
  */

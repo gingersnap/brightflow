@@ -9,7 +9,7 @@ use brightflow_engine::debug::DebugLog;
 
 use crate::insights::types::{InsightsResponse, ReviewRequest, TrendsRequest};
 use crate::shared::{AppError, AppResult};
-use crate::state::AppState;
+use crate::state::{cache_key, AppState};
 use tracing::instrument;
 
 /// Run a review analysis on a dataset
@@ -19,7 +19,8 @@ pub async fn run_review(
     Json(req): Json<ReviewRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
     let cadence = parse_cadence(&req.cadence)?;
-    let (files, table_name, overrides, settings) = resolve_dataset(&state, &req.dataset_id).await?;
+    let (files, table_name, overrides, settings) =
+        resolve_dataset(&state, &req.source_id, &req.dataset_id).await?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
@@ -66,7 +67,8 @@ pub async fn run_trends(
     State(state): State<AppState>,
     Json(req): Json<TrendsRequest>,
 ) -> AppResult<Json<InsightsResponse>> {
-    let (files, table_name, overrides, settings) = resolve_dataset(&state, &req.dataset_id).await?;
+    let (files, table_name, overrides, settings) =
+        resolve_dataset(&state, &req.source_id, &req.dataset_id).await?;
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
@@ -112,6 +114,7 @@ pub async fn run_trends(
 /// Accepts dataset IDs in `"store:{table_name}"` format or plain table names.
 async fn resolve_dataset(
     state: &AppState,
+    source_id: &str,
     dataset_id: &str,
 ) -> AppResult<(
     Vec<PathBuf>,
@@ -129,7 +132,7 @@ async fn resolve_dataset(
         .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
 
     let files = store
-        .get_table_parquet_paths(&table_name)
+        .get_table_parquet_paths(source_id, &table_name)
         .await
         .map_err(|e| AppError::NotFound(format!("Table '{table_name}' not found in store: {e}")))?;
 
@@ -139,15 +142,16 @@ async fn resolve_dataset(
         )));
     }
 
+    let key = cache_key(source_id, &table_name);
     let overrides = state
         .schema_overrides
-        .get(&table_name)
+        .get(&key)
         .map(|v| v.value().clone())
         .unwrap_or_default();
 
     let settings = state
         .settings_overrides
-        .get(&table_name)
+        .get(&key)
         .map(|v| v.value().clone());
 
     Ok((files, table_name, overrides, settings))

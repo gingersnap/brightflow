@@ -119,12 +119,12 @@ impl FlushTask {
             let file_stats = brightflow_store::extract_file_column_stats(&df_for_stats, "");
             if let Err(e) = store
                 .register_file(
+                    &format!("web:{source_id}"),
                     &table_name,
                     &path,
                     &[("date", date.as_str())],
                     Some(&["date"]),
                     Some(file_stats),
-                    Some(&format!("web:{source_id}")),
                 )
                 .await
             {

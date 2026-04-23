@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useMutation } from '@pinia/colada';
-import { Copy, Trash2 } from 'lucide-vue-next';
-import { ref } from 'vue';
+import { useMutation, useQueryCache } from '@pinia/colada';
+import { Check, Copy, Pencil, Trash2, X } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { sourceApi } from '@/services/api';
@@ -12,16 +12,17 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const queryCache = useQueryCache();
 
 const snippetText = ref('');
 
 // Extract raw source id (strip "web:" prefix)
-function rawId(id: string): string {
-  return id.startsWith('web:') ? id.slice(4) : id;
-}
+const rawId = computed(() =>
+  props.source.id.startsWith('web:') ? props.source.id.slice(4) : props.source.id,
+);
 
 async function loadSnippet(): Promise<void> {
-  const result = await sourceApi.snippet(rawId(props.source.id));
+  const result = await sourceApi.snippet(rawId.value);
   snippetText.value = result?.snippet ?? '';
 }
 
@@ -29,9 +30,44 @@ function copySnippet(): void {
   navigator.clipboard.writeText(snippetText.value);
 }
 
+// --- Name editing ---
+const editingName = ref(false);
+const nameDraft = ref('');
+const nameError = ref<string | null>(null);
+
+function startEditName(): void {
+  nameDraft.value = props.source.name;
+  nameError.value = null;
+  editingName.value = true;
+}
+
+function cancelEditName(): void {
+  editingName.value = false;
+  nameError.value = null;
+}
+
+const { mutate: saveName, isLoading: savingName } = useMutation({
+  mutation: async (name: string) => await sourceApi.update(rawId.value, { name }),
+  onSuccess: () => {
+    editingName.value = false;
+    queryCache.invalidateQueries({ key: ['unified-sources'] });
+  },
+  onError: (error: unknown) => {
+    nameError.value = error instanceof Error ? error.message : 'Failed to save name';
+  },
+});
+
+function submitName(): void {
+  const trimmed = nameDraft.value.trim();
+  if (!trimmed) {
+    return;
+  }
+  saveName(trimmed);
+}
+
 const { mutate: deleteSource } = useMutation({
   mutation: async () => {
-    await sourceApi.delete(rawId(props.source.id));
+    await sourceApi.delete(rawId.value);
     await router.push({ name: 'sources' });
   },
 });
@@ -44,8 +80,41 @@ const { mutate: deleteSource } = useMutation({
       <section>
         <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Name</h3>
         <div class="rounded-lg border border-default bg-elevated p-4">
-          <p class="text-sm text-highlighted">{{ source.name }}</p>
-          <p v-if="source.domain" class="mt-0.5 text-xs text-muted">{{ source.domain }}</p>
+          <div v-if="!editingName" class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-highlighted">{{ source.name }}</p>
+              <p v-if="source.domain" class="mt-0.5 text-xs text-muted">{{ source.domain }}</p>
+            </div>
+            <UButton variant="ghost" size="xs" @click="startEditName">
+              <Pencil class="mr-1 h-3.5 w-3.5" />
+              Edit
+            </UButton>
+          </div>
+          <div v-else class="space-y-2">
+            <input
+              v-model="nameDraft"
+              type="text"
+              class="placeholder-muted w-full rounded border border-default bg-default px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
+              @keyup.enter="submitName"
+              @keyup.escape="cancelEditName"
+            />
+            <div v-if="nameError" class="text-xs text-red-500">{{ nameError }}</div>
+            <div class="flex justify-end gap-2">
+              <UButton variant="ghost" size="xs" @click="cancelEditName">
+                <X class="mr-1 h-3.5 w-3.5" />
+                Cancel
+              </UButton>
+              <UButton
+                size="xs"
+                :loading="savingName"
+                :disabled="!nameDraft.trim()"
+                @click="submitName"
+              >
+                <Check class="mr-1 h-3.5 w-3.5" />
+                Save
+              </UButton>
+            </div>
+          </div>
         </div>
       </section>
 

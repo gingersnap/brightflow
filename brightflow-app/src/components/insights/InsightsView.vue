@@ -60,10 +60,10 @@ function handleBackToTables(): void {
 
 // Watch table prop — select in store when it changes
 watch(
-  () => props.table,
-  (name) => {
+  () => [props.sourceId, props.table] as const,
+  ([sourceId, name]) => {
     if (name) {
-      insightsStore.selectTable(name);
+      insightsStore.selectTable(sourceId, name);
     }
   },
   { immediate: true },

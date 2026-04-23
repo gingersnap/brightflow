@@ -47,26 +47,26 @@ pub enum IngestMode {
     Ignore,
 }
 
-/// Generate a new Parquet filename using UUIDv7
-fn new_parquet_path(table_name: &str) -> String {
+/// Generate a new Parquet filename using UUIDv7, scoped by source_id and table name.
+fn new_parquet_path(source_id: &str, table_name: &str) -> String {
     let id = uuid::Uuid::now_v7();
-    format!("{table_name}/{id}.parquet")
+    format!("{source_id}/{table_name}/{id}.parquet")
 }
 
 /// Ingest a Parquet file into a table
 pub async fn ingest_parquet(
     db: &StoreDb,
     root: &Path,
+    source_id: &str,
     table_name: &str,
     parquet_path: &Path,
     options: &IngestOptions,
-    source_id: Option<&str>,
 ) -> StoreResult<()> {
     if !parquet_path.exists() {
         return Err(StoreError::FileNotFound(parquet_path.to_path_buf()));
     }
 
-    let existing = db.get_table_by_name(table_name).await?;
+    let existing = db.get_table(source_id, table_name).await?;
 
     if let Some(ref row) = existing {
         match options.mode {
@@ -92,12 +92,12 @@ pub async fn ingest_parquet(
         }
     }
 
-    // Ensure table directory exists
-    let table_dir = root.join(table_name);
+    // Ensure source/table directory exists
+    let table_dir = root.join(source_id).join(table_name);
     std::fs::create_dir_all(&table_dir)?;
 
     // Generate UUIDv7 filename and copy file
-    let relative_path = new_parquet_path(table_name);
+    let relative_path = new_parquet_path(source_id, table_name);
     let dest_path = root.join(&relative_path);
     std::fs::copy(parquet_path, &dest_path)?;
 
@@ -119,9 +119,6 @@ pub async fn ingest_parquet(
 
     // Create or update table record
     let table_row = if let Some(row) = existing {
-        if let Some(sid) = source_id {
-            db.backfill_source_id(&row.id, sid).await?;
-        }
         if options.mode == IngestMode::Overwrite {
             db.update_table_meta(&row.id, Some(&schema_str), None, num_rows)
                 .await?
@@ -155,10 +152,10 @@ pub async fn ingest_parquet(
 pub async fn merge_parquet(
     db: &StoreDb,
     root: &Path,
+    source_id: &str,
     table_name: &str,
     parquet_path: &Path,
     primary_keys: &[String],
-    source_id: Option<&str>,
 ) -> StoreResult<MergeMetrics> {
     if primary_keys.is_empty() {
         return Err(StoreError::Other(
@@ -171,10 +168,7 @@ pub async fn merge_parquet(
     }
 
     // Get or create table record
-    let table_row = if let Some(row) = db.get_table_by_name(table_name).await? {
-        if let Some(sid) = source_id {
-            db.backfill_source_id(&row.id, sid).await?;
-        }
+    let table_row = if let Some(row) = db.get_table(source_id, table_name).await? {
         row
     } else {
         let row = db.create_table(table_name, source_id).await?;
@@ -287,12 +281,12 @@ pub async fn merge_parquet(
         return Ok(metrics);
     }
 
-    // Ensure table directory exists
-    let table_dir = root.join(table_name);
+    // Ensure source/table directory exists
+    let table_dir = root.join(source_id).join(table_name);
     std::fs::create_dir_all(&table_dir)?;
 
     // Write merged result to new UUIDv7 file
-    let relative_path = new_parquet_path(table_name);
+    let relative_path = new_parquet_path(source_id, table_name);
     let dest_path = root.join(&relative_path);
     write_parquet(&result_df, &dest_path)?;
 
@@ -414,8 +408,11 @@ pub(crate) fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::ParquetStore;
+    use tempfile::TempDir;
 
     #[test]
     fn test_ingest_mode_default() {
@@ -429,5 +426,53 @@ mod tests {
         assert_eq!(opts.mode, IngestMode::Append);
         assert!(opts.partition_by.is_empty());
         assert!(opts.description.is_none());
+    }
+
+    /// Writing the same table name under two different source_ids must produce
+    /// two independent catalog rows — no cross-source data pollution.
+    #[tokio::test]
+    async fn test_same_table_name_isolated_per_source() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        let store = ParquetStore::new(tmp.path(), &db_url).await.expect("store");
+
+        // Build a small parquet file to ingest twice.
+        let mut df = df!("id" => [1i64, 2, 3], "value" => ["a", "b", "c"]).expect("df");
+        let parquet_path = tmp.path().join("source.parquet");
+        {
+            let file = std::fs::File::create(&parquet_path).expect("create");
+            ParquetWriter::new(file).finish(&mut df).expect("write");
+        }
+
+        let pks = vec!["id".to_string()];
+        let source_a = "connector:aaaaaaaa";
+        let source_b = "connector:bbbbbbbb";
+
+        store
+            .merge_parquet(source_a, "issues", &parquet_path, &pks)
+            .await
+            .expect("merge a");
+        store
+            .merge_parquet(source_b, "issues", &parquet_path, &pks)
+            .await
+            .expect("merge b");
+
+        let tables_a = store.list_tables_by_source(source_a).await.expect("list a");
+        let tables_b = store.list_tables_by_source(source_b).await.expect("list b");
+
+        assert_eq!(tables_a.len(), 1);
+        assert_eq!(tables_b.len(), 1);
+        assert_eq!(tables_a[0].name, "issues");
+        assert_eq!(tables_b[0].name, "issues");
+        assert_ne!(tables_a[0].id, tables_b[0].id);
+        assert_eq!(tables_a[0].total_rows, 3);
+        assert_eq!(tables_b[0].total_rows, 3);
+
+        // Each source gets its own on-disk directory.
+        assert!(tmp.path().join(source_a).join("issues").is_dir());
+        assert!(tmp.path().join(source_b).join("issues").is_dir());
     }
 }

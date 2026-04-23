@@ -6,6 +6,7 @@ use ts_rs::TS;
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewRequest {
+    pub source_id: String,
     pub dataset_id: String,
     /// Cadence: "daily", "weekly", or "monthly"
     #[serde(default = "default_cadence")]
@@ -21,6 +22,7 @@ fn default_cadence() -> String {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct TrendsRequest {
+    pub source_id: String,
     pub dataset_id: String,
 }
 

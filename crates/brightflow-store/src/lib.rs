@@ -79,25 +79,29 @@ impl ParquetStore {
         self.db.list_tables_by_source(source_id).await
     }
 
-    /// Check if a table exists
-    pub async fn table_exists(&self, name: &str) -> StoreResult<bool> {
-        table::table_exists(&self.db, name).await
+    /// Check if a table exists for the given source
+    pub async fn table_exists(&self, source_id: &str, name: &str) -> StoreResult<bool> {
+        table::table_exists(&self.db, source_id, name).await
     }
 
     /// Get information about a table
-    pub async fn table_info(&self, name: &str) -> StoreResult<TableInfo> {
-        table::get_table_info(&self.db, name, &self.root_path).await
+    pub async fn table_info(&self, source_id: &str, name: &str) -> StoreResult<TableInfo> {
+        table::get_table_info(&self.db, source_id, name, &self.root_path).await
     }
 
     /// Read a table as a Polars DataFrame
-    pub async fn read_table(&self, name: &str) -> StoreResult<DataFrame> {
-        info!("Reading table '{}'", name);
-        table::read_table(&self.db, name, &self.root_path).await
+    pub async fn read_table(&self, source_id: &str, name: &str) -> StoreResult<DataFrame> {
+        info!("Reading table '{}' for source '{}'", name, source_id);
+        table::read_table(&self.db, source_id, name, &self.root_path).await
     }
 
     /// Get the parquet file paths for a table (for lazy scan mode)
-    pub async fn get_table_parquet_paths(&self, name: &str) -> StoreResult<Vec<PathBuf>> {
-        table::get_parquet_paths(&self.db, name, &self.root_path).await
+    pub async fn get_table_parquet_paths(
+        &self,
+        source_id: &str,
+        name: &str,
+    ) -> StoreResult<Vec<PathBuf>> {
+        table::get_parquet_paths(&self.db, source_id, name, &self.root_path).await
     }
 
     /// Ingest a Parquet file into a table
@@ -106,61 +110,75 @@ impl ParquetStore {
     /// If it exists, data will be appended.
     pub async fn ingest_parquet(
         &self,
+        source_id: &str,
         table_name: &str,
         parquet_path: impl AsRef<Path>,
         options: Option<IngestOptions>,
-        source_id: Option<&str>,
     ) -> StoreResult<TableInfo> {
         let ingest_options = options.unwrap_or_default();
 
         info!(
-            "Ingesting parquet {:?} into table '{}'",
+            "Ingesting parquet {:?} into table '{}' for source '{}'",
             parquet_path.as_ref(),
             table_name,
+            source_id,
         );
 
         ingest::ingest_parquet(
             &self.db,
             &self.root_path,
+            source_id,
             table_name,
             parquet_path.as_ref(),
             &ingest_options,
-            source_id,
         )
         .await?;
-        self.table_info(table_name).await
+        self.table_info(source_id, table_name).await
     }
 
     /// Merge (upsert) a Parquet file into a table by primary key.
     /// Uses Polars join operations to update existing rows and insert new ones.
     pub async fn merge_parquet(
         &self,
+        source_id: &str,
         table_name: &str,
         parquet_path: impl AsRef<Path>,
         primary_keys: &[String],
-        source_id: Option<&str>,
     ) -> StoreResult<MergeMetrics> {
         info!(
-            "Merging parquet {:?} into table '{}' with PKs {:?}",
+            "Merging parquet {:?} into table '{}' for source '{}' with PKs {:?}",
             parquet_path.as_ref(),
             table_name,
+            source_id,
             primary_keys
         );
         ingest::merge_parquet(
             &self.db,
             &self.root_path,
+            source_id,
             table_name,
             parquet_path.as_ref(),
             primary_keys,
-            source_id,
         )
         .await
     }
 
-    /// Delete a table
-    pub async fn delete_table(&self, name: &str) -> StoreResult<()> {
-        info!("Deleting table '{}'", name);
-        table::delete_table(&self.db, name, &self.root_path).await
+    /// Delete a single table for a source
+    pub async fn delete_table(&self, source_id: &str, name: &str) -> StoreResult<()> {
+        info!("Deleting table '{}' for source '{}'", name, source_id);
+        table::delete_table(&self.db, source_id, name, &self.root_path).await
+    }
+
+    /// Delete all tables and on-disk parquet files for a source.
+    /// Safe to call when the source has no data (missing directory is ignored).
+    pub async fn delete_source_data(&self, source_id: &str) -> StoreResult<u64> {
+        info!("Deleting all store data for source '{}'", source_id);
+        let deleted = self.db.delete_tables_by_source(source_id).await?;
+        let dir = self.root_path.join(source_id);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir)?;
+        }
+        Ok(deleted)
     }
 
     // =====================================================
@@ -183,12 +201,12 @@ impl ParquetStore {
     /// Idempotent: skips if the file path is already registered.
     pub async fn register_file(
         &self,
+        source_id: &str,
         table_name: &str,
         file_path: &Path,
         partition_values: &[(&str, &str)],
         partition_columns: Option<&[&str]>,
         stats: Option<Vec<FileColumnStatRow>>,
-        source_id: Option<&str>,
     ) -> StoreResult<()> {
         let pc_json = partition_columns.map(|cols| serde_json::to_string(cols).unwrap_or_default());
         let table = self
@@ -268,10 +286,11 @@ impl ParquetStore {
     /// Returns `Ok(None)` if the table doesn't exist or no files match.
     pub async fn scan_table(
         &self,
+        source_id: &str,
         table_name: &str,
         filters: &[ScanFilter],
     ) -> StoreResult<Option<LazyFrame>> {
-        let Some(table) = self.db.get_table_by_name(table_name).await? else {
+        let Some(table) = self.db.get_table(source_id, table_name).await? else {
             return Ok(None);
         };
 
@@ -296,13 +315,14 @@ impl ParquetStore {
     /// Returns the number of files that were merged (0 if nothing to compact).
     pub async fn compact_partition(
         &self,
+        source_id: &str,
         table_name: &str,
         partition_key: &str,
         partition_value: &str,
     ) -> StoreResult<usize> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
 
@@ -396,22 +416,24 @@ impl ParquetStore {
     // Column Semantics (high-level, resolves table name → id)
     // =====================================================
 
-    /// Get column semantics overrides for a table by name.
+    /// Get column semantics overrides for a table by (source_id, name).
     pub async fn get_column_semantics(
         &self,
+        source_id: &str,
         table_name: &str,
     ) -> StoreResult<Vec<ColumnSemanticRow>> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db.get_column_semantics(&table.id).await
     }
 
-    /// Upsert a single column semantic override by table name.
+    /// Upsert a single column semantic override by (source_id, table name).
     pub async fn upsert_column_semantic(
         &self,
+        source_id: &str,
         table_name: &str,
         column_name: &str,
         role: &str,
@@ -421,7 +443,7 @@ impl ParquetStore {
     ) -> StoreResult<ColumnSemanticRow> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db
@@ -429,60 +451,68 @@ impl ParquetStore {
             .await
     }
 
-    /// Batch upsert column semantics for a table by name.
+    /// Batch upsert column semantics for a table by (source_id, name).
     pub async fn upsert_column_semantics_batch(
         &self,
+        source_id: &str,
         table_name: &str,
         rows: &[ColumnSemanticRow],
     ) -> StoreResult<()> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db.upsert_column_semantics_batch(&table.id, rows).await
     }
 
-    /// Delete a single column semantic override by table name.
+    /// Delete a single column semantic override by (source_id, table name).
     pub async fn delete_column_semantic(
         &self,
+        source_id: &str,
         table_name: &str,
         column_name: &str,
     ) -> StoreResult<bool> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db.delete_column_semantic(&table.id, column_name).await
     }
 
-    /// Delete all column semantic overrides for a table by name.
-    pub async fn delete_all_column_semantics(&self, table_name: &str) -> StoreResult<u64> {
+    /// Delete all column semantic overrides for a table by (source_id, name).
+    pub async fn delete_all_column_semantics(
+        &self,
+        source_id: &str,
+        table_name: &str,
+    ) -> StoreResult<u64> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db.delete_all_column_semantics(&table.id).await
     }
 
-    /// Get table analysis settings by table name.
+    /// Get table analysis settings by (source_id, table name).
     pub async fn get_table_settings(
         &self,
+        source_id: &str,
         table_name: &str,
     ) -> StoreResult<Option<TableAnalysisSettingsRow>> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db.get_table_settings(&table.id).await
     }
 
-    /// Upsert table analysis settings by table name.
+    /// Upsert table analysis settings by (source_id, table name).
     pub async fn upsert_table_settings(
         &self,
+        source_id: &str,
         table_name: &str,
         display_name: Option<&str>,
         description: Option<&str>,
@@ -491,7 +521,7 @@ impl ParquetStore {
     ) -> StoreResult<TableAnalysisSettingsRow> {
         let table = self
             .db
-            .get_table_by_name(table_name)
+            .get_table(source_id, table_name)
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db
@@ -549,12 +579,12 @@ impl ParquetStore {
                     let file_path = file_entry.path();
                     if file_path.extension().is_some_and(|ext| ext == "parquet") {
                         self.register_file(
+                            &format!("web:{source_id}"),
                             &table_name,
                             &file_path,
                             &[("date", &date)],
                             Some(&["date"]),
                             None,
-                            Some(&format!("web:{source_id}")),
                         )
                         .await?;
                         count += 1;

@@ -231,8 +231,9 @@ async fn execute_sync(
         }
     }
 
-    // Inject output_path from workspace paths
-    let connector_output_dir = paths.connector_output(&config.connector_path);
+    // Inject output_path from workspace paths — scoped by preset id so concurrent
+    // runs of two presets of the same connector type don't race on the same file.
+    let connector_output_dir = paths.connector_output_for_preset(&config.id);
     std::fs::create_dir_all(&connector_output_dir)?;
     if let Some(obj) = config_json.as_object_mut() {
         obj.insert(
@@ -288,12 +289,13 @@ async fn execute_sync(
             warn!("Text enrichment skipped for {}: {e}", ep_result.name);
         }
 
+        let source_id = format!("connector:{connector_id}");
         let metrics = store
             .merge_parquet(
+                &source_id,
                 &ep_result.name,
                 &parquet_file,
                 &ep_result.primary_key,
-                Some(&format!("connector:{connector_id}")),
             )
             .await
             .map_err(|e| format!("Merge failed for {}: {e}", ep_result.name))?;

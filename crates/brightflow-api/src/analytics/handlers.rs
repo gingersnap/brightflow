@@ -42,17 +42,11 @@ pub async fn list_available_tables(State(state): State<AppState>) -> Json<Vec<Ta
 #[instrument(skip(state))]
 pub async fn load_table(
     State(state): State<AppState>,
-    Path(name): Path<String>,
+    Path((source_id, name)): Path<(String, String)>,
 ) -> AppResult<Json<LoadTableResponse>> {
-    // Check if table exists in index
-    if !state.table_exists(&name).await {
-        return Err(AppError::NotFound(format!(
-            "Table '{name}' not found in store"
-        )));
-    }
-
-    // Load the table (this unloads any previously loaded store tables)
-    let id = state.load_table(&name).await?;
+    // Load the table — the store is authoritative about existence.
+    // A stale in-memory table_index can lag behind fresh sync output.
+    let id = state.load_table(&source_id, &name).await?;
 
     // Get the loaded dataset info
     let dataset = state

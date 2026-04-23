@@ -164,6 +164,10 @@ enum Commands {
 
     /// Enrich existing store tables with text-derived columns
     Enrich {
+        /// Source id (e.g. `connector:<uuid>`)
+        #[arg(long)]
+        source: String,
+
         /// Table name to enrich (e.g., "issues", "pull_requests"). If omitted, enriches all supported tables.
         #[arg(long)]
         table: Option<String>,
@@ -178,6 +182,10 @@ enum Commands {
 
     /// Compact event files in a partition into a single file
     Compact {
+        /// Source id (e.g. `web:<uuid>` — matches the source the table belongs to)
+        #[arg(long)]
+        source: String,
+
         /// Table name (e.g., events_<source_id>)
         #[arg(long)]
         table: String,
@@ -245,6 +253,10 @@ enum StoreCommands {
 
     /// Show information about a table
     Info {
+        /// Source id (e.g. `connector:<uuid>` or `web:<uuid>`)
+        #[arg(long)]
+        source: String,
+
         /// Table name
         name: String,
 
@@ -255,6 +267,10 @@ enum StoreCommands {
 
     /// Ingest a Parquet file into a table
     Ingest {
+        /// Source id (e.g. `connector:<uuid>` or `web:<uuid>`)
+        #[arg(long)]
+        source: String,
+
         /// Table name to create/append to
         table: String,
 
@@ -273,6 +289,10 @@ enum StoreCommands {
 
     /// Export a table to CSV
     Export {
+        /// Source id (e.g. `connector:<uuid>` or `web:<uuid>`)
+        #[arg(long)]
+        source: String,
+
         /// Table name to export
         table: String,
 
@@ -287,6 +307,10 @@ enum StoreCommands {
 
     /// Delete a table from the store
     Delete {
+        /// Source id (e.g. `connector:<uuid>` or `web:<uuid>`)
+        #[arg(long)]
+        source: String,
+
         /// Table name to delete
         table: String,
 
@@ -431,9 +455,13 @@ async fn main() -> Result<()> {
             handle_create_admin(&email, &name, &database_url).await?;
         },
 
-        Commands::Enrich { table, clusters } => {
+        Commands::Enrich {
+            source,
+            table,
+            clusters,
+        } => {
             init_tracing_simple("brightflow=info");
-            handle_enrich(table.as_deref(), clusters).await?;
+            handle_enrich(&source, table.as_deref(), clusters).await?;
         },
 
         Commands::MigrateEvents => {
@@ -446,6 +474,7 @@ async fn main() -> Result<()> {
         },
 
         Commands::Compact {
+            source,
             table,
             date,
             all_dates,
@@ -455,18 +484,20 @@ async fn main() -> Result<()> {
             let store = ParquetStore::new(paths.store(), &paths.litehouse_url()).await?;
 
             if let Some(date) = date {
-                let merged = store.compact_partition(&table, "date", &date).await?;
-                println!("Compacted {merged} files for {table}/date={date}");
+                let merged = store
+                    .compact_partition(&source, &table, "date", &date)
+                    .await?;
+                println!("Compacted {merged} files for {source}/{table}/date={date}");
             } else if all_dates {
                 // List all distinct date partitions for this table
                 let table_row = store
-                    .table_info(&table)
+                    .table_info(&source, &table)
                     .await
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
                 // Query files and extract partition values
                 let files = store
-                    .get_table_parquet_paths(&table)
+                    .get_table_parquet_paths(&source, &table)
                     .await
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -485,9 +516,11 @@ async fn main() -> Result<()> {
 
                 let mut total = 0usize;
                 for date_val in &dates {
-                    let merged = store.compact_partition(&table, "date", date_val).await?;
+                    let merged = store
+                        .compact_partition(&source, &table, "date", date_val)
+                        .await?;
                     if merged > 0 {
-                        println!("Compacted {merged} files for {table}/date={date_val}");
+                        println!("Compacted {merged} files for {source}/{table}/date={date_val}");
                         total += merged;
                     }
                 }
@@ -673,16 +706,17 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             } else {
                 println!("Tables in {}:", store_path.display());
                 for table in tables {
-                    println!("  - {}", table.name);
+                    println!("  - {} ({})", table.name, table.source_id);
                 }
             }
         },
 
-        StoreCommands::Info { name, path } => {
+        StoreCommands::Info { source, name, path } => {
             let store_path = path.unwrap_or_else(|| wp.store());
             let store = ParquetStore::new(&store_path, &litehouse_url).await?;
-            let info = store.table_info(&name).await?;
+            let info = store.table_info(&source, &name).await?;
 
+            println!("Source: {}", info.source_id);
             println!("Table: {}", info.name);
             println!("Path: {}", info.path);
             println!("Version: {}", info.version);
@@ -699,6 +733,7 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
         },
 
         StoreCommands::Ingest {
+            source,
             table,
             input,
             path,
@@ -721,24 +756,25 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
                 ..Default::default()
             };
 
-            tracing::info!("Ingesting {} into table '{}'", input.display(), table);
+            tracing::info!("Ingesting {} into {}/{}", input.display(), source, table);
             let info = store
-                .ingest_parquet(&table, &input, Some(options), None)
+                .ingest_parquet(&source, &table, &input, Some(options))
                 .await?;
 
-            println!("Ingested into table '{}'", info.name);
+            println!("Ingested into table '{}/{}'", info.source_id, info.name);
             println!("Version: {}", info.version);
             println!("Files: {}", info.num_files);
         },
 
         StoreCommands::Export {
+            source,
             table,
             output,
             path,
         } => {
             let store_path = path.unwrap_or_else(|| wp.store());
             let store = ParquetStore::new(&store_path, &litehouse_url).await?;
-            let df = store.read_table(&table).await?;
+            let df = store.read_table(&source, &table).await?;
 
             // Create output directory if needed
             if let Some(parent) = output.parent() {
@@ -749,21 +785,33 @@ async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             let mut file = std::fs::File::create(&output)?;
             polars::io::csv::write::CsvWriter::new(&mut file).finish(&mut df.clone())?;
 
-            println!("Exported table '{}' to {}", table, output.display());
+            println!(
+                "Exported table '{}/{}' to {}",
+                source,
+                table,
+                output.display()
+            );
             println!("Rows: {}", df.height());
         },
 
-        StoreCommands::Delete { table, path, force } => {
+        StoreCommands::Delete {
+            source,
+            table,
+            path,
+            force,
+        } => {
             if !force {
-                println!("Are you sure you want to delete table '{table}'? This cannot be undone.");
+                println!(
+                    "Are you sure you want to delete table '{source}/{table}'? This cannot be undone."
+                );
                 println!("Run with --force to confirm.");
                 return Ok(());
             }
 
             let store_path = path.unwrap_or_else(|| wp.store());
             let store = ParquetStore::new(&store_path, &litehouse_url).await?;
-            store.delete_table(&table).await?;
-            println!("Deleted table '{table}'");
+            store.delete_table(&source, &table).await?;
+            println!("Deleted table '{source}/{table}'");
         },
     }
 
@@ -807,7 +855,7 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
     Ok(())
 }
 
-async fn handle_enrich(table: Option<&str>, num_clusters: usize) -> Result<()> {
+async fn handle_enrich(source: &str, table: Option<&str>, num_clusters: usize) -> Result<()> {
     use brightflow_engine::enrichment::{enrich_github_issues, is_enrichable, ENRICHABLE_TABLES};
 
     let wp = brightflow_core::WorkspacePaths::from_env();
@@ -831,10 +879,10 @@ async fn handle_enrich(table: Option<&str>, num_clusters: usize) -> Result<()> {
     std::fs::create_dir_all(&models_dir)?;
 
     for table_name in &tables_to_process {
-        println!("Enriching table: {table_name}");
+        println!("Enriching table: {source}/{table_name}");
 
         // Load the full table from the store
-        let df = match store.read_table(table_name).await {
+        let df = match store.read_table(source, table_name).await {
             Ok(df) => df,
             Err(e) => {
                 println!("  Skipping {table_name}: {e}");
@@ -863,7 +911,7 @@ async fn handle_enrich(table: Option<&str>, num_clusters: usize) -> Result<()> {
 
         // Write the enriched table back to the store
         // We need to write a new parquet file and re-register it
-        let table_dir = wp.store().join(table_name);
+        let table_dir = wp.store().join(source).join(table_name);
         std::fs::create_dir_all(&table_dir)?;
 
         let output_path = table_dir.join("enriched.parquet");
@@ -873,13 +921,13 @@ async fn handle_enrich(table: Option<&str>, num_clusters: usize) -> Result<()> {
         // Re-ingest the enriched file (this replaces the existing table data)
         let info = store
             .ingest_parquet(
+                source,
                 table_name,
                 &output_path,
                 Some(IngestOptions {
                     mode: IngestMode::Overwrite,
                     ..Default::default()
                 }),
-                None,
             )
             .await?;
 

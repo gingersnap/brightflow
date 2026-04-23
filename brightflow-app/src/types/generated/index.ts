@@ -7,6 +7,7 @@ export type { AvailableConnectorResponse } from './AvailableConnectorResponse';
 export type { ColumnInfo } from './ColumnInfo';
 export type { ColumnStat } from './ColumnStat';
 export type { ConnectorConfig } from './ConnectorConfig';
+export type { ConnectorConfigResponse } from './ConnectorConfigResponse';
 export type { ConnectorInfo } from './ConnectorInfo';
 export type { CreateConnectorConfigRequest } from './CreateConnectorConfigRequest';
 export type { CreateJobRequest } from './CreateJobRequest';

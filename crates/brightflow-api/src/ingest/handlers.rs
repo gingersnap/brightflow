@@ -262,6 +262,29 @@ pub async fn delete_source(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
+    // Purge the source's tables + parquet files from the catalog
+    if let Some(store) = state.store() {
+        let source_key = format!("web:{id}");
+        if let Err(e) = store.delete_source_data(&source_key).await {
+            tracing::warn!("Failed to purge store data for source '{source_key}': {e}");
+        }
+    }
+
+    // Delete on-disk events directory for this source (events/<id>/)
+    if let Some(paths) = &state.paths {
+        let events_dir = paths.events_store().join(&id);
+        if events_dir.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&events_dir) {
+                tracing::warn!(
+                    "Failed to remove events directory {}: {e}",
+                    events_dir.display()
+                );
+            }
+        }
+    }
+
+    state.refresh_table_index().await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 

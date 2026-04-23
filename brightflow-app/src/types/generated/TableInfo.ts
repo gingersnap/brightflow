@@ -10,6 +10,10 @@ export type TableInfo = {
  */
 name: string, 
 /**
+ * Owning source (e.g. `web:<uuid>` or `connector:<uuid>`)
+ */
+source_id: string, 
+/**
  * Path to the table
  */
 path: string, 

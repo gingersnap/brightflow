@@ -99,10 +99,11 @@ async fn scan_source_events(
     let Some(store) = state.store() else {
         return Ok(None);
     };
+    let store_source_id = format!("web:{source_id}");
     let table_name = format!("events_{source_id}");
     let filters = date_filters(start, end);
     let lf = store
-        .scan_table(&table_name, &filters)
+        .scan_table(&store_source_id, &table_name, &filters)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(lf.map(queries::scan_events_from_store))

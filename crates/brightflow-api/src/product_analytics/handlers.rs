@@ -78,6 +78,7 @@ async fn scan_source_events(
     let Some(store) = state.store() else {
         return Ok(None);
     };
+    let store_source_id = format!("web:{source_id}");
     let table_name = format!("events_{source_id}");
     let date_start = &start[..10.min(start.len())];
     let date_end = &end[..10.min(end.len())];
@@ -94,7 +95,7 @@ async fn scan_source_events(
         },
     ];
     let lf = store
-        .scan_table(&table_name, &filters)
+        .scan_table(&store_source_id, &table_name, &filters)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(lf.map(crate::web_analytics::queries::scan_events_from_store))
@@ -109,9 +110,10 @@ async fn scan_source_events_all(
     let Some(store) = state.store() else {
         return Ok(None);
     };
+    let store_source_id = format!("web:{source_id}");
     let table_name = format!("events_{source_id}");
     let lf = store
-        .scan_table(&table_name, &[])
+        .scan_table(&store_source_id, &table_name, &[])
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(lf.map(crate::web_analytics::queries::scan_events_from_store))
