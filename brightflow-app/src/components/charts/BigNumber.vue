@@ -211,7 +211,7 @@ const aggregationLabel = computed((): string | null => {
           <div class="text-2xl font-semibold text-default tabular-nums">
             {{ formatNumber(item.value, displayData.dtype) }}
           </div>
-          <div class="mt-1 text-xs text-muted">{{ item.label }}</div>
+          <div class="mt-1 text-sm text-muted">{{ item.label }}</div>
         </div>
       </div>
     </div>

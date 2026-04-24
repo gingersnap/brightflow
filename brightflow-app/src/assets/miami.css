@@ -1,5 +1,5 @@
 /* ============================================================================
-   MIAMI — Design Tokens v2.1.0
+   MIAMI — Design Tokens v0.0.4
    ============================================================================
 
    Colors:
@@ -26,12 +26,35 @@
                   info: 'info', success: 'success', warning: 'warning',
                   error: 'error' }
 
-   Marketing utilities (included below):
-     text-default / text-subtle / text-dimmed — text hierarchy
-     bg-main / bg-sidebar / bg-card / border-main — layout
+   Semantic utilities (bound below to --ui-* tokens):
+     bg-default / bg-muted / bg-elevated / bg-accented / bg-inverted
+     text-default / text-muted / text-dimmed / text-toned /
+       text-highlighted / text-inverted / text-brand
+     border-default / border-muted / border-accented / border-inverted
+
+   Accent utilities (decorative emphasis, mode-aware, headers only):
+     text-accent-brand / text-accent-primary / text-accent-secondary
+
+   Presentation utilities (on-demand; no CSS emitted unless used):
+     glass / card-glow / card-glow-hover — surface effects
+     bg-grid — grid background
+     mask-fade-b / mask-fade-x — edge masks
+     scrollbar-hide — chrome hide
+     font-mono-data — system monospace + tabular-nums for data tables
+
+   Motion:
+     --ease-out-expo — signature spring curve (use for all transitions)
+     animate-fade-up / animate-fade-in — entry motion, fires on mount
+     animate-float — ambient drift (marketing only)
+     animate-shimmer — skeleton loaders (app) / hover emphasis (marketing)
+     animate-pulse-glow — CTA emphasis (marketing)
+     animate-marquee — tickers + logo bars (app + marketing)
+     reveal-up / reveal-in — scroll-driven entry motion via
+       animation-timeline: view(); zero JS. Graceful fallback on
+       browsers without scroll-timeline support.
 
    Font loading is the consumer's responsibility.
-   Neutral uses Tailwind's mauve palette — all other colors are Tailwind defaults.
+   Neutral is aliased to Tailwind's mauve palette.
 
    ============================================================================ */
 
@@ -81,6 +104,20 @@
   --color-secondary-800: var(--color-teal-800);
   --color-secondary-900: var(--color-teal-900);
   --color-secondary-950: var(--color-teal-950);
+
+  /* ── Neutral (→ mauve) — Surfaces, borders, text ──────────────────────── */
+
+  --color-neutral-50: var(--color-mauve-50);
+  --color-neutral-100: var(--color-mauve-100);
+  --color-neutral-200: var(--color-mauve-200);
+  --color-neutral-300: var(--color-mauve-300);
+  --color-neutral-400: var(--color-mauve-400);
+  --color-neutral-500: var(--color-mauve-500);
+  --color-neutral-600: var(--color-mauve-600);
+  --color-neutral-700: var(--color-mauve-700);
+  --color-neutral-800: var(--color-mauve-800);
+  --color-neutral-900: var(--color-mauve-900);
+  --color-neutral-950: var(--color-mauve-950);
 
   /* ── Info (→ sky) ──────────────────────────────────────────────────────── */
 
@@ -157,50 +194,134 @@
 
   --font-brand: 'Poppins', system-ui, sans-serif;
   --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /* ============================================================================
-   NUXT UI TOKENS — Light & Dark
+   NUXT UI — Semantic tokens (light & dark)
    ============================================================================
-   These map Nuxt UI's semantic variables to the Miami palette.
-   Harmless when Nuxt UI isn't loaded — just unused CSS variables.
+   The full semantic layer expected by Nuxt UI components. When the
+   Nuxt UI plugin is loaded it generates these itself; these definitions
+   are the marketing-side source of truth. Everything downstream —
+   bg-default / text-muted / border-accented utilities — resolves here.
    ============================================================================ */
 
 :root {
-  /* --ui-radius: 0.5rem; */
-  --ui-bg: var(--ui-color-neutral-50);
-  --ui-bg-muted: var(--ui-color-neutral-100);
+  /* Nuxt UI rebinds Tailwind's --radius-* utilities as multiples of this value
+     (rounded-lg = --ui-radius * 2, rounded-2xl = * 4, etc.). Keep at 0.25rem
+     so Tailwind's standard radius scale holds. */
+  --ui-radius: 0.25rem;
+
+  /* Backgrounds — page sits on warm sand, cards pop forward in white */
+  --ui-bg: var(--color-neutral-50);
+  --ui-bg-muted: var(--color-neutral-100);
   --ui-bg-elevated: var(--color-white);
+  --ui-bg-accented: var(--color-neutral-200);
+  --ui-bg-inverted: var(--color-neutral-900);
+
+  /* Text — dimmed → highlighted */
+  --ui-text-dimmed: var(--color-neutral-400);
+  --ui-text-muted: var(--color-neutral-500);
+  --ui-text-toned: var(--color-neutral-600);
+  --ui-text: var(--color-neutral-700);
+  --ui-text-highlighted: var(--color-neutral-900);
+  --ui-text-inverted: var(--color-white);
+
+  /* Borders — default → accented */
+  --ui-border: var(--color-neutral-200);
+  --ui-border-muted: var(--color-neutral-200);
+  --ui-border-accented: var(--color-neutral-300);
+  --ui-border-inverted: var(--color-neutral-900);
+
+  /* Brand — Miami pink, stable across modes */
   --ui-brand: oklch(0.72 0.16 348);
-
-  /*--ui-brand: oklch(80.2% 0.136 347);*/
-
-  /*  --ui-brand: oklch(76.45% 0.1545 354.5); /* ~pink-350 / #fd86b8 */
-  /*
-  oklch(82.3% 0.12 346.018)
-  oklch(71.8% 0.202 349.761)
-10,5
-0,082
-3,743
-
-80,2
-0,1364
-346,766
-  */
 }
 
 .dark {
-  --ui-bg: var(--color-black);
-  --ui-bg-muted: var(--ui-color-neutral-950);
-  --ui-bg-elevated: var(--ui-color-neutral-900);
+  --ui-bg: var(--color-neutral-950);
+  --ui-bg-muted: var(--color-neutral-900);
+  --ui-bg-elevated: var(--color-neutral-800);
+  --ui-bg-accented: var(--color-neutral-700);
+  --ui-bg-inverted: var(--color-white);
 
-  /*  
-300 
-oklch(0.823 0.12 346.018)
+  --ui-text-dimmed: var(--color-neutral-500);
+  --ui-text-muted: var(--color-neutral-400);
+  --ui-text-toned: var(--color-neutral-300);
+  --ui-text: var(--color-neutral-200);
+  --ui-text-highlighted: var(--color-white);
+  --ui-text-inverted: var(--color-neutral-900);
 
-400
-oklch(71.8% 0.202 349.761)
-*/
+  --ui-border: var(--color-neutral-800);
+  --ui-border-muted: var(--color-neutral-700);
+  --ui-border-accented: var(--color-neutral-700);
+  --ui-border-inverted: var(--color-white);
+}
+
+/* ============================================================================
+   TAILWIND UTILITIES — bound to --ui-* tokens
+   ============================================================================
+   Maps the semantic tokens above to property-scoped Tailwind scales so
+   that bg-{name}, text-{name}, border-{name} resolve to distinct values
+   per utility family. Mirrors Nuxt UI's class names.
+   ============================================================================ */
+
+@theme inline {
+  /* Background utilities — bg-default / bg-muted / bg-elevated / ... */
+  --background-color-default: var(--ui-bg);
+  --background-color-muted: var(--ui-bg-muted);
+  --background-color-elevated: var(--ui-bg-elevated);
+  --background-color-accented: var(--ui-bg-accented);
+  --background-color-inverted: var(--ui-bg-inverted);
+
+  /* Text utilities — text-default / text-muted / text-dimmed / ... */
+  --text-color-default: var(--ui-text);
+  --text-color-muted: var(--ui-text-muted);
+  --text-color-dimmed: var(--ui-text-dimmed);
+  --text-color-toned: var(--ui-text-toned);
+  --text-color-highlighted: var(--ui-text-highlighted);
+  --text-color-inverted: var(--ui-text-inverted);
+  --text-color-brand: var(--ui-brand);
+
+  /* Border utilities — border-default / border-muted / border-accented / ... */
+  --border-color-default: var(--ui-border);
+  --border-color-muted: var(--ui-border-muted);
+  --border-color-accented: var(--ui-border-accented);
+  --border-color-inverted: var(--ui-border-inverted);
+}
+
+/* ============================================================================
+   ACCENTS — Brand-family pops, mode-aware
+   ============================================================================
+   Decorative emphasis in brand-family colors (text-accent-brand /
+   text-accent-primary / text-accent-secondary). Shade-shifts per mode
+   so the accent stays visually punchy on both surfaces:
+
+     Light → shade 500 (saturated, confident on white)
+     Dark  → shade 400 (one step lighter so it still pops)
+
+   USE FOR: headlines, stat numbers, eyebrow labels, chip/badge text,
+   icon tints, section-title underlines — anywhere a phrase or glyph
+   should read "in brand".
+
+   DO NOT USE FOR: body text, long prose, caption copy, or any
+   extended reading. 500/400 shades are vivid but contrast below AA
+   on small text against white/dark. For text, use text-default,
+   text-muted, text-dimmed.
+
+   Defined via role ramps so any future change to brand/primary/
+   secondary automatically propagates.
+   ============================================================================ */
+
+@theme {
+  --color-accent-brand: var(--color-brand-500);
+  --color-accent-primary: var(--color-primary-500);
+  --color-accent-secondary: var(--color-secondary-500);
+}
+
+.dark {
+  --color-accent-brand: var(--color-brand-400);
+  --color-accent-primary: var(--color-primary-400);
+  --color-accent-secondary: var(--color-secondary-400);
 }
 
 /* ============================================================================
@@ -214,19 +335,9 @@ oklch(71.8% 0.202 349.761)
 .bg-gradient-sunset {
   background: linear-gradient(
     135deg,
-    var(--color-amber-400) 0%,
-    var(--color-orange-400) 25%,
-    var(--color-rose-400) 50%,
-    var(--color-pink-500) 75%,
-    var(--color-purple-500) 100%
-  );
-}
-
-.bg-gradient-sunset-soft {
-  background: linear-gradient(
-    135deg,
-    var(--color-orange-400) 0%,
-    var(--color-rose-500) 50%,
+    var(--color-amber-300) 0%,
+    var(--color-orange-400) 33%,
+    var(--color-rose-500) 66%,
     var(--color-pink-600) 100%
   );
 }
@@ -234,9 +345,9 @@ oklch(71.8% 0.202 349.761)
 .bg-gradient-flamingo {
   background: linear-gradient(
     135deg,
-    var(--color-rose-300) 0%,
-    var(--color-rose-400) 50%,
-    var(--color-pink-500) 100%
+    var(--color-rose-400) 0%,
+    var(--color-rose-500) 50%,
+    var(--color-pink-600) 100%
   );
 }
 
@@ -258,76 +369,186 @@ oklch(71.8% 0.202 349.761)
   );
 }
 
-.bg-gradient-neon {
-  background: linear-gradient(135deg, var(--color-pink-500) 0%, var(--color-teal-500) 100%);
-}
+/* ============================================================================
+   MOTION — Easing + animations
+   ============================================================================
+   --ease-out-expo is the signature spring curve. Use it for every transition
+   in the app and marketing (button hover, modal open, dropdown expand, page
+   route change). Coverage is what makes motion feel like Miami/Linear/Vercel —
+   consistency > novelty.
 
-.bg-gradient-brand {
-  background: linear-gradient(135deg, var(--color-brand-500) 0%, var(--color-primary-500) 100%);
-}
+   Named animate-* keyframes are for entry motion (fade-up / fade-in), one
+   ambient drift (float, marketing-only), loading states (shimmer), CTA
+   emphasis (pulse-glow), and scrolling strips (marquee). All @theme entries
+   are on-demand — unused names emit no CSS.
+   ============================================================================ */
 
-.text-gradient-sunset-soft {
-  background: linear-gradient(
-    135deg,
-    var(--color-orange-400) 0%,
-    var(--color-rose-500) 50%,
-    var(--color-pink-600) 100%
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+@theme {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
-.text-gradient-sunset {
-  background: linear-gradient(
-    135deg,
-    var(--color-amber-400) 0%,
-    var(--color-orange-400) 25%,
-    var(--color-rose-400) 50%,
-    var(--color-pink-500) 75%,
-    var(--color-purple-500) 100%
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  --animate-fade-up: fade-up 0.8s var(--ease-out-expo) both;
+  --animate-fade-in: fade-in 0.8s var(--ease-out-expo) both;
+  --animate-float: float 8s ease-in-out infinite;
+  --animate-shimmer: shimmer 3s linear infinite;
+  --animate-pulse-glow: pulse-glow 3.5s ease-in-out infinite;
+  --animate-marquee: marquee 30s linear infinite;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(1.25rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0) translateX(0);
+    }
+    50% {
+      transform: translateY(-1.25rem) translateX(0.5rem);
+    }
+  }
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes pulse-glow {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 0 color-mix(in oklab, var(--color-brand-400) 40%, transparent),
+        0 0 40px 0 color-mix(in oklab, var(--color-brand-500) 20%, transparent);
+    }
+    50% {
+      box-shadow:
+        0 0 0 6px color-mix(in oklab, var(--color-brand-400) 0%, transparent),
+        0 0 60px 4px color-mix(in oklab, var(--color-brand-500) 35%, transparent);
+    }
+  }
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }
 
 /* ============================================================================
-   BRAND — Marketing Utilities
+   UTILITIES — Presentation layer
    ============================================================================
-   Convenience utilities for brand/marketing pages. These reference --ui-*
-   tokens so they stay in sync with the app. Not needed in Nuxt UI apps
-   (components use --ui-* tokens directly).
+   Surface effects (glass, card-glow / card-glow-hover), textures
+   (bg-grid, bg-noise), and masks (mask-fade-b, mask-fade-x) that recur
+   across marketing compositions. Used as Tailwind classes:
+
+     <div class="glass rounded-2xl p-6"> ... </div>
+     <article class="card-glow p-6 hover:card-glow-hover"> ... </article>
+
+   Bound to --ui-* tokens so they follow light/dark mode automatically.
+   Each @utility is on-demand: no CSS emitted unless the class is used.
    ============================================================================ */
 
-@utility text-default {
-  color: var(--ui-text);
+@utility glass {
+  background: color-mix(in oklab, var(--ui-bg-muted) 70%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid color-mix(in oklab, var(--ui-border) 60%, transparent);
 }
 
-@utility text-subtle {
-  color: var(--ui-text-muted);
+@utility card-glow {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--ui-bg-muted) 80%, transparent) 0%,
+    color-mix(in oklab, var(--ui-bg) 80%, transparent) 100%
+  );
+  border: 1px solid color-mix(in oklab, var(--ui-border) 70%, transparent);
+  transition:
+    border-color 0.3s ease,
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
-@utility text-dimmed {
-  color: var(--ui-text-dimmed);
+@utility card-glow-hover {
+  border-color: color-mix(in oklab, var(--color-brand-400) 50%, transparent);
+  box-shadow: 0 0 40px -12px color-mix(in oklab, var(--color-brand-500) 40%, transparent);
+  transform: translateY(-2px);
 }
 
-@utility bg-main {
-  background-color: var(--ui-bg);
+@utility bg-grid {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--ui-border) 60%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--ui-border) 60%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 3rem 3rem;
 }
 
-@utility bg-sidebar {
-  background-color: var(--ui-bg-muted);
+@utility mask-fade-b {
+  mask-image: linear-gradient(to bottom, black 60%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
 }
 
-@utility bg-card {
-  background-color: var(--ui-bg-elevated);
+@utility mask-fade-x {
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
 }
 
-@utility border-main {
-  border-color: var(--ui-border);
+@utility scrollbar-hide {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
-@utility text-brand {
-  color: var(--ui-brand);
+@utility font-mono-data {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Scroll-driven reveal — CSS-native, zero JS
+   ────────────────────────────────────────────────────────────────────────────
+   animation-timeline: view() binds animation progress to the element's
+   viewport position instead of wall-clock time. Browsers without support
+   fall back to a one-shot fade-up on mount (still looks fine).
+
+   Use reveal-up for section headers and cards, reveal-in for images or
+   blocks where translate would feel off. Range is tuned so motion begins
+   just as the element enters view and finishes when it's comfortably
+   placed.
+   ──────────────────────────────────────────────────────────────────────── */
+
+@utility reveal-up {
+  animation: fade-up 1s var(--ease-out-expo) both;
+  animation-timeline: view();
+  animation-range: entry 10% cover 30%;
+}
+
+@utility reveal-in {
+  animation: fade-in 1s var(--ease-out-expo) both;
+  animation-timeline: view();
+  animation-range: entry 10% cover 30%;
 }

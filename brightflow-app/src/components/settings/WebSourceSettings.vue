@@ -83,9 +83,9 @@ const { mutate: deleteSource } = useMutation({
           <div v-if="!editingName" class="flex items-center justify-between">
             <div>
               <p class="text-sm text-highlighted">{{ source.name }}</p>
-              <p v-if="source.domain" class="mt-0.5 text-xs text-muted">{{ source.domain }}</p>
+              <p v-if="source.domain" class="mt-0.5 text-sm text-muted">{{ source.domain }}</p>
             </div>
-            <UButton variant="ghost" size="xs" @click="startEditName">
+            <UButton variant="ghost" size="md" @click="startEditName">
               <Pencil class="mr-1 h-3.5 w-3.5" />
               Edit
             </UButton>
@@ -98,14 +98,14 @@ const { mutate: deleteSource } = useMutation({
               @keyup.enter="submitName"
               @keyup.escape="cancelEditName"
             />
-            <div v-if="nameError" class="text-xs text-red-500">{{ nameError }}</div>
+            <div v-if="nameError" class="text-sm text-red-500">{{ nameError }}</div>
             <div class="flex justify-end gap-2">
-              <UButton variant="ghost" size="xs" @click="cancelEditName">
+              <UButton variant="ghost" size="md" @click="cancelEditName">
                 <X class="mr-1 h-3.5 w-3.5" />
                 Cancel
               </UButton>
               <UButton
-                size="xs"
+                size="md"
                 :loading="savingName"
                 :disabled="!nameDraft.trim()"
                 @click="submitName"
@@ -126,21 +126,21 @@ const { mutate: deleteSource } = useMutation({
         <div class="rounded-lg border border-default bg-elevated p-4">
           <button
             v-if="!snippetText"
-            class="text-xs text-primary-500 underline"
+            class="text-sm text-primary-500 underline"
             @click="loadSnippet"
           >
             Show tracking snippet
           </button>
           <template v-else>
             <div class="mb-2 flex items-center justify-between">
-              <span class="text-xs font-medium text-muted">
+              <span class="text-sm font-medium text-muted">
                 Add this to your website's &lt;head&gt;
               </span>
-              <UButton size="xs" variant="ghost" @click="copySnippet">
+              <UButton size="md" variant="ghost" @click="copySnippet">
                 <Copy class="h-3.5 w-3.5" />
               </UButton>
             </div>
-            <code class="block rounded bg-default p-2 text-xs text-highlighted">{{
+            <code class="block rounded bg-default p-2 text-sm text-highlighted">{{
               snippetText
             }}</code>
           </template>
@@ -151,7 +151,7 @@ const { mutate: deleteSource } = useMutation({
       <section>
         <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Danger zone</h3>
         <div class="rounded-lg border border-default bg-elevated p-4">
-          <UButton variant="ghost" color="error" size="sm" @click="deleteSource()">
+          <UButton variant="ghost" color="error" size="md" @click="deleteSource()">
             <Trash2 class="mr-1.5 h-3.5 w-3.5" />
             Delete source
           </UButton>

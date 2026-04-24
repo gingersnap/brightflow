@@ -30,7 +30,7 @@ const emit = defineEmits<{
     <button
       v-for="p in periods"
       :key="p.value"
-      class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+      class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
       :class="
         modelValue === p.value
           ? 'bg-default text-highlighted shadow-sm'

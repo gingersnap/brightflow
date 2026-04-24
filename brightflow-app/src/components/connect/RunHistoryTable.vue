@@ -28,12 +28,12 @@ function duration(startedAt: string, finishedAt: string): string {
 </script>
 
 <template>
-  <div v-if="runs.length === 0" class="py-4 text-center text-xs text-muted">No runs yet</div>
+  <div v-if="runs.length === 0" class="py-4 text-center text-sm text-muted">No runs yet</div>
   <div v-else class="divide-y divide-default">
     <div
       v-for="run in runs"
       :key="run.id"
-      class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 py-2 text-xs"
+      class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 py-2 text-sm"
     >
       <SyncStatusBadge :status="run.status as 'pending' | 'running' | 'completed' | 'failed'" />
       <span class="font-medium text-highlighted">{{ run.connectorName }}</span>

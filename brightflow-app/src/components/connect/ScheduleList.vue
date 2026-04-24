@@ -85,7 +85,7 @@ function lastCompletedLabel(c: UnifiedConnector): string | null {
 </script>
 
 <template>
-  <div v-if="scheduled.length === 0" class="py-4 text-center text-xs text-muted">
+  <div v-if="scheduled.length === 0" class="py-4 text-center text-sm text-muted">
     No active schedules
   </div>
   <div v-else class="divide-y divide-default">
@@ -105,7 +105,7 @@ function lastCompletedLabel(c: UnifiedConnector): string | null {
       </span>
 
       <!-- Next run / last completed — subtle muted text -->
-      <span class="hidden items-center gap-2 text-xs text-muted sm:flex">
+      <span class="hidden items-center gap-2 text-sm text-muted sm:flex">
         <span v-if="!isRunning(c)">Next {{ nextRunLabel(c) }}</span>
         <span v-if="!isRunning(c) && lastCompletedLabel(c)">
           &middot; Last {{ lastCompletedLabel(c) }}
@@ -117,7 +117,7 @@ function lastCompletedLabel(c: UnifiedConnector): string | null {
 
       <!-- Run Now -->
       <UButton
-        size="xs"
+        size="md"
         variant="ghost"
         :disabled="isRunning(c)"
         :loading="isRunning(c)"
@@ -128,7 +128,7 @@ function lastCompletedLabel(c: UnifiedConnector): string | null {
       </UButton>
 
       <!-- Delete -->
-      <UButton size="xs" variant="ghost" color="error" @click="emit('delete', c.job!.id)">
+      <UButton size="md" variant="ghost" color="error" @click="emit('delete', c.job!.id)">
         <Trash2 class="h-3 w-3" />
       </UButton>
     </div>

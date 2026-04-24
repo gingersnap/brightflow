@@ -164,9 +164,9 @@ watch(presetId, () => void refreshConfig());
           <div v-if="!editingName" class="flex items-center justify-between">
             <div>
               <p class="text-sm text-highlighted">{{ source.name }}</p>
-              <p v-if="connectorPath" class="mt-0.5 text-xs text-muted">{{ connectorPath }}</p>
+              <p v-if="connectorPath" class="mt-0.5 text-sm text-muted">{{ connectorPath }}</p>
             </div>
-            <UButton variant="ghost" size="xs" @click="startEditName">
+            <UButton variant="ghost" size="md" @click="startEditName">
               <Pencil class="mr-1 h-3.5 w-3.5" />
               Edit
             </UButton>
@@ -179,14 +179,14 @@ watch(presetId, () => void refreshConfig());
               @keyup.enter="submitName"
               @keyup.escape="cancelEditName"
             />
-            <div v-if="nameError" class="text-xs text-red-500">{{ nameError }}</div>
+            <div v-if="nameError" class="text-sm text-red-500">{{ nameError }}</div>
             <div class="flex justify-end gap-2">
-              <UButton variant="ghost" size="xs" @click="cancelEditName">
+              <UButton variant="ghost" size="md" @click="cancelEditName">
                 <X class="mr-1 h-3.5 w-3.5" />
                 Cancel
               </UButton>
               <UButton
-                size="xs"
+                size="md"
                 :loading="savingName"
                 :disabled="!nameDraft.trim()"
                 @click="submitName"
@@ -205,13 +205,13 @@ watch(presetId, () => void refreshConfig());
         <div class="rounded-lg border border-default bg-elevated p-4">
           <div class="flex items-center justify-between">
             <span
-              class="inline-flex items-center gap-1.5 text-xs"
+              class="inline-flex items-center gap-1.5 text-sm"
               :class="config?.hasToken ? 'text-green-500' : 'text-amber-500'"
             >
               <Key class="h-3.5 w-3.5" />
               {{ config?.hasToken ? 'Token set' : 'No token' }}
             </span>
-            <UButton variant="ghost" size="xs" @click="toggleTokenEdit">
+            <UButton variant="ghost" size="md" @click="toggleTokenEdit">
               {{ editingToken ? 'Cancel' : config?.hasToken ? 'Update' : 'Add token' }}
             </UButton>
           </div>
@@ -238,10 +238,10 @@ watch(presetId, () => void refreshConfig());
                 <Eye v-else class="h-4 w-4" />
               </button>
             </div>
-            <div v-if="tokenError" class="text-xs text-red-500">{{ tokenError }}</div>
+            <div v-if="tokenError" class="text-sm text-red-500">{{ tokenError }}</div>
             <div class="flex justify-end">
               <UButton
-                size="xs"
+                size="md"
                 :loading="savingToken"
                 :disabled="!tokenDraft.trim()"
                 @click="submitToken"
@@ -259,18 +259,18 @@ watch(presetId, () => void refreshConfig());
         <div class="rounded-lg border border-default bg-elevated p-4">
           <dl class="space-y-2 text-sm">
             <div class="flex items-baseline gap-3">
-              <dt class="w-24 shrink-0 text-xs text-muted">Type</dt>
+              <dt class="w-24 shrink-0 text-sm text-muted">Type</dt>
               <dd class="text-highlighted">{{ connectorPath }}</dd>
             </div>
             <div v-for="row in configRows" :key="row.key" class="flex items-baseline gap-3">
-              <dt class="w-24 shrink-0 text-xs text-muted">{{ row.label }}</dt>
+              <dt class="w-24 shrink-0 text-sm text-muted">{{ row.label }}</dt>
               <dd class="break-all text-highlighted">
                 <template v-if="row.value">{{ row.value }}</template>
                 <span v-else class="text-muted italic">not set</span>
               </dd>
             </div>
           </dl>
-          <p class="mt-3 text-xs text-muted">
+          <p class="mt-3 text-sm text-muted">
             Connector settings are fixed for the lifetime of a source. To sync a different target,
             add a new source.
           </p>
@@ -284,20 +284,20 @@ watch(presetId, () => void refreshConfig());
       <section>
         <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Danger zone</h3>
         <div class="space-y-2 rounded-lg border border-default bg-elevated p-4">
-          <div v-if="deleteError" class="text-xs text-red-500">{{ deleteError }}</div>
+          <div v-if="deleteError" class="text-sm text-red-500">{{ deleteError }}</div>
           <div v-if="!confirmingDelete">
-            <UButton variant="ghost" color="error" size="sm" @click="confirmingDelete = true">
+            <UButton variant="ghost" color="error" size="md" @click="confirmingDelete = true">
               <Trash2 class="mr-1.5 h-3.5 w-3.5" />
               Delete source
             </UButton>
           </div>
           <div v-else class="space-y-2">
-            <p class="text-xs text-muted">
+            <p class="text-sm text-muted">
               This will remove the preset and its schedules. Stored data is kept.
             </p>
             <div class="flex gap-2">
-              <UButton variant="ghost" size="xs" @click="confirmingDelete = false">Cancel</UButton>
-              <UButton color="error" size="xs" :loading="deleting" @click="deleteSource()">
+              <UButton variant="ghost" size="md" @click="confirmingDelete = false">Cancel</UButton>
+              <UButton color="error" size="md" :loading="deleting" @click="deleteSource()">
                 Yes, delete
               </UButton>
             </div>

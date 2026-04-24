@@ -76,7 +76,7 @@ function retentionColor(value: number): string {
     <!-- Config form -->
     <div class="mb-6 flex flex-wrap items-end gap-3">
       <div>
-        <label class="mb-1 block text-xs text-muted">Cohort event</label>
+        <label class="mb-1 block text-sm text-muted">Cohort event</label>
         <select
           v-model="cohortEvent"
           class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
@@ -86,7 +86,7 @@ function retentionColor(value: number): string {
         </select>
       </div>
       <div>
-        <label class="mb-1 block text-xs text-muted">Return event</label>
+        <label class="mb-1 block text-sm text-muted">Return event</label>
         <select
           v-model="returnEvent"
           class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
@@ -96,7 +96,7 @@ function retentionColor(value: number): string {
         </select>
       </div>
       <div>
-        <label class="mb-1 block text-xs text-muted">Period</label>
+        <label class="mb-1 block text-sm text-muted">Period</label>
         <select
           v-model="periodType"
           class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
@@ -106,7 +106,7 @@ function retentionColor(value: number): string {
         </select>
       </div>
       <div>
-        <label class="mb-1 block text-xs text-muted">Periods</label>
+        <label class="mb-1 block text-sm text-muted">Periods</label>
         <select
           v-model.number="numPeriods"
           class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
@@ -117,7 +117,7 @@ function retentionColor(value: number): string {
           <option :value="12">12</option>
         </select>
       </div>
-      <UButton size="sm" :disabled="!cohortEvent || !returnEvent" @click="runRetention">
+      <UButton size="md" :disabled="!cohortEvent || !returnEvent" @click="runRetention">
         Analyze
       </UButton>
     </div>

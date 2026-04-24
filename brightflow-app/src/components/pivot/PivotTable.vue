@@ -318,14 +318,14 @@ function isNumeric(dtype: string | undefined): boolean {
     <div v-if="!pivotData" class="flex h-full items-center justify-center text-muted">
       <div class="text-center">
         <p class="text-sm">No pivot data</p>
-        <p class="mt-1 text-xs text-muted/70">Configure your pivot and run the query</p>
+        <p class="mt-1 text-sm text-muted/70">Configure your pivot and run the query</p>
       </div>
     </div>
 
     <!-- Grouping toolbar -->
     <div
       v-if="hasGrouping && pivotData"
-      class="flex items-center gap-2 border-b border-default bg-muted/30 px-3 py-1.5 text-xs"
+      class="flex items-center gap-2 border-b border-default bg-muted/30 px-3 py-1.5 text-sm"
     >
       <span class="text-muted">Groups:</span>
       <button

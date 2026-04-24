@@ -196,7 +196,7 @@ const chartOption = computed(() => {
         <!-- Web / Product tab switcher -->
         <div class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
           <button
-            class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
             :class="
               analyticsTab === 'web'
                 ? 'bg-default text-highlighted shadow-sm'
@@ -207,7 +207,7 @@ const chartOption = computed(() => {
             Web
           </button>
           <button
-            class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
             :class="
               analyticsTab === 'product'
                 ? 'bg-default text-highlighted shadow-sm'
@@ -230,7 +230,7 @@ const chartOption = computed(() => {
           </option>
         </select>
 
-        <UButton size="xs" variant="ghost" @click="showAddSource = !showAddSource">
+        <UButton size="md" variant="ghost" @click="showAddSource = !showAddSource">
           <Plus class="h-4 w-4" />
         </UButton>
       </div>
@@ -244,7 +244,7 @@ const chartOption = computed(() => {
       <h3 class="mb-3 text-sm font-medium text-highlighted">Add Source</h3>
       <div class="flex items-end gap-3">
         <div>
-          <label class="mb-1 block text-xs text-muted">Domain</label>
+          <label class="mb-1 block text-sm text-muted">Domain</label>
           <input
             v-model="newDomain"
             type="text"
@@ -253,7 +253,7 @@ const chartOption = computed(() => {
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs text-muted">Name (optional)</label>
+          <label class="mb-1 block text-sm text-muted">Name (optional)</label>
           <input
             v-model="newName"
             type="text"
@@ -261,7 +261,7 @@ const chartOption = computed(() => {
             class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
           />
         </div>
-        <UButton size="sm" @click="addSource()">Add</UButton>
+        <UButton size="md" @click="addSource()">Add</UButton>
       </div>
     </div>
 
@@ -272,7 +272,7 @@ const chartOption = computed(() => {
     >
       <Globe class="h-12 w-12 opacity-40" />
       <p>No sources added yet</p>
-      <UButton @click="showAddSource = true">Add your first source</UButton>
+      <UButton size="md" @click="showAddSource = true">Add your first source</UButton>
     </div>
 
     <!-- Product analytics tab -->
@@ -285,20 +285,20 @@ const chartOption = computed(() => {
     <template v-else-if="analyticsTab === 'web'">
       <!-- Tracking snippet -->
       <div v-if="selectedSource && !snippetText" class="mb-6">
-        <button class="text-xs text-primary-500 underline" @click="loadSnippet(selectedSource.id)">
+        <button class="text-sm text-primary-500 underline" @click="loadSnippet(selectedSource.id)">
           Show tracking snippet
         </button>
       </div>
       <div v-if="snippetText" class="mb-6 rounded-lg border border-default bg-elevated p-4">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs font-medium text-muted"
+          <span class="text-sm font-medium text-muted"
             >Add this to your website's &lt;head&gt;</span
           >
-          <UButton size="xs" variant="ghost" @click="copySnippet">
+          <UButton size="md" variant="ghost" @click="copySnippet">
             <Copy class="h-3.5 w-3.5" />
           </UButton>
         </div>
-        <code class="block rounded bg-default p-2 text-xs text-highlighted">{{ snippetText }}</code>
+        <code class="block rounded bg-default p-2 text-sm text-highlighted">{{ snippetText }}</code>
       </div>
 
       <!-- Dashboard -->
@@ -306,25 +306,25 @@ const chartOption = computed(() => {
         <!-- Stats bar -->
         <div class="mb-6 grid grid-cols-4 gap-4">
           <div class="rounded-lg border border-default bg-elevated p-4">
-            <p class="text-xs text-muted">Unique Visitors</p>
+            <p class="text-sm text-muted">Unique Visitors</p>
             <p class="mt-1 text-2xl font-semibold text-highlighted">
               {{ stats?.visitors?.toLocaleString() ?? '-' }}
             </p>
           </div>
           <div class="rounded-lg border border-default bg-elevated p-4">
-            <p class="text-xs text-muted">Total Pageviews</p>
+            <p class="text-sm text-muted">Total Pageviews</p>
             <p class="mt-1 text-2xl font-semibold text-highlighted">
               {{ stats?.pageviews?.toLocaleString() ?? '-' }}
             </p>
           </div>
           <div class="rounded-lg border border-default bg-elevated p-4">
-            <p class="text-xs text-muted">Bounce Rate</p>
+            <p class="text-sm text-muted">Bounce Rate</p>
             <p class="mt-1 text-2xl font-semibold text-highlighted">
               {{ stats?.bounceRate != null ? `${(stats.bounceRate * 100).toFixed(1)}%` : '-' }}
             </p>
           </div>
           <div class="rounded-lg border border-default bg-elevated p-4">
-            <p class="text-xs text-muted">Avg Visit Duration</p>
+            <p class="text-sm text-muted">Avg Visit Duration</p>
             <p class="mt-1 text-2xl font-semibold text-highlighted">
               {{ stats?.avgVisitDuration != null ? `${stats.avgVisitDuration.toFixed(0)}s` : '-' }}
             </p>
@@ -350,7 +350,7 @@ const chartOption = computed(() => {
             <h3 class="mb-3 text-sm font-medium text-highlighted">Top Pages</h3>
             <table v-if="topPages && topPages.length > 0" class="w-full text-sm">
               <thead>
-                <tr class="border-b border-default text-xs text-muted">
+                <tr class="border-b border-default text-sm text-muted">
                   <th class="pb-2 text-left font-medium">Page</th>
                   <th class="pb-2 text-right font-medium">Visitors</th>
                 </tr>
@@ -366,7 +366,7 @@ const chartOption = computed(() => {
                 </tr>
               </tbody>
             </table>
-            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+            <p v-else class="py-4 text-center text-sm text-muted">No data</p>
           </div>
 
           <!-- Referrers -->
@@ -374,7 +374,7 @@ const chartOption = computed(() => {
             <h3 class="mb-3 text-sm font-medium text-highlighted">Sources</h3>
             <table v-if="referrers && referrers.length > 0" class="w-full text-sm">
               <thead>
-                <tr class="border-b border-default text-xs text-muted">
+                <tr class="border-b border-default text-sm text-muted">
                   <th class="pb-2 text-left font-medium">Source</th>
                   <th class="pb-2 text-right font-medium">Visitors</th>
                 </tr>
@@ -390,7 +390,7 @@ const chartOption = computed(() => {
                 </tr>
               </tbody>
             </table>
-            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+            <p v-else class="py-4 text-center text-sm text-muted">No data</p>
           </div>
 
           <!-- Browsers -->
@@ -398,7 +398,7 @@ const chartOption = computed(() => {
             <h3 class="mb-3 text-sm font-medium text-highlighted">Browsers</h3>
             <table v-if="devices && devices.length > 0" class="w-full text-sm">
               <thead>
-                <tr class="border-b border-default text-xs text-muted">
+                <tr class="border-b border-default text-sm text-muted">
                   <th class="pb-2 text-left font-medium">Browser</th>
                   <th class="pb-2 text-right font-medium">Visitors</th>
                 </tr>
@@ -414,7 +414,7 @@ const chartOption = computed(() => {
                 </tr>
               </tbody>
             </table>
-            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+            <p v-else class="py-4 text-center text-sm text-muted">No data</p>
           </div>
 
           <!-- Countries -->
@@ -422,7 +422,7 @@ const chartOption = computed(() => {
             <h3 class="mb-3 text-sm font-medium text-highlighted">Countries</h3>
             <table v-if="geoData && geoData.length > 0" class="w-full text-sm">
               <thead>
-                <tr class="border-b border-default text-xs text-muted">
+                <tr class="border-b border-default text-sm text-muted">
                   <th class="pb-2 text-left font-medium">Country</th>
                   <th class="pb-2 text-right font-medium">Visitors</th>
                 </tr>
@@ -438,13 +438,13 @@ const chartOption = computed(() => {
                 </tr>
               </tbody>
             </table>
-            <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+            <p v-else class="py-4 text-center text-sm text-muted">No data</p>
           </div>
         </div>
 
         <!-- Source management: delete -->
         <div v-if="selectedSource" class="mt-8 border-t border-default pt-4">
-          <UButton variant="ghost" color="error" size="xs" @click="deleteSource(selectedSource.id)">
+          <UButton variant="ghost" color="error" size="md" @click="deleteSource(selectedSource.id)">
             <Trash2 class="h-3.5 w-3.5" />
             Delete {{ selectedSource.domain }}
           </UButton>

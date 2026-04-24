@@ -86,25 +86,25 @@ const chartOption = computed(() => {
     <!-- Stats bar -->
     <div class="mb-4 grid grid-cols-4 gap-3">
       <div class="rounded-lg border border-default bg-elevated p-4">
-        <p class="text-xs text-muted">Unique Visitors</p>
+        <p class="text-sm text-muted">Unique Visitors</p>
         <p class="mt-1 text-2xl font-semibold text-highlighted">
           {{ stats?.visitors?.toLocaleString() ?? '-' }}
         </p>
       </div>
       <div class="rounded-lg border border-default bg-elevated p-4">
-        <p class="text-xs text-muted">Total Pageviews</p>
+        <p class="text-sm text-muted">Total Pageviews</p>
         <p class="mt-1 text-2xl font-semibold text-highlighted">
           {{ stats?.pageviews?.toLocaleString() ?? '-' }}
         </p>
       </div>
       <div class="rounded-lg border border-default bg-elevated p-4">
-        <p class="text-xs text-muted">Bounce Rate</p>
+        <p class="text-sm text-muted">Bounce Rate</p>
         <p class="mt-1 text-2xl font-semibold text-highlighted">
           {{ stats?.bounceRate != null ? `${(stats.bounceRate * 100).toFixed(1)}%` : '-' }}
         </p>
       </div>
       <div class="rounded-lg border border-default bg-elevated p-4">
-        <p class="text-xs text-muted">Avg Visit Duration</p>
+        <p class="text-sm text-muted">Avg Visit Duration</p>
         <p class="mt-1 text-2xl font-semibold text-highlighted">
           {{ stats?.avgVisitDuration != null ? `${stats.avgVisitDuration.toFixed(0)}s` : '-' }}
         </p>
@@ -130,7 +130,7 @@ const chartOption = computed(() => {
         <h3 class="mb-3 text-sm font-medium text-highlighted">Top Pages</h3>
         <table v-if="topPages && topPages.length > 0" class="w-full text-sm">
           <thead>
-            <tr class="border-b border-default text-xs text-muted">
+            <tr class="border-b border-default text-sm text-muted">
               <th class="pb-2 text-left font-medium">Page</th>
               <th class="pb-2 text-right font-medium">Visitors</th>
             </tr>
@@ -146,7 +146,7 @@ const chartOption = computed(() => {
             </tr>
           </tbody>
         </table>
-        <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
       </div>
 
       <!-- Referrers -->
@@ -154,7 +154,7 @@ const chartOption = computed(() => {
         <h3 class="mb-3 text-sm font-medium text-highlighted">Sources</h3>
         <table v-if="referrers && referrers.length > 0" class="w-full text-sm">
           <thead>
-            <tr class="border-b border-default text-xs text-muted">
+            <tr class="border-b border-default text-sm text-muted">
               <th class="pb-2 text-left font-medium">Source</th>
               <th class="pb-2 text-right font-medium">Visitors</th>
             </tr>
@@ -170,7 +170,7 @@ const chartOption = computed(() => {
             </tr>
           </tbody>
         </table>
-        <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
       </div>
 
       <!-- Browsers -->
@@ -178,7 +178,7 @@ const chartOption = computed(() => {
         <h3 class="mb-3 text-sm font-medium text-highlighted">Browsers</h3>
         <table v-if="devices && devices.length > 0" class="w-full text-sm">
           <thead>
-            <tr class="border-b border-default text-xs text-muted">
+            <tr class="border-b border-default text-sm text-muted">
               <th class="pb-2 text-left font-medium">Browser</th>
               <th class="pb-2 text-right font-medium">Visitors</th>
             </tr>
@@ -194,7 +194,7 @@ const chartOption = computed(() => {
             </tr>
           </tbody>
         </table>
-        <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
       </div>
 
       <!-- Countries -->
@@ -202,7 +202,7 @@ const chartOption = computed(() => {
         <h3 class="mb-3 text-sm font-medium text-highlighted">Countries</h3>
         <table v-if="geoData && geoData.length > 0" class="w-full text-sm">
           <thead>
-            <tr class="border-b border-default text-xs text-muted">
+            <tr class="border-b border-default text-sm text-muted">
               <th class="pb-2 text-left font-medium">Country</th>
               <th class="pb-2 text-right font-medium">Visitors</th>
             </tr>
@@ -218,7 +218,7 @@ const chartOption = computed(() => {
             </tr>
           </tbody>
         </table>
-        <p v-else class="py-4 text-center text-xs text-muted">No data</p>
+        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
       </div>
     </div>
   </div>

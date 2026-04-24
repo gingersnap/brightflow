@@ -40,7 +40,7 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
         <button
           v-for="t in tabs"
           :key="t.value"
-          class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+          class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
           :class="
             tab === t.value
               ? 'bg-default text-highlighted shadow-sm'

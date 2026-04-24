@@ -33,6 +33,11 @@ const router = createRouter({
       component: () => import('./components/system/SystemView.vue'),
     },
     {
+      path: '/preferences',
+      name: 'preferences',
+      component: () => import('./components/preferences/PreferencesPage.vue'),
+    },
+    {
       path: '/:sourceId/insights/:table',
       name: 'insights-table',
       component: () => import('./components/layout/SourceLayout.vue'),

@@ -115,9 +115,9 @@ function handleScroll(): void {
               'bg-neutral-400': !systemStore.isConnected && systemStore.status !== 'connecting',
             }"
           />
-          <span class="text-xs text-muted">{{ systemStore.status }}</span>
+          <span class="text-sm text-muted">{{ systemStore.status }}</span>
 
-          <UButton variant="ghost" size="xs" @click="systemStore.clearLogs()">
+          <UButton variant="ghost" size="md" @click="systemStore.clearLogs()">
             <Trash2 class="h-3.5 w-3.5" />
             Clear
           </UButton>
@@ -133,7 +133,7 @@ function handleScroll(): void {
       >
         <!-- Process Memory -->
         <div class="rounded-lg border border-default bg-default p-3">
-          <div class="mb-1 text-xs text-muted">Process Memory</div>
+          <div class="mb-1 text-sm text-muted">Process Memory</div>
           <div class="text-lg font-semibold text-highlighted">
             {{ formatBytes(systemStore.metrics.processRssBytes) }}
             <span class="text-xs font-normal text-muted"
@@ -144,7 +144,7 @@ function handleScroll(): void {
 
         <!-- System Memory -->
         <div class="rounded-lg border border-default bg-default p-3">
-          <div class="mb-1 text-xs text-muted">System Memory</div>
+          <div class="mb-1 text-sm text-muted">System Memory</div>
           <div class="mb-1.5 text-sm font-semibold text-highlighted">
             {{ formatBytes(systemStore.metrics.systemUsedBytes) }}
             <span class="text-xs font-normal text-muted"
@@ -168,7 +168,7 @@ function handleScroll(): void {
 
         <!-- Process CPU -->
         <div class="rounded-lg border border-default bg-default p-3">
-          <div class="mb-1 text-xs text-muted">Process CPU</div>
+          <div class="mb-1 text-sm text-muted">Process CPU</div>
           <div class="text-lg font-semibold text-highlighted">
             {{ formatCpu(systemStore.metrics.cpuPercent) }}
           </div>
@@ -176,7 +176,7 @@ function handleScroll(): void {
 
         <!-- Uptime -->
         <div class="rounded-lg border border-default bg-default p-3">
-          <div class="mb-1 text-xs text-muted">Uptime</div>
+          <div class="mb-1 text-sm text-muted">Uptime</div>
           <div class="text-lg font-semibold text-highlighted">
             {{ formatUptime(systemStore.metrics.uptimeSecs) }}
           </div>
@@ -215,7 +215,7 @@ function handleScroll(): void {
 
       <!-- Auto-scroll indicator -->
       <div v-if="!autoScroll && systemStore.logs.length > 0" class="absolute right-4 bottom-4">
-        <UButton size="xs" variant="solid" @click="autoScroll = true"> Scroll to bottom </UButton>
+        <UButton size="md" variant="solid" @click="autoScroll = true"> Scroll to bottom </UButton>
       </div>
     </template>
   </UDashboardPanel>

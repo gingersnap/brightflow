@@ -112,7 +112,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
     <div v-if="!isCollapsed" class="space-y-2 border-t border-default bg-muted/10 px-4 py-2">
       <!-- Filters Row -->
       <div class="flex flex-wrap items-center gap-2">
-        <span class="w-12 text-xs font-medium text-muted">Filter:</span>
+        <span class="w-12 text-sm font-medium text-muted">Filter:</span>
         <div
           v-for="filter in queryStore.filters"
           :key="filter.id"
@@ -165,7 +165,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
 
         <!-- Add filter button -->
         <button
-          class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-muted/30 hover:text-default"
+          class="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted transition-colors hover:bg-muted/30 hover:text-default"
           @click="queryStore.addFilter()"
         >
           <Plus class="h-3.5 w-3.5" />
@@ -175,7 +175,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
 
       <!-- Limit Row -->
       <div class="flex items-center gap-2">
-        <span class="w-12 text-xs font-medium text-muted">Limit:</span>
+        <span class="w-12 text-sm font-medium text-muted">Limit:</span>
         <USelectMenu
           :model-value="queryStore.limit"
           :items="limitOptions"
@@ -184,7 +184,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
           class="w-20"
           @update:model-value="queryStore.limit = $event"
         />
-        <span class="text-xs text-muted">rows</span>
+        <span class="text-sm text-muted">rows</span>
       </div>
     </div>
   </div>

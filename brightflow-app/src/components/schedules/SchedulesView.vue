@@ -20,7 +20,7 @@ function refreshAll(): void {
           <UDashboardSidebarCollapse />
         </template>
         <template #trailing>
-          <UButton variant="ghost" size="sm" @click="refreshAll">
+          <UButton variant="ghost" size="md" @click="refreshAll">
             <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
             Refresh
           </UButton>

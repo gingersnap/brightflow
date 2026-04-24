@@ -23,12 +23,12 @@ defineEmits<{
       <h3 class="text-sm font-semibold text-highlighted">{{ source.name }}</h3>
     </div>
 
-    <p class="text-xs text-muted">
+    <p class="text-sm text-muted">
       {{ source.kind === 'web-analytics' ? source.domain : source.connectorName }}
     </p>
 
     <div class="mt-auto flex items-center gap-3 pt-2">
-      <span v-if="source.tables.length > 0" class="flex items-center gap-1 text-xs text-muted">
+      <span v-if="source.tables.length > 0" class="flex items-center gap-1 text-sm text-muted">
         <Table2 class="h-3.5 w-3.5" />
         {{ source.tables.length }} table{{ source.tables.length === 1 ? '' : 's' }}
       </span>

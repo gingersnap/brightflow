@@ -22,7 +22,7 @@ const eventList = computed<EventListRow[]>(() => events.value ?? []);
   <div>
     <table v-if="eventList.length > 0" class="w-full text-sm">
       <thead>
-        <tr class="border-b border-default text-xs text-muted">
+        <tr class="border-b border-default text-sm text-muted">
           <th class="pb-2 text-left font-medium">Event</th>
           <th class="pb-2 text-right font-medium">Count</th>
           <th class="pb-2 text-right font-medium">Unique Users</th>

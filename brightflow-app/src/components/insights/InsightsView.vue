@@ -86,7 +86,7 @@ watch(
             <Table2 class="h-5 w-5 text-muted" />
             <div>
               <p class="text-sm font-medium text-highlighted">{{ t.name }}</p>
-              <p v-if="t.numRows != null" class="text-xs text-muted">
+              <p v-if="t.numRows != null" class="text-sm text-muted">
                 {{ t.numRows.toLocaleString() }} rows
               </p>
             </div>
@@ -100,14 +100,14 @@ watch(
       <!-- Toolbar -->
       <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
         <button
-          class="flex cursor-pointer items-center gap-1 text-xs text-muted transition-colors hover:text-highlighted"
+          class="flex cursor-pointer items-center gap-1 text-sm text-muted transition-colors hover:text-highlighted"
           @click="handleBackToTables"
         >
           <ArrowLeft class="h-3 w-3" />
           Back to tables
         </button>
 
-        <span class="text-xs font-medium text-highlighted">{{ table }}</span>
+        <span class="text-sm font-medium text-highlighted">{{ table }}</span>
 
         <div class="mx-1 h-4 w-px bg-default" />
 
@@ -116,7 +116,7 @@ watch(
           <button
             v-for="rt in reportTypes"
             :key="rt.value"
-            class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
             :class="
               insightsStore.reportType === rt.value
                 ? 'bg-default text-highlighted shadow-sm'
@@ -136,7 +136,7 @@ watch(
           <button
             v-for="c in cadences"
             :key="c.value"
-            class="rounded-md px-3 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
             :class="
               insightsStore.cadence === c.value
                 ? 'bg-default text-highlighted shadow-sm'
@@ -152,7 +152,7 @@ watch(
         <div class="flex-1" />
 
         <!-- Run button -->
-        <UButton size="sm" :loading="insightsStore.loading" @click="runAnalysis">
+        <UButton size="md" :loading="insightsStore.loading" @click="runAnalysis">
           <Play class="mr-1.5 h-3.5 w-3.5" />
           Run Analysis
         </UButton>

@@ -74,7 +74,7 @@ watch(
     <template v-else>
       <div class="border-b border-default px-4 py-2">
         <button
-          class="flex cursor-pointer items-center gap-1 text-xs text-muted transition-colors hover:text-highlighted"
+          class="flex cursor-pointer items-center gap-1 text-sm text-muted transition-colors hover:text-highlighted"
           @click="handleBackToTables"
         >
           <ArrowLeft class="h-3 w-3" />

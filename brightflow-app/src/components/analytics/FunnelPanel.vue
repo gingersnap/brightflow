@@ -76,15 +76,15 @@ const { data: funnelResult } = useQuery({
         </button>
       </div>
       <div class="flex items-center gap-3">
-        <UButton size="xs" variant="ghost" @click="addStep">
+        <UButton size="md" variant="ghost" @click="addStep">
           <Plus class="h-3.5 w-3.5" />
           Add step
         </UButton>
-        <div class="flex items-center gap-2 text-xs text-muted">
+        <div class="flex items-center gap-2 text-sm text-muted">
           <span>Window:</span>
           <select
             v-model.number="windowDays"
-            class="rounded border border-default bg-default px-2 py-1 text-xs"
+            class="rounded border border-default bg-default px-2 py-1 text-sm"
           >
             <option :value="1">1 day</option>
             <option :value="7">7 days</option>
@@ -92,7 +92,7 @@ const { data: funnelResult } = useQuery({
             <option :value="30">30 days</option>
           </select>
         </div>
-        <UButton size="sm" :disabled="validSteps.length < 2" @click="runFunnel">Analyze</UButton>
+        <UButton size="md" :disabled="validSteps.length < 2" @click="runFunnel">Analyze</UButton>
       </div>
     </div>
 
@@ -114,7 +114,7 @@ const { data: funnelResult } = useQuery({
               :style="{ width: `${step.conversionRate * 100}%` }"
             />
           </div>
-          <div v-if="i > 0" class="mt-0.5 text-right text-xs text-muted">
+          <div v-if="i > 0" class="mt-0.5 text-right text-sm text-muted">
             {{ (step.dropoffRate * 100).toFixed(1) }}% drop-off
           </div>
         </div>

@@ -83,9 +83,9 @@ function parseTraits(traitsJson: string): Record<string, unknown> {
           @click="selectUser(user.userId)"
         >
           <div class="font-medium text-highlighted">{{ user.userId }}</div>
-          <div class="text-xs text-muted">Last seen {{ user.updatedAt.slice(0, 10) }}</div>
+          <div class="text-sm text-muted">Last seen {{ user.updatedAt.slice(0, 10) }}</div>
         </button>
-        <p v-if="userList.length === 0" class="py-4 text-center text-xs text-muted">
+        <p v-if="userList.length === 0" class="py-4 text-center text-sm text-muted">
           No users found
         </p>
       </div>
@@ -108,7 +108,7 @@ function parseTraits(traitsJson: string): Record<string, unknown> {
             </div>
             <p
               v-if="Object.keys(parseTraits(profile.traits)).length === 0"
-              class="text-xs text-muted"
+              class="text-sm text-muted"
             >
               No traits set
             </p>
@@ -131,17 +131,17 @@ function parseTraits(traitsJson: string): Record<string, unknown> {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between">
                   <span class="text-sm font-medium text-highlighted">{{ event.eventName }}</span>
-                  <span class="text-xs text-muted">
+                  <span class="text-sm text-muted">
                     {{ event.timestamp.slice(0, 19).replace('T', ' ') }}
                   </span>
                 </div>
-                <div v-if="event.pageUrl" class="truncate text-xs text-muted">
+                <div v-if="event.pageUrl" class="truncate text-sm text-muted">
                   {{ event.pageUrl }}
                 </div>
               </div>
             </div>
           </div>
-          <p v-else class="py-4 text-center text-xs text-muted">No events</p>
+          <p v-else class="py-4 text-center text-sm text-muted">No events</p>
         </div>
       </template>
       <div v-else class="flex h-full items-center justify-center text-sm text-muted">

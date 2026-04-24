@@ -206,21 +206,21 @@ const sortColumnOptions = computed(() =>
 
       <div v-if="!isCollapsed" class="flex items-center gap-3 pr-4">
         <!-- Settings toggles -->
-        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted" @click.stop>
           <USwitch v-model="pivotStore.showSubtotals" size="xs" />
           Subtotals
         </label>
-        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted" @click.stop>
           <USwitch v-model="pivotStore.showColumnTotals" size="xs" />
           Totals
         </label>
-        <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted" @click.stop>
           <USwitch v-model="pivotStore.showConditionalFormatting" size="xs" />
           Heatmap
         </label>
 
         <!-- Decimals -->
-        <div class="flex items-center gap-1.5 text-xs text-muted" @click.stop>
+        <div class="flex items-center gap-1.5 text-sm text-muted" @click.stop>
           <span>Dec:</span>
           <USelectMenu
             v-model="pivotStore.decimalPlaces"
@@ -237,7 +237,7 @@ const sortColumnOptions = computed(() =>
         </div>
 
         <!-- Reset -->
-        <UButton variant="ghost" size="xs" @click.stop="pivotStore.reset()">
+        <UButton variant="ghost" size="md" @click.stop="pivotStore.reset()">
           <RotateCcw class="h-3 w-3" />
         </UButton>
       </div>
@@ -258,7 +258,7 @@ const sortColumnOptions = computed(() =>
           >
             <template #item="{ element }">
               <div
-                class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-xs transition-colors hover:bg-default active:cursor-grabbing"
+                class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-sm transition-colors hover:bg-default active:cursor-grabbing"
               >
                 <GripVertical class="h-3 w-3 text-muted/30 group-hover:text-muted/60" />
                 <component :is="getTypeIcon(element)" class="h-3 w-3 text-muted" />
@@ -268,7 +268,7 @@ const sortColumnOptions = computed(() =>
           </draggable>
         </div>
 
-        <div v-else class="py-4 text-xs text-muted/60">No columns loaded</div>
+        <div v-else class="py-4 text-sm text-muted/60">No columns loaded</div>
       </div>
 
       <!-- Buckets (right side) -->
@@ -321,7 +321,7 @@ const sortColumnOptions = computed(() =>
         <!-- Sort Row -->
         <div class="flex items-center gap-3 border-t border-default/50 pt-2">
           <button
-            class="flex items-center gap-1.5 text-xs"
+            class="flex items-center gap-1.5 text-sm"
             :class="queryStore.sections.sort.enabled ? 'text-muted' : 'text-muted/50'"
             @click="toggleSort"
           >
@@ -343,7 +343,7 @@ const sortColumnOptions = computed(() =>
             <UButton
               v-if="queryStore.sortBy"
               variant="ghost"
-              size="xs"
+              size="md"
               @click="toggleSortDirection"
             >
               <component
@@ -355,7 +355,7 @@ const sortColumnOptions = computed(() =>
           </template>
 
           <!-- Help text -->
-          <div v-if="!pivotStore.isConfigured" class="flex-1 text-right text-xs text-muted/60">
+          <div v-if="!pivotStore.isConfigured" class="flex-1 text-right text-sm text-muted/60">
             Drag columns into buckets to build your query
           </div>
         </div>

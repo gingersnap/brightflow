@@ -107,7 +107,7 @@ const rowCountDisplay = computed(() => {
             :key="mode.value"
             :variant="uiStore.viewMode === mode.value ? 'solid' : 'ghost'"
             :color="uiStore.viewMode === mode.value ? 'primary' : 'neutral'"
-            size="xs"
+            size="md"
             @click="uiStore.setViewMode(mode.value)"
           >
             <component :is="mode.icon" class="h-3.5 w-3.5" />
@@ -124,7 +124,7 @@ const rowCountDisplay = computed(() => {
           v-if="hasCurrentResults"
           variant="ghost"
           color="neutral"
-          size="xs"
+          size="md"
           @click.stop="resultsStore.exportCsv(uiStore.viewMode === 'pivot' ? 'pivot' : 'table')"
         >
           <Download class="mr-1 h-3.5 w-3.5" />

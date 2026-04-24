@@ -148,12 +148,12 @@ async function handlePresetCreate(data: {
             v-if="tab === 'web'"
             class="space-y-4 rounded-lg border border-default bg-elevated p-4"
           >
-            <div v-if="webError" class="rounded bg-red-500/10 p-2 text-xs text-red-500">
+            <div v-if="webError" class="rounded bg-red-500/10 p-2 text-sm text-red-500">
               {{ webError }}
             </div>
             <form class="space-y-3" @submit.prevent="submitWeb">
               <div>
-                <label class="mb-1 block text-xs font-medium text-muted">Domain</label>
+                <label class="mb-1 block text-sm font-medium text-muted">Domain</label>
                 <input
                   v-model="domain"
                   type="text"
@@ -163,7 +163,7 @@ async function handlePresetCreate(data: {
                 />
               </div>
               <div>
-                <label class="mb-1 block text-xs font-medium text-muted">
+                <label class="mb-1 block text-sm font-medium text-muted">
                   Name <span class="text-muted">(optional)</span>
                 </label>
                 <input
@@ -176,7 +176,7 @@ async function handlePresetCreate(data: {
               <div class="flex justify-end pt-1">
                 <UButton
                   type="submit"
-                  size="sm"
+                  size="md"
                   :loading="webSubmitting"
                   :disabled="!domain.trim()"
                 >
@@ -188,7 +188,7 @@ async function handlePresetCreate(data: {
 
           <!-- Connector tab -->
           <section v-else class="space-y-4">
-            <div v-if="connectorError" class="rounded bg-red-500/10 p-2 text-xs text-red-500">
+            <div v-if="connectorError" class="rounded bg-red-500/10 p-2 text-sm text-red-500">
               {{ connectorError }}
             </div>
 
@@ -206,11 +206,11 @@ async function handlePresetCreate(data: {
                     <span class="text-sm font-medium text-highlighted">{{ c.name }}</span>
                     <span v-if="c.version" class="text-xs text-muted">v{{ c.version }}</span>
                   </div>
-                  <p v-if="c.description" class="mt-0.5 text-xs text-muted">{{ c.description }}</p>
+                  <p v-if="c.description" class="mt-0.5 text-sm text-muted">{{ c.description }}</p>
                 </div>
               </button>
 
-              <p v-if="availableList.length === 0" class="py-4 text-center text-xs text-muted">
+              <p v-if="availableList.length === 0" class="py-4 text-center text-sm text-muted">
                 No connectors available
               </p>
             </div>
@@ -222,7 +222,7 @@ async function handlePresetCreate(data: {
                   New {{ selectedConnector.name }} source
                 </h3>
                 <button
-                  class="cursor-pointer text-xs text-muted hover:text-highlighted"
+                  class="cursor-pointer text-sm text-muted hover:text-highlighted"
                   @click="backToConnectorList"
                 >
                   Change connector
@@ -234,7 +234,7 @@ async function handlePresetCreate(data: {
                 @submit="handlePresetCreate"
                 @cancel="backToConnectorList"
               />
-              <p v-if="connectorSubmitting" class="text-xs text-muted">Creating preset…</p>
+              <p v-if="connectorSubmitting" class="text-sm text-muted">Creating preset…</p>
             </div>
           </section>
         </div>

@@ -52,7 +52,7 @@ const rootNodes = computed(() => {
     <div v-else-if="rootNodes.length === 0" class="flex h-64 items-center justify-center">
       <div class="text-center">
         <p class="text-sm text-muted">No significant findings detected</p>
-        <p class="mt-1 text-xs text-muted">Try a different report type or cadence</p>
+        <p class="mt-1 text-sm text-muted">Try a different report type or cadence</p>
       </div>
     </div>
 
@@ -60,7 +60,7 @@ const rootNodes = computed(() => {
     <div v-else class="space-y-3 p-4">
       <!-- Summary bar -->
       <div
-        class="flex items-center justify-between border-b border-default pb-2 text-xs text-muted"
+        class="flex items-center justify-between border-b border-default pb-2 text-sm text-muted"
       >
         <span>
           {{ insightsStore.firstLevelCount + insightsStore.deeperCount }} analyses

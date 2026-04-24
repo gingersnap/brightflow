@@ -5,24 +5,18 @@
 @import './miami.css';
 
 @layer base {
-  /* Compact density (default): 14px root scales all rem-based sizes */
-  :root {
-    font-size: 14px;
+  /* Root font-size controls the density of the whole app. Tailwind's rem-based
+     sizes (text-sm, text-base, etc.) track this automatically.
+     Using percentages so OS/browser font-size preferences flow through. */
+  .text-small {
+    font-size: 87.5%; /* 14px at a 16px browser default */
   }
-
-  /* Comfortable: browser default 16px */
-  .text-comfortable {
-    font-size: 16px;
+  .text-large {
+    font-size: 112.5%; /* 18px at a 16px browser default */
   }
 
   button:not(:disabled),
   [role='button']:not(:disabled) {
     cursor: pointer;
   }
-}
-
-/* Analytics-specific utilities */
-.font-mono-data {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-variant-numeric: tabular-nums;
 }

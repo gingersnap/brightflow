@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import { useQuery } from '@pinia/colada';
-import { useColorMode } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { sourceApi } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 import { useSourceStore } from '@/stores/source';
-import { useUiStore } from '@/stores/ui';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 
 const router = useRouter();
 const route = useRoute();
 const sourceStore = useSourceStore();
 const authStore = useAuthStore();
-const uiStore = useUiStore();
-const colorMode = useColorMode();
 
 const open = ref(false);
 
@@ -99,17 +95,11 @@ const navItems = computed(() => {
 const userMenuItems = computed(() => [
   [
     {
-      label: colorMode.value === 'dark' ? 'Light mode' : 'Dark mode',
-      icon: colorMode.value === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon',
+      label: 'Preferences',
+      icon: 'i-lucide-settings-2',
       onSelect: () => {
-        colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark';
-      },
-    },
-    {
-      label: uiStore.textSize === 'compact' ? 'Comfortable text' : 'Compact text',
-      icon: 'i-lucide-a-large-small',
-      onSelect: () => {
-        uiStore.toggleTextSize();
+        void router.push({ name: 'preferences' });
+        open.value = false;
       },
     },
   ],

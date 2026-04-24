@@ -61,3 +61,38 @@ Components use Nuxt UI 4 conventions:
 - `UTable` uses TanStack Table format (`data` + `columns` with `accessorKey`)
 - `USelectMenu` uses `items` prop (not `options`)
 - Colors configured in vite plugin, not CSS variables
+
+## Typography
+
+Inspired by Vercel Geist and Linear — 12px is chrome-only, 14px is the default.
+
+**Font-size utilities:**
+
+- `text-sm` (14px) is the default for UI chrome: labels, captions, empty states, table headers, breadcrumbs, metadata under names, form help text.
+- `text-base` (16px) for prose and primary readable content (dashboard card descriptions, longer explanations).
+- `text-xs` (12px) is allowed only for:
+  - Status chips and badges (`SyncStatusBadge`, Ready/Pending pills, interval chips)
+  - Uppercase eyebrow section headers with `tracking-wider uppercase`
+  - Kbd hints and key-combo indicators
+  - Dense data grids where density is intentional (retention heatmap cells, log viewers)
+  - Chrome-adjacent numerals next to an icon or inside parens (child-counters, `(N active)`, `Xms`)
+- Do not use `text-xs` for form labels, empty-state prose, table data cells the user reads, button labels, or anything that's a full sentence.
+
+**UButton sizes:**
+
+Nuxt UI's UButton renders `size="xs"` and `size="sm"` at 12px text (only padding differs — `sm` is strictly worse than `xs`). Default `md` renders 14px.
+
+- **Always** specify `size` explicitly on UButton — don't rely on the default.
+- Default to `size="md"`.
+- `size="xs"` only for buttons placed inside an input field (Vercel Geist's "Button 12" criterion).
+- `size="sm"` is banned (same 12px text as `xs`, fatter padding).
+- `size="lg"` / `size="xl"` for primary CTAs where extra weight helps.
+
+**UBadge sizes:**
+
+UBadge's default `size="md"` renders 12px text. No UBadge usages exist in the codebase yet, but when adding one:
+
+- Default to `size="lg"` (14px) for badges the user reads.
+- Smaller sizes only for status chips and decorative markers.
+
+**UTooltip:** hardcoded at 12px in Nuxt UI's theme. Accept as-is — tooltips are conventionally compact and transient.

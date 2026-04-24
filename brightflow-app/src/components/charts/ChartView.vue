@@ -352,7 +352,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
     <div class="mb-4 flex flex-wrap items-center gap-4">
       <!-- Chart type -->
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted">Type:</label>
+        <label class="text-sm text-muted">Type:</label>
         <USelectMenu
           :model-value="uiStore.chartType"
           :items="chartTypes"
@@ -365,7 +365,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
 
       <!-- X Axis -->
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted">X:</label>
+        <label class="text-sm text-muted">X:</label>
         <USelectMenu
           :model-value="xAxis ?? ''"
           :items="stringColumns.length ? stringColumns : allColumnNames"
@@ -378,7 +378,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
 
       <!-- Y Axes (multi-select) -->
       <div class="flex items-center gap-2">
-        <label class="text-xs text-muted">Y:</label>
+        <label class="text-sm text-muted">Y:</label>
         <USelectMenu
           v-model="yAxes"
           :items="numericColumns"
@@ -389,7 +389,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
         />
         <button
           v-if="numericColumns.length > 1 && !allYAxesSelected"
-          class="text-xs text-primary transition-colors hover:text-primary/80"
+          class="text-sm text-primary transition-colors hover:text-primary/80"
           @click="selectAllYAxes"
         >
           All
@@ -398,7 +398,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
 
       <!-- Stacking (for bar/line) -->
       <div v-if="showStackingOptions" class="flex items-center gap-2">
-        <label class="text-xs text-muted">Stack:</label>
+        <label class="text-sm text-muted">Stack:</label>
         <USelectMenu
           v-model="stacking"
           :items="stackOptions"
@@ -411,14 +411,14 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
       <!-- Horizontal toggle (for bar) -->
       <label
         v-if="showHorizontalOption"
-        class="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
+        class="flex cursor-pointer items-center gap-1.5 text-sm text-muted"
       >
         <USwitch v-model="horizontal" size="xs" />
         Horizontal
       </label>
 
       <!-- Show values toggle -->
-      <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
+      <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted">
         <USwitch v-model="showValues" size="xs" />
         Values
       </label>

@@ -101,7 +101,7 @@ function duration(startedAt: string, finishedAt: string): string {
           <span class="text-sm font-medium text-highlighted">{{ connector.name }}</span>
           <span
             v-if="!connector.valid"
-            class="inline-flex items-center gap-0.5 text-xs text-amber-500"
+            class="inline-flex items-center gap-0.5 text-sm text-amber-500"
           >
             <AlertTriangle class="h-3 w-3" />
             missing
@@ -130,7 +130,7 @@ function duration(startedAt: string, finishedAt: string): string {
 
       <!-- Schedule dropdown -->
       <select
-        class="cursor-pointer rounded border border-default bg-elevated px-2 py-1 text-xs text-muted"
+        class="cursor-pointer rounded border border-default bg-elevated px-2 py-1 text-sm text-muted"
         :value="currentInterval"
         @change="handleScheduleChange"
       >
@@ -141,7 +141,7 @@ function duration(startedAt: string, finishedAt: string): string {
 
       <!-- Sync Now button -->
       <UButton
-        size="sm"
+        size="md"
         :disabled="!connector.valid || running"
         :loading="running"
         @click="emit('run')"
@@ -157,19 +157,19 @@ function duration(startedAt: string, finishedAt: string): string {
         v-model="tokenValue"
         type="password"
         placeholder="Paste API token..."
-        class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted focus:border-blue-500 focus:outline-none"
+        class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
         @keyup.enter="saveToken"
       />
-      <UButton size="xs" :loading="savingToken" :disabled="!tokenValue.trim()" @click="saveToken">
+      <UButton size="md" :loading="savingToken" :disabled="!tokenValue.trim()" @click="saveToken">
         Save
       </UButton>
-      <UButton size="xs" variant="ghost" @click="toggleTokenInput"> Cancel </UButton>
+      <UButton size="md" variant="ghost" @click="toggleTokenInput"> Cancel </UButton>
     </div>
 
     <!-- Last sync summary -->
     <div
       v-if="connector.lastRun || running"
-      class="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pb-2 text-xs text-muted"
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pb-2 text-sm text-muted"
     >
       <template v-if="running && !connector.lastRun">
         <span class="text-blue-500">Sync in progress...</span>
@@ -196,7 +196,7 @@ function duration(startedAt: string, finishedAt: string): string {
 
     <!-- Run History toggle -->
     <button
-      class="flex w-full cursor-pointer items-center gap-1.5 border-t border-default px-4 py-2 text-xs text-muted transition-colors hover:text-highlighted"
+      class="flex w-full cursor-pointer items-center gap-1.5 border-t border-default px-4 py-2 text-sm text-muted transition-colors hover:text-highlighted"
       @click="emit('toggleHistory')"
     >
       <ChevronDown v-if="expanded" class="h-3 w-3" />
@@ -206,14 +206,14 @@ function duration(startedAt: string, finishedAt: string): string {
 
     <!-- Expanded history -->
     <div v-if="expanded" class="border-t border-default">
-      <div v-if="history.length === 0" class="px-4 py-3 text-center text-xs text-muted">
+      <div v-if="history.length === 0" class="px-4 py-3 text-center text-sm text-muted">
         No runs yet
       </div>
       <div v-else class="divide-y divide-default">
         <div
           v-for="run in history"
           :key="run.id"
-          class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2 text-xs"
+          class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-2 text-sm"
         >
           <SyncStatusBadge :status="run.status as 'pending' | 'running' | 'completed' | 'failed'" />
           <span class="text-muted">{{ relativeTime(run.startedAt) }}</span>

@@ -144,7 +144,7 @@ const analysisTypeConfig = computed(() => {
           {{ node.summary }}
         </p>
         <!-- Tech summary badge -->
-        <p class="font-mono-data mt-1 text-xs text-muted">
+        <p class="mt-1 font-mono-data text-sm text-muted">
           {{ node.tech_summary }}
         </p>
       </div>

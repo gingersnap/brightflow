@@ -153,7 +153,7 @@ function triggerRunNow(): void {
         class="flex flex-wrap items-center gap-3 rounded-lg border border-default bg-elevated p-3"
       >
         <UButton
-          size="sm"
+          size="md"
           :loading="triggering || presetIsRunning"
           :disabled="triggering || presetIsRunning"
           @click="triggerRunNow"
@@ -163,9 +163,9 @@ function triggerRunNow(): void {
         </UButton>
 
         <div class="flex items-center gap-2">
-          <label class="text-xs text-muted">Schedule</label>
+          <label class="text-sm text-muted">Schedule</label>
           <select
-            class="cursor-pointer rounded border border-default bg-default px-2 py-1 text-xs text-highlighted"
+            class="cursor-pointer rounded border border-default bg-default px-2 py-1 text-sm text-highlighted"
             :value="currentInterval"
             :disabled="savingSchedule"
             @change="handleIntervalChange"

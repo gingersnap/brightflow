@@ -60,7 +60,13 @@ async function handleSubmit(): Promise<void> {
           {{ authStore.error }}
         </p>
 
-        <UButton type="submit" block :loading="submitting" :disabled="!email || !password">
+        <UButton
+          type="submit"
+          size="md"
+          block
+          :loading="submitting"
+          :disabled="!email || !password"
+        >
           Sign in
         </UButton>
       </form>

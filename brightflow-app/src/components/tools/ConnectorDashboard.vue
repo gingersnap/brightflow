@@ -38,11 +38,11 @@ function openInExplore(tableName: string): void {
           <div class="flex items-center gap-2">
             <Table2 class="h-4 w-4 text-muted" />
             <span class="text-sm font-medium text-highlighted">{{ table.name }}</span>
-            <span v-if="table.numRows != null" class="text-xs text-muted">
+            <span v-if="table.numRows != null" class="text-sm text-muted">
               {{ table.numRows.toLocaleString() }} rows
             </span>
           </div>
-          <UButton size="xs" variant="ghost" @click="openInExplore(table.name)">
+          <UButton size="md" variant="ghost" @click="openInExplore(table.name)">
             <Search class="h-3.5 w-3.5" />
             Explore
           </UButton>

@@ -106,14 +106,14 @@ watch(
         <div v-else-if="error" class="py-8 text-center">
           <AlertCircle class="mx-auto mb-3 h-8 w-8 text-red-500" />
           <p class="text-sm text-red-500">{{ error }}</p>
-          <UButton variant="ghost" size="sm" class="mt-4" @click="fetchTables"> Try again </UButton>
+          <UButton variant="ghost" size="md" class="mt-4" @click="fetchTables"> Try again </UButton>
         </div>
 
         <!-- Empty state -->
         <div v-else-if="tables.length === 0" class="py-8 text-center">
           <Table2 class="mx-auto mb-3 h-8 w-8 text-muted" />
           <p class="text-sm text-muted">No tables available</p>
-          <p class="mt-1 text-xs text-muted">Run a data sync to populate the data store</p>
+          <p class="mt-1 text-sm text-muted">Run a data sync to populate the data store</p>
         </div>
 
         <!-- Table list -->
@@ -144,7 +144,7 @@ watch(
                 />
                 <div>
                   <div class="font-medium text-highlighted">{{ table.name }}</div>
-                  <div class="mt-0.5 text-xs text-muted">
+                  <div class="mt-0.5 text-sm text-muted">
                     {{ formatRowCount(table.num_rows) }}
                     <span v-if="table.num_files" class="ml-2">
                       {{ table.num_files }} file{{ table.num_files !== 1 ? 's' : '' }}
@@ -152,7 +152,7 @@ watch(
                   </div>
                 </div>
               </div>
-              <div class="text-xs text-muted">
+              <div class="text-sm text-muted">
                 <span v-if="loading && selectedTable === table.name">Loading...</span>
                 <span v-else>v{{ table.version }}</span>
               </div>

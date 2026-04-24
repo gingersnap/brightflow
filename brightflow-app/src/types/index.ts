@@ -159,7 +159,7 @@ export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'er
 // View modes (frontend-only)
 export type ViewMode = 'table' | 'pivot' | 'chart' | 'split' | 'number';
 export type ChartType = 'bar' | 'line' | 'pie' | 'scatter';
-export type TextSize = 'compact' | 'comfortable';
+export type TextSize = 'small' | 'default' | 'large';
 
 // Operator definition (frontend-only)
 export interface OperatorDef {

@@ -14,7 +14,30 @@ function isChartType(s: string): s is ChartType {
 }
 
 function isTextSize(s: string): s is TextSize {
-  return ['compact', 'comfortable'].includes(s);
+  return ['small', 'default', 'large'].includes(s);
+}
+
+function readStoredTextSize(): TextSize {
+  const stored = localStorage.getItem('brightflow-text-size');
+  if (stored == null) {
+    return 'default';
+  }
+  // Migrate legacy values from the old 2-size system.
+  if (stored === 'compact') {
+    localStorage.setItem('brightflow-text-size', 'small');
+    return 'small';
+  }
+  if (stored === 'comfortable') {
+    localStorage.setItem('brightflow-text-size', 'default');
+    return 'default';
+  }
+  return isTextSize(stored) ? stored : 'default';
+}
+
+function applyTextSize(size: TextSize): void {
+  const root = document.documentElement;
+  root.classList.toggle('text-small', size === 'small');
+  root.classList.toggle('text-large', size === 'large');
 }
 
 export const useUiStore = defineStore('ui', () => {
@@ -31,10 +54,7 @@ export const useUiStore = defineStore('ui', () => {
   );
 
   // Text size preference
-  const storedTextSize = localStorage.getItem('brightflow-text-size');
-  const textSize = ref<TextSize>(
-    storedTextSize != null && isTextSize(storedTextSize) ? storedTextSize : 'compact',
-  );
+  const textSize = ref<TextSize>(readStoredTextSize());
 
   // Section collapsed states (Filter collapsed by default, others open)
   const filterCollapsed = ref(true);
@@ -54,10 +74,10 @@ export const useUiStore = defineStore('ui', () => {
   });
   watch(textSize, (val) => {
     localStorage.setItem('brightflow-text-size', val);
-    document.documentElement.classList.toggle('text-comfortable', val === 'comfortable');
+    applyTextSize(val);
   });
   // Apply on init
-  document.documentElement.classList.toggle('text-comfortable', textSize.value === 'comfortable');
+  applyTextSize(textSize.value);
 
   watch(viewMode, (val) => {
     localStorage.setItem('brightflow-view-mode', val);
@@ -101,8 +121,8 @@ export const useUiStore = defineStore('ui', () => {
     viewMode.value = 'table';
   }
 
-  function toggleTextSize(): void {
-    textSize.value = textSize.value === 'compact' ? 'comfortable' : 'compact';
+  function setTextSize(size: TextSize): void {
+    textSize.value = size;
   }
 
   return {
@@ -113,12 +133,12 @@ export const useUiStore = defineStore('ui', () => {
     resetForNewDataset,
     resultsCollapsed,
     setChartType,
+    setTextSize,
     sidebarCollapsed,
     setViewMode,
     summarizeCollapsed,
     textSize,
     toggleSection,
-    toggleTextSize,
     viewMode,
   };
 });

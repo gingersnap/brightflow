@@ -37,7 +37,7 @@ const sourceTables = computed(() => {
         <Table2 class="h-5 w-5 text-muted" />
         <div>
           <p class="text-sm font-medium text-highlighted">{{ table.name }}</p>
-          <p v-if="table.numRows != null" class="text-xs text-muted">
+          <p v-if="table.numRows != null" class="text-sm text-muted">
             {{ table.numRows.toLocaleString() }} rows
           </p>
         </div>

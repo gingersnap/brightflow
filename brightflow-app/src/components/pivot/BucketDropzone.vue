@@ -183,7 +183,7 @@ function handleChange(evt: DragEvent): void {
       <template #footer>
         <div
           v-if="localFields.length === 0"
-          class="flex h-full items-center justify-center py-4 text-xs"
+          class="flex h-full items-center justify-center py-4 text-sm"
           :class="disabled ? 'text-muted/50' : 'text-muted/70'"
         >
           {{ disabled ? disabledMessage : 'Drop columns here' }}

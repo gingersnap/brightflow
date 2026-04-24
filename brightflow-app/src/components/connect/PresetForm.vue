@@ -96,7 +96,7 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
   <form class="space-y-3" autocomplete="off" @submit.prevent="handleSubmit">
     <!-- Name -->
     <div>
-      <label class="mb-1 block text-xs font-medium text-muted">Name</label>
+      <label class="mb-1 block text-sm font-medium text-muted">Name</label>
       <input
         v-model="name"
         type="text"
@@ -111,7 +111,7 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
 
     <!-- Token (create mode only; edit mode manages token separately) -->
     <div v-if="mode === 'create'">
-      <label class="mb-1 block text-xs font-medium text-muted">API Token</label>
+      <label class="mb-1 block text-sm font-medium text-muted">API Token</label>
       <div class="relative">
         <input
           v-model="token"
@@ -137,7 +137,7 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
 
     <!-- Typed hint fields -->
     <div v-for="hint in hints" :key="hint.key">
-      <label class="mb-1 block text-xs font-medium text-muted">{{ hint.label }}</label>
+      <label class="mb-1 block text-sm font-medium text-muted">{{ hint.label }}</label>
       <input
         v-model="hintValues[hint.key]"
         type="text"
@@ -149,12 +149,12 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
     <!-- Generic config key-value pairs -->
     <div>
       <div class="mb-1 flex items-center justify-between">
-        <label class="text-xs font-medium text-muted">
+        <label class="text-sm font-medium text-muted">
           {{ hints.length > 0 ? 'Additional config' : 'Config' }}
         </label>
         <button
           type="button"
-          class="cursor-pointer text-xs text-blue-500 hover:text-blue-400"
+          class="cursor-pointer text-sm text-blue-500 hover:text-blue-400"
           @click="addConfigEntry"
         >
           + Add field
@@ -165,17 +165,17 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
           v-model="entry.key"
           type="text"
           placeholder="key"
-          class="placeholder-muted w-1/3 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted focus:border-blue-500 focus:outline-none"
+          class="placeholder-muted w-1/3 rounded border border-default bg-elevated px-2 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
         />
         <input
           v-model="entry.value"
           type="text"
           placeholder="value"
-          class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-xs text-highlighted focus:border-blue-500 focus:outline-none"
+          class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
         />
         <button
           type="button"
-          class="cursor-pointer text-xs text-red-400 hover:text-red-300"
+          class="cursor-pointer text-sm text-red-400 hover:text-red-300"
           @click="removeConfigEntry(i)"
         >
           Remove
@@ -185,8 +185,8 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
 
     <!-- Actions -->
     <div class="flex justify-end gap-2 pt-1">
-      <UButton type="button" variant="ghost" size="sm" @click="emit('cancel')">Cancel</UButton>
-      <UButton type="submit" size="sm" :disabled="!name.trim()">{{ submitLabel }}</UButton>
+      <UButton type="button" variant="ghost" size="md" @click="emit('cancel')">Cancel</UButton>
+      <UButton type="submit" size="md" :disabled="!name.trim()">{{ submitLabel }}</UButton>
     </div>
   </form>
 </template>
