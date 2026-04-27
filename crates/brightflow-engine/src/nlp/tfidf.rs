@@ -63,6 +63,14 @@ impl TfIdf {
         self
     }
 
+    /// Override the internal tokenizer with a fully-configured one. The preset
+    /// id stored on the fitted model still reflects whatever was last set via
+    /// `preset()`, so loaders can reconstruct an equivalent tokenizer.
+    pub fn tokenizer(mut self, tokenizer: Tokenizer) -> Self {
+        self.tokenizer = tokenizer;
+        self
+    }
+
     /// Set the n-gram range (e.g., `1..=2` for unigrams + bigrams).
     pub fn ngram_range(mut self, range: RangeInclusive<usize>) -> Self {
         self.ngram_range = range;

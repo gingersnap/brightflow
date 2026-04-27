@@ -21,6 +21,7 @@
 pub mod analysis;
 pub mod data;
 pub mod debug;
+pub mod embedding;
 pub mod enrichment;
 pub mod nlp;
 pub mod output;

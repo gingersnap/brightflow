@@ -214,6 +214,10 @@ fn write_ascii_tree<W: Write>(
                 "📉"
             }
         },
+        AnalysisType::Concentration { .. } => "■",
+        AnalysisType::DistributionShift { .. } => "≠",
+        AnalysisType::MembershipChange { .. } => "±",
+        AnalysisType::ChangePoint { .. } => "⤳",
         AnalysisType::ForecastDeviation {
             deviation_percent, ..
         } => {

@@ -5,12 +5,18 @@ use anyhow::Result;
 use polars::prelude::*;
 
 use crate::analysis::anomaly::detect_anomaly;
+use crate::analysis::change_point::detect_change_point;
+use crate::analysis::concentration::detect_concentration;
 use crate::analysis::correlation::correlate;
+use crate::analysis::dedup;
+use crate::analysis::distribution_shift::detect_distribution_shift;
 use crate::analysis::forecast::detect_forecast_deviation;
+use crate::analysis::membership::detect_membership_change;
 use crate::analysis::outlier_cluster::find_outlier_clusters;
 use crate::analysis::period::{
     compare_periods_cached, extract_timestamps, find_anomalous_period_cached, get_period_labels,
 };
+use crate::analysis::scoring::{self, ScoringContext};
 use crate::analysis::seasonality::detect_seasonality;
 use crate::analysis::segment::{attribute_period_segments_cached, attribute_segment};
 use crate::analysis::tree::{
@@ -96,6 +102,23 @@ pub struct AnalysisEngine {
     z_threshold: f64,
     p_threshold: f64,
     max_depth: usize,
+    scoring_ctx: ScoringContext,
+}
+
+/// Score an analysis and add as child using calibrated scoring
+fn add_child_scored(
+    tree: &mut AnalysisTree,
+    parent_id: NodeId,
+    analysis: AnalysisType,
+    description: String,
+    ctx: &ScoringContext,
+) -> Option<NodeId> {
+    let breakdown = scoring::score(&analysis, ctx);
+    if !scoring::passes_floor(&breakdown, ctx) {
+        return None;
+    }
+    let total = scoring::total(&breakdown);
+    Some(tree.add_child_full(parent_id, analysis, total, breakdown, description, None))
 }
 
 enum AnalysisTask {
@@ -118,6 +141,19 @@ enum AnalysisTask {
         column: String,
     },
     FindOutlierClusters,
+    DetectConcentration {
+        column: String,
+        segment_col: String,
+    },
+    DetectDistributionShift {
+        column: String,
+    },
+    DetectMembershipChange {
+        segment_col: String,
+    },
+    DetectChangePoint {
+        column: String,
+    },
     AttributeSegment {
         parent_id: NodeId,
         target_col: String,
@@ -144,7 +180,13 @@ impl AnalysisEngine {
             z_threshold,
             p_threshold,
             max_depth,
+            scoring_ctx: ScoringContext::new(),
         }
+    }
+
+    pub fn with_scoring_ctx(mut self, ctx: ScoringContext) -> Self {
+        self.scoring_ctx = ctx;
+        self
     }
 
     /// Run review report: anomaly detection with attribution
@@ -321,19 +363,27 @@ impl AnalysisEngine {
                     p_value
                 );
 
-                let node_id = tree.add_root(
-                    AnalysisType::PeriodComparison {
-                        column: col.clone(),
-                        current_period: current_period.clone(),
-                        previous_period: previous_period.clone(),
-                        current_value: current_mean,
-                        previous_value: previous_mean,
-                        change_percent,
-                        p_value,
-                    },
-                    change_percent.abs() / p_value.max(0.0001),
-                    description,
+                let analysis = AnalysisType::PeriodComparison {
+                    column: col.clone(),
+                    current_period: current_period.clone(),
+                    previous_period: previous_period.clone(),
+                    current_value: current_mean,
+                    previous_value: previous_mean,
+                    change_percent,
+                    p_value,
+                };
+                let data = build_period_comparison_data(
+                    metric_values,
+                    &period_labels,
+                    &current_period,
+                    &previous_period,
                 );
+                let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                    continue;
+                }
+                let score = scoring::total(&breakdown);
+                let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
 
                 // Attribute to segments
                 for seg_col in &schema.dimension_columns {
@@ -392,24 +442,39 @@ impl AnalysisEngine {
                             if attr.change_percent > 0.0 { "higher" } else { "lower" },
                             attr.contribution_pct.abs()
                         );
-                        tree.add_child(
+                        let analysis = AnalysisType::Segment {
+                            target_column: attr.target_column.clone(),
+                            segment_column: attr.segment_column.clone(),
+                            segment_value: attr.segment_value.clone(),
+                            contribution: attr.contribution,
+                            change_percent: attr.change_percent,
+                            contribution_pct: attr.contribution_pct,
+                            p_value: attr.p_value,
+                        };
+                        if let Some(child_id) = add_child_scored(
+                            &mut tree,
                             parent_id,
-                            AnalysisType::Segment {
-                                target_column: attr.target_column,
-                                segment_column: attr.segment_column,
-                                segment_value: attr.segment_value,
-                                contribution: attr.contribution,
-                                change_percent: attr.change_percent,
-                                contribution_pct: attr.contribution_pct,
-                                p_value: attr.p_value,
-                            },
-                            attr.contribution_pct.abs(),
+                            analysis,
                             description,
-                        );
+                            &self.scoring_ctx,
+                        ) {
+                            // Extend the filter chain for this segment finding
+                            let parent_chain = tree.nodes[parent_id.0].filter_chain.clone();
+                            let mut chain = parent_chain;
+                            chain.push(crate::analysis::tree::FilterStep {
+                                column: attr.segment_column.clone(),
+                                op: "eq".to_string(),
+                                value: attr.segment_value.clone(),
+                            });
+                            tree.set_filter_chain(child_id, chain);
+                        }
                     }
                 }
             }
         }
+
+        // Dedup before reporting
+        dedup::dedup(&mut tree);
 
         let total_time = start_time.elapsed();
         debug.section("REVIEW COMPLETE");
@@ -469,16 +534,27 @@ impl AnalysisEngine {
                                 if anomaly.z_score > 0.0 { "above" } else { "below" }, anomaly.mean
                             );
 
-                            let node_id = tree.add_root(
-                                AnalysisType::Anomaly {
-                                    column: anomaly.column.clone(),
-                                    value: anomaly.value,
-                                    mean: anomaly.mean,
-                                    std_dev: anomaly.std_dev,
-                                    z_score: anomaly.z_score,
-                                },
-                                anomaly.z_score.abs(),
+                            let analysis = AnalysisType::Anomaly {
+                                column: anomaly.column.clone(),
+                                value: anomaly.value,
+                                mean: anomaly.mean,
+                                std_dev: anomaly.std_dev,
+                                z_score: anomaly.z_score,
+                            };
+                            let series_data = cache.numeric.get(&column).map(|values| {
+                                build_anomaly_series(values, anomaly.mean, anomaly.std_dev)
+                            });
+                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                continue;
+                            }
+                            let score = scoring::total(&breakdown);
+                            let node_id = tree.add_root_full(
+                                analysis,
+                                score,
+                                breakdown,
                                 description,
+                                series_data,
                             );
 
                             // Spawn attribution tasks
@@ -513,25 +589,36 @@ impl AnalysisEngine {
                                 target_col,
                                 attr.p_value
                             );
-                            let node_id = tree.add_child(
+                            let analysis = AnalysisType::Segment {
+                                target_column: attr.target_column.clone(),
+                                segment_column: attr.segment_column.clone(),
+                                segment_value: attr.segment_value.clone(),
+                                contribution: attr.contribution,
+                                change_percent: attr.change_percent,
+                                contribution_pct: attr.contribution_pct,
+                                p_value: attr.p_value,
+                            };
+                            if let Some(node_id) = add_child_scored(
+                                &mut tree,
                                 parent_id,
-                                AnalysisType::Segment {
-                                    target_column: attr.target_column.clone(),
-                                    segment_column: attr.segment_column.clone(),
-                                    segment_value: attr.segment_value.clone(),
-                                    contribution: attr.contribution,
-                                    change_percent: attr.change_percent,
-                                    contribution_pct: attr.contribution_pct,
-                                    p_value: attr.p_value,
-                                },
-                                1.0 / attr.p_value,
+                                analysis,
                                 description,
-                            );
-                            queue.push_back(AnalysisTask::SearchCorrelations {
-                                parent_id: node_id,
-                                target_col: target_col.clone(),
-                                depth: depth + 1,
-                            });
+                                &self.scoring_ctx,
+                            ) {
+                                let parent_chain = tree.nodes[parent_id.0].filter_chain.clone();
+                                let mut chain = parent_chain;
+                                chain.push(crate::analysis::tree::FilterStep {
+                                    column: attr.segment_column.clone(),
+                                    op: "eq".to_string(),
+                                    value: attr.segment_value.clone(),
+                                });
+                                tree.set_filter_chain(node_id, chain);
+                                queue.push_back(AnalysisTask::SearchCorrelations {
+                                    parent_id: node_id,
+                                    target_col: target_col.clone(),
+                                    depth: depth + 1,
+                                });
+                            }
                         }
                     }
                 },
@@ -552,16 +639,36 @@ impl AnalysisEngine {
                                         "Correlation between '{}' and '{}': r={:.3} (p={:.4})",
                                         target_col, other_col, corr.r_value, corr.p_value
                                     );
-                                    tree.add_child(
+                                    let xs = cache.numeric.get(&target_col).cloned();
+                                    let ys = cache.numeric.get(other_col).cloned();
+                                    let scatter_data = match (xs, ys) {
+                                        (Some(x), Some(y)) => Some(build_scatter_data(
+                                            &x,
+                                            &y,
+                                            &target_col,
+                                            other_col,
+                                            corr.r_value,
+                                        )),
+                                        _ => None,
+                                    };
+                                    let analysis = AnalysisType::Correlation {
+                                        column_a: corr.column_a,
+                                        column_b: corr.column_b,
+                                        r_value: corr.r_value,
+                                        p_value: corr.p_value,
+                                    };
+                                    let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                                    if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                        continue;
+                                    }
+                                    let score = scoring::total(&breakdown);
+                                    tree.add_child_full(
                                         parent_id,
-                                        AnalysisType::Correlation {
-                                            column_a: corr.column_a,
-                                            column_b: corr.column_b,
-                                            r_value: corr.r_value,
-                                            p_value: corr.p_value,
-                                        },
-                                        corr.r_value.abs() / corr.p_value,
+                                        analysis,
+                                        score,
+                                        breakdown,
                                         description,
+                                        scatter_data,
                                     );
                                 }
                             }
@@ -571,6 +678,9 @@ impl AnalysisEngine {
                 _ => {}, // Ignore other task types in review
             }
         }
+
+        // Dedup before reporting
+        dedup::dedup(&mut tree);
 
         let total_time = start_time.elapsed();
         debug.section("REVIEW COMPLETE");
@@ -583,7 +693,7 @@ impl AnalysisEngine {
         debug.flush();
 
         // Suppress unused variable warning
-        drop((cache, setup_time));
+        let _ = setup_time;
 
         Ok(AnalysisResult {
             tree,
@@ -631,10 +741,29 @@ impl AnalysisEngine {
                 queue.push_back(AnalysisTask::DetectForecastDeviation {
                     column: col.clone(),
                 });
+                queue.push_back(AnalysisTask::DetectDistributionShift {
+                    column: col.clone(),
+                });
+                queue.push_back(AnalysisTask::DetectChangePoint {
+                    column: col.clone(),
+                });
+            }
+            // Concentration: per (measure, dimension) — fan out
+            for seg_col in &schema.dimension_columns {
+                queue.push_back(AnalysisTask::DetectConcentration {
+                    column: col.clone(),
+                    segment_col: seg_col.clone(),
+                });
             }
         }
+        // Membership: per dimension
         if schema.time_column.is_some() {
             queue.push_back(AnalysisTask::FindOutlierClusters);
+            for seg_col in &schema.dimension_columns {
+                queue.push_back(AnalysisTask::DetectMembershipChange {
+                    segment_col: seg_col.clone(),
+                });
+            }
         }
 
         while let Some(task) = queue.pop_front() {
@@ -651,17 +780,23 @@ impl AnalysisEngine {
                                 "Significant {} trend in '{}': slope={:.4}, R²={:.3} (p={:.4})",
                                 direction_str, column, trend.slope, trend.r_squared, trend.p_value
                             );
-                            tree.add_root(
-                                AnalysisType::Trend {
-                                    column: trend.column,
-                                    direction: trend.direction,
-                                    slope: trend.slope,
-                                    r_squared: trend.r_squared,
-                                    p_value: trend.p_value,
-                                },
-                                trend.r_squared / trend.p_value,
-                                description,
-                            );
+                            let data = cache
+                                .numeric
+                                .get(&column)
+                                .map(|v| build_trend_data(v, trend.slope));
+                            let analysis = AnalysisType::Trend {
+                                column: trend.column,
+                                direction: trend.direction,
+                                slope: trend.slope,
+                                r_squared: trend.r_squared,
+                                p_value: trend.p_value,
+                            };
+                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                continue;
+                            }
+                            let score = scoring::total(&breakdown);
+                            tree.add_root_full(analysis, score, breakdown, description, data);
                         }
                     }
                 },
@@ -690,19 +825,27 @@ impl AnalysisEngine {
                                 comparison.previous_period,
                                 comparison.p_value
                             );
-                            tree.add_root(
-                                AnalysisType::PeriodComparison {
-                                    column: comparison.column,
-                                    current_period: comparison.current_period,
-                                    previous_period: comparison.previous_period,
-                                    current_value: comparison.current_value,
-                                    previous_value: comparison.previous_value,
-                                    change_percent: comparison.change_percent,
-                                    p_value: comparison.p_value,
-                                },
-                                comparison.change_percent.abs() / comparison.p_value,
-                                description,
+                            let data = build_period_comparison_data(
+                                metric_values,
+                                &period_labels,
+                                &comparison.current_period,
+                                &comparison.previous_period,
                             );
+                            let analysis = AnalysisType::PeriodComparison {
+                                column: comparison.column,
+                                current_period: comparison.current_period,
+                                previous_period: comparison.previous_period,
+                                current_value: comparison.current_value,
+                                previous_value: comparison.previous_value,
+                                change_percent: comparison.change_percent,
+                                p_value: comparison.p_value,
+                            };
+                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                continue;
+                            }
+                            let score = scoring::total(&breakdown);
+                            tree.add_root_full(analysis, score, breakdown, description, data);
                         }
                     }
                 },
@@ -730,18 +873,25 @@ impl AnalysisEngine {
                                 direction,
                                 anomaly.p_value
                             );
-                            tree.add_root(
-                                AnalysisType::PeriodAnomaly {
-                                    column: anomaly.column,
-                                    period: anomaly.current_period,
-                                    period_value: anomaly.current_value,
-                                    other_periods_mean: anomaly.previous_value,
-                                    change_percent: anomaly.change_percent,
-                                    p_value: anomaly.p_value,
-                                },
-                                anomaly.change_percent.abs() / anomaly.p_value,
-                                description,
+                            let data = build_period_anomaly_data(
+                                metric_values,
+                                &period_labels,
+                                &anomaly.current_period,
                             );
+                            let analysis = AnalysisType::PeriodAnomaly {
+                                column: anomaly.column,
+                                period: anomaly.current_period,
+                                period_value: anomaly.current_value,
+                                other_periods_mean: anomaly.previous_value,
+                                change_percent: anomaly.change_percent,
+                                p_value: anomaly.p_value,
+                            };
+                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                continue;
+                            }
+                            let score = scoring::total(&breakdown);
+                            tree.add_root_full(analysis, score, breakdown, description, data);
                         }
                     }
                 },
@@ -771,16 +921,19 @@ impl AnalysisEngine {
                                 "Seasonality detected in '{}': {} pattern (r={:.3}, p={:.4})",
                                 column, result.period_name, result.autocorrelation, result.p_value
                             );
-                            tree.add_root(
-                                AnalysisType::Seasonality {
-                                    column: result.column,
-                                    period_name: result.period_name,
-                                    autocorrelation: result.autocorrelation,
-                                    p_value: result.p_value,
-                                },
-                                result.autocorrelation.abs() / result.p_value,
-                                description,
-                            );
+                            let data = build_seasonality_data(metric_values, &period_labels);
+                            let analysis = AnalysisType::Seasonality {
+                                column: result.column,
+                                period_name: result.period_name,
+                                autocorrelation: result.autocorrelation,
+                                p_value: result.p_value,
+                            };
+                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                continue;
+                            }
+                            let score = scoring::total(&breakdown);
+                            tree.add_root_full(analysis, score, breakdown, description, data);
                         }
                     }
                 },
@@ -809,19 +962,198 @@ impl AnalysisEngine {
                                 column, deviation.period, deviation.actual, deviation.expected,
                                 deviation.deviation_percent, deviation.p_value
                             );
-                            tree.add_root(
-                                AnalysisType::ForecastDeviation {
-                                    column: deviation.column,
-                                    period: deviation.period,
-                                    actual: deviation.actual,
-                                    expected: deviation.expected,
-                                    deviation_percent: deviation.deviation_percent,
-                                    p_value: deviation.p_value,
-                                },
-                                deviation.deviation_percent.abs() / deviation.p_value,
-                                description,
+                            let data = build_forecast_data(
+                                &period_values,
+                                deviation.expected,
+                                deviation.actual,
                             );
+                            let analysis = AnalysisType::ForecastDeviation {
+                                column: deviation.column,
+                                period: deviation.period,
+                                actual: deviation.actual,
+                                expected: deviation.expected,
+                                deviation_percent: deviation.deviation_percent,
+                                p_value: deviation.p_value,
+                            };
+                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                                continue;
+                            }
+                            let score = scoring::total(&breakdown);
+                            tree.add_root_full(analysis, score, breakdown, description, data);
                         }
+                    }
+                },
+                AnalysisTask::DetectConcentration {
+                    column,
+                    segment_col,
+                } => {
+                    let Some(target_values) = cache.numeric.get(&column) else {
+                        continue;
+                    };
+                    let Some(segment_values) = cache.dimension.get(&segment_col) else {
+                        continue;
+                    };
+                    if let Some(result) =
+                        detect_concentration(&column, &segment_col, target_values, segment_values)
+                    {
+                        let description = format!(
+                            "Concentration in '{column}' by '{segment_col}': HHI={:.2}, top {} = {:.0}%",
+                            result.hhi, result.top_n, result.top_share
+                        );
+                        let data = Some(NodeData::Lorenz {
+                            cumulative_share: result.lorenz_share,
+                            cumulative_population: result.lorenz_population,
+                            gini: result.gini,
+                        });
+                        let analysis = AnalysisType::Concentration {
+                            column: result.column,
+                            segment_column: result.segment_column,
+                            hhi: result.hhi,
+                            top_n: result.top_n,
+                            top_share: result.top_share,
+                            hhi_delta: None,
+                        };
+                        let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                        if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                            continue;
+                        }
+                        let score = scoring::total(&breakdown);
+                        tree.add_root_full(analysis, score, breakdown, description, data);
+                    }
+                },
+                AnalysisTask::DetectDistributionShift { column } => {
+                    let Some(values) = cache.numeric.get(&column) else {
+                        continue;
+                    };
+                    let Some((prev, curr)) = latest_two_periods(&period_labels) else {
+                        continue;
+                    };
+                    if let Some(result) =
+                        detect_distribution_shift(&column, values, &period_labels, &prev, &curr)
+                    {
+                        let description = format!(
+                            "Distribution of '{column}' shifted from {prev} to {curr} (KS={:.2}, p={:.4})",
+                            result.ks_statistic, result.p_value
+                        );
+                        let data = Some(NodeData::HistogramPair {
+                            bin_edges: result.bin_edges,
+                            previous: result.previous_hist,
+                            current: result.current_hist,
+                        });
+                        let analysis = AnalysisType::DistributionShift {
+                            column: result.column,
+                            previous_period: result.previous_period,
+                            current_period: result.current_period,
+                            ks_statistic: result.ks_statistic,
+                            p_value: result.p_value,
+                        };
+                        let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                        if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                            continue;
+                        }
+                        let score = scoring::total(&breakdown);
+                        tree.add_root_full(analysis, score, breakdown, description, data);
+                    }
+                },
+                AnalysisTask::DetectMembershipChange { segment_col } => {
+                    let Some(seg_values) = cache.dimension.get(&segment_col) else {
+                        continue;
+                    };
+                    let Some((prev, curr)) = latest_two_periods(&period_labels) else {
+                        continue;
+                    };
+                    if let Some(result) = detect_membership_change(
+                        &segment_col,
+                        seg_values,
+                        &period_labels,
+                        &prev,
+                        &curr,
+                    ) {
+                        let description = format!(
+                            "{segment_col} membership: +{} new / -{} disappeared between {prev} and {curr}",
+                            result.added.len(),
+                            result.removed.len()
+                        );
+                        let data = Some(NodeData::MembershipDiff {
+                            added: result.added.clone(),
+                            removed: result.removed.clone(),
+                        });
+                        let analysis = AnalysisType::MembershipChange {
+                            segment_column: result.segment_column,
+                            previous_period: result.previous_period,
+                            current_period: result.current_period,
+                            added_count: result.added.len(),
+                            removed_count: result.removed.len(),
+                        };
+                        let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                        if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                            continue;
+                        }
+                        let score = scoring::total(&breakdown);
+                        tree.add_root_full(analysis, score, breakdown, description, data);
+                    }
+                },
+                AnalysisTask::DetectChangePoint { column } => {
+                    let Some(values) = cache.numeric.get(&column) else {
+                        continue;
+                    };
+                    let mut by_period: HashMap<String, (f64, usize)> = HashMap::new();
+                    for (val, p) in values.iter().zip(period_labels.iter()) {
+                        if let Some(label) = p {
+                            let entry = by_period.entry(label.clone()).or_insert((0.0, 0));
+                            entry.0 += val;
+                            entry.1 += 1;
+                        }
+                    }
+                    let mut period_means: Vec<(String, f64)> = by_period
+                        .into_iter()
+                        .map(|(p, (s, n))| (p, s / n as f64))
+                        .collect();
+                    period_means.sort_by(|a, b| a.0.cmp(&b.0));
+                    if let Some(result) = detect_change_point(&column, &period_means) {
+                        let description = format!(
+                            "Change-point in '{column}' at {}: {:.2} → {:.2} (p={:.4})",
+                            result.period, result.before_mean, result.after_mean, result.p_value
+                        );
+                        // Build SeriesWithFit-like data: full series + step-fit overlay
+                        let labels: Vec<String> =
+                            period_means.iter().map(|(p, _)| p.clone()).collect();
+                        let vals: Vec<f64> = period_means.iter().map(|(_, v)| *v).collect();
+                        let cp_idx = labels
+                            .iter()
+                            .position(|p| p == &result.period)
+                            .unwrap_or(labels.len() / 2);
+                        let fit: Vec<f64> = vals
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| {
+                                if i <= cp_idx {
+                                    result.before_mean
+                                } else {
+                                    result.after_mean
+                                }
+                            })
+                            .collect();
+                        let data = Some(NodeData::SeriesWithFit {
+                            labels,
+                            values: vals,
+                            fit,
+                        });
+                        let analysis = AnalysisType::ChangePoint {
+                            column: result.column,
+                            period: result.period,
+                            before_mean: result.before_mean,
+                            after_mean: result.after_mean,
+                            cusum: result.cusum,
+                            p_value: result.p_value,
+                        };
+                        let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                        if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                            continue;
+                        }
+                        let score = scoring::total(&breakdown);
+                        tree.add_root_full(analysis, score, breakdown, description, data);
                     }
                 },
                 AnalysisTask::FindOutlierClusters => {
@@ -844,21 +1176,32 @@ impl AnalysisEngine {
                                     .join(", ")
                             }
                         );
-                        tree.add_root(
-                            AnalysisType::OutlierCluster {
-                                period: cluster.period,
-                                columns: cluster.columns.clone(),
-                                direction: cluster.direction,
-                                cluster_size: cluster.columns.len(),
-                            },
-                            cluster.columns.len() as f64,
-                            description,
+                        let data = build_outlier_cluster_data(
+                            &cache,
+                            &period_labels,
+                            &cluster.period,
+                            &cluster.columns,
                         );
+                        let analysis = AnalysisType::OutlierCluster {
+                            period: cluster.period,
+                            columns: cluster.columns.clone(),
+                            direction: cluster.direction,
+                            cluster_size: cluster.columns.len(),
+                        };
+                        let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+                        if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                            continue;
+                        }
+                        let score = scoring::total(&breakdown);
+                        tree.add_root_full(analysis, score, breakdown, description, data);
                     }
                 },
                 _ => {}, // Ignore other task types in trends
             }
         }
+
+        // Dedup before reporting
+        dedup::dedup(&mut tree);
 
         let total_time = start_time.elapsed();
         debug.section("TRENDS COMPLETE");
@@ -897,5 +1240,288 @@ impl AnalysisEngine {
             first_level_count: 0,
             deeper_count: 0,
         })
+    }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+use crate::analysis::tree::{NamedSeries, NodeData};
+
+/// Return the latest two distinct period labels (previous, current) sorted by string order.
+fn latest_two_periods(period_labels: &[Option<String>]) -> Option<(String, String)> {
+    let mut periods: Vec<String> = period_labels
+        .iter()
+        .filter_map(Clone::clone)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    periods.sort();
+    if periods.len() < 2 {
+        return None;
+    }
+    let curr = periods.last()?.clone();
+    let prev = periods.get(periods.len() - 2)?.clone();
+    Some((prev, curr))
+}
+
+// ─── Data payload builders ────────────────────────────────────────────────────
+
+/// LTTB-ish downsample to ≤MAX_POINTS (simple stride sampling — good enough for
+/// glance-charts; replace with LTTB if precision matters later)
+const MAX_POINTS: usize = 200;
+
+fn downsample(values: &[f64]) -> (Vec<String>, Vec<f64>) {
+    let n = values.len();
+    if n <= MAX_POINTS {
+        let labels = (0..n).map(|i| i.to_string()).collect();
+        return (labels, values.to_vec());
+    }
+    let stride = n / MAX_POINTS;
+    let mut out = Vec::with_capacity(MAX_POINTS);
+    let mut labels = Vec::with_capacity(MAX_POINTS);
+    let mut i = 0;
+    while i < n {
+        out.push(values[i]);
+        labels.push(i.to_string());
+        i += stride.max(1);
+    }
+    (labels, out)
+}
+
+fn build_anomaly_series(values: &[f64], mean: f64, std_dev: f64) -> NodeData {
+    let (labels, vals) = downsample(values);
+    let band_low = vec![2.0_f64.mul_add(-std_dev, mean); vals.len()];
+    let band_high = vec![2.0_f64.mul_add(std_dev, mean); vals.len()];
+    let marker = vals.len().saturating_sub(1);
+    NodeData::Series {
+        labels,
+        values: vals,
+        band_low: Some(band_low),
+        band_high: Some(band_high),
+        marker_index: Some(marker),
+    }
+}
+
+fn build_trend_data(values: &[f64], slope: f64) -> NodeData {
+    let (labels, vals) = downsample(values);
+    let n = vals.len();
+    if n == 0 {
+        return NodeData::SeriesWithFit {
+            labels,
+            values: vals,
+            fit: Vec::new(),
+        };
+    }
+    // Recompute simple linear fit on the (possibly downsampled) series
+    let xs: Vec<f64> = (0..n).map(|i| i as f64).collect();
+    let mean_y: f64 = vals.iter().sum::<f64>() / n as f64;
+    let mean_x = (n as f64 - 1.0) / 2.0;
+    let intercept = slope.mul_add(-mean_x, mean_y);
+    let fit: Vec<f64> = xs.iter().map(|x| slope.mul_add(*x, intercept)).collect();
+    NodeData::SeriesWithFit {
+        labels,
+        values: vals,
+        fit,
+    }
+}
+
+fn build_period_comparison_data(
+    values: &[f64],
+    period_labels: &[Option<String>],
+    current_period: &str,
+    previous_period: &str,
+) -> Option<NodeData> {
+    let mut current_sum = 0.0;
+    let mut current_n = 0_i32;
+    let mut previous_sum = 0.0;
+    let mut previous_n = 0_i32;
+    for (val, period) in values.iter().zip(period_labels.iter()) {
+        match period {
+            Some(p) if p == current_period => {
+                current_sum += val;
+                current_n += 1;
+            },
+            Some(p) if p == previous_period => {
+                previous_sum += val;
+                previous_n += 1;
+            },
+            _ => {},
+        }
+    }
+    if current_n == 0 || previous_n == 0 {
+        return None;
+    }
+    Some(NodeData::PairedBars {
+        labels: vec![previous_period.to_string(), current_period.to_string()],
+        previous: vec![previous_sum / f64::from(previous_n)],
+        current: vec![current_sum / f64::from(current_n)],
+    })
+}
+
+fn build_period_anomaly_data(
+    values: &[f64],
+    period_labels: &[Option<String>],
+    anomalous_period: &str,
+) -> Option<NodeData> {
+    let mut by_period: HashMap<String, (f64, usize)> = HashMap::new();
+    for (val, period) in values.iter().zip(period_labels.iter()) {
+        if let Some(p) = period {
+            let entry = by_period.entry(p.clone()).or_insert((0.0, 0));
+            entry.0 += val;
+            entry.1 += 1;
+        }
+    }
+    if by_period.is_empty() {
+        return None;
+    }
+    let mut sorted: Vec<(String, f64)> = by_period
+        .into_iter()
+        .map(|(p, (s, n))| (p, s / n as f64))
+        .collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let labels: Vec<String> = sorted.iter().map(|(p, _)| p.clone()).collect();
+    let vals: Vec<f64> = sorted.iter().map(|(_, v)| *v).collect();
+    let marker = labels.iter().position(|p| p == anomalous_period);
+    Some(NodeData::Series {
+        labels,
+        values: vals,
+        band_low: None,
+        band_high: None,
+        marker_index: marker,
+    })
+}
+
+fn build_seasonality_data(values: &[f64], period_labels: &[Option<String>]) -> Option<NodeData> {
+    let mut by_period: HashMap<String, (f64, usize)> = HashMap::new();
+    for (val, period) in values.iter().zip(period_labels.iter()) {
+        if let Some(p) = period {
+            let entry = by_period.entry(p.clone()).or_insert((0.0, 0));
+            entry.0 += val;
+            entry.1 += 1;
+        }
+    }
+    if by_period.is_empty() {
+        return None;
+    }
+    let mut sorted: Vec<(String, f64)> = by_period
+        .into_iter()
+        .map(|(p, (s, n))| (p, s / n as f64))
+        .collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let labels: Vec<String> = sorted.iter().map(|(p, _)| p.clone()).collect();
+    let vals: Vec<f64> = sorted.iter().map(|(_, v)| *v).collect();
+    Some(NodeData::Series {
+        labels,
+        values: vals,
+        band_low: None,
+        band_high: None,
+        marker_index: None,
+    })
+}
+
+fn build_forecast_data(
+    period_values: &[(String, f64)],
+    expected: f64,
+    actual: f64,
+) -> Option<NodeData> {
+    if period_values.is_empty() {
+        return None;
+    }
+    let labels: Vec<String> = period_values.iter().map(|(p, _)| p.clone()).collect();
+    let history: Vec<f64> = period_values.iter().map(|(_, v)| *v).collect();
+    // Simple PI: ±20% of expected — replace with proper PI from forecast detector
+    let pi = expected.abs() * 0.2;
+    Some(NodeData::Forecast {
+        labels,
+        history,
+        expected,
+        actual,
+        pi_low: expected - pi,
+        pi_high: expected + pi,
+    })
+}
+
+fn build_outlier_cluster_data(
+    cache: &ColumnCache,
+    period_labels: &[Option<String>],
+    target_period: &str,
+    columns: &[String],
+) -> Option<NodeData> {
+    let mut series_list: Vec<NamedSeries> = Vec::new();
+    let mut common_labels: Vec<String> = Vec::new();
+    let mut marker_idx: Option<usize> = None;
+
+    for col in columns {
+        let Some(values) = cache.numeric.get(col) else {
+            continue;
+        };
+        let mut by_period: HashMap<String, (f64, usize)> = HashMap::new();
+        for (val, period) in values.iter().zip(period_labels.iter()) {
+            if let Some(p) = period {
+                let entry = by_period.entry(p.clone()).or_insert((0.0, 0));
+                entry.0 += val;
+                entry.1 += 1;
+            }
+        }
+        if by_period.is_empty() {
+            continue;
+        }
+        let mut sorted: Vec<(String, f64)> = by_period
+            .into_iter()
+            .map(|(p, (s, n))| (p, s / n as f64))
+            .collect();
+        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        if common_labels.is_empty() {
+            common_labels = sorted.iter().map(|(p, _)| p.clone()).collect();
+            marker_idx = common_labels.iter().position(|p| p == target_period);
+        }
+        let vals: Vec<f64> = sorted.iter().map(|(_, v)| *v).collect();
+        series_list.push(NamedSeries {
+            name: col.clone(),
+            values: vals,
+        });
+    }
+
+    if series_list.is_empty() || common_labels.is_empty() {
+        return None;
+    }
+
+    Some(NodeData::Multi {
+        labels: common_labels,
+        series: series_list,
+        marker_index: marker_idx.unwrap_or(0),
+    })
+}
+
+fn build_scatter_data(xs: &[f64], ys: &[f64], x_label: &str, y_label: &str, r: f64) -> NodeData {
+    // Downsample if too large
+    let take = xs.len().min(ys.len()).min(MAX_POINTS);
+    let stride = (xs.len() / take).max(1);
+    let x: Vec<f64> = xs.iter().step_by(stride).take(take).copied().collect();
+    let y: Vec<f64> = ys.iter().step_by(stride).take(take).copied().collect();
+    // Compute simple OLS fit
+    let n = x.len() as f64;
+    let mean_x = x.iter().sum::<f64>() / n;
+    let mean_y = y.iter().sum::<f64>() / n;
+    let mut num = 0.0;
+    let mut den = 0.0;
+    for (xi, yi) in x.iter().zip(y.iter()) {
+        num += (xi - mean_x) * (yi - mean_y);
+        den += (xi - mean_x).powi(2);
+    }
+    let (slope, intercept) = if (den - 0.0).abs() > f64::EPSILON {
+        let s = num / den;
+        (Some(s), Some(s.mul_add(-mean_x, mean_y)))
+    } else {
+        (None, None)
+    };
+    let _ = r; // r already part of analysis
+    NodeData::Scatter {
+        x,
+        y,
+        x_label: x_label.to_string(),
+        y_label: y_label.to_string(),
+        fit_slope: slope,
+        fit_intercept: intercept,
     }
 }

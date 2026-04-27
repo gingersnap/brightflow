@@ -21,6 +21,7 @@ pub enum SourceTool {
     Users,
     Explore,
     Insights,
+    Topics,
 }
 
 /// A table belonging to a source

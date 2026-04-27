@@ -162,19 +162,10 @@ enum Commands {
         database_url: Option<String>,
     },
 
-    /// Enrich existing store tables with text-derived columns
-    Enrich {
-        /// Source id (e.g. `connector:<uuid>`)
-        #[arg(long)]
-        source: String,
-
-        /// Table name to enrich (e.g., "issues", "pull_requests"). If omitted, enriches all supported tables.
-        #[arg(long)]
-        table: Option<String>,
-
-        /// Number of topic clusters (0 = skip clustering, faster)
-        #[arg(long, default_value = "0")]
-        clusters: usize,
+    /// Manage topic clusters (Model2Vec embeddings + k-means)
+    Topics {
+        #[command(subcommand)]
+        action: TopicsAction,
     },
 
     /// Register existing event Parquet files in the Litehouse catalog
@@ -240,6 +231,46 @@ enum CadenceArg {
 enum ConnectCommands {
     /// List available built-in connectors
     List,
+}
+
+#[derive(Subcommand, Debug)]
+enum TopicsAction {
+    /// Fit a fresh model: embed all rows, refit TF-IDF + clusters + label centroids
+    Fit {
+        /// Source id (e.g. `connector:<uuid>`)
+        #[arg(long)]
+        source: String,
+
+        /// Table name (default: issues)
+        #[arg(long, default_value = "issues")]
+        table: String,
+
+        /// Number of topic clusters (k for k-means). Defaults to engine DEFAULT_K.
+        #[arg(long)]
+        clusters: Option<usize>,
+    },
+
+    /// List existing clusters for a source/table
+    List {
+        /// Source id
+        #[arg(long)]
+        source: String,
+
+        /// Table name
+        #[arg(long, default_value = "issues")]
+        table: String,
+    },
+
+    /// Embed rows only (no clustering refit) - useful after model swap
+    Embed {
+        /// Source id
+        #[arg(long)]
+        source: String,
+
+        /// Table name
+        #[arg(long, default_value = "issues")]
+        table: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -455,13 +486,9 @@ async fn main() -> Result<()> {
             handle_create_admin(&email, &name, &database_url).await?;
         },
 
-        Commands::Enrich {
-            source,
-            table,
-            clusters,
-        } => {
+        Commands::Topics { action } => {
             init_tracing_simple("brightflow=info");
-            handle_enrich(&source, table.as_deref(), clusters).await?;
+            handle_topics(action).await?;
         },
 
         Commands::MigrateEvents => {
@@ -855,96 +882,184 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
     Ok(())
 }
 
-async fn handle_enrich(source: &str, table: Option<&str>, num_clusters: usize) -> Result<()> {
-    use brightflow_engine::enrichment::{enrich_github_issues, is_enrichable, ENRICHABLE_TABLES};
+async fn handle_topics(action: TopicsAction) -> Result<()> {
+    match action {
+        TopicsAction::Fit {
+            source,
+            table,
+            clusters,
+        } => topics_fit(&source, &table, clusters).await,
+        TopicsAction::List { source, table } => topics_list(&source, &table),
+        TopicsAction::Embed { source, table } => topics_embed(&source, &table).await,
+    }
+}
+
+async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> Result<()> {
+    use brightflow_engine::enrichment::{fit_topics, is_enrichable, DEFAULT_K};
+    let num_clusters = num_clusters.unwrap_or(DEFAULT_K);
+
+    if !is_enrichable(table) {
+        anyhow::bail!("Table '{table}' is not supported for topics. Supported: issues");
+    }
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
 
-    let all_names: Vec<&str> = ENRICHABLE_TABLES.iter().map(|(name, _)| *name).collect();
-    let tables_to_process: Vec<&str> = match table {
-        Some(t) => {
-            if !is_enrichable(t) {
-                anyhow::bail!(
-                    "Table '{t}' is not enrichable. Supported: {}",
-                    all_names.join(", ")
-                );
-            }
-            vec![t]
-        },
-        None => all_names,
-    };
+    println!("Fitting topics: {source}/{table} (k={num_clusters})");
 
-    let models_dir = wp.root().join("models");
-    std::fs::create_dir_all(&models_dir)?;
+    let df = store.read_table(source, table).await?;
+    println!("  Loaded {} rows", df.height());
 
-    for table_name in &tables_to_process {
-        println!("Enriching table: {source}/{table_name}");
+    let workspace_root = wp.root();
+    let source_owned = source.to_string();
+    let table_owned = table.to_string();
+    let (enriched, outcome) = tokio::task::spawn_blocking(move || {
+        fit_topics(
+            &workspace_root,
+            &source_owned,
+            &table_owned,
+            &df,
+            num_clusters,
+        )
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("topics fit join error: {e}"))?
+    .map_err(|e| anyhow::anyhow!("topics fit failed: {e}"))?;
 
-        // Load the full table from the store
-        let df = match store.read_table(source, table_name).await {
-            Ok(df) => df,
-            Err(e) => {
-                println!("  Skipping {table_name}: {e}");
-                continue;
-            },
-        };
-
-        // Check required columns
-        if df.column("title").is_err() || df.column("body").is_err() {
-            println!("  Skipping {table_name}: missing title or body column");
-            continue;
-        }
-
-        println!("  Loaded {} rows", df.height());
-
-        let model_path = models_dir.join(format!("{table_name}-tfidf.bin"));
-
-        let (enriched, model) = enrich_github_issues(&df, Some(&model_path), num_clusters)?;
-
-        println!("  Vocabulary: {} terms", model.fitted.vocabulary.len());
-        println!("  Label centroids: {}", model.label_centroids.len());
-        println!("  Topic clusters: {}", model.cluster_names.len());
-        for (i, name) in model.cluster_names.iter().enumerate() {
-            println!("    cluster {i}: {name}");
-        }
-
-        // Write the enriched table back to the store
-        // We need to write a new parquet file and re-register it
-        let table_dir = wp.store().join(source).join(table_name);
-        std::fs::create_dir_all(&table_dir)?;
-
-        let output_path = table_dir.join("enriched.parquet");
-        let file = std::fs::File::create(&output_path)?;
-        polars::prelude::ParquetWriter::new(file).finish(&mut enriched.clone())?;
-
-        // Re-ingest the enriched file (this replaces the existing table data)
-        let info = store
-            .ingest_parquet(
-                source,
-                table_name,
-                &output_path,
-                Some(IngestOptions {
-                    mode: IngestMode::Overwrite,
-                    ..Default::default()
-                }),
-            )
-            .await?;
-
-        println!(
-            "  Written: {} rows, {} columns",
-            info.num_rows.unwrap_or(0),
-            enriched.width()
-        );
-
-        // Clean up the temporary enriched.parquet if ingest copied it
-        if output_path.exists() {
-            drop(std::fs::remove_file(&output_path));
-        }
-
-        println!("  Done enriching {table_name}");
+    println!(
+        "  k = {} ({} rows, labels={})",
+        outcome.k, outcome.total_rows, outcome.has_labels
+    );
+    for (i, name) in outcome.cluster_names.iter().enumerate() {
+        let size = outcome.cluster_sizes.get(i).copied().unwrap_or(0);
+        println!("    cluster {i}: {size:>6} docs · {name}");
     }
 
-    println!("Enrichment complete.");
+    let table_dir = wp.store().join(source).join(table);
+    std::fs::create_dir_all(&table_dir)?;
+    let output_path = table_dir.join("enriched.parquet");
+    let file = std::fs::File::create(&output_path)?;
+    polars::prelude::ParquetWriter::new(file).finish(&mut enriched.clone())?;
+
+    let info = store
+        .ingest_parquet(
+            source,
+            table,
+            &output_path,
+            Some(IngestOptions {
+                mode: IngestMode::Overwrite,
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    println!(
+        "  Written: {} rows, {} columns",
+        info.num_rows.unwrap_or(0),
+        enriched.width()
+    );
+
+    if output_path.exists() {
+        drop(std::fs::remove_file(&output_path));
+    }
+
+    println!("Done.");
+    Ok(())
+}
+
+fn topics_list(source: &str, table: &str) -> Result<()> {
+    use brightflow_engine::embedding::topics_artifact_dir;
+    use brightflow_engine::enrichment::{ArtifactMeta, ClusteringArtifact};
+
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let dir = topics_artifact_dir(&wp.root(), source, table);
+
+    if !ArtifactMeta::exists(&dir) {
+        println!("No topics artifacts found at {}", dir.display());
+        println!("Run: brightflow topics fit --source {source} --table {table}");
+        return Ok(());
+    }
+
+    let meta = ArtifactMeta::load(&dir).map_err(|e| anyhow::anyhow!("{e}"))?;
+    println!("Topics for {source}/{table}");
+    println!("  embedding model : {}", meta.embedding_model_id);
+    println!("  k               : {}", meta.k);
+    println!("  rows            : {}", meta.total_rows);
+    println!("  labels present  : {}", meta.has_labels);
+    println!("  fitted_at       : {}", meta.fitted_at);
+
+    if let Ok(c) = ClusteringArtifact::load(&dir) {
+        println!();
+        for i in 0..c.k {
+            let terms = c.top_terms.get(i).cloned().unwrap_or_default();
+            let samples = c.sample_titles.get(i).cloned().unwrap_or_default();
+            println!("Cluster {i}");
+            if !terms.is_empty() {
+                println!("  distinctive terms : {}", terms.join(", "));
+            }
+            if !samples.is_empty() {
+                println!("  representative titles:");
+                for s in &samples {
+                    println!("    · {s}");
+                }
+            }
+            if terms.is_empty() && samples.is_empty() {
+                if let Some(n) = c.names.get(i) {
+                    println!("  {n}");
+                }
+            }
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
+async fn topics_embed(source: &str, table: &str) -> Result<()> {
+    use brightflow_engine::enrichment::{enrich_with_topics, is_enrichable};
+
+    if !is_enrichable(table) {
+        anyhow::bail!("Table '{table}' is not supported for topics.");
+    }
+
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+
+    let df = store.read_table(source, table).await?;
+    println!("Embedding {} rows from {source}/{table}", df.height());
+
+    let workspace_root = wp.root();
+    let source_owned = source.to_string();
+    let table_owned = table.to_string();
+    let enriched = tokio::task::spawn_blocking(move || {
+        enrich_with_topics(&workspace_root, &source_owned, &table_owned, &df)
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("embed join error: {e}"))?
+    .map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
+
+    let table_dir = wp.store().join(source).join(table);
+    std::fs::create_dir_all(&table_dir)?;
+    let output_path = table_dir.join("enriched.parquet");
+    let file = std::fs::File::create(&output_path)?;
+    polars::prelude::ParquetWriter::new(file).finish(&mut enriched.clone())?;
+
+    store
+        .ingest_parquet(
+            source,
+            table,
+            &output_path,
+            Some(IngestOptions {
+                mode: IngestMode::Overwrite,
+                ..Default::default()
+            }),
+        )
+        .await?;
+
+    if output_path.exists() {
+        drop(std::fs::remove_file(&output_path));
+    }
+
+    println!("Done.");
     Ok(())
 }

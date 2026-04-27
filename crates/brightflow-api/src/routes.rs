@@ -16,6 +16,7 @@ use crate::semantics::handlers as semantics_handlers;
 use crate::sources::handlers as sources_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
+use crate::topics::handlers as topics_handlers;
 use crate::web_analytics::handlers as wa_handlers;
 
 /// Create the main application router
@@ -72,6 +73,19 @@ fn api_routes() -> Router<AppState> {
             "/sources/{source_id}/tables/{name}/settings",
             get(semantics_handlers::get_table_settings)
                 .put(semantics_handlers::upsert_table_settings),
+        )
+        // Topics (Model2Vec embeddings + dense k-means)
+        .route(
+            "/sources/{source_id}/tables/{table}/topics",
+            get(topics_handlers::get_overview),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/topics/clusters/{cluster_id}",
+            get(topics_handlers::get_cluster_detail),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/topics/recluster",
+            post(topics_handlers::post_recluster),
         )
         // WebSocket
         .route("/ws", get(handlers::ws_handler))

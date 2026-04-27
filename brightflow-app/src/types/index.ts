@@ -52,6 +52,7 @@ export type ToolId =
   | 'users'
   | 'explore'
   | 'insights'
+  | 'topics'
   | 'settings';
 
 export interface SourceTable {
@@ -84,6 +85,7 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
   users: { label: 'Users', icon: 'i-lucide-users' },
   explore: { label: 'Explore', icon: 'i-lucide-search' },
   insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
+  topics: { label: 'Topics', icon: 'i-lucide-shapes' },
   settings: { label: 'Settings', icon: 'i-lucide-settings' },
 };
 

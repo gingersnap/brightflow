@@ -1,4 +1,5 @@
 pub mod clustering;
+pub mod dense_clustering;
 pub mod error;
 pub mod ngrams;
 pub mod polars;
@@ -9,6 +10,7 @@ pub mod tokenizer;
 pub mod vocabulary;
 
 pub use clustering::{kmeans, ClusterResult};
+pub use dense_clustering::{dense_cosine, kmeans_dense, DenseClusterResult};
 pub use error::SubtextError;
 pub use ngrams::ngrams;
 pub use similarity::{cosine, cosine_unnormalized};

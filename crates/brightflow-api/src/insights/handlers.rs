@@ -7,10 +7,26 @@ use brightflow_engine::analysis::tree::ReviewCadence;
 use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
 use brightflow_engine::debug::DebugLog;
 
-use crate::insights::types::{InsightsResponse, ReviewRequest, TrendsRequest};
+use crate::insights::types::{EngineConfig, InsightsResponse, ReviewRequest, TrendsRequest};
 use crate::shared::{AppError, AppResult};
 use crate::state::{cache_key, AppState};
 use tracing::instrument;
+
+const DEFAULT_Z: f64 = 2.0;
+const DEFAULT_P: f64 = 0.05;
+const DEFAULT_MIN_EFFECT: f64 = 0.1;
+const DEFAULT_MAX_RESULTS: usize = 50;
+const DEFAULT_MAX_DEPTH: usize = 3;
+
+fn resolve_config(req: EngineConfig) -> EngineConfig {
+    EngineConfig {
+        z_threshold: Some(req.z_threshold.unwrap_or(DEFAULT_Z)),
+        p_threshold: Some(req.p_threshold.unwrap_or(DEFAULT_P)),
+        min_effect_size: Some(req.min_effect_size.unwrap_or(DEFAULT_MIN_EFFECT)),
+        max_results: Some(req.max_results.unwrap_or(DEFAULT_MAX_RESULTS)),
+        max_depth: Some(req.max_depth.unwrap_or(DEFAULT_MAX_DEPTH)),
+    }
+}
 
 /// Run a review analysis on a dataset
 #[instrument(skip(state, req))]
@@ -25,12 +41,18 @@ pub async fn run_review(
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
     let cadence_str = req.cadence.clone();
+    let config = resolve_config(req.config);
+    let config_for_engine = config.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         let df = scan_parquet_files(files)?;
         let schema = build_schema(&df, &overrides, settings.as_ref())
             .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
-        let engine = AnalysisEngine::new(2.0, 0.05, 3);
+        let engine = AnalysisEngine::new(
+            config_for_engine.z_threshold.unwrap_or(DEFAULT_Z),
+            config_for_engine.p_threshold.unwrap_or(DEFAULT_P),
+            config_for_engine.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
+        );
         engine.run_review_with_cadence(&df, &schema, cadence, &DebugLog::disabled())
     })
     .await??;
@@ -38,9 +60,7 @@ pub async fn run_review(
     let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
     let node_count = result.tree.nodes.len();
     let finding_count = result.tree.roots.len();
-
-    let tree_json = serde_json::to_value(&result.tree)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize analysis tree: {e}")))?;
+    let total_candidates = result.first_level_count + result.deeper_count;
 
     tracing::info!(
         "Review analysis on '{}' completed in {:.0}ms ({} nodes)",
@@ -52,12 +72,14 @@ pub async fn run_review(
     Ok(Json(InsightsResponse {
         dataset_id,
         report_type: format!("review_{cadence_str}"),
-        tree: tree_json,
+        tree: result.tree,
         node_count,
         finding_count,
         first_level_count: result.first_level_count,
         deeper_count: result.deeper_count,
         execution_time_ms,
+        total_candidates,
+        config_used: config,
     }))
 }
 
@@ -72,12 +94,18 @@ pub async fn run_trends(
 
     let start = Instant::now();
     let dataset_id = req.dataset_id.clone();
+    let config = resolve_config(req.config);
+    let config_for_engine = config.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         let df = scan_parquet_files(files)?;
         let schema = build_schema(&df, &overrides, settings.as_ref())
             .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
-        let engine = AnalysisEngine::new(2.0, 0.05, 3);
+        let engine = AnalysisEngine::new(
+            config_for_engine.z_threshold.unwrap_or(DEFAULT_Z),
+            config_for_engine.p_threshold.unwrap_or(DEFAULT_P),
+            config_for_engine.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
+        );
         engine.run_trends(&df, &schema)
     })
     .await??;
@@ -85,9 +113,7 @@ pub async fn run_trends(
     let execution_time_ms = start.elapsed().as_secs_f64() * 1000.0;
     let node_count = result.tree.nodes.len();
     let finding_count = result.tree.roots.len();
-
-    let tree_json = serde_json::to_value(&result.tree)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize analysis tree: {e}")))?;
+    let total_candidates = result.first_level_count + result.deeper_count;
 
     tracing::info!(
         "Trends analysis on '{}' completed in {:.0}ms ({} nodes)",
@@ -99,12 +125,14 @@ pub async fn run_trends(
     Ok(Json(InsightsResponse {
         dataset_id,
         report_type: "trends".to_string(),
-        tree: tree_json,
+        tree: result.tree,
         node_count,
         finding_count,
         first_level_count: result.first_level_count,
         deeper_count: result.deeper_count,
         execution_time_ms,
+        total_candidates,
+        config_used: config,
     }))
 }
 

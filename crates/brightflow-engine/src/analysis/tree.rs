@@ -1,4 +1,5 @@
 use serde::Serialize;
+use ts_rs::TS;
 
 /// Report types that can be generated
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +64,8 @@ impl ReviewCadence {
 }
 
 /// High-level categories for organizing analysis findings
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, TS)]
+#[ts(export)]
 pub enum AnalysisCategory {
     /// "How are we doing vs expectations?"
     Performance,
@@ -105,21 +107,28 @@ impl AnalysisCategory {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, TS)]
+#[ts(export, type = "number")]
 pub struct NodeId(pub usize);
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
 pub struct AnalysisTree {
     pub nodes: Vec<AnalysisNode>,
     pub roots: Vec<NodeId>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
 pub struct AnalysisNode {
     pub id: NodeId,
     pub parent_id: Option<NodeId>,
     pub analysis: AnalysisType,
     pub significance: f64,
+    /// Calibrated component scores (significance × effect size × surprise) — exposed for UI explainer
+    pub score_breakdown: ScoreBreakdown,
     /// Technical description with statistics (for data scientists)
     pub description: String,
     /// Natural language summary for non-technical readers
@@ -127,9 +136,134 @@ pub struct AnalysisNode {
     /// Technical summary with statistical notation
     pub tech_summary: String,
     pub children: Vec<NodeId>,
+    /// Optional payload of underlying data needed by per-type renderers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<NodeData>,
+    /// Filter chain implied by this finding's drill path — used to open the finding in Explore
+    #[serde(default)]
+    pub filter_chain: Vec<FilterStep>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreBreakdown {
+    pub significance: f64,
+    pub effect_size: f64,
+    pub surprise: f64,
+    pub kpi_boost: f64,
+}
+
+impl ScoreBreakdown {
+    pub fn empty() -> Self {
+        Self {
+            significance: 0.0,
+            effect_size: 0.0,
+            surprise: 0.0,
+            kpi_boost: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterStep {
+    pub column: String,
+    pub op: String,
+    pub value: String,
+}
+
+/// Renderer payload — small data slices attached so frontend can draw a chart
+/// without a second round-trip. Series are downsampled to ≤200 points.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(tag = "type")]
+pub enum NodeData {
+    /// Time-series for the column with optional comparison band
+    Series {
+        labels: Vec<String>,
+        values: Vec<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        band_low: Option<Vec<f64>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        band_high: Option<Vec<f64>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        marker_index: Option<usize>,
+    },
+    /// Time-series with a fitted regression line overlay
+    SeriesWithFit {
+        labels: Vec<String>,
+        values: Vec<f64>,
+        fit: Vec<f64>,
+    },
+    /// Two periods compared, paired bars per category
+    PairedBars {
+        labels: Vec<String>,
+        previous: Vec<f64>,
+        current: Vec<f64>,
+    },
+    /// Ranked horizontal bars (one per segment value)
+    SegmentBars {
+        labels: Vec<String>,
+        values: Vec<f64>,
+        contributions_pct: Vec<f64>,
+    },
+    /// Scatter plot points with optional fit line
+    Scatter {
+        x: Vec<f64>,
+        y: Vec<f64>,
+        x_label: String,
+        y_label: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fit_slope: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fit_intercept: Option<f64>,
+    },
+    /// Forecast cone: history + extrapolated point with prediction interval
+    Forecast {
+        labels: Vec<String>,
+        history: Vec<f64>,
+        expected: f64,
+        actual: f64,
+        pi_low: f64,
+        pi_high: f64,
+    },
+    /// Multiple sparklines (one per affected column) for cluster findings
+    Multi {
+        labels: Vec<String>,
+        series: Vec<NamedSeries>,
+        marker_index: usize,
+    },
+    /// Histogram pair for distribution shift
+    HistogramPair {
+        bin_edges: Vec<f64>,
+        previous: Vec<f64>,
+        current: Vec<f64>,
+    },
+    /// Lorenz / concentration curve
+    Lorenz {
+        cumulative_share: Vec<f64>,
+        cumulative_population: Vec<f64>,
+        gini: f64,
+    },
+    /// Before/after diff of dimension membership
+    MembershipDiff {
+        added: Vec<String>,
+        removed: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedSeries {
+    pub name: String,
+    pub values: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 #[serde(tag = "type")]
 pub enum AnalysisType {
     Anomaly {
@@ -193,6 +327,7 @@ pub enum AnalysisType {
         period: String,
         columns: Vec<String>,
         direction: String, // "spike" or "dip"
+        #[ts(type = "number")]
         cluster_size: usize,
     },
     /// Actual value deviates from historical trend forecast
@@ -204,9 +339,52 @@ pub enum AnalysisType {
         deviation_percent: f64,
         p_value: f64,
     },
+    /// Concentration alert: a small number of segment values dominate the metric
+    Concentration {
+        column: String,
+        segment_column: String,
+        /// Herfindahl-Hirschman index ([0, 1]) — higher = more concentrated
+        hhi: f64,
+        /// Top-N share (e.g. top 3 contribute X% of total)
+        top_n: usize,
+        top_share: f64,
+        /// Optional change vs prior baseline
+        #[ts(optional)]
+        hhi_delta: Option<f64>,
+    },
+    /// Distribution of a metric shifted between two windows (KS-test)
+    DistributionShift {
+        column: String,
+        previous_period: String,
+        current_period: String,
+        /// KS statistic ([0, 1])
+        ks_statistic: f64,
+        p_value: f64,
+    },
+    /// New or disappeared dimension values between two periods
+    MembershipChange {
+        segment_column: String,
+        previous_period: String,
+        current_period: String,
+        added_count: usize,
+        removed_count: usize,
+    },
+    /// Change-point in a time series (level shift)
+    ChangePoint {
+        column: String,
+        /// Period label where the level shift starts
+        period: String,
+        before_mean: f64,
+        after_mean: f64,
+        /// Cumulative sum statistic at the change point
+        cusum: f64,
+        /// Synthetic p-value derived from |cusum| / σ
+        p_value: f64,
+    },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub enum TrendDirection {
     Increasing,
     Decreasing,
@@ -277,12 +455,15 @@ impl AnalysisType {
             | Self::Seasonality { .. }
             | Self::PeriodComparison { .. }
             | Self::PeriodAnomaly { .. }
-            | Self::OutlierCluster { .. } => AnalysisCategory::Trends,
+            | Self::OutlierCluster { .. }
+            | Self::DistributionShift { .. }
+            | Self::ChangePoint { .. }
+            | Self::MembershipChange { .. } => AnalysisCategory::Trends,
 
             // Root Cause - "Why did this change happen?"
             Self::Segment { .. } | Self::Correlation { .. } => AnalysisCategory::RootCause,
-            // Note: Drivers category analyses (SegmentBreakdown, Pareto, etc.)
-            // will be added here in the future
+            // Drivers - "What makes up this KPI?"
+            Self::Concentration { .. } => AnalysisCategory::Drivers,
         }
     }
 
@@ -380,6 +561,50 @@ impl AnalysisType {
             } => {
                 format!(
                     "{column} [{period}]: actual={actual:.2}, expected={expected:.2}, Δ={deviation_percent:.1}%, p={p_value:.4}"
+                )
+            },
+            Self::Concentration {
+                column,
+                segment_column,
+                hhi,
+                top_n,
+                top_share,
+                ..
+            } => {
+                format!("{column} by {segment_column}: HHI={hhi:.2}, top {top_n} = {top_share:.1}%")
+            },
+            Self::DistributionShift {
+                column,
+                previous_period,
+                current_period,
+                ks_statistic,
+                p_value,
+            } => {
+                format!(
+                    "{column} [{previous_period} → {current_period}]: KS={ks_statistic:.3}, p={p_value:.4}"
+                )
+            },
+            Self::MembershipChange {
+                segment_column,
+                previous_period,
+                current_period,
+                added_count,
+                removed_count,
+            } => {
+                format!(
+                    "{segment_column} [{previous_period} → {current_period}]: +{added_count}, -{removed_count}"
+                )
+            },
+            Self::ChangePoint {
+                column,
+                period,
+                before_mean,
+                after_mean,
+                p_value,
+                ..
+            } => {
+                format!(
+                    "{column} change-point @ {period}: {before_mean:.1} → {after_mean:.1}, p={p_value:.4}"
                 )
             },
         }
@@ -549,6 +774,59 @@ impl AnalysisType {
                     "{col} in {p}: Actual {actual:.1} vs Expected {expected:.1} ({direction}{deviation_percent:.0}% deviation)"
                 )
             },
+            Self::Concentration {
+                column,
+                segment_column,
+                top_n,
+                top_share,
+                ..
+            } => {
+                let c = humanize_column(column);
+                let s = humanize_column(segment_column);
+                format!(
+                    "{c} is concentrated — top {top_n} {s} values account for {top_share:.0}% of the total"
+                )
+            },
+            Self::DistributionShift {
+                column,
+                previous_period,
+                current_period,
+                ..
+            } => {
+                let c = humanize_column(column);
+                let prev = humanize_period(previous_period);
+                let curr = humanize_period(current_period);
+                format!("{c} distribution shifted from {prev} to {curr}")
+            },
+            Self::MembershipChange {
+                segment_column,
+                added_count,
+                removed_count,
+                current_period,
+                ..
+            } => {
+                let s = humanize_column(segment_column);
+                let p = humanize_period(current_period);
+                format!(
+                    "{s} membership changed in {p}: {added_count} new, {removed_count} disappeared"
+                )
+            },
+            Self::ChangePoint {
+                column,
+                period,
+                before_mean,
+                after_mean,
+                ..
+            } => {
+                let c = humanize_column(column);
+                let p = humanize_period(period);
+                let direction = if after_mean > before_mean {
+                    "stepped up"
+                } else {
+                    "stepped down"
+                };
+                format!("{c} {direction} at {p} ({before_mean:.1} → {after_mean:.1})")
+            },
         }
     }
 }
@@ -567,6 +845,23 @@ impl AnalysisTree {
         significance: f64,
         description: String,
     ) -> NodeId {
+        self.add_root_full(
+            analysis,
+            significance,
+            ScoreBreakdown::empty(),
+            description,
+            None,
+        )
+    }
+
+    pub fn add_root_full(
+        &mut self,
+        analysis: AnalysisType,
+        significance: f64,
+        score_breakdown: ScoreBreakdown,
+        description: String,
+        data: Option<NodeData>,
+    ) -> NodeId {
         let summary = analysis.natural_summary();
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
@@ -575,10 +870,13 @@ impl AnalysisTree {
             parent_id: None,
             analysis,
             significance,
+            score_breakdown,
             description,
             summary,
             tech_summary,
             children: Vec::new(),
+            data,
+            filter_chain: Vec::new(),
         };
         self.nodes.push(node);
         self.roots.push(id);
@@ -592,22 +890,52 @@ impl AnalysisTree {
         significance: f64,
         description: String,
     ) -> NodeId {
+        self.add_child_full(
+            parent_id,
+            analysis,
+            significance,
+            ScoreBreakdown::empty(),
+            description,
+            None,
+        )
+    }
+
+    pub fn add_child_full(
+        &mut self,
+        parent_id: NodeId,
+        analysis: AnalysisType,
+        significance: f64,
+        score_breakdown: ScoreBreakdown,
+        description: String,
+        data: Option<NodeData>,
+    ) -> NodeId {
         let summary = analysis.natural_summary();
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
+        let parent_chain = self.nodes[parent_id.0].filter_chain.clone();
         let node = AnalysisNode {
             id,
             parent_id: Some(parent_id),
             analysis,
             significance,
+            score_breakdown,
             description,
             summary,
             tech_summary,
             children: Vec::new(),
+            data,
+            filter_chain: parent_chain,
         };
         self.nodes.push(node);
         self.nodes[parent_id.0].children.push(id);
         id
+    }
+
+    /// Replace the filter_chain of a node (used to extend drill paths)
+    pub fn set_filter_chain(&mut self, id: NodeId, chain: Vec<FilterStep>) {
+        if let Some(n) = self.nodes.get_mut(id.0) {
+            n.filter_chain = chain;
+        }
     }
 }
 

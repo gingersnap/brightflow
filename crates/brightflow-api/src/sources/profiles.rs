@@ -19,6 +19,7 @@ pub fn connector_tools(name: &str) -> Vec<SourceTool> {
             SourceTool::Dashboard,
             SourceTool::Explore,
             SourceTool::Insights,
+            SourceTool::Topics,
         ],
         _ => vec![SourceTool::Explore, SourceTool::Insights],
     }

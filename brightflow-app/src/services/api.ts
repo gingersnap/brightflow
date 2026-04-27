@@ -4,21 +4,24 @@
 import type {
   AvailableConnectorResponse,
   BreakdownRow,
+  ClusterDetail,
   ConnectorConfigResponse,
-  EnrichedSyncRun,
   DashboardStats,
   DatasetInfo,
+  EnrichedSyncRun,
   EventListRow,
   FunnelResult,
   InsightsResponse,
   LoadTableResponse,
   QueryResponse,
+  ReclusterRequest,
   RetentionResult,
   RunTriggerResponse,
   ScheduleResponse,
   Source,
   SyncRun,
   TimeseriesPoint,
+  TopicsOverview,
   UnifiedConnector,
   UploadResponse,
   User,
@@ -200,38 +203,43 @@ export const connectApi = {
     api.put(`/api/scheduler/jobs/${id}`, data),
 };
 
-// Frontend-specific tree types (refinements of the backend's serde_json::Value)
-export interface AnalysisTree {
-  nodes: AnalysisNode[];
-  roots: number[];
-}
+// Re-export generated insights types
+export type { AnalysisTree } from '@/types/generated/AnalysisTree';
+export type { AnalysisNode } from '@/types/generated/AnalysisNode';
+export type { AnalysisType } from '@/types/generated/AnalysisType';
+export type { NodeData } from '@/types/generated/NodeData';
+export type { NodeId } from '@/types/generated/NodeId';
+export type { ScoreBreakdown } from '@/types/generated/ScoreBreakdown';
+export type { FilterStep } from '@/types/generated/FilterStep';
+export type { TrendDirection } from '@/types/generated/TrendDirection';
+export type { EngineConfig } from '@/types/generated/EngineConfig';
 
-export interface AnalysisNode {
-  id: number;
-  parent_id: number | null;
-  analysis: AnalysisType;
-  significance: number;
-  description: string;
-  summary: string;
-  tech_summary: string;
-  children: number[];
-}
-
-export interface AnalysisType {
-  type: string;
-  [key: string]: unknown;
-}
+import type { EngineConfig } from '@/types/generated/EngineConfig';
 
 // Insights API
 export const insightsApi = {
-  runReview: (
-    sourceId: string,
-    datasetId: string,
-    cadence = 'weekly',
-  ): Promise<InsightsResponse | null> =>
-    api.post<InsightsResponse>('/api/insights/review', { cadence, datasetId, sourceId }),
-  runTrends: (sourceId: string, datasetId: string): Promise<InsightsResponse | null> =>
-    api.post<InsightsResponse>('/api/insights/trends', { datasetId, sourceId }),
+  runReview: (params: {
+    sourceId: string;
+    datasetId: string;
+    cadence?: string;
+    config?: EngineConfig;
+  }): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/review', {
+      cadence: params.cadence ?? 'weekly',
+      config: params.config ?? {},
+      datasetId: params.datasetId,
+      sourceId: params.sourceId,
+    }),
+  runTrends: (params: {
+    sourceId: string;
+    datasetId: string;
+    config?: EngineConfig;
+  }): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/trends', {
+      config: params.config ?? {},
+      datasetId: params.datasetId,
+      sourceId: params.sourceId,
+    }),
 };
 
 // Auth API
@@ -335,4 +343,29 @@ export const productAnalyticsApi = {
     ),
   userProfile: (sourceId: string, userId: string): Promise<UserProfile | null> =>
     api.get<UserProfile>(`/api/analytics/${sourceId}/users/${encodeURIComponent(userId)}/profile`),
+};
+
+// Topics API (Model2Vec embeddings + dense k-means)
+export const topicsApi = {
+  overview: (sourceId: string, table: string): Promise<TopicsOverview | null> =>
+    api.get<TopicsOverview>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/topics`,
+    ),
+  clusterDetail: (
+    sourceId: string,
+    table: string,
+    clusterId: number,
+  ): Promise<ClusterDetail | null> =>
+    api.get<ClusterDetail>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/topics/clusters/${clusterId}`,
+    ),
+  recluster: (
+    sourceId: string,
+    table: string,
+    body: ReclusterRequest = {},
+  ): Promise<TopicsOverview | null> =>
+    api.post<TopicsOverview>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/topics/recluster`,
+      body,
+    ),
 };

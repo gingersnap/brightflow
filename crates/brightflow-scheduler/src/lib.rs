@@ -277,19 +277,19 @@ async fn execute_sync(
             continue;
         }
 
-        // Enrich with text-derived columns if applicable (issues, pull_requests)
+        let source_id = format!("connector:{connector_id}");
+
+        // Enrich with text-derived columns if applicable (issues today; PRs/comments later)
         let workspace_root = paths.root();
-        let store_root = paths.store();
         if let Err(e) = text_enrichment::maybe_enrich_parquet(
             &parquet_file,
             &ep_result.name,
+            &source_id,
             &workspace_root,
-            &store_root,
         ) {
             warn!("Text enrichment skipped for {}: {e}", ep_result.name);
         }
 
-        let source_id = format!("connector:{connector_id}");
         let metrics = store
             .merge_parquet(
                 &source_id,

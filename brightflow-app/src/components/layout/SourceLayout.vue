@@ -13,6 +13,7 @@ import ConnectorSourceSettings from '@/components/settings/ConnectorSourceSettin
 import WebSourceSettings from '@/components/settings/WebSourceSettings.vue';
 import ConnectorDashboard from '@/components/tools/ConnectorDashboard.vue';
 import WebDashboard from '@/components/tools/WebDashboard.vue';
+import TopicsView from '@/components/topics/TopicsView.vue';
 import { productAnalyticsApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
 import { TOOL_DEFS, type ToolId } from '@/types';
@@ -117,6 +118,9 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
 
       <!-- Insights -->
       <InsightsView v-else-if="activeTool === 'insights'" :source-id="sourceId" :table="table" />
+
+      <!-- Topics -->
+      <TopicsView v-else-if="activeTool === 'topics'" :source-id="sourceId" :table="table" />
 
       <!-- Settings -->
       <template v-else-if="activeTool === 'settings'">

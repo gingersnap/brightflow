@@ -1,9 +1,15 @@
 pub mod anomaly;
+pub mod change_point;
+pub mod concentration;
 pub mod correlation;
+pub mod dedup;
+pub mod distribution_shift;
 pub mod engine;
 pub mod forecast;
+pub mod membership;
 pub mod outlier_cluster;
 pub mod period;
+pub mod scoring;
 pub mod seasonality;
 pub mod segment;
 pub mod tree;
