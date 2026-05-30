@@ -75,32 +75,42 @@ fn english_stopwords() -> std::collections::HashSet<String> {
     set
 }
 
-/// Combine `title` and `body` into a single text string for each row.
-fn build_combined_text(df: &DataFrame) -> Result<Vec<String>, TopicError> {
-    let title = df
-        .column("title")
-        .map_err(|_| TopicError::MissingColumn("title".to_string()))?
-        .as_materialized_series()
-        .str()
-        .map_err(|e| TopicError::Nlp(format!("title is not a string column: {e}")))?
-        .into_iter()
-        .map(|o| o.unwrap_or("").to_string())
-        .collect::<Vec<_>>();
-    let body = df
-        .column("body")
-        .map_err(|_| TopicError::MissingColumn("body".to_string()))?
-        .as_materialized_series()
-        .str()
-        .map_err(|e| TopicError::Nlp(format!("body is not a string column: {e}")))?
-        .into_iter()
-        .map(|o| o.unwrap_or("").to_string())
-        .collect::<Vec<_>>();
+/// Concatenate the configured text columns (space-separated) into a single
+/// string per row. Driven by `ENRICHABLE_TABLES` so each table type can declare
+/// its own text columns (e.g. issues → `title`+`body`, posts → `text`).
+fn build_combined_text(df: &DataFrame, columns: &[&str]) -> Result<Vec<String>, TopicError> {
+    if columns.is_empty() {
+        return Err(TopicError::MissingColumn(
+            "no enrichable columns configured".to_string(),
+        ));
+    }
 
-    Ok(title
-        .into_iter()
-        .zip(body)
-        .map(|(t, b)| format!("{t} {b}"))
-        .collect())
+    let n = df.height();
+    let mut per_column: Vec<Vec<String>> = Vec::with_capacity(columns.len());
+    for col in columns {
+        let values = df
+            .column(col)
+            .map_err(|_| TopicError::MissingColumn((*col).to_string()))?
+            .as_materialized_series()
+            .str()
+            .map_err(|e| TopicError::Nlp(format!("{col} is not a string column: {e}")))?
+            .into_iter()
+            .map(|o| o.unwrap_or("").to_string())
+            .collect::<Vec<_>>();
+        per_column.push(values);
+    }
+
+    let mut combined: Vec<String> = Vec::with_capacity(n);
+    for row in 0..n {
+        let mut parts: Vec<&str> = Vec::with_capacity(columns.len());
+        for col_values in &per_column {
+            if let Some(v) = col_values.get(row) {
+                parts.push(v.as_str());
+            }
+        }
+        combined.push(parts.join(" "));
+    }
+    Ok(combined)
 }
 
 /// Read an existing `embedding` column. Returns None if absent or wrong shape.
@@ -142,10 +152,11 @@ fn read_existing_model_ids(df: &DataFrame) -> Vec<Option<String>> {
 /// `embedding_model_id` matches the current model.
 fn compute_embeddings(
     df: &DataFrame,
+    columns: &[&str],
     encoder: &StaticModel,
     model_id: &str,
 ) -> Result<(Vec<Vec<f32>>, usize), TopicError> {
-    let texts = build_combined_text(df)?;
+    let texts = build_combined_text(df, columns)?;
     let n = texts.len();
 
     let existing = read_existing_embeddings(df);
@@ -469,6 +480,7 @@ pub fn fit_topics(
     let encoder = shared_embedder(workspace_root)?;
     let model_id = POTION_BASE_32M_DIR.to_string();
     let artifact_dir = topics_artifact_dir(workspace_root, source_id, table_name);
+    let columns = super::required_columns(table_name);
 
     info!(
         "Fitting topics for source={} table={} (sanitized={}) k={}",
@@ -479,7 +491,7 @@ pub fn fit_topics(
     );
 
     // 1. Embed (reuse existing where model_id matches).
-    let (embeddings, embedded_count) = compute_embeddings(df, &encoder, &model_id)?;
+    let (embeddings, embedded_count) = compute_embeddings(df, columns, &encoder, &model_id)?;
     info!(
         "Computed {} embeddings ({} reused, {} fresh)",
         embeddings.len(),
@@ -487,7 +499,7 @@ pub fn fit_topics(
         embedded_count
     );
 
-    let texts = build_combined_text(df)?;
+    let texts = build_combined_text(df, columns)?;
 
     // 2. Fit TF-IDF (for top-term naming).
     let t_fit = std::time::Instant::now();
@@ -543,7 +555,10 @@ pub fn fit_topics(
     //      from the others, not just frequent within it)
     //    - names: a short single-line name combining the most-central title
     //      with the top distinctive terms. Used in CLI/legacy summaries.
-    let titles = read_string_column(df, "title");
+    // Use the first enrichable column as the "headline" source for sample
+    // titles (issues: title; posts: text). Falls back to "title" for safety.
+    let headline_col = columns.first().copied().unwrap_or("title");
+    let titles = read_string_column(df, headline_col);
     let mut sample_titles: Vec<Vec<String>> = Vec::with_capacity(k);
     for cluster_idx in 0..k {
         sample_titles.push(representative_titles(
@@ -683,8 +698,9 @@ pub fn enrich_with_topics(
     let encoder = shared_embedder(workspace_root)?;
     let model_id = POTION_BASE_32M_DIR.to_string();
     let artifact_dir = topics_artifact_dir(workspace_root, source_id, table_name);
+    let columns = super::required_columns(table_name);
 
-    let (embeddings, embedded_count) = compute_embeddings(df, &encoder, &model_id)?;
+    let (embeddings, embedded_count) = compute_embeddings(df, columns, &encoder, &model_id)?;
     info!(
         "Enriched {} rows ({} fresh embeddings) for {table_name}",
         embeddings.len(),
@@ -693,7 +709,7 @@ pub fn enrich_with_topics(
 
     // Recompute TF-IDF vectors per row only if a fitted TF-IDF artifact exists.
     let tfidf_artifact = TfIdfArtifact::load(&artifact_dir).ok();
-    let texts = build_combined_text(df)?;
+    let texts = build_combined_text(df, columns)?;
     let tfidf_vectors = tfidf_artifact
         .as_ref()
         .map(|a| a.fitted.transform_batch(&texts));
