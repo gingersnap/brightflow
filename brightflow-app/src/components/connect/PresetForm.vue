@@ -26,6 +26,29 @@ const emit = defineEmits<{
 
 const hints = computed<FieldHint[]>(() => hintsFor(props.connectorName));
 
+function isHintVisible(hint: FieldHint): boolean {
+  if (!hint.showWhen) {
+    return true;
+  }
+  return hintValues.value[hint.showWhen.key] === hint.showWhen.equals;
+}
+
+// Connectors that use only public APIs and don't need a secret credential.
+const TOKENLESS_CONNECTORS = new Set<string>();
+const requiresToken = computed(() => !TOKENLESS_CONNECTORS.has(props.connectorName));
+
+// Credential field copy. Bluesky authenticates with an App Password; everything
+// Else uses a plain API token.
+const tokenField = computed(() =>
+  props.connectorName === 'bluesky'
+    ? {
+        label: 'App password',
+        placeholder: 'xxxx-xxxx-xxxx-xxxx',
+        help: 'Create one in Bluesky: Settings → Privacy and Security → App Passwords. Use the app password, not your main password.',
+      }
+    : { label: 'API token', placeholder: 'Paste API token...', help: '' },
+);
+
 const name = ref('');
 const token = ref('');
 const showToken = ref(false);
@@ -40,7 +63,7 @@ function initFromProps(): void {
   const hintKeys = new Set(hints.value.map((h) => h.key));
   const nextHintValues: Record<string, string> = {};
   for (const hint of hints.value) {
-    nextHintValues[hint.key] = initial?.config[hint.key] ?? '';
+    nextHintValues[hint.key] = initial?.config[hint.key] ?? hint.default ?? '';
   }
   hintValues.value = nextHintValues;
 
@@ -75,9 +98,11 @@ function removeConfigEntry(index: number): void {
 function handleSubmit(): void {
   const config: Record<string, string> = {};
   for (const hint of hints.value) {
-    const v = hintValues.value[hint.key] ?? '';
-    if (v.trim()) {
-      config[hint.key] = v;
+    if (isHintVisible(hint)) {
+      const v = hintValues.value[hint.key] ?? '';
+      if (v.trim()) {
+        config[hint.key] = v;
+      }
     }
   }
   for (const entry of extraEntries.value) {
@@ -110,8 +135,8 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
     </div>
 
     <!-- Token (create mode only; edit mode manages token separately) -->
-    <div v-if="mode === 'create'">
-      <label class="mb-1 block text-sm font-medium text-muted">API Token</label>
+    <div v-if="mode === 'create' && requiresToken">
+      <label class="mb-1 block text-sm font-medium text-muted">{{ tokenField.label }}</label>
       <div class="relative">
         <input
           v-model="token"
@@ -120,7 +145,7 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
           autocomplete="new-password"
           data-1p-ignore
           data-lpignore="true"
-          placeholder="Paste API token..."
+          :placeholder="tokenField.placeholder"
           class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 pr-8 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
         />
         <button
@@ -133,17 +158,27 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
           <Eye v-else class="h-4 w-4" />
         </button>
       </div>
+      <p v-if="tokenField.help" class="mt-1 text-sm text-muted">{{ tokenField.help }}</p>
     </div>
 
     <!-- Typed hint fields -->
-    <div v-for="hint in hints" :key="hint.key">
+    <div v-for="hint in hints" v-show="isHintVisible(hint)" :key="hint.key">
       <label class="mb-1 block text-sm font-medium text-muted">{{ hint.label }}</label>
+      <select
+        v-if="hint.options"
+        v-model="hintValues[hint.key]"
+        class="w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
+      >
+        <option v-for="opt in hint.options" :key="opt" :value="opt">{{ opt }}</option>
+      </select>
       <input
+        v-else
         v-model="hintValues[hint.key]"
         type="text"
         :placeholder="hint.placeholder ?? ''"
         class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
       />
+      <p v-if="hint.helperText" class="mt-1 text-sm text-muted">{{ hint.helperText }}</p>
     </div>
 
     <!-- Generic config key-value pairs -->

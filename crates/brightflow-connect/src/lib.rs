@@ -80,6 +80,7 @@ pub fn discover_connectors(custom_dir: Option<&Path>) -> Vec<AvailableConnector>
 static BUILTIN_CONNECTORS: LazyLock<HashMap<&str, &str>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     m.insert("github", include_str!("../connectors/github.lua"));
+    m.insert("bluesky", include_str!("../connectors/bluesky.lua"));
     m
 });
 
