@@ -2,20 +2,23 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::Utc;
-use model2vec_rs::model::StaticModel;
 use polars::prelude::*;
 use thiserror::Error;
 use tracing::info;
 
 use crate::embedding::{
-    embed_batch, sanitize_source_id, shared_embedder, topics_artifact_dir, EmbedderError,
-    EMBEDDING_DIM, POTION_BASE_32M_DIR,
+    get_backend, sanitize_source_id, topics_artifact_dir, EmbedderBackend, EmbedderError,
 };
-use crate::nlp::{kmeans_dense, FittedTfIdf, TfIdf, Tokenizer, TokenizerPreset};
+use crate::nlp::{
+    clean_for_embedding, default_min_cluster_size, effective_model_id, hdbscan_dense, kmeans_dense,
+    CleaningProfile, FittedTfIdf, TfIdf, Tokenizer, TokenizerPreset,
+};
 
 use super::artifacts::{
     ArtifactError, ArtifactMeta, ClusteringArtifact, LabelCentroidsArtifact, TfIdfArtifact,
+    ARTIFACT_VERSION,
 };
+use super::config::EnrichmentConfig;
 
 #[derive(Debug, Error)]
 pub enum TopicError {
@@ -31,6 +34,28 @@ pub enum TopicError {
     Nlp(String),
 }
 
+/// Options for a topics fit.
+#[derive(Debug, Clone)]
+pub struct FitOptions {
+    /// Number of k-means clusters.
+    pub num_clusters: usize,
+    /// Fit on this language only (primary subtag, e.g. "en"). Defaults to the
+    /// dominant language when the table has a language column.
+    pub language: Option<String>,
+    /// Clustering algorithm: "kmeans" (default) or "hdbscan".
+    pub algorithm: Option<String>,
+}
+
+impl Default for FitOptions {
+    fn default() -> Self {
+        Self {
+            num_clusters: DEFAULT_K,
+            language: None,
+            algorithm: None,
+        }
+    }
+}
+
 /// Output of a fit run.
 #[derive(Debug, Clone)]
 pub struct FitOutcome {
@@ -38,6 +63,10 @@ pub struct FitOutcome {
     pub cluster_names: Vec<String>,
     pub cluster_sizes: Vec<usize>,
     pub total_rows: usize,
+    /// Rows that passed cleaning + language gates and were embedded.
+    pub eligible_rows: usize,
+    /// Language the fit covers, when a language column was present.
+    pub language: Option<String>,
     pub has_labels: bool,
 }
 
@@ -59,6 +88,9 @@ const MIN_DF: f32 = 2.0;
 const MAX_DF: f32 = 0.5;
 const KMEANS_MAX_ITER: usize = 30;
 
+/// Column names probed for a per-row language code.
+const LANGUAGE_COLUMNS: &[&str] = &["lang", "language"];
+
 /// Build the English stopword set used during cluster-naming TF-IDF.
 fn english_stopwords() -> std::collections::HashSet<String> {
     let mut set: std::collections::HashSet<String> = stop_words::get(stop_words::LANGUAGE::English)
@@ -76,8 +108,7 @@ fn english_stopwords() -> std::collections::HashSet<String> {
 }
 
 /// Concatenate the configured text columns (space-separated) into a single
-/// string per row. Driven by `ENRICHABLE_TABLES` so each table type can declare
-/// its own text columns (e.g. issues → `title`+`body`, posts → `text`).
+/// raw string per row.
 fn build_combined_text(df: &DataFrame, columns: &[&str]) -> Result<Vec<String>, TopicError> {
     if columns.is_empty() {
         return Err(TopicError::MissingColumn(
@@ -113,8 +144,132 @@ fn build_combined_text(df: &DataFrame, columns: &[&str]) -> Result<Vec<String>, 
     Ok(combined)
 }
 
+/// Combined text per row, cleaned for embedding. `None` = row is ineligible
+/// (too thin after cleaning) and must not be embedded or clustered.
+fn build_clean_texts(
+    df: &DataFrame,
+    columns: &[&str],
+    profile: CleaningProfile,
+) -> Result<Vec<Option<String>>, TopicError> {
+    let raw = build_combined_text(df, columns)?;
+    Ok(raw
+        .iter()
+        .map(|t| clean_for_embedding(t, profile))
+        .collect())
+}
+
+// ─── Language facet ───────────────────────────────────────────────────────────
+
+/// Find the table's language column, if any.
+fn detect_language_column(df: &DataFrame) -> Option<String> {
+    LANGUAGE_COLUMNS
+        .iter()
+        .find(|c| {
+            df.column(c)
+                .is_ok_and(|col| col.as_materialized_series().str().is_ok())
+        })
+        .map(|c| (*c).to_string())
+}
+
+/// Normalize a raw language tag to its lowercase primary subtag
+/// ("en-US" → "en"). Empty/blank → None.
+fn normalize_lang(raw: &str) -> Option<String> {
+    let primary = raw.trim().split(['-', '_']).next()?.to_lowercase();
+    if primary.is_empty() {
+        None
+    } else {
+        Some(primary)
+    }
+}
+
+/// Per-language row counts, sorted descending.
+fn build_language_histogram(langs: &[Option<String>]) -> Vec<(String, usize)> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for l in langs.iter().flatten() {
+        *counts.entry(l.clone()).or_insert(0) += 1;
+    }
+    let mut hist: Vec<(String, usize)> = counts.into_iter().collect();
+    hist.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    hist
+}
+
+/// Normalized per-row language values for a column.
+fn read_language_values(df: &DataFrame, col: &str) -> Vec<Option<String>> {
+    read_string_column(df, col).map_or_else(
+        || vec![None; df.height()],
+        |values| {
+            values
+                .iter()
+                .map(|o| o.as_deref().and_then(normalize_lang))
+                .collect()
+        },
+    )
+}
+
+/// Resolved language facet for a fit: target language + histogram.
+struct LanguageFacet {
+    /// Target language (explicit request or dominant), when detectable.
+    target: Option<String>,
+    histogram: Vec<(String, usize)>,
+    /// Per-row normalized language, aligned with the DataFrame.
+    row_langs: Vec<Option<String>>,
+}
+
+fn resolve_language_facet(
+    df: &DataFrame,
+    configured_column: Option<&str>,
+    requested: Option<&str>,
+) -> LanguageFacet {
+    let configured = configured_column
+        .filter(|c| {
+            df.column(c)
+                .is_ok_and(|col| col.as_materialized_series().str().is_ok())
+        })
+        .map(str::to_string);
+    let Some(col) = configured.or_else(|| detect_language_column(df)) else {
+        return LanguageFacet {
+            target: None,
+            histogram: Vec::new(),
+            row_langs: Vec::new(),
+        };
+    };
+    let row_langs = read_language_values(df, &col);
+    let histogram = build_language_histogram(&row_langs);
+    let target = requested
+        .and_then(normalize_lang)
+        .or_else(|| histogram.first().map(|(l, _)| l.clone()));
+    LanguageFacet {
+        target,
+        histogram,
+        row_langs,
+    }
+}
+
+/// Blank out rows whose language differs from the target. Rows with no
+/// language tag are kept — they are most often untagged majority-language rows.
+fn apply_language_gate(cleaned: &mut [Option<String>], facet: &LanguageFacet) {
+    let Some(target) = &facet.target else {
+        return;
+    };
+    if facet.row_langs.is_empty() {
+        return;
+    }
+    for (c, lang) in cleaned.iter_mut().zip(facet.row_langs.iter()) {
+        if let Some(l) = lang {
+            if l != target {
+                *c = None;
+            }
+        }
+    }
+}
+
+// ─── Embeddings ───────────────────────────────────────────────────────────────
+
+/// Per-row optional embedding vectors, aligned with the DataFrame.
+type RowEmbeddings = Vec<Option<Vec<f32>>>;
+
 /// Read an existing `embedding` column. Returns None if absent or wrong shape.
-fn read_existing_embeddings(df: &DataFrame) -> Option<Vec<Option<Vec<f32>>>> {
+fn read_existing_embeddings(df: &DataFrame, dim: usize) -> Option<RowEmbeddings> {
     let col = df.column("embedding").ok()?;
     let list = col.as_materialized_series().list().ok()?;
     let mut out = Vec::with_capacity(list.len());
@@ -125,7 +280,7 @@ fn read_existing_embeddings(df: &DataFrame) -> Option<Vec<Option<Vec<f32>>>> {
             Some(s) => {
                 let ca = s.f32().ok()?;
                 let v: Vec<f32> = ca.into_no_null_iter().collect();
-                if v.len() != EMBEDDING_DIM {
+                if v.len() != dim {
                     return None;
                 }
                 out.push(Some(v));
@@ -148,71 +303,92 @@ fn read_existing_model_ids(df: &DataFrame) -> Vec<Option<String>> {
         .unwrap_or_else(|| vec![None; df.height()])
 }
 
-/// Compute embeddings for all rows. Reuses any existing embeddings whose
-/// `embedding_model_id` matches the current model.
+/// True when a vector is non-degenerate (finite, non-zero norm).
+fn is_valid_embedding(v: &[f32]) -> bool {
+    let mut norm_sq = 0.0_f32;
+    for x in v {
+        if !x.is_finite() {
+            return false;
+        }
+        norm_sq = x.mul_add(*x, norm_sq);
+    }
+    norm_sq > 1e-12
+}
+
+/// Compute embeddings for eligible rows only (`cleaned[i].is_some()`).
+/// Ineligible rows and failed embeds are `None` — never zero vectors, which
+/// used to cluster together as a fake "empty" topic.
+///
+/// Reuses existing row embeddings whose `embedding_model_id` matches the
+/// effective model id (base model + cleaning profile version).
 fn compute_embeddings(
     df: &DataFrame,
-    columns: &[&str],
-    encoder: &StaticModel,
+    cleaned: &[Option<String>],
+    backend: &dyn EmbedderBackend,
     model_id: &str,
-) -> Result<(Vec<Vec<f32>>, usize), TopicError> {
-    let texts = build_combined_text(df, columns)?;
-    let n = texts.len();
-
-    let existing = read_existing_embeddings(df);
+) -> Result<(RowEmbeddings, usize), TopicError> {
+    let n = cleaned.len();
+    let existing = read_existing_embeddings(df, backend.dim());
     let existing_ids = read_existing_model_ids(df);
 
-    // Determine which rows need re-embedding.
-    let mut to_embed_indices: Vec<usize> = Vec::new();
     let mut out: Vec<Option<Vec<f32>>> = vec![None; n];
+    let mut to_embed_indices: Vec<usize> = Vec::new();
 
-    if let Some(ex) = existing {
-        for (i, vec_opt) in ex.into_iter().enumerate() {
-            let id_matches = existing_ids
-                .get(i)
-                .and_then(|o| o.as_deref())
-                .is_some_and(|id| id == model_id);
-            if id_matches {
-                if let Some(v) = vec_opt {
-                    out[i] = Some(v);
-                    continue;
-                }
-            }
-            to_embed_indices.push(i);
+    for (i, text_opt) in cleaned.iter().enumerate() {
+        if text_opt.is_none() {
+            continue; // ineligible — stays None
         }
-    } else {
-        to_embed_indices = (0..n).collect();
+        let id_matches = existing_ids
+            .get(i)
+            .and_then(|o| o.as_deref())
+            .is_some_and(|id| id == model_id);
+        let reusable = id_matches
+            .then(|| {
+                existing
+                    .as_ref()
+                    .and_then(|ex| ex.get(i).cloned().flatten())
+            })
+            .flatten()
+            .filter(|v| is_valid_embedding(v));
+        match reusable {
+            Some(v) => out[i] = Some(v),
+            None => to_embed_indices.push(i),
+        }
     }
 
     let embedded_count = to_embed_indices.len();
     if !to_embed_indices.is_empty() {
-        let to_embed: Vec<String> = to_embed_indices.iter().map(|&i| texts[i].clone()).collect();
-        let new_embs = embed_batch(encoder, &to_embed)?;
+        let to_embed: Vec<String> = to_embed_indices
+            .iter()
+            .filter_map(|&i| cleaned[i].clone())
+            .collect();
+        let new_embs = backend.embed(&to_embed)?;
         for (idx_in_batch, &row_idx) in to_embed_indices.iter().enumerate() {
             if let Some(emb) = new_embs.get(idx_in_batch) {
-                out[row_idx] = Some(emb.clone());
+                if is_valid_embedding(emb) {
+                    out[row_idx] = Some(emb.clone());
+                }
             }
         }
     }
 
-    let final_vecs: Vec<Vec<f32>> = out
-        .into_iter()
-        .map(|o| o.unwrap_or_else(|| vec![0.0; EMBEDDING_DIM]))
-        .collect();
-
-    Ok((final_vecs, embedded_count))
+    Ok((out, embedded_count))
 }
 
-/// Build a `List<Float32>` series from per-row embeddings.
-fn embeddings_to_series(name: &str, embeddings: &[Vec<f32>]) -> Series {
+/// Build a `List<Float32>` series from per-row optional embeddings.
+/// Ineligible rows become null entries.
+fn embeddings_to_series(name: &str, embeddings: &[Option<Vec<f32>>], dim: usize) -> Series {
     let mut builder = ListPrimitiveChunkedBuilder::<Float32Type>::new(
         name.into(),
         embeddings.len(),
-        embeddings.len() * EMBEDDING_DIM,
+        embeddings.len() * dim,
         DataType::Float32,
     );
     for emb in embeddings {
-        builder.append_slice(emb);
+        match emb {
+            Some(e) => builder.append_slice(e),
+            None => builder.append_null(),
+        }
     }
     builder.finish().into_series()
 }
@@ -234,15 +410,16 @@ fn drop_enrichment_columns(df: &mut DataFrame) {
 
 fn write_embedding_columns(
     df: &mut DataFrame,
-    embeddings: &[Vec<f32>],
+    embeddings: &[Option<Vec<f32>>],
     model_id: &str,
+    dim: usize,
 ) -> Result<(), TopicError> {
-    let emb_series = embeddings_to_series("embedding", embeddings);
-    let id_series = StringChunked::new(
-        "embedding_model_id".into(),
-        vec![Some(model_id); df.height()],
-    )
-    .into_series();
+    let emb_series = embeddings_to_series("embedding", embeddings, dim);
+    let ids: Vec<Option<&str>> = embeddings
+        .iter()
+        .map(|o| o.as_ref().map(|_| model_id))
+        .collect();
+    let id_series = StringChunked::new("embedding_model_id".into(), ids).into_series();
     df.with_column(emb_series)?;
     df.with_column(id_series)?;
     Ok(())
@@ -251,7 +428,8 @@ fn write_embedding_columns(
 /// Build dense label centroids by averaging row embeddings per label.
 fn build_dense_label_centroids(
     df: &DataFrame,
-    embeddings: &[Vec<f32>],
+    embeddings: &[Option<Vec<f32>>],
+    dim: usize,
 ) -> HashMap<String, Vec<f32>> {
     let Some(label_ca) = df
         .column("label_names")
@@ -268,7 +446,7 @@ fn build_dense_label_centroids(
             Some(s) if !s.is_empty() => s,
             _ => continue,
         };
-        let Some(emb) = embeddings.get(i) else {
+        let Some(Some(emb)) = embeddings.get(i) else {
             continue;
         };
         for label in labels.split(',') {
@@ -278,7 +456,7 @@ fn build_dense_label_centroids(
             }
             let entry = accum
                 .entry(label.to_string())
-                .or_insert_with(|| (vec![0.0_f32; EMBEDDING_DIM], 0));
+                .or_insert_with(|| (vec![0.0_f32; dim], 0));
             for (j, val) in emb.iter().enumerate() {
                 entry.0[j] += val;
             }
@@ -341,28 +519,28 @@ fn truncate_title(s: &str) -> String {
 /// similarity to the centroid. Skips trivial titles (".", "---", very short).
 fn representative_titles(
     cluster_idx: usize,
-    cluster_result: &crate::nlp::DenseClusterResult,
-    embeddings: &[Vec<f32>],
+    assignments: &[Option<usize>],
+    centroids: &[Vec<f32>],
+    embeddings: &[Option<Vec<f32>>],
     titles: Option<&[Option<String>]>,
     n: usize,
 ) -> Vec<String> {
     let Some(titles) = titles else {
         return Vec::new();
     };
-    let Some(centroid) = cluster_result.centroids.get(cluster_idx) else {
+    let Some(centroid) = centroids.get(cluster_idx) else {
         return Vec::new();
     };
     if centroid.iter().all(|&v| v == 0.0) {
         return Vec::new();
     }
 
-    let mut candidates: Vec<(usize, f32)> = cluster_result
-        .assignments
+    let mut candidates: Vec<(usize, f32)> = assignments
         .iter()
         .enumerate()
         .filter_map(|(i, &c)| {
-            if c == cluster_idx {
-                let v = embeddings.get(i)?;
+            if c == Some(cluster_idx) {
+                let v = embeddings.get(i)?.as_ref()?;
                 Some((i, dot(v, centroid)))
             } else {
                 None
@@ -398,7 +576,7 @@ fn representative_titles(
 /// of plain within-cluster averaging.
 fn build_ctfidf_top_terms(
     k: usize,
-    cluster_result: &crate::nlp::DenseClusterResult,
+    assignments: &[Option<usize>],
     tfidf_vectors: &[crate::nlp::SparseVec],
     fitted: &FittedTfIdf,
     sizes: &[usize],
@@ -413,7 +591,10 @@ fn build_ctfidf_top_terms(
     let mut cluster_sums: Vec<Vec<f32>> = (0..k).map(|_| vec![0.0_f32; vocab_size]).collect();
     let mut total_sum: Vec<f32> = vec![0.0_f32; vocab_size];
 
-    for (row_idx, &cluster) in cluster_result.assignments.iter().enumerate() {
+    for (row_idx, assigned) in assignments.iter().enumerate() {
+        let Some(cluster) = *assigned else {
+            continue;
+        };
         if cluster >= k {
             continue;
         }
@@ -468,43 +649,73 @@ fn build_ctfidf_top_terms(
     out
 }
 
-/// Fit the full pipeline: TF-IDF + dense k-means + label centroids.
+/// Fit the full pipeline: clean → embed → TF-IDF → dense k-means → label centroids.
 /// Saves artifacts to disk and returns an enriched DataFrame.
 pub fn fit_topics(
     workspace_root: &Path,
     source_id: &str,
     table_name: &str,
     df: &DataFrame,
-    num_clusters: usize,
+    config: &EnrichmentConfig,
+    options: &FitOptions,
 ) -> Result<(DataFrame, FitOutcome), TopicError> {
-    let encoder = shared_embedder(workspace_root)?;
-    let model_id = POTION_BASE_32M_DIR.to_string();
+    let backend = get_backend(workspace_root, config.embedder)?;
+    let profile = config.cleaning_profile;
+    let model_id = effective_model_id(backend.model_id(), profile);
     let artifact_dir = topics_artifact_dir(workspace_root, source_id, table_name);
-    let columns = super::required_columns(table_name);
+    let columns: Vec<&str> = config.text_columns.iter().map(String::as_str).collect();
+    let columns = columns.as_slice();
 
     info!(
-        "Fitting topics for source={} table={} (sanitized={}) k={}",
+        "Fitting topics for source={} table={} (sanitized={}) k={} profile={}",
         source_id,
         table_name,
         sanitize_source_id(source_id),
-        num_clusters
+        options.num_clusters,
+        profile.id()
     );
 
-    // 1. Embed (reuse existing where model_id matches).
-    let (embeddings, embedded_count) = compute_embeddings(df, columns, &encoder, &model_id)?;
+    // 1. Clean + language gate. `None` rows are ineligible.
+    let facet = resolve_language_facet(
+        df,
+        config.language_column.as_deref(),
+        options.language.as_deref(),
+    );
+    let mut cleaned = build_clean_texts(df, columns, profile)?;
+    apply_language_gate(&mut cleaned, &facet);
+
+    // 2. Embed eligible rows (reuse existing where effective model id matches).
+    let (embeddings, embedded_count) =
+        compute_embeddings(df, &cleaned, backend.as_ref(), &model_id)?;
+    let eligible: Vec<usize> = embeddings
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| e.as_ref().map(|_| i))
+        .collect();
     info!(
-        "Computed {} embeddings ({} reused, {} fresh)",
-        embeddings.len(),
-        embeddings.len() - embedded_count,
-        embedded_count
+        "Embeddings: {} eligible of {} rows ({} fresh, {} reused); language={:?}",
+        eligible.len(),
+        df.height(),
+        embedded_count,
+        eligible.len().saturating_sub(embedded_count),
+        facet.target
     );
+    if eligible.is_empty() {
+        return Err(TopicError::Nlp(
+            "no rows eligible for embedding after cleaning/language gates".to_string(),
+        ));
+    }
 
-    let texts = build_combined_text(df, columns)?;
+    // Cleaned text per row for TF-IDF (empty for ineligible → empty vectors).
+    let texts_full: Vec<String> = cleaned
+        .iter()
+        .map(|o| o.clone().unwrap_or_default())
+        .collect();
+    let texts_eligible: Vec<String> = eligible.iter().map(|&i| texts_full[i].clone()).collect();
 
-    // 2. Fit TF-IDF (for top-term naming).
+    // 3. Fit TF-IDF on eligible cleaned text (for top-term naming).
     let t_fit = std::time::Instant::now();
     let stopwords = english_stopwords();
-    info!("Loaded {} stopwords for TF-IDF", stopwords.len());
     let custom_tokenizer = Tokenizer::builder()
         .lowercase(true)
         .min_token_len(2)
@@ -519,7 +730,7 @@ pub fn fit_topics(
         .min_df(MIN_DF)
         .max_df(MAX_DF)
         .sublinear_tf(true)
-        .fit(&texts)
+        .fit(&texts_eligible)
         .map_err(|e| TopicError::Nlp(e.to_string()))?;
     info!(
         "Fitted TF-IDF: {} vocab terms in {:?}",
@@ -527,43 +738,69 @@ pub fn fit_topics(
         t_fit.elapsed()
     );
     let t_transform = std::time::Instant::now();
-    let tfidf_vectors = fitted_tfidf.transform_batch(&texts);
+    let tfidf_vectors = fitted_tfidf.transform_batch(&texts_full);
     info!("TF-IDF transform_batch in {:?}", t_transform.elapsed());
 
-    // 3. Cluster in embedding space.
-    let k = num_clusters.max(1).min(embeddings.len().max(1));
-    let t_kmeans = std::time::Instant::now();
-    let cluster_result = kmeans_dense(&embeddings, k, KMEANS_MAX_ITER);
+    // 4. Cluster eligible rows in embedding space.
+    let compact: Vec<Vec<f32>> = eligible
+        .iter()
+        .filter_map(|&i| embeddings[i].clone())
+        .collect();
+    let algorithm = options.algorithm.as_deref().unwrap_or("kmeans").to_string();
+    let t_cluster = std::time::Instant::now();
+    let (cluster_result, effective_min_cluster) = if algorithm == "hdbscan" {
+        let mcs = config
+            .min_cluster_size
+            .unwrap_or_else(|| default_min_cluster_size(compact.len()));
+        (hdbscan_dense(&compact, mcs), Some(mcs))
+    } else {
+        let k = options.num_clusters.max(1).min(compact.len());
+        (kmeans_dense(&compact, k, KMEANS_MAX_ITER), None)
+    };
+    let k = cluster_result.centroids.len();
+    if k == 0 {
+        return Err(TopicError::Nlp(
+            "clustering produced no clusters (all rows classified as noise)".to_string(),
+        ));
+    }
     info!(
-        "k-means k={k} converged in {} iterations, {:?}",
+        "{algorithm} produced k={k} clusters in {} iterations (inertia {:.2}), {:?}",
         cluster_result.iterations,
-        t_kmeans.elapsed()
+        cluster_result.inertia,
+        t_cluster.elapsed()
     );
 
-    // 4. Cluster sizes from kmeans.
+    // Map compacted assignments back to full-row space.
+    let mut assignments: Vec<Option<usize>> = vec![None; df.height()];
+    for (compact_idx, &row_idx) in eligible.iter().enumerate() {
+        assignments[row_idx] = cluster_result
+            .assignments
+            .get(compact_idx)
+            .copied()
+            .flatten();
+    }
+
+    // 5. Cluster sizes (assigned members only).
     let mut cluster_sizes: Vec<usize> = vec![0; k];
-    for &assignment in &cluster_result.assignments {
-        if assignment < k {
-            cluster_sizes[assignment] += 1;
+    for assigned in assignments.iter().flatten() {
+        if *assigned < k {
+            cluster_sizes[*assigned] += 1;
         }
     }
-    info!("Cluster sizes (kmeans): {:?}", cluster_sizes);
+    info!("Cluster sizes (kmeans, post-trim): {:?}", cluster_sizes);
 
-    // 5. Per-cluster naming:
-    //    - sample_titles: 3 representative doc titles (closest to centroid)
-    //    - top_terms: c-TF-IDF distinctive terms (distinguish this cluster
-    //      from the others, not just frequent within it)
-    //    - names: a short single-line name combining the most-central title
-    //      with the top distinctive terms. Used in CLI/legacy summaries.
-    // Use the first enrichable column as the "headline" source for sample
-    // titles (issues: title; posts: text). Falls back to "title" for safety.
+    // 6. Per-cluster naming:
+    //    - sample_titles: representative doc titles (closest to centroid)
+    //    - top_terms: c-TF-IDF distinctive terms
+    //    - names: short single-line name combining both.
     let headline_col = columns.first().copied().unwrap_or("title");
     let titles = read_string_column(df, headline_col);
     let mut sample_titles: Vec<Vec<String>> = Vec::with_capacity(k);
     for cluster_idx in 0..k {
         sample_titles.push(representative_titles(
             cluster_idx,
-            &cluster_result,
+            &assignments,
+            &cluster_result.centroids,
             &embeddings,
             titles.as_deref(),
             SAMPLE_TITLES_PER_CLUSTER,
@@ -571,7 +808,7 @@ pub fn fit_topics(
     }
     let top_terms = build_ctfidf_top_terms(
         k,
-        &cluster_result,
+        &assignments,
         &tfidf_vectors,
         &fitted_tfidf,
         &cluster_sizes,
@@ -595,9 +832,9 @@ pub fn fit_topics(
         })
         .collect();
 
-    // 5. Build dense label centroids.
+    // 7. Build dense label centroids.
     let t_labels = std::time::Instant::now();
-    let label_centroids = build_dense_label_centroids(df, &embeddings);
+    let label_centroids = build_dense_label_centroids(df, &embeddings, backend.dim());
     let has_labels = !label_centroids.is_empty();
     info!(
         "Built {} label centroids in {:?}",
@@ -605,7 +842,7 @@ pub fn fit_topics(
         t_labels.elapsed()
     );
 
-    // 6. Persist artifacts.
+    // 8. Persist artifacts.
     std::fs::create_dir_all(&artifact_dir).map_err(|e| ArtifactError::Io {
         path: artifact_dir.display().to_string(),
         message: e.to_string(),
@@ -625,6 +862,14 @@ pub fn fit_topics(
         embedding_model_id: model_id.clone(),
         k,
         fitted_at: Utc::now().timestamp(),
+        assign_thresholds: cluster_result.assign_thresholds,
+        dim: backend.dim(),
+        language: facet.target.clone(),
+        language_histogram: facet.histogram.clone(),
+        artifact_version: ARTIFACT_VERSION,
+        algorithm: algorithm.clone(),
+        min_cluster_size: effective_min_cluster,
+        pca_dims: (algorithm == "hdbscan").then_some(12),
     };
     clustering.save(&artifact_dir)?;
 
@@ -643,15 +888,20 @@ pub fn fit_topics(
         fitted_at: clustering.fitted_at,
         total_rows,
         has_labels,
+        language: facet.target.clone(),
+        artifact_version: ARTIFACT_VERSION,
+        algorithm: algorithm.clone(),
+        min_cluster_size: effective_min_cluster,
+        pca_dims: (algorithm == "hdbscan").then_some(12),
     };
     meta.save(&artifact_dir)?;
     info!("Saved artifacts to {}", artifact_dir.display());
 
-    // 7. Build enriched DataFrame.
+    // 9. Build enriched DataFrame.
     let t_enrich = std::time::Instant::now();
     let mut work = df.clone();
     drop_enrichment_columns(&mut work);
-    write_embedding_columns(&mut work, &embeddings, &model_id)?;
+    write_embedding_columns(&mut work, &embeddings, &model_id, backend.dim())?;
 
     apply_topics(
         &mut work,
@@ -679,6 +929,8 @@ pub fn fit_topics(
             cluster_names,
             cluster_sizes,
             total_rows,
+            eligible_rows: eligible.len(),
+            language: facet.target,
             has_labels,
         },
     ))
@@ -688,19 +940,39 @@ pub fn fit_topics(
 ///
 /// Applies whatever artifacts exist on disk to the DataFrame. Always writes
 /// `embedding` and `embedding_model_id`; topic columns are written only when
-/// fitted artifacts are present.
+/// fitted artifacts of the current version and model id are present.
 pub fn enrich_with_topics(
     workspace_root: &Path,
     source_id: &str,
     table_name: &str,
     df: &DataFrame,
+    config: &EnrichmentConfig,
 ) -> Result<DataFrame, TopicError> {
-    let encoder = shared_embedder(workspace_root)?;
-    let model_id = POTION_BASE_32M_DIR.to_string();
+    let backend = get_backend(workspace_root, config.embedder)?;
+    let profile = config.cleaning_profile;
+    let model_id = effective_model_id(backend.model_id(), profile);
     let artifact_dir = topics_artifact_dir(workspace_root, source_id, table_name);
-    let columns = super::required_columns(table_name);
+    let columns: Vec<&str> = config.text_columns.iter().map(String::as_str).collect();
+    let columns = columns.as_slice();
 
-    let (embeddings, embedded_count) = compute_embeddings(df, columns, &encoder, &model_id)?;
+    // Apply the fitted language gate so newly synced rows in other languages
+    // stay unassigned, matching fit-time behavior.
+    let clustering = ClusteringArtifact::load(&artifact_dir)
+        .ok()
+        .filter(|a| a.embedding_model_id == model_id && a.artifact_version == ARTIFACT_VERSION);
+
+    let facet = resolve_language_facet(
+        df,
+        config.language_column.as_deref(),
+        clustering.as_ref().and_then(|c| c.language.as_deref()),
+    );
+    let mut cleaned = build_clean_texts(df, columns, profile)?;
+    if clustering.is_some() {
+        apply_language_gate(&mut cleaned, &facet);
+    }
+
+    let (embeddings, embedded_count) =
+        compute_embeddings(df, &cleaned, backend.as_ref(), &model_id)?;
     info!(
         "Enriched {} rows ({} fresh embeddings) for {table_name}",
         embeddings.len(),
@@ -708,15 +980,17 @@ pub fn enrich_with_topics(
     );
 
     // Recompute TF-IDF vectors per row only if a fitted TF-IDF artifact exists.
-    let tfidf_artifact = TfIdfArtifact::load(&artifact_dir).ok();
-    let texts = build_combined_text(df, columns)?;
-    let tfidf_vectors = tfidf_artifact
-        .as_ref()
-        .map(|a| a.fitted.transform_batch(&texts));
-
-    let clustering = ClusteringArtifact::load(&artifact_dir)
+    let tfidf_artifact = TfIdfArtifact::load(&artifact_dir)
         .ok()
         .filter(|a| a.embedding_model_id == model_id);
+    let texts_full: Vec<String> = cleaned
+        .iter()
+        .map(|o| o.clone().unwrap_or_default())
+        .collect();
+    let tfidf_vectors = tfidf_artifact
+        .as_ref()
+        .map(|a| a.fitted.transform_batch(&texts_full));
+
     let labels = LabelCentroidsArtifact::load(&artifact_dir)
         .ok()
         .filter(|a| a.embedding_model_id == model_id)
@@ -724,7 +998,7 @@ pub fn enrich_with_topics(
 
     let mut work = df.clone();
     drop_enrichment_columns(&mut work);
-    write_embedding_columns(&mut work, &embeddings, &model_id)?;
+    write_embedding_columns(&mut work, &embeddings, &model_id, backend.dim())?;
 
     if let (Some(t_artifact), Some(t_vectors)) = (tfidf_artifact.as_ref(), tfidf_vectors.as_ref()) {
         apply_topics(
@@ -741,9 +1015,14 @@ pub fn enrich_with_topics(
 }
 
 /// Apply enrichment columns: topic_terms, topic_cluster*, predicted_label, confidence.
+///
+/// Rows without an embedding get null topic columns. Cluster assignment is
+/// gated by the fitted per-cluster similarity thresholds — rows that don't
+/// genuinely fit any cluster stay unassigned instead of being forced into
+/// the least-bad one.
 fn apply_topics(
     df: &mut DataFrame,
-    embeddings: &[Vec<f32>],
+    embeddings: &[Option<Vec<f32>>],
     tfidf_vectors: &[crate::nlp::SparseVec],
     fitted: &FittedTfIdf,
     clustering: Option<&ClusteringArtifact>,
@@ -772,7 +1051,12 @@ fn apply_topics(
     if let Some(c) = clustering {
         let mut cluster_ids: Vec<Option<i32>> = Vec::with_capacity(n);
         let mut cluster_names: Vec<Option<String>> = Vec::with_capacity(n);
-        for emb in embeddings {
+        for emb_opt in embeddings {
+            let Some(emb) = emb_opt else {
+                cluster_ids.push(None);
+                cluster_names.push(None);
+                continue;
+            };
             if c.centroids.is_empty() {
                 cluster_ids.push(None);
                 cluster_names.push(None);
@@ -787,8 +1071,18 @@ fn apply_topics(
                     best_id = i;
                 }
             }
-            cluster_ids.push(Some(i32::try_from(best_id).unwrap_or(0)));
-            cluster_names.push(c.names.get(best_id).cloned());
+            let threshold = c
+                .assign_thresholds
+                .get(best_id)
+                .copied()
+                .unwrap_or(f32::NEG_INFINITY);
+            if best_sim < threshold {
+                cluster_ids.push(None);
+                cluster_names.push(None);
+            } else {
+                cluster_ids.push(Some(i32::try_from(best_id).unwrap_or(0)));
+                cluster_names.push(c.names.get(best_id).cloned());
+            }
         }
         df.with_column(Int32Chunked::new("topic_cluster_id".into(), cluster_ids).into_series())?;
         df.with_column(StringChunked::new("topic_cluster".into(), cluster_names).into_series())?;
@@ -798,7 +1092,12 @@ fn apply_topics(
     if let Some(centroids) = label_centroids {
         let mut labels: Vec<Option<String>> = Vec::with_capacity(n);
         let mut scores: Vec<Option<f32>> = Vec::with_capacity(n);
-        for emb in embeddings {
+        for emb_opt in embeddings {
+            let Some(emb) = emb_opt else {
+                labels.push(None);
+                scores.push(None);
+                continue;
+            };
             if centroids.is_empty() {
                 labels.push(None);
                 scores.push(None);
@@ -821,4 +1120,58 @@ fn apply_topics(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_lang_extracts_primary_subtag() {
+        assert_eq!(normalize_lang("en-US"), Some("en".to_string()));
+        assert_eq!(normalize_lang("PT_br"), Some("pt".to_string()));
+        assert_eq!(normalize_lang("ja"), Some("ja".to_string()));
+        assert_eq!(normalize_lang("  "), None);
+        assert_eq!(normalize_lang(""), None);
+    }
+
+    #[test]
+    fn language_histogram_sorted_desc() {
+        let langs = vec![
+            Some("en".to_string()),
+            Some("en".to_string()),
+            Some("ja".to_string()),
+            None,
+            Some("en".to_string()),
+        ];
+        let hist = build_language_histogram(&langs);
+        assert_eq!(hist[0], ("en".to_string(), 3));
+        assert_eq!(hist[1], ("ja".to_string(), 1));
+    }
+
+    #[test]
+    fn language_gate_blanks_other_languages_keeps_untagged() {
+        let facet = LanguageFacet {
+            target: Some("en".to_string()),
+            histogram: Vec::new(),
+            row_langs: vec![Some("en".to_string()), Some("ja".to_string()), None],
+        };
+        let mut cleaned = vec![
+            Some("hello world one".to_string()),
+            Some("こんにちは世界です".to_string()),
+            Some("untagged text row".to_string()),
+        ];
+        apply_language_gate(&mut cleaned, &facet);
+        assert!(cleaned[0].is_some());
+        assert!(cleaned[1].is_none(), "non-dominant language must be gated");
+        assert!(cleaned[2].is_some(), "untagged rows are kept");
+    }
+
+    #[test]
+    fn invalid_embeddings_rejected() {
+        assert!(!is_valid_embedding(&[0.0, 0.0, 0.0]));
+        assert!(!is_valid_embedding(&[f32::NAN, 1.0]));
+        assert!(is_valid_embedding(&[0.1, 0.2]));
+    }
 }

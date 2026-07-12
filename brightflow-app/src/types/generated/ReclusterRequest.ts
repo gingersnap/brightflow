@@ -3,4 +3,21 @@
 /**
  * Body for `POST …/topics/recluster`.
  */
-export type ReclusterRequest = { k?: number, };
+export type ReclusterRequest = { k?: number, 
+/**
+ * Fit on this language (primary subtag, e.g. "ja") instead of the
+ * dominant one.
+ */
+language?: string, 
+/**
+ * Embedder id override for this fit (only `"potion-base-32M"` today).
+ */
+embedder?: string, 
+/**
+ * Minimum cluster size (used by density clustering; advisory for k-means).
+ */
+minClusterSize?: number, 
+/**
+ * Clustering algorithm: "kmeans" (default) or "hdbscan".
+ */
+algorithm?: string, };

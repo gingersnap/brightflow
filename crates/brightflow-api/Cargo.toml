@@ -12,6 +12,7 @@ brightflow-core = { path = "../brightflow-core" }
 brightflow-store = { path = "../brightflow-store" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-engine = { path = "../brightflow-engine" }
+brightflow-llm = { path = "../brightflow-llm" }
 brightflow-scheduler = { path = "../brightflow-scheduler" }
 
 # Web framework
@@ -37,6 +38,7 @@ polars = { workspace = true }
 
 # Concurrency
 dashmap = "6"
+schemars = "1"
 
 # Ingest dependencies
 blake3 = "1"

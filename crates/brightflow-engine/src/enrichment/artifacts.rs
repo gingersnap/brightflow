@@ -30,6 +30,12 @@ pub struct TfIdfArtifact {
     pub embedding_model_id: String,
 }
 
+/// Current on-disk format version for fitted artifacts.
+///
+/// Bump when the binary layout of `ClusteringArtifact` changes; readers treat
+/// version mismatches (and undecodable files) as "refit needed", not errors.
+pub const ARTIFACT_VERSION: u32 = 3;
+
 /// Dense k-means centroids in embedding space, plus human-readable cluster names.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusteringArtifact {
@@ -44,6 +50,30 @@ pub struct ClusteringArtifact {
     pub embedding_model_id: String,
     pub k: usize,
     pub fitted_at: i64,
+    /// Per-cluster minimum cosine similarity for assignment (from outlier trim).
+    #[serde(default)]
+    pub assign_thresholds: Vec<f32>,
+    /// Embedding dimensionality the centroids were fitted in.
+    #[serde(default)]
+    pub dim: usize,
+    /// Language this fit covers (primary subtag, e.g. "en"), when a language
+    /// column was present.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Distribution of languages seen at fit time: (language, row count).
+    #[serde(default)]
+    pub language_histogram: Vec<(String, usize)>,
+    #[serde(default)]
+    pub artifact_version: u32,
+    /// Clustering algorithm used: "kmeans" | "hdbscan".
+    #[serde(default)]
+    pub algorithm: String,
+    /// min_cluster_size used (hdbscan) — recorded for reproducibility.
+    #[serde(default)]
+    pub min_cluster_size: Option<usize>,
+    /// PCA dims used before density clustering, when applicable.
+    #[serde(default)]
+    pub pca_dims: Option<usize>,
 }
 
 /// Per-label centroid in embedding space; classify by nearest centroid.
@@ -61,6 +91,22 @@ pub struct ArtifactMeta {
     pub fitted_at: i64,
     pub total_rows: usize,
     pub has_labels: bool,
+    /// Language this fit covers (primary subtag), if a language column exists.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Format version of the sibling binary artifacts (serde-default 0 for
+    /// pre-versioning fits, which readers treat as stale).
+    #[serde(default)]
+    pub artifact_version: u32,
+    /// Clustering algorithm used: "kmeans" | "hdbscan".
+    #[serde(default)]
+    pub algorithm: String,
+    /// min_cluster_size used (hdbscan) — recorded for reproducibility.
+    #[serde(default)]
+    pub min_cluster_size: Option<usize>,
+    /// PCA dims used before density clustering, when applicable.
+    #[serde(default)]
+    pub pca_dims: Option<usize>,
 }
 
 const TFIDF_FILE: &str = "tfidf.bin";

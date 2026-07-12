@@ -13,8 +13,10 @@ pub struct EngineConfig {
     pub p_threshold: Option<f64>,
     #[ts(optional)]
     pub min_effect_size: Option<f64>,
+    /// Diversity-selected top-N roots returned (formerly `maxResults`)
     #[ts(optional)]
-    pub max_results: Option<usize>,
+    #[serde(alias = "maxResults")]
+    pub select_top: Option<usize>,
     #[ts(optional)]
     pub max_depth: Option<usize>,
 }

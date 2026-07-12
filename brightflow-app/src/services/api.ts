@@ -2,6 +2,15 @@
  * REST API client
  */
 import type {
+  Action,
+  ActionLogEntry,
+  ActionResponse,
+  AgentRunResponse,
+  EnrichmentSettingsResponse,
+  UpdateEnrichmentSettingsRequest,
+  LlmProviderResponse,
+  LlmTestResponse,
+  UpsertLlmProviderRequest,
   AvailableConnectorResponse,
   BreakdownRow,
   ClusterDetail,
@@ -368,4 +377,63 @@ export const topicsApi = {
       `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/topics/recluster`,
       body,
     ),
+  getEnrichment: (sourceId: string, table: string): Promise<EnrichmentSettingsResponse | null> =>
+    api.get<EnrichmentSettingsResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/enrichment`,
+    ),
+  updateEnrichment: (
+    sourceId: string,
+    table: string,
+    body: UpdateEnrichmentSettingsRequest,
+  ): Promise<EnrichmentSettingsResponse | null> =>
+    api.put<EnrichmentSettingsResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/enrichment`,
+      body,
+    ),
+};
+
+// Insight history (novelty memory) inspection + reset
+export const insightHistoryApi = {
+  reset: (sourceId: string, table: string): Promise<{ deleted: number } | null> =>
+    api.delete<{ deleted: number }>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/insights/history`,
+    ),
+};
+
+// First-class curation actions: one dispatch path for humans and agents
+export const actionsApi = {
+  dispatch: (action: Action, requestId: string): Promise<ActionResponse | null> =>
+    api.post<ActionResponse>('/api/actions', { action, requestId }),
+  feed: (limit = 100): Promise<ActionLogEntry[] | null> =>
+    api.get<ActionLogEntry[]>(`/api/actions?limit=${limit}`),
+  approve: (id: number): Promise<ActionResponse | null> =>
+    api.post<ActionResponse>(`/api/actions/${id}/approve`),
+  reject: (id: number): Promise<ActionResponse | null> =>
+    api.post<ActionResponse>(`/api/actions/${id}/reject`),
+  undo: (id: number): Promise<ActionResponse | null> =>
+    api.post<ActionResponse>(`/api/actions/${id}/undo`),
+};
+
+// LLM provider settings (optional, OpenAI-compatible endpoints)
+export const llmApi = {
+  listProviders: (): Promise<LlmProviderResponse[] | null> =>
+    api.get<LlmProviderResponse[]>('/api/llm/providers'),
+  upsertProvider: (body: UpsertLlmProviderRequest): Promise<LlmProviderResponse[] | null> =>
+    api.post<LlmProviderResponse[]>('/api/llm/providers', body),
+  deleteProvider: (id: number): Promise<LlmProviderResponse[] | null> =>
+    api.delete<LlmProviderResponse[]>(`/api/llm/providers/${id}`),
+  testProvider: (id: number): Promise<LlmTestResponse | null> =>
+    api.post<LlmTestResponse>(`/api/llm/providers/${id}/test`),
+};
+
+// Agent runs: LLM curation through the same action layer
+export const agentApi = {
+  start: (kind: string, sourceId: string, table: string): Promise<AgentRunResponse | null> =>
+    api.post<AgentRunResponse>('/api/agent/runs', { kind, sourceId, table }),
+  list: (limit = 50): Promise<AgentRunResponse[] | null> =>
+    api.get<AgentRunResponse[]>(`/api/agent/runs?limit=${limit}`),
+  get: (id: number): Promise<AgentRunResponse | null> =>
+    api.get<AgentRunResponse>(`/api/agent/runs/${id}`),
+  cancel: (id: number): Promise<AgentRunResponse | null> =>
+    api.post<AgentRunResponse>(`/api/agent/runs/${id}/cancel`),
 };

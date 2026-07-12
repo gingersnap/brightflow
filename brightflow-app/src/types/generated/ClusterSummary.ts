@@ -18,4 +18,9 @@ sampleTitles: Array<string>,
 /**
  * Top GitHub labels in this cluster with their share (0..=1).
  */
-topLabels: Array<LabelBucket>, };
+topLabels: Array<LabelBucket>, 
+/**
+ * True when `name` comes from curation (a rename or an assigned label)
+ * rather than auto-generated c-TF-IDF terms.
+ */
+curated: boolean, };

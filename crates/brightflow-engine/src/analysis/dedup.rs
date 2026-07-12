@@ -122,6 +122,14 @@ fn story_key(node: &AnalysisNode) -> Option<String> {
         | AnalysisType::DistributionShift { column, .. }
         | AnalysisType::ChangePoint { column, .. } => Some(column.clone()),
         AnalysisType::Segment { target_column, .. } => Some(target_column.clone()),
+        // Derived-series stories key on their full recipe: same dimension
+        // value can legitimately carry a rank story AND a dominance story.
+        AnalysisType::RankChange {
+            dimension, value, ..
+        } => Some(format!("rank:{dimension}={value}")),
+        AnalysisType::TopDominance {
+            dimension, value, ..
+        } => Some(format!("dominance:{dimension}={value}")),
         AnalysisType::Correlation { .. }
         | AnalysisType::OutlierCluster { .. }
         | AnalysisType::MembershipChange { .. } => None,

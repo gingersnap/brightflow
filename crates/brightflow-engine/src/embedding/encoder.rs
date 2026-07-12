@@ -8,9 +8,6 @@ use tracing::info;
 
 use super::paths::embedder_path;
 
-/// Output dimensionality of the bundled `potion-base-32M` model.
-pub const EMBEDDING_DIM: usize = 512;
-
 #[derive(Debug, Error)]
 pub enum EmbedderError {
     #[error("embedder model directory not found: {path}")]

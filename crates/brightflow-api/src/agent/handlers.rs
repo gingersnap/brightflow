@@ -1,0 +1,161 @@
+//! Agent run lifecycle endpoints.
+
+use axum::extract::{Path, Query, State};
+use axum::Json;
+use serde::Deserialize;
+
+use crate::agent::runner;
+use crate::agent::types::{AgentRunResponse, StartAgentRunRequest};
+use crate::shared::{AppError, AppResult};
+use crate::state::AppState;
+
+const VALID_KINDS: &[&str] = &[
+    "auto_label",
+    "propose_merges",
+    "narrate_insights",
+    "triage_insights",
+];
+
+fn now_epoch() -> i64 {
+    i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    )
+    .unwrap_or(0)
+}
+
+fn to_response(row: brightflow_store::AgentRunRow, actions: Vec<i64>) -> AgentRunResponse {
+    AgentRunResponse {
+        id: row.id,
+        kind: row.kind,
+        mode: row.mode,
+        scope: row.scope,
+        status: row.status,
+        detail: row.detail,
+        created_at: row.created_at,
+        finished_at: row.finished_at,
+        proposed_actions: actions,
+    }
+}
+
+/// `POST /api/agent/runs` — start a run. 409 when one is active for the scope.
+pub async fn start_run(
+    State(state): State<AppState>,
+    Json(req): Json<StartAgentRunRequest>,
+) -> AppResult<Json<AgentRunResponse>> {
+    if !VALID_KINDS.contains(&req.kind.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "unknown agent kind '{}'; valid: {}",
+            req.kind,
+            VALID_KINDS.join(", ")
+        )));
+    }
+    // Fail fast when no provider is configured.
+    crate::llm::default_client(&state).await?;
+
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let scope = format!("{}:{}:{}", req.kind, req.source_id, req.table);
+    if let Some(active) = store.db().active_agent_run_for_scope(&scope).await? {
+        return Err(AppError::Conflict(format!(
+            "agent run {} is already running for this scope",
+            active.id
+        )));
+    }
+    let row = store
+        .db()
+        .insert_agent_run(&req.kind, "propose", &scope, now_epoch())
+        .await?;
+    let run_id = row.id;
+
+    let task_state = state.clone();
+    let kind = req.kind.clone();
+    let source_id = req.source_id.clone();
+    let table = req.table.clone();
+    let handle = tokio::spawn(async move {
+        runner::execute_run(task_state, run_id, kind, source_id, table).await;
+    });
+    state.agent_runs.insert(run_id, handle.abort_handle());
+
+    Ok(Json(to_response(row, Vec::new())))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListQuery {
+    pub limit: Option<i64>,
+}
+
+/// `GET /api/agent/runs`
+pub async fn list_runs(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> AppResult<Json<Vec<AgentRunResponse>>> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let rows = store
+        .db()
+        .list_agent_runs(q.limit.unwrap_or(50).clamp(1, 200))
+        .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| to_response(r, Vec::new()))
+            .collect(),
+    ))
+}
+
+/// `GET /api/agent/runs/{id}` — run + the actions it proposed.
+pub async fn get_run(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<AgentRunResponse>> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let row = store
+        .db()
+        .get_agent_run(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
+    let actions = store
+        .db()
+        .list_actions_for_agent_run(id)
+        .await?
+        .into_iter()
+        .map(|a| a.id)
+        .collect();
+    Ok(Json(to_response(row, actions)))
+}
+
+/// `POST /api/agent/runs/{id}/cancel`
+pub async fn cancel_run(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<AgentRunResponse>> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let row = store
+        .db()
+        .get_agent_run(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
+    if row.status == "running" {
+        if let Some((_, handle)) = state.agent_runs.remove(&id) {
+            handle.abort();
+        }
+        store
+            .db()
+            .finish_agent_run(id, "cancelled", Some("cancelled by user"), now_epoch())
+            .await?;
+    }
+    let updated = store
+        .db()
+        .get_agent_run(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
+    Ok(Json(to_response(updated, Vec::new())))
+}

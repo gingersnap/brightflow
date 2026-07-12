@@ -9,4 +9,5 @@
 )]
 
 pub mod handlers;
+pub mod overlay;
 pub mod types;

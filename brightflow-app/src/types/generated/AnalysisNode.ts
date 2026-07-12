@@ -3,11 +3,17 @@ import type { AnalysisType } from "./AnalysisType";
 import type { FilterStep } from "./FilterStep";
 import type { NodeData } from "./NodeData";
 import type { NodeId } from "./NodeId";
+import type { ProvenanceStep } from "./ProvenanceStep";
 import type { ScoreBreakdown } from "./ScoreBreakdown";
 
-export type AnalysisNode = { id: NodeId, parentId: NodeId | null, analysis: AnalysisType, significance: number, 
+export type AnalysisNode = { id: NodeId, parentId: NodeId | null, analysis: AnalysisType, 
 /**
- * Calibrated component scores (significance × effect size × surprise) — exposed for UI explainer
+ * Final composite score — kept under the legacy name because the
+ * frontend sorts on it. Equal to `final_score(score_breakdown)`.
+ */
+significance: number, 
+/**
+ * Calibrated component scores — exposed for the UI explainer
  */
 scoreBreakdown: ScoreBreakdown, 
 /**
@@ -21,7 +27,29 @@ summary: string,
 /**
  * Technical summary with statistical notation
  */
-techSummary: string, children: Array<NodeId>, 
+techSummary: string, 
+/**
+ * Why this finding is interesting, in plain language
+ * ("affects 34% of rows; a stable series would show this <1% of the time")
+ */
+why: string, 
+/**
+ * How the underlying series was derived (measure → filters → derivations)
+ */
+provenance: Array<ProvenanceStep>, 
+/**
+ * Composition depth: 1 = bare aggregate, +1 per filter/derivation
+ */
+depth: number, 
+/**
+ * Stable story fingerprint (see `analysis::fingerprint`) — keys history,
+ * dismissals, and suppressions
+ */
+fingerprint: string, 
+/**
+ * 1-based position after diversity selection; None for non-root nodes
+ */
+rank?: number, children: Array<NodeId>, 
 /**
  * Optional payload of underlying data needed by per-type renderers
  */

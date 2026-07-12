@@ -3,11 +3,15 @@ import { computed } from 'vue';
 
 import type { TopicsOverview } from '@/types/generated';
 
+import EnrichmentSettingsPanel from './EnrichmentSettingsPanel.vue';
+
 const props = defineProps<{
   overview: TopicsOverview | null | undefined;
   isLoading: boolean;
   isReclustering: boolean;
   kInput: number | undefined;
+  sourceId: string;
+  table: string;
 }>();
 
 const emit = defineEmits<{
@@ -26,6 +30,14 @@ const fittedAt = computed(() => {
 const totalRows = computed(() => props.overview?.totalRows ?? 0);
 const k = computed(() => props.overview?.k ?? null);
 const modelId = computed(() => props.overview?.embeddingModelId ?? null);
+const unassignedRows = computed(() => props.overview?.unassignedRows ?? 0);
+const hiddenClusters = computed(() => props.overview?.hiddenClusters ?? 0);
+const language = computed(() => props.overview?.language ?? null);
+const otherLanguages = computed(() => {
+  const hist = props.overview?.languageHistogram ?? [];
+  const lang = language.value;
+  return hist.filter((b) => b.language !== lang).reduce((acc, b) => acc + b.count, 0);
+});
 
 function handleKInput(event: Event): void {
   const target = event.target as HTMLInputElement;
@@ -50,6 +62,17 @@ function handleKInput(event: Event): void {
           <span v-if="k != null">k = {{ k }}</span>
           <span v-if="fittedAt">·</span>
           <span v-if="fittedAt">fitted {{ fittedAt }}</span>
+          <span v-if="language">·</span>
+          <span v-if="language">
+            {{ language }}
+            <template v-if="otherLanguages > 0">
+              (+{{ otherLanguages.toLocaleString() }} rows in other languages)
+            </template>
+          </span>
+          <span v-if="unassignedRows > 0">·</span>
+          <span v-if="unassignedRows > 0"> {{ unassignedRows.toLocaleString() }} unassigned </span>
+          <span v-if="hiddenClusters > 0">·</span>
+          <span v-if="hiddenClusters > 0">{{ hiddenClusters }} small clusters hidden</span>
           <span v-if="modelId">·</span>
           <code v-if="modelId" class="text-xs">{{ modelId }}</code>
         </div>
@@ -58,6 +81,18 @@ function handleKInput(event: Event): void {
       </div>
 
       <div class="flex items-center gap-2">
+        <UPopover>
+          <UButton
+            size="md"
+            color="neutral"
+            variant="soft"
+            icon="i-lucide-settings-2"
+            aria-label="Enrichment settings"
+          />
+          <template #content>
+            <EnrichmentSettingsPanel :source-id="sourceId" :table="table" />
+          </template>
+        </UPopover>
         <UInput
           type="number"
           placeholder="k = 10"

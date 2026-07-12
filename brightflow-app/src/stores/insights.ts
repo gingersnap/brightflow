@@ -74,7 +74,19 @@ export const useInsightsStore = defineStore('insights', () => {
         }
         return true;
       })
-      .toSorted((a, b) => b.significance - a.significance);
+      .toSorted((a, b) => {
+        // Diversity-selected rank from the engine wins; fall back to score
+        if (a.rank != null && b.rank != null) {
+          return a.rank - b.rank;
+        }
+        if (a.rank != null) {
+          return -1;
+        }
+        if (b.rank != null) {
+          return 1;
+        }
+        return b.significance - a.significance;
+      });
   });
 
   // The set of measures referenced anywhere in the tree (for the measure filter dropdown)
@@ -247,6 +259,10 @@ function nodeDirection(n: AnalysisNode): 'up' | 'down' | null {
     case 'ChangePoint': {
       return a.after_mean > a.before_mean ? 'up' : 'down';
     }
+    case 'RankChange': {
+      return a.new_rank < a.previous_rank ? 'up' : 'down';
+    }
+    case 'TopDominance':
     case 'Concentration':
     case 'Correlation':
     case 'DistributionShift':
@@ -279,6 +295,10 @@ function nodeMeasure(n: AnalysisNode): string | null {
     }
     case 'OutlierCluster': {
       return a.columns[0] ?? null;
+    }
+    case 'RankChange':
+    case 'TopDominance': {
+      return a.measure;
     }
     case 'MembershipChange': {
       return null;

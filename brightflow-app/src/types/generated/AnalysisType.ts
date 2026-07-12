@@ -5,7 +5,15 @@ export type AnalysisType = { "type": "Anomaly", column: string, value: number, m
 /**
  * What percentage of the total change this segment explains
  */
-contribution_pct: number, p_value: number, } | { "type": "Correlation", column_a: string, column_b: string, r_value: number, p_value: number, } | { "type": "Trend", column: string, direction: TrendDirection, slope: number, r_squared: number, p_value: number, } | { "type": "PeriodComparison", column: string, current_period: string, previous_period: string, current_value: number, previous_value: number, change_percent: number, p_value: number, } | { "type": "PeriodAnomaly", column: string, period: string, period_value: number, other_periods_mean: number, change_percent: number, p_value: number, } | { "type": "Seasonality", column: string, period_name: string, autocorrelation: number, p_value: number, } | { "type": "OutlierCluster", period: string, columns: Array<string>, direction: string, cluster_size: number, } | { "type": "ForecastDeviation", column: string, period: string, actual: number, expected: number, deviation_percent: number, p_value: number, } | { "type": "Concentration", column: string, segment_column: string, 
+contribution_pct: number, p_value: number, } | { "type": "Correlation", column_a: string, column_b: string, r_value: number, p_value: number, } | { "type": "Trend", column: string, direction: TrendDirection, slope: number, r_squared: number, p_value: number, } | { "type": "PeriodComparison", column: string, current_period: string, previous_period: string, current_value: number, previous_value: number, change_percent: number, p_value: number, } | { "type": "PeriodAnomaly", column: string, period: string, period_value: number, other_periods_mean: number, change_percent: number, p_value: number, } | { "type": "Seasonality", column: string, period_name: string, autocorrelation: number, p_value: number, } | { "type": "OutlierCluster", period: string, columns: Array<string>, direction: string, cluster_size: number, 
+/**
+ * How many numeric columns were scanned (binomial-null denominator)
+ */
+columns_tested: number, 
+/**
+ * How many periods were scanned (multiple-comparison correction)
+ */
+n_periods: number, } | { "type": "ForecastDeviation", column: string, period: string, actual: number, expected: number, deviation_percent: number, p_value: number, } | { "type": "Concentration", column: string, segment_column: string, 
 /**
  * Herfindahl-Hirschman index ([0, 1]) — higher = more concentrated
  */
@@ -17,11 +25,27 @@ top_n: number, top_share: number,
 /**
  * Optional change vs prior baseline
  */
-hhi_delta?: number, } | { "type": "DistributionShift", column: string, previous_period: string, current_period: string, 
+hhi_delta?: number, 
+/**
+ * Number of distinct segment values (uniform-null denominator)
+ */
+n_segments: number, 
+/**
+ * Number of contributing rows (pseudo-count mass for the null)
+ */
+n_rows: number, } | { "type": "DistributionShift", column: string, previous_period: string, current_period: string, 
 /**
  * KS statistic ([0, 1])
  */
-ks_statistic: number, p_value: number, } | { "type": "MembershipChange", segment_column: string, previous_period: string, current_period: string, added_count: number, removed_count: number, } | { "type": "ChangePoint", column: string, 
+ks_statistic: number, p_value: number, } | { "type": "MembershipChange", segment_column: string, previous_period: string, current_period: string, added_count: number, removed_count: number, 
+/**
+ * Membership size in the previous period (churn-null exposure)
+ */
+prev_size: number, 
+/**
+ * Membership size in the current period
+ */
+curr_size: number, } | { "type": "ChangePoint", column: string, 
 /**
  * Period label where the level shift starts
  */
@@ -33,4 +57,20 @@ cusum: number,
 /**
  * Synthetic p-value derived from |cusum| / σ
  */
-p_value: number, };
+p_value: number, } | { "type": "RankChange", 
+/**
+ * Measure being ranked (usually row volume)
+ */
+measure: string, dimension: string, value: string, previous_rank: number, new_rank: number, 
+/**
+ * Number of sibling values in the ranking
+ */
+n_siblings: number, p_value: number, } | { "type": "TopDominance", measure: string, dimension: string, value: string, 
+/**
+ * Observed share of the leader, in [0, 1]
+ */
+share: number, 
+/**
+ * Share the power-law fit over ranks 2..k predicts for rank 1
+ */
+expected_share: number, n_values: number, p_value: number, };

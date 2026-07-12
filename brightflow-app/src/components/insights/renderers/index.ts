@@ -25,6 +25,11 @@ const RENDERERS: Record<string, Component> = {
   OutlierCluster: OutlierClusterRenderer,
   PeriodAnomaly: PeriodAnomalyRenderer,
   PeriodComparison: PeriodComparisonRenderer,
+  // RankChange carries a marked Series (rank per period) — reuse the
+  // Period-anomaly line renderer; v2 gets a dedicated bump chart.
+  RankChange: PeriodAnomalyRenderer,
+  // TopDominance carries SegmentBars — reuse the segment bar renderer.
+  TopDominance: SegmentRenderer,
   Seasonality: SeasonalityRenderer,
   Segment: SegmentRenderer,
   Trend: TrendRenderer,

@@ -14,8 +14,18 @@ pub fn p_value_for_correlation(r: f64, n: usize) -> f64 {
         return 1.0;
     }
 
+    // Perfect correlation → t = ∞ → p = 0; feeding ∞ to the CDF panics in
+    // statrs' incomplete-beta.
+    let one_minus_r2 = r.mul_add(-r, 1.0);
+    if one_minus_r2 <= f64::EPSILON {
+        return 0.0;
+    }
+
     let df = n as f64 - 2.0;
-    let t = r * (df / r.mul_add(-r, 1.0)).sqrt();
+    let t = r * (df / one_minus_r2).sqrt();
+    if !t.is_finite() {
+        return 0.0;
+    }
 
     let Ok(t_dist) = StudentsT::new(0.0, 1.0, df) else {
         return 1.0;

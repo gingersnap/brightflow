@@ -126,8 +126,10 @@ pub struct AnalysisNode {
     pub id: NodeId,
     pub parent_id: Option<NodeId>,
     pub analysis: AnalysisType,
+    /// Final composite score — kept under the legacy name because the
+    /// frontend sorts on it. Equal to `final_score(score_breakdown)`.
     pub significance: f64,
-    /// Calibrated component scores (significance × effect size × surprise) — exposed for UI explainer
+    /// Calibrated component scores — exposed for the UI explainer
     pub score_breakdown: ScoreBreakdown,
     /// Technical description with statistics (for data scientists)
     pub description: String,
@@ -135,6 +137,22 @@ pub struct AnalysisNode {
     pub summary: String,
     /// Technical summary with statistical notation
     pub tech_summary: String,
+    /// Why this finding is interesting, in plain language
+    /// ("affects 34% of rows; a stable series would show this <1% of the time")
+    #[serde(default)]
+    pub why: String,
+    /// How the underlying series was derived (measure → filters → derivations)
+    #[serde(default)]
+    pub provenance: Vec<ProvenanceStep>,
+    /// Composition depth: 1 = bare aggregate, +1 per filter/derivation
+    pub depth: u8,
+    /// Stable story fingerprint (see `analysis::fingerprint`) — keys history,
+    /// dismissals, and suppressions
+    #[serde(default)]
+    pub fingerprint: String,
+    /// 1-based position after diversity selection; None for non-root nodes
+    #[ts(optional)]
+    pub rank: Option<u32>,
     pub children: Vec<NodeId>,
     /// Optional payload of underlying data needed by per-type renderers
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -144,13 +162,29 @@ pub struct AnalysisNode {
     pub filter_chain: Vec<FilterStep>,
 }
 
+/// One stage of a derived series' recipe, rendered as a chip in the UI.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvenanceStep {
+    /// "measure" | "filter" | "derive"
+    pub kind: String,
+    pub label: String,
+}
+
+/// Interestingness = Impact × Significance (× Novelty × KPI boost).
+///
+/// `final_score = significance · √impact · (0.5 + 0.5·novelty) · kpi_boost`
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreBreakdown {
+    /// 1 − p under the detector's type-specific null, in [0, 1]
     pub significance: f64,
-    pub effect_size: f64,
-    pub surprise: f64,
+    /// Share of total data volume the finding affects, in [0, 1]
+    pub impact: f64,
+    /// 1.0 = never shown before; decays with history (wired in 1C)
+    pub novelty: f64,
     pub kpi_boost: f64,
 }
 
@@ -158,8 +192,8 @@ impl ScoreBreakdown {
     pub fn empty() -> Self {
         Self {
             significance: 0.0,
-            effect_size: 0.0,
-            surprise: 0.0,
+            impact: 0.0,
+            novelty: 1.0,
             kpi_boost: 1.0,
         }
     }
@@ -329,6 +363,12 @@ pub enum AnalysisType {
         direction: String, // "spike" or "dip"
         #[ts(type = "number")]
         cluster_size: usize,
+        /// How many numeric columns were scanned (binomial-null denominator)
+        #[ts(type = "number")]
+        columns_tested: usize,
+        /// How many periods were scanned (multiple-comparison correction)
+        #[ts(type = "number")]
+        n_periods: usize,
     },
     /// Actual value deviates from historical trend forecast
     ForecastDeviation {
@@ -351,6 +391,12 @@ pub enum AnalysisType {
         /// Optional change vs prior baseline
         #[ts(optional)]
         hhi_delta: Option<f64>,
+        /// Number of distinct segment values (uniform-null denominator)
+        #[ts(type = "number")]
+        n_segments: usize,
+        /// Number of contributing rows (pseudo-count mass for the null)
+        #[ts(type = "number")]
+        n_rows: usize,
     },
     /// Distribution of a metric shifted between two windows (KS-test)
     DistributionShift {
@@ -368,6 +414,12 @@ pub enum AnalysisType {
         current_period: String,
         added_count: usize,
         removed_count: usize,
+        /// Membership size in the previous period (churn-null exposure)
+        #[ts(type = "number")]
+        prev_size: usize,
+        /// Membership size in the current period
+        #[ts(type = "number")]
+        curr_size: usize,
     },
     /// Change-point in a time series (level shift)
     ChangePoint {
@@ -379,6 +431,35 @@ pub enum AnalysisType {
         /// Cumulative sum statistic at the change point
         cusum: f64,
         /// Synthetic p-value derived from |cusum| / σ
+        p_value: f64,
+    },
+    /// A segment's volume rank among its dimension's siblings changed
+    RankChange {
+        /// Measure being ranked (usually row volume)
+        measure: String,
+        dimension: String,
+        value: String,
+        #[ts(type = "number")]
+        previous_rank: usize,
+        #[ts(type = "number")]
+        new_rank: usize,
+        /// Number of sibling values in the ranking
+        #[ts(type = "number")]
+        n_siblings: usize,
+        p_value: f64,
+    },
+    /// The top value of a dimension holds more share than its rank
+    /// distribution predicts (power-law null)
+    TopDominance {
+        measure: String,
+        dimension: String,
+        value: String,
+        /// Observed share of the leader, in [0, 1]
+        share: f64,
+        /// Share the power-law fit over ranks 2..k predicts for rank 1
+        expected_share: f64,
+        #[ts(type = "number")]
+        n_values: usize,
         p_value: f64,
     },
 }
@@ -444,6 +525,27 @@ fn humanize_period(period: &str) -> String {
 }
 
 impl AnalysisType {
+    /// Stable machine name of the variant (persisted in insight history).
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Anomaly { .. } => "anomaly",
+            Self::Segment { .. } => "segment",
+            Self::Correlation { .. } => "correlation",
+            Self::Trend { .. } => "trend",
+            Self::PeriodComparison { .. } => "period_comparison",
+            Self::PeriodAnomaly { .. } => "period_anomaly",
+            Self::Seasonality { .. } => "seasonality",
+            Self::OutlierCluster { .. } => "outlier_cluster",
+            Self::ForecastDeviation { .. } => "forecast_deviation",
+            Self::Concentration { .. } => "concentration",
+            Self::DistributionShift { .. } => "distribution_shift",
+            Self::MembershipChange { .. } => "membership_change",
+            Self::ChangePoint { .. } => "change_point",
+            Self::RankChange { .. } => "rank_change",
+            Self::TopDominance { .. } => "top_dominance",
+        }
+    }
+
     /// Returns the category this analysis type belongs to
     pub fn category(&self) -> AnalysisCategory {
         match self {
@@ -458,12 +560,13 @@ impl AnalysisType {
             | Self::OutlierCluster { .. }
             | Self::DistributionShift { .. }
             | Self::ChangePoint { .. }
+            | Self::RankChange { .. }
             | Self::MembershipChange { .. } => AnalysisCategory::Trends,
 
             // Root Cause - "Why did this change happen?"
             Self::Segment { .. } | Self::Correlation { .. } => AnalysisCategory::RootCause,
             // Drivers - "What makes up this KPI?"
-            Self::Concentration { .. } => AnalysisCategory::Drivers,
+            Self::Concentration { .. } | Self::TopDominance { .. } => AnalysisCategory::Drivers,
         }
     }
 
@@ -590,6 +693,7 @@ impl AnalysisType {
                 current_period,
                 added_count,
                 removed_count,
+                ..
             } => {
                 format!(
                     "{segment_column} [{previous_period} → {current_period}]: +{added_count}, -{removed_count}"
@@ -605,6 +709,34 @@ impl AnalysisType {
             } => {
                 format!(
                     "{column} change-point @ {period}: {before_mean:.1} → {after_mean:.1}, p={p_value:.4}"
+                )
+            },
+            Self::RankChange {
+                measure,
+                dimension,
+                value,
+                previous_rank,
+                new_rank,
+                n_siblings,
+                p_value,
+            } => {
+                format!(
+                    "{dimension}=\"{value}\" [{measure}]: rank {previous_rank} → {new_rank} of {n_siblings}, p={p_value:.4}"
+                )
+            },
+            Self::TopDominance {
+                measure,
+                dimension,
+                value,
+                share,
+                expected_share,
+                p_value,
+                ..
+            } => {
+                format!(
+                    "{dimension}=\"{value}\" [{measure}]: share {:.1}% vs {:.1}% expected, p={p_value:.4}",
+                    share * 100.0,
+                    expected_share * 100.0
                 )
             },
         }
@@ -827,6 +959,38 @@ impl AnalysisType {
                 };
                 format!("{c} {direction} at {p} ({before_mean:.1} → {after_mean:.1})")
             },
+            Self::RankChange {
+                dimension,
+                value,
+                previous_rank,
+                new_rank,
+                n_siblings,
+                ..
+            } => {
+                let d = humanize_column(dimension);
+                let direction = if new_rank < previous_rank {
+                    "climbed"
+                } else {
+                    "dropped"
+                };
+                format!(
+                    "{d} \"{value}\" {direction} from #{previous_rank} to #{new_rank} of {n_siblings} by volume"
+                )
+            },
+            Self::TopDominance {
+                dimension,
+                value,
+                share,
+                expected_share,
+                ..
+            } => {
+                let d = humanize_column(dimension);
+                format!(
+                    "{d} \"{value}\" dominates with {:.0}% of the volume — its rank distribution predicts only {:.0}%",
+                    share * 100.0,
+                    expected_share * 100.0
+                )
+            },
         }
     }
 }
@@ -874,6 +1038,11 @@ impl AnalysisTree {
             description,
             summary,
             tech_summary,
+            why: String::new(),
+            provenance: Vec::new(),
+            depth: 1,
+            fingerprint: String::new(),
+            rank: None,
             children: Vec::new(),
             data,
             filter_chain: Vec::new(),
@@ -881,6 +1050,24 @@ impl AnalysisTree {
         self.nodes.push(node);
         self.roots.push(id);
         id
+    }
+
+    /// Attach insight metadata (why-interesting, provenance recipe, depth,
+    /// stable fingerprint) to a node after creation.
+    pub fn set_insight_meta(
+        &mut self,
+        id: NodeId,
+        why: String,
+        provenance: Vec<ProvenanceStep>,
+        depth: u8,
+        fingerprint: String,
+    ) {
+        if let Some(n) = self.nodes.get_mut(id.0) {
+            n.why = why;
+            n.provenance = provenance;
+            n.depth = depth;
+            n.fingerprint = fingerprint;
+        }
     }
 
     pub fn add_child(
@@ -913,6 +1100,7 @@ impl AnalysisTree {
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
         let parent_chain = self.nodes[parent_id.0].filter_chain.clone();
+        let parent_depth = self.nodes[parent_id.0].depth;
         let node = AnalysisNode {
             id,
             parent_id: Some(parent_id),
@@ -922,6 +1110,11 @@ impl AnalysisTree {
             description,
             summary,
             tech_summary,
+            why: String::new(),
+            provenance: Vec::new(),
+            depth: parent_depth.saturating_add(1),
+            fingerprint: String::new(),
+            rank: None,
             children: Vec::new(),
             data,
             filter_chain: parent_chain,

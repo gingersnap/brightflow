@@ -12,11 +12,14 @@
     clippy::needless_pass_by_value
 )]
 
+pub mod actions;
+pub mod agent;
 pub mod analytics;
 pub mod auth;
 pub mod connect;
 pub mod ingest;
 pub mod insights;
+pub mod llm;
 pub mod product_analytics;
 pub mod routes;
 pub mod scheduler;
@@ -205,6 +208,18 @@ pub async fn serve(
     // Seed column semantics from known schemas (one-time migration from TOML)
     if let Some(store) = state.store() {
         state::seed_column_semantics(store).await;
+        state::hydrate_enrichment_overrides(&state, store).await;
+        llm::seed_from_env(&state).await;
+        // Any 'running' agent run from a previous process crashed mid-flight
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
+            .unwrap_or(0);
+        if let Ok(n) = store.db().fail_stuck_agent_runs(now).await {
+            if n > 0 {
+                tracing::warn!("Marked {n} stuck agent runs as failed");
+            }
+        }
     }
 
     // Load column semantic overrides from SQLite

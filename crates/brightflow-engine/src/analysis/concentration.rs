@@ -16,6 +16,10 @@ pub struct ConcentrationResult {
     pub lorenz_population: Vec<f64>,
     pub lorenz_share: Vec<f64>,
     pub gini: f64,
+    /// Number of distinct segment values (uniform-null denominator)
+    pub n_segments: usize,
+    /// Number of contributing (finite, positive) rows
+    pub n_rows: usize,
 }
 
 const HHI_THRESHOLD: f64 = 0.25;
@@ -35,10 +39,12 @@ pub fn detect_concentration(
     // Sum metric per segment value
     let mut by_segment: HashMap<&str, f64> = HashMap::new();
     let mut total: f64 = 0.0;
+    let mut n_rows: usize = 0;
     for (val, seg) in target_values.iter().zip(segment_values.iter()) {
         if val.is_finite() && *val > 0.0 {
             *by_segment.entry(seg.as_str()).or_insert(0.0) += val;
             total += val;
+            n_rows += 1;
         }
     }
 
@@ -89,6 +95,8 @@ pub fn detect_concentration(
         lorenz_population: cum_pop,
         lorenz_share: cum_share,
         gini,
+        n_segments: by_segment.len(),
+        n_rows,
     })
 }
 

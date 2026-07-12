@@ -10,6 +10,10 @@ pub struct MembershipChangeResult {
     pub current_period: String,
     pub added: Vec<String>,
     pub removed: Vec<String>,
+    /// Membership size in the previous period (churn-null exposure)
+    pub prev_size: usize,
+    /// Membership size in the current period
+    pub curr_size: usize,
 }
 
 pub fn detect_membership_change(
@@ -56,6 +60,8 @@ pub fn detect_membership_change(
         current_period: current_period.to_string(),
         added: added_sorted,
         removed: removed_sorted,
+        prev_size: prev.len(),
+        curr_size: curr.len(),
     })
 }
 

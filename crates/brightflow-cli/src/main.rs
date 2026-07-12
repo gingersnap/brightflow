@@ -49,6 +49,7 @@ use brightflow_api::system::log_layer::{LogBroadcastLayer, LogEntry};
 use brightflow_api::ServeConfig;
 use brightflow_connect::list_builtin_connectors;
 use brightflow_engine::analysis::engine::AnalysisEngine;
+use brightflow_engine::analysis::scoring::ScoringContext;
 use brightflow_engine::analysis::tree::{ReportType, ReviewCadence};
 use brightflow_engine::data::loader::load_csv;
 use brightflow_engine::data::schema::detect_schema;
@@ -259,6 +260,26 @@ enum TopicsAction {
         /// Table name
         #[arg(long, default_value = "issues")]
         table: String,
+    },
+
+    /// A/B evaluate clustering algorithms and k on real data:
+    /// prints silhouette, Davies-Bouldin, NPMI coherence, unassigned %, wall time
+    Eval {
+        /// Source id
+        #[arg(long)]
+        source: String,
+
+        /// Table name
+        #[arg(long, default_value = "issues")]
+        table: String,
+
+        /// Comma-separated algorithms: kmeans, hdbscan
+        #[arg(long, default_value = "kmeans,hdbscan")]
+        algorithms: String,
+
+        /// k for k-means runs
+        #[arg(long, default_value_t = 12)]
+        k: usize,
     },
 
     /// Embed rows only (no clustering refit) - useful after model swap
@@ -638,7 +659,10 @@ fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
     let suffix = format!("review_{}", cadence.suffix());
     tracing::info!("[{}] Running...", suffix);
 
-    let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth);
+    let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth)
+        .with_scoring_ctx(
+            ScoringContext::new().with_kpis(data_schema.kpi_columns.iter().cloned().collect()),
+        );
     let result =
         engine.run_review_with_cadence(&df, &data_schema, cadence, &DebugLog::disabled())?;
     let tree = result.tree;
@@ -662,7 +686,10 @@ fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
     let suffix = report_type.suffix();
     tracing::info!("[{}] Running...", suffix);
 
-    let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth);
+    let engine = AnalysisEngine::new(args.z_threshold, args.p_threshold, args.max_depth)
+        .with_scoring_ctx(
+            ScoringContext::new().with_kpis(data_schema.kpi_columns.iter().cloned().collect()),
+        );
     let result = engine.run_report(&df, &data_schema, report_type, &DebugLog::disabled())?;
     let tree = result.tree;
 
@@ -890,22 +917,57 @@ async fn handle_topics(action: TopicsAction) -> Result<()> {
             clusters,
         } => topics_fit(&source, &table, clusters).await,
         TopicsAction::List { source, table } => topics_list(&source, &table),
+        TopicsAction::Eval {
+            source,
+            table,
+            algorithms,
+            k,
+        } => topics_eval(&source, &table, &algorithms, k).await,
         TopicsAction::Embed { source, table } => topics_embed(&source, &table).await,
     }
 }
 
-async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> Result<()> {
-    use brightflow_engine::enrichment::{fit_topics, is_enrichable, DEFAULT_K};
-    let num_clusters = num_clusters.unwrap_or(DEFAULT_K);
+async fn resolve_enrichment_config(
+    store: &ParquetStore,
+    source: &str,
+    table: &str,
+) -> Result<brightflow_engine::enrichment::EnrichmentConfig> {
+    use brightflow_engine::enrichment::{EnrichmentConfig, EnrichmentOverrides};
+    let overrides = match store.db().get_table(source, table).await {
+        Ok(Some(row)) => store
+            .db()
+            .get_enrichment_settings(&row.id)
+            .await
+            .ok()
+            .flatten()
+            .map(|r| {
+                EnrichmentOverrides::from_stored(
+                    r.text_columns.as_deref(),
+                    r.cleaning_profile,
+                    r.language_column,
+                    r.embedder,
+                    r.min_cluster_size,
+                    r.algorithm,
+                )
+            }),
+        _ => None,
+    };
+    EnrichmentConfig::resolve(table, overrides.as_ref())
+        .ok_or_else(|| anyhow::anyhow!("Table '{table}' is not enrichable"))
+}
 
-    if !is_enrichable(table) {
-        anyhow::bail!("Table '{table}' is not supported for topics. Supported: issues");
-    }
+async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> Result<()> {
+    use brightflow_engine::enrichment::{fit_topics, FitOptions, DEFAULT_K};
+    let num_clusters = num_clusters.unwrap_or(DEFAULT_K);
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+    let config = resolve_enrichment_config(&store, source, table).await?;
 
-    println!("Fitting topics: {source}/{table} (k={num_clusters})");
+    println!(
+        "Fitting topics: {source}/{table} (k={num_clusters}, embedder={})",
+        config.embedder.name()
+    );
 
     let df = store.read_table(source, table).await?;
     println!("  Loaded {} rows", df.height());
@@ -919,7 +981,12 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
             &source_owned,
             &table_owned,
             &df,
-            num_clusters,
+            &config,
+            &FitOptions {
+                num_clusters,
+                language: None,
+                algorithm: None,
+            },
         )
     })
     .await
@@ -927,8 +994,12 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
     .map_err(|e| anyhow::anyhow!("topics fit failed: {e}"))?;
 
     println!(
-        "  k = {} ({} rows, labels={})",
-        outcome.k, outcome.total_rows, outcome.has_labels
+        "  k = {} ({} of {} rows eligible, labels={}, language={})",
+        outcome.k,
+        outcome.eligible_rows,
+        outcome.total_rows,
+        outcome.has_labels,
+        outcome.language.as_deref().unwrap_or("-")
     );
     for (i, name) in outcome.cluster_names.iter().enumerate() {
         let size = outcome.cluster_sizes.get(i).copied().unwrap_or(0);
@@ -964,6 +1035,128 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
     }
 
     println!("Done.");
+    Ok(())
+}
+
+/// A/B eval: clustering algorithms × k on the table's real rows.
+/// This is the decisive quality check for clustering choices.
+#[allow(
+    clippy::indexing_slicing,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
+async fn topics_eval(source: &str, table: &str, algorithms: &str, k: usize) -> Result<()> {
+    use std::collections::HashMap;
+
+    use brightflow_engine::embedding::get_backend;
+    use brightflow_engine::nlp::cluster_metrics::{davies_bouldin, npmi_coherence, silhouette};
+    use brightflow_engine::nlp::{
+        clean_for_embedding, default_min_cluster_size, hdbscan_dense, kmeans_dense,
+    };
+
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+    let config = resolve_enrichment_config(&store, source, table).await?;
+    let df = store.read_table(source, table).await?;
+    println!("Eval on {source}/{table}: {} rows", df.height());
+
+    // Clean once (profile is embedder-independent)
+    let mut texts: Vec<Option<String>> = Vec::with_capacity(df.height());
+    {
+        let columns: Vec<&str> = config.text_columns.iter().map(String::as_str).collect();
+        let mut per_col: Vec<Vec<String>> = Vec::new();
+        for col in &columns {
+            let values = df
+                .column(col)
+                .map_err(|e| anyhow::anyhow!("column {col}: {e}"))?
+                .as_materialized_series()
+                .str()
+                .map_err(|e| anyhow::anyhow!("column {col} not string: {e}"))?
+                .into_iter()
+                .map(|o| o.unwrap_or("").to_string())
+                .collect::<Vec<_>>();
+            per_col.push(values);
+        }
+        for row in 0..df.height() {
+            let raw = per_col
+                .iter()
+                .filter_map(|c| c.get(row).map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" ");
+            texts.push(clean_for_embedding(&raw, config.cleaning_profile));
+        }
+    }
+    let eligible: Vec<usize> = texts
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| t.as_ref().map(|_| i))
+        .collect();
+    let clean_texts: Vec<String> = eligible.iter().filter_map(|&i| texts[i].clone()).collect();
+    println!("  {} rows eligible after cleaning", eligible.len());
+
+    println!(
+        "\n{:<38} {:<9} {:>4} {:>10} {:>8} {:>7} {:>9} {:>9}",
+        "embedder", "algo", "k", "silhouette", "dav-bou", "npmi", "unassign%", "wall"
+    );
+
+    let embedder_name = config.embedder.name();
+    let backend = get_backend(&wp.root(), config.embedder)
+        .map_err(|e| anyhow::anyhow!("embedder unavailable: {e}"))?;
+    let t_embed = std::time::Instant::now();
+    let vectors = backend
+        .embed(&clean_texts)
+        .map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
+    let embed_time = t_embed.elapsed();
+
+    for algo in algorithms.split(',').map(str::trim) {
+        let t_cluster = std::time::Instant::now();
+        let result = match algo {
+            "hdbscan" => hdbscan_dense(&vectors, default_min_cluster_size(vectors.len())),
+            _ => kmeans_dense(&vectors, k, 30),
+        };
+        let wall = t_cluster.elapsed() + embed_time;
+        let unassigned = result.assignments.iter().filter(|a| a.is_none()).count() as f64
+            / result.assignments.len().max(1) as f64
+            * 100.0;
+
+        let sil = silhouette(&vectors, &result.assignments);
+        let db = davies_bouldin(&vectors, &result.assignments);
+
+        // Top terms per cluster by in-cluster document frequency (quick,
+        // eval-only naming — the real pipeline uses c-TF-IDF)
+        let n_clusters = result.centroids.len();
+        let mut term_df: Vec<HashMap<String, usize>> = vec![HashMap::new(); n_clusters];
+        for (text, assigned) in clean_texts.iter().zip(result.assignments.iter()) {
+            let Some(c) = assigned else { continue };
+            let mut seen = std::collections::HashSet::new();
+            for token in text.to_lowercase().split_whitespace() {
+                if token.len() > 3 && seen.insert(token.to_string()) {
+                    *term_df[*c].entry(token.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+        let cluster_terms: Vec<Vec<String>> = term_df
+            .iter()
+            .map(|counts| {
+                let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();
+                ranked.sort_by(|a, b| b.1.cmp(a.1));
+                ranked.into_iter().take(6).map(|(t, _)| t.clone()).collect()
+            })
+            .collect();
+        let npmi = npmi_coherence(&clean_texts, &cluster_terms);
+
+        println!(
+            "{:<38} {:<9} {:>4} {:>10} {:>8} {:>7} {:>8.1}% {:>8.1}s",
+            embedder_name,
+            algo,
+            n_clusters,
+            sil.map_or("-".to_string(), |v| format!("{v:.3}")),
+            db.map_or("-".to_string(), |v| format!("{v:.3}")),
+            npmi.map_or("-".to_string(), |v| format!("{v:.3}")),
+            unassigned,
+            wall.as_secs_f64(),
+        );
+    }
     Ok(())
 }
 
@@ -1016,14 +1209,11 @@ fn topics_list(source: &str, table: &str) -> Result<()> {
 }
 
 async fn topics_embed(source: &str, table: &str) -> Result<()> {
-    use brightflow_engine::enrichment::{enrich_with_topics, is_enrichable};
-
-    if !is_enrichable(table) {
-        anyhow::bail!("Table '{table}' is not supported for topics.");
-    }
+    use brightflow_engine::enrichment::enrich_with_topics;
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+    let config = resolve_enrichment_config(&store, source, table).await?;
 
     let df = store.read_table(source, table).await?;
     println!("Embedding {} rows from {source}/{table}", df.height());
@@ -1032,7 +1222,7 @@ async fn topics_embed(source: &str, table: &str) -> Result<()> {
     let source_owned = source.to_string();
     let table_owned = table.to_string();
     let enriched = tokio::task::spawn_blocking(move || {
-        enrich_with_topics(&workspace_root, &source_owned, &table_owned, &df)
+        enrich_with_topics(&workspace_root, &source_owned, &table_owned, &df, &config)
     })
     .await
     .map_err(|e| anyhow::anyhow!("embed join error: {e}"))?

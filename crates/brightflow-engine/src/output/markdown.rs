@@ -215,6 +215,18 @@ fn write_ascii_tree<W: Write>(
             }
         },
         AnalysisType::Concentration { .. } => "■",
+        AnalysisType::TopDominance { .. } => "♛",
+        AnalysisType::RankChange {
+            previous_rank,
+            new_rank,
+            ..
+        } => {
+            if new_rank < previous_rank {
+                "⇧"
+            } else {
+                "⇩"
+            }
+        },
         AnalysisType::DistributionShift { .. } => "≠",
         AnalysisType::MembershipChange { .. } => "±",
         AnalysisType::ChangePoint { .. } => "⤳",

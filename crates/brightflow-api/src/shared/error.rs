@@ -20,6 +20,9 @@ pub enum AppError {
     #[error("Invalid query: {0}")]
     InvalidQuery(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 
@@ -52,6 +55,7 @@ impl IntoResponse for AppError {
             ),
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
+            Self::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
             Self::InvalidQuery(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "INVALID_QUERY",
@@ -112,6 +116,7 @@ impl AppError {
             Self::BadRequest(_) => "BAD_REQUEST",
             Self::NotFound(_) => "NOT_FOUND",
             Self::InvalidQuery(_) => "INVALID_QUERY",
+            Self::Conflict(_) => "CONFLICT",
             Self::Internal(_) => "INTERNAL_ERROR",
             Self::Polars(_) => "POLARS_ERROR",
             Self::Io(_) => "IO_ERROR",

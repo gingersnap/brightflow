@@ -3,4 +3,8 @@
 /**
  * Optional engine config knobs accepted on insights requests
  */
-export type EngineConfig = { zThreshold?: number, pThreshold?: number, minEffectSize?: number, maxResults?: number, maxDepth?: number, };
+export type EngineConfig = { zThreshold?: number, pThreshold?: number, minEffectSize?: number, 
+/**
+ * Diversity-selected top-N roots returned (formerly `maxResults`)
+ */
+selectTop?: number, maxDepth?: number, };

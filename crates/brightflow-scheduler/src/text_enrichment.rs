@@ -3,7 +3,7 @@ use std::path::Path;
 use polars::prelude::*;
 use tracing::{debug, info};
 
-use brightflow_engine::enrichment::{enrich_with_topics, is_enrichable, required_columns};
+use brightflow_engine::enrichment::{enrich_with_topics, EnrichmentConfig, EnrichmentOverrides};
 
 /// If the table supports text enrichment, embed each row and apply any existing
 /// topic / label artifacts. Writes the result back to the same parquet file.
@@ -20,21 +20,22 @@ pub fn maybe_enrich_parquet(
     table_name: &str,
     source_id: &str,
     workspace_root: &Path,
+    overrides: Option<&EnrichmentOverrides>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    if !is_enrichable(table_name) {
+    let Some(config) = EnrichmentConfig::resolve(table_name, overrides) else {
         return Ok(false);
-    }
+    };
 
     let df = read_parquet(parquet_path)?;
 
-    for col in required_columns(table_name) {
+    for col in &config.text_columns {
         if df.column(col).is_err() {
             debug!("Skipping enrichment for {table_name}: missing required column {col}");
             return Ok(false);
         }
     }
 
-    let enriched = match enrich_with_topics(workspace_root, source_id, table_name, &df) {
+    let enriched = match enrich_with_topics(workspace_root, source_id, table_name, &df, &config) {
         Ok(d) => d,
         Err(e) => {
             // Embedder errors (e.g. missing model file) shouldn't fail the sync.

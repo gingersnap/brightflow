@@ -6,8 +6,9 @@ use std::str::FromStr;
 
 use crate::error::StoreResult;
 use crate::models::{
-    ColumnSemanticRow, ColumnStatRow, FileColumnStatRow, TableAnalysisSettingsRow, TableFileRow,
-    TableRow,
+    ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, ColumnStatRow, ExcludedTermRow,
+    FileColumnStatRow, InsightHistoryRow, InsightStateRow, InsightSuppressionRow,
+    TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableFileRow, TableRow,
 };
 use crate::scan::ScanFilter;
 
@@ -542,5 +543,597 @@ impl StoreDb {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    // =====================================================
+    // Table Enrichment Settings CRUD
+    // =====================================================
+
+    pub async fn get_enrichment_settings(
+        &self,
+        table_id: &str,
+    ) -> StoreResult<Option<TableEnrichmentSettingsRow>> {
+        let row = sqlx::query_as::<_, TableEnrichmentSettingsRow>(
+            "SELECT * FROM table_enrichment_settings WHERE table_id = ?",
+        )
+        .bind(table_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn get_all_enrichment_settings(
+        &self,
+    ) -> StoreResult<Vec<TableEnrichmentSettingsRow>> {
+        let rows = sqlx::query_as::<_, TableEnrichmentSettingsRow>(
+            "SELECT * FROM table_enrichment_settings",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upsert_enrichment_settings(
+        &self,
+        table_id: &str,
+        text_columns: Option<&str>,
+        cleaning_profile: Option<&str>,
+        language_column: Option<&str>,
+        embedder: Option<&str>,
+        min_cluster_size: Option<i64>,
+        algorithm: Option<&str>,
+    ) -> StoreResult<TableEnrichmentSettingsRow> {
+        let row = sqlx::query_as::<_, TableEnrichmentSettingsRow>(
+            r"INSERT INTO table_enrichment_settings
+                (table_id, text_columns, cleaning_profile, language_column, embedder, min_cluster_size, algorithm)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (table_id) DO UPDATE SET
+                text_columns = excluded.text_columns,
+                cleaning_profile = excluded.cleaning_profile,
+                language_column = excluded.language_column,
+                embedder = excluded.embedder,
+                min_cluster_size = excluded.min_cluster_size,
+                algorithm = excluded.algorithm,
+                updated_at = datetime('now')
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(text_columns)
+        .bind(cleaning_profile)
+        .bind(language_column)
+        .bind(embedder)
+        .bind(min_cluster_size)
+        .bind(algorithm)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn delete_enrichment_settings(&self, table_id: &str) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM table_enrichment_settings WHERE table_id = ?")
+            .bind(table_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    // =====================================================
+    // Insight History CRUD (novelty decay input)
+    // =====================================================
+
+    pub async fn get_insight_history(&self, table_id: &str) -> StoreResult<Vec<InsightHistoryRow>> {
+        let rows = sqlx::query_as::<_, InsightHistoryRow>(
+            "SELECT * FROM insight_history WHERE table_id = ?",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Record that a batch of insights was shown: bumps shown_count and
+    /// last_shown_at; a changed value signature resets the count (the story
+    /// developed, so it is novel again).
+    pub async fn record_shown_insights(
+        &self,
+        table_id: &str,
+        shown: &[(String, String, String, String)], // (fingerprint, identity, insight_type, value_sig)
+        now_epoch: i64,
+    ) -> StoreResult<()> {
+        let mut tx = self.pool.begin().await?;
+        for (fingerprint, identity, insight_type, value_sig) in shown {
+            sqlx::query(
+                r"INSERT INTO insight_history
+                    (table_id, fingerprint, identity, insight_type, last_value_sig,
+                     shown_count, first_shown_at, last_shown_at)
+                  VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                  ON CONFLICT (table_id, fingerprint) DO UPDATE SET
+                    identity = excluded.identity,
+                    insight_type = excluded.insight_type,
+                    shown_count = CASE
+                        WHEN insight_history.last_value_sig != excluded.last_value_sig THEN 1
+                        ELSE insight_history.shown_count + 1
+                    END,
+                    last_value_sig = excluded.last_value_sig,
+                    last_shown_at = excluded.last_shown_at",
+            )
+            .bind(table_id)
+            .bind(fingerprint)
+            .bind(identity)
+            .bind(insight_type)
+            .bind(value_sig)
+            .bind(now_epoch)
+            .bind(now_epoch)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn reset_insight_history(&self, table_id: &str) -> StoreResult<u64> {
+        let result = sqlx::query("DELETE FROM insight_history WHERE table_id = ?")
+            .bind(table_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    // =====================================================
+    // Insight State (dismiss / pin) + Suppressions
+    // =====================================================
+
+    pub async fn get_insight_states(&self, table_id: &str) -> StoreResult<Vec<InsightStateRow>> {
+        let rows =
+            sqlx::query_as::<_, InsightStateRow>("SELECT * FROM insight_state WHERE table_id = ?")
+                .bind(table_id)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows)
+    }
+
+    pub async fn upsert_insight_state(
+        &self,
+        table_id: &str,
+        fingerprint: &str,
+        state: &str,
+        reason: Option<&str>,
+        annotation: Option<&str>,
+        now_epoch: i64,
+    ) -> StoreResult<InsightStateRow> {
+        let row = sqlx::query_as::<_, InsightStateRow>(
+            r"INSERT INTO insight_state (table_id, fingerprint, state, reason, annotation, created_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT (table_id, fingerprint) DO UPDATE SET
+                state = excluded.state,
+                reason = excluded.reason,
+                annotation = excluded.annotation,
+                created_at = excluded.created_at
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(fingerprint)
+        .bind(state)
+        .bind(reason)
+        .bind(annotation)
+        .bind(now_epoch)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn delete_insight_state(
+        &self,
+        table_id: &str,
+        fingerprint: &str,
+    ) -> StoreResult<bool> {
+        let result =
+            sqlx::query("DELETE FROM insight_state WHERE table_id = ? AND fingerprint = ?")
+                .bind(table_id)
+                .bind(fingerprint)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn get_insight_suppressions(
+        &self,
+        table_id: &str,
+    ) -> StoreResult<Vec<InsightSuppressionRow>> {
+        let rows = sqlx::query_as::<_, InsightSuppressionRow>(
+            "SELECT * FROM insight_suppressions WHERE table_id = ?",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn add_insight_suppression(
+        &self,
+        table_id: &str,
+        kind: &str,
+        target: &str,
+        now_epoch: i64,
+    ) -> StoreResult<InsightSuppressionRow> {
+        let row = sqlx::query_as::<_, InsightSuppressionRow>(
+            r"INSERT INTO insight_suppressions (table_id, kind, target, created_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT (table_id, kind, target) DO UPDATE SET created_at = excluded.created_at
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(kind)
+        .bind(target)
+        .bind(now_epoch)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn delete_insight_suppression(&self, id: i64) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM insight_suppressions WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    // =====================================================
+    // Action log
+    // =====================================================
+
+    /// Insert a new action-log entry. Returns None when the request_id was
+    /// already recorded (idempotent replay — fetch the existing row instead).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_action(
+        &self,
+        request_id: &str,
+        actor_type: &str,
+        agent_run_id: Option<i64>,
+        action_kind: &str,
+        params_json: &str,
+        status: &str,
+        now_epoch: i64,
+    ) -> StoreResult<Option<ActionLogRow>> {
+        let row = sqlx::query_as::<_, ActionLogRow>(
+            r"INSERT INTO action_log
+                (request_id, actor_type, agent_run_id, action_kind, params_json, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (request_id) DO NOTHING
+              RETURNING *",
+        )
+        .bind(request_id)
+        .bind(actor_type)
+        .bind(agent_run_id)
+        .bind(action_kind)
+        .bind(params_json)
+        .bind(status)
+        .bind(now_epoch)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn get_action_by_request_id(
+        &self,
+        request_id: &str,
+    ) -> StoreResult<Option<ActionLogRow>> {
+        let row =
+            sqlx::query_as::<_, ActionLogRow>("SELECT * FROM action_log WHERE request_id = ?")
+                .bind(request_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row)
+    }
+
+    pub async fn get_action(&self, id: i64) -> StoreResult<Option<ActionLogRow>> {
+        let row = sqlx::query_as::<_, ActionLogRow>("SELECT * FROM action_log WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row)
+    }
+
+    pub async fn list_actions(&self, limit: i64) -> StoreResult<Vec<ActionLogRow>> {
+        let rows = sqlx::query_as::<_, ActionLogRow>(
+            "SELECT * FROM action_log ORDER BY created_at DESC, id DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn list_actions_for_agent_run(&self, run_id: i64) -> StoreResult<Vec<ActionLogRow>> {
+        let rows = sqlx::query_as::<_, ActionLogRow>(
+            "SELECT * FROM action_log WHERE agent_run_id = ? ORDER BY id",
+        )
+        .bind(run_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn update_action_result(
+        &self,
+        id: i64,
+        status: &str,
+        result_json: Option<&str>,
+        undo_json: Option<&str>,
+        resolved_at: i64,
+    ) -> StoreResult<()> {
+        sqlx::query(
+            r"UPDATE action_log
+              SET status = ?, result_json = ?, undo_json = ?, resolved_at = ?
+              WHERE id = ?",
+        )
+        .bind(status)
+        .bind(result_json)
+        .bind(undo_json)
+        .bind(resolved_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn set_action_status(
+        &self,
+        id: i64,
+        status: &str,
+        resolved_at: i64,
+    ) -> StoreResult<()> {
+        sqlx::query("UPDATE action_log SET status = ?, resolved_at = ? WHERE id = ?")
+            .bind(status)
+            .bind(resolved_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // =====================================================
+    // Cluster edits (curation overlay)
+    // =====================================================
+
+    pub async fn get_cluster_edits(&self, table_id: &str) -> StoreResult<Vec<ClusterEditRow>> {
+        let rows =
+            sqlx::query_as::<_, ClusterEditRow>("SELECT * FROM cluster_edits WHERE table_id = ?")
+                .bind(table_id)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows)
+    }
+
+    /// Upsert an edit keyed by (table, centroid fingerprint). `Some(inner)`
+    /// fields overwrite; `None` fields keep the existing value.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upsert_cluster_edit(
+        &self,
+        table_id: &str,
+        centroid_fingerprint: &str,
+        centroid_json: &str,
+        cluster_id: Option<i64>,
+        custom_name: Option<Option<&str>>,
+        label: Option<Option<&str>>,
+        is_noise: Option<bool>,
+        merged_into: Option<Option<i64>>,
+        now_epoch: i64,
+    ) -> StoreResult<ClusterEditRow> {
+        sqlx::query(
+            r"INSERT INTO cluster_edits (table_id, centroid_fingerprint, centroid_json, cluster_id, updated_at)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT (table_id, centroid_fingerprint) DO UPDATE SET
+                centroid_json = excluded.centroid_json,
+                cluster_id = excluded.cluster_id,
+                orphaned = 0,
+                updated_at = excluded.updated_at",
+        )
+        .bind(table_id)
+        .bind(centroid_fingerprint)
+        .bind(centroid_json)
+        .bind(cluster_id)
+        .bind(now_epoch)
+        .execute(&self.pool)
+        .await?;
+
+        if let Some(v) = custom_name {
+            sqlx::query("UPDATE cluster_edits SET custom_name = ? WHERE table_id = ? AND centroid_fingerprint = ?")
+                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
+        }
+        if let Some(v) = label {
+            sqlx::query("UPDATE cluster_edits SET label = ? WHERE table_id = ? AND centroid_fingerprint = ?")
+                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
+        }
+        if let Some(v) = is_noise {
+            sqlx::query("UPDATE cluster_edits SET is_noise = ? WHERE table_id = ? AND centroid_fingerprint = ?")
+                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
+        }
+        if let Some(v) = merged_into {
+            sqlx::query("UPDATE cluster_edits SET merged_into = ? WHERE table_id = ? AND centroid_fingerprint = ?")
+                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
+        }
+
+        let row = sqlx::query_as::<_, ClusterEditRow>(
+            "SELECT * FROM cluster_edits WHERE table_id = ? AND centroid_fingerprint = ?",
+        )
+        .bind(table_id)
+        .bind(centroid_fingerprint)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Reconciliation write-back: point an edit at a new raw cluster id (or
+    /// orphan it when no new centroid matches).
+    pub async fn set_cluster_edit_target(
+        &self,
+        edit_id: i64,
+        cluster_id: Option<i64>,
+        centroid_json: Option<&str>,
+        now_epoch: i64,
+    ) -> StoreResult<()> {
+        if let Some(json) = centroid_json {
+            sqlx::query(
+                r"UPDATE cluster_edits
+                  SET cluster_id = ?, centroid_json = ?, orphaned = 0, updated_at = ?
+                  WHERE id = ?",
+            )
+            .bind(cluster_id)
+            .bind(json)
+            .bind(now_epoch)
+            .bind(edit_id)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query(
+                r"UPDATE cluster_edits
+                  SET cluster_id = NULL, orphaned = 1, updated_at = ?
+                  WHERE id = ?",
+            )
+            .bind(now_epoch)
+            .bind(edit_id)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn delete_cluster_edit(&self, edit_id: i64) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM cluster_edits WHERE id = ?")
+            .bind(edit_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    // =====================================================
+    // Excluded terms
+    // =====================================================
+
+    pub async fn get_excluded_terms(&self, table_id: &str) -> StoreResult<Vec<ExcludedTermRow>> {
+        let rows = sqlx::query_as::<_, ExcludedTermRow>(
+            "SELECT * FROM excluded_terms WHERE table_id = ? ORDER BY term",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn add_excluded_term(
+        &self,
+        table_id: &str,
+        term: &str,
+        now_epoch: i64,
+    ) -> StoreResult<ExcludedTermRow> {
+        let row = sqlx::query_as::<_, ExcludedTermRow>(
+            r"INSERT INTO excluded_terms (table_id, term, created_at)
+              VALUES (?, ?, ?)
+              ON CONFLICT (table_id, term) DO UPDATE SET created_at = excluded.created_at
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(term)
+        .bind(now_epoch)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn remove_excluded_term(&self, table_id: &str, term: &str) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM excluded_terms WHERE table_id = ? AND term = ?")
+            .bind(table_id)
+            .bind(term)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    // =====================================================
+    // Agent runs
+    // =====================================================
+
+    pub async fn insert_agent_run(
+        &self,
+        kind: &str,
+        mode: &str,
+        scope: &str,
+        now_epoch: i64,
+    ) -> StoreResult<AgentRunRow> {
+        let row = sqlx::query_as::<_, AgentRunRow>(
+            r"INSERT INTO agent_runs (kind, mode, scope, status, created_at)
+              VALUES (?, ?, ?, 'running', ?)
+              RETURNING *",
+        )
+        .bind(kind)
+        .bind(mode)
+        .bind(scope)
+        .bind(now_epoch)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn get_agent_run(&self, id: i64) -> StoreResult<Option<AgentRunRow>> {
+        let row = sqlx::query_as::<_, AgentRunRow>("SELECT * FROM agent_runs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row)
+    }
+
+    pub async fn list_agent_runs(&self, limit: i64) -> StoreResult<Vec<AgentRunRow>> {
+        let rows = sqlx::query_as::<_, AgentRunRow>(
+            "SELECT * FROM agent_runs ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn active_agent_run_for_scope(
+        &self,
+        scope: &str,
+    ) -> StoreResult<Option<AgentRunRow>> {
+        let row = sqlx::query_as::<_, AgentRunRow>(
+            "SELECT * FROM agent_runs WHERE scope = ? AND status = 'running' LIMIT 1",
+        )
+        .bind(scope)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn finish_agent_run(
+        &self,
+        id: i64,
+        status: &str,
+        detail: Option<&str>,
+        now_epoch: i64,
+    ) -> StoreResult<()> {
+        sqlx::query("UPDATE agent_runs SET status = ?, detail = ?, finished_at = ? WHERE id = ?")
+            .bind(status)
+            .bind(detail)
+            .bind(now_epoch)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Boot cleanup: any run still 'running' from a previous process crashed.
+    pub async fn fail_stuck_agent_runs(&self, now_epoch: i64) -> StoreResult<u64> {
+        let result = sqlx::query(
+            r"UPDATE agent_runs SET status = 'failed', detail = 'process restarted mid-run',
+              finished_at = ? WHERE status = 'running'",
+        )
+        .bind(now_epoch)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
     }
 }

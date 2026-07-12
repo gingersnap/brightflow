@@ -3,6 +3,7 @@ import { useColorMode } from '@vueuse/core';
 import { Moon, Sun } from 'lucide-vue-next';
 import { computed } from 'vue';
 
+import LlmSettings from '@/components/settings/LlmSettings.vue';
 import { useUiStore } from '@/stores/ui';
 import type { TextSize } from '@/types';
 
@@ -87,6 +88,9 @@ const textSizes: { value: TextSize; label: string; description: string }[] = [
               </p>
             </div>
           </section>
+
+          <!-- LLM provider -->
+          <LlmSettings />
         </div>
       </div>
     </template>

@@ -1,17 +1,19 @@
 //! Calibrated interestingness scoring.
 //!
-//! Replaces the ad-hoc `change_percent / p_value` formulas previously scattered
-//! across detectors. Combines three normalized components:
-//! - **Significance**: 1 - p_value, clamped
-//! - **Effect size**: per-type, normalized to [0, 1] using effect-size conventions
-//!   (Cohen's d, |r|, R², z/5, etc.)
-//! - **Surprise**: how unusual this finding is relative to the dataset's own baseline
-//!   (computed within-run; no historical store yet)
+//! Each finding gets two normalized components:
+//! - **Significance**: 1 - p_value where the p-value comes from a
+//!   type-specific "boring baseline" null (uniform multinomial for
+//!   concentration, binomial co-occurrence for outlier clusters, baseline
+//!   churn for membership changes, standard tests elsewhere).
+//! - **Effect size**: per-type, normalized to [0, 1] using effect-size
+//!   conventions (Cohen's d, |r|, R², z/5, etc.)
 //!
-//! The final score is a weighted product:
-//!   score = (W_SIG * sig + W_EFFECT * effect + W_SURPRISE * surprise) * kpi_boost
+//! The final score is a product:
+//!   score = significance * sqrt(effect_size) * kpi_boost
 //!
-//! Calibration is iterative — tune the constants empirically on real datasets.
+//! The product form means a finding must be BOTH statistically real AND
+//! materially large to rank — a weighted sum lets one component compensate
+//! for the other, which is how trivia used to surface.
 
 // Match arms over `AnalysisType` are intentionally exhaustive per variant for
 // readability and so that adding a new variant raises a compile error rather
@@ -20,30 +22,37 @@
 
 use std::collections::HashSet;
 
+use statrs::distribution::{Binomial, ChiSquared, ContinuousCDF, DiscreteCDF};
+
 use crate::analysis::tree::{AnalysisType, ScoreBreakdown, TrendDirection};
 
 // ─── Calibration constants ────────────────────────────────────────────────────
 
-/// Weight for significance (1 - p_value)
-const W_SIG: f64 = 0.30;
-/// Weight for effect size (normalized magnitude)
-const W_EFFECT: f64 = 0.45;
-/// Weight for surprise (within-run novelty)
-const W_SURPRISE: f64 = 0.25;
-
 /// Multiplier applied when a finding's measure is flagged as KPI
-const KPI_MULTIPLIER: f64 = 2.5;
+const KPI_MULTIPLIER: f64 = 1.5;
 
 /// Effect-size floor — findings below this are dropped entirely
 const DEFAULT_MIN_EFFECT: f64 = 0.05;
 
+/// Significance floor — findings whose null can't be rejected at this level
+/// are dropped regardless of effect size
+const MIN_SIGNIFICANCE: f64 = 0.5;
+
+/// Per-column probability of a same-direction period outlier under H0.
+/// One-sided tail at the default z-threshold of 2.0 (Φ(-2) ≈ 0.0228).
+const OUTLIER_NULL_P: f64 = 0.0228;
+
+/// Baseline per-member churn probability between adjacent periods under H0.
+/// Membership changes below this base rate are considered ordinary turnover.
+const MEMBERSHIP_NULL_CHURN: f64 = 0.05;
+
 // ─── Scoring context ──────────────────────────────────────────────────────────
 
-/// Context passed to scoring — carries dataset-wide info needed for surprise
-/// and KPI flagging. Fields can be empty (no-ops) for the basic case.
+/// Context passed to scoring — carries dataset-wide info needed for KPI
+/// flagging and floor overrides. Fields can be empty (no-ops) for the basic case.
 #[derive(Debug, Clone, Default)]
 pub struct ScoringContext {
-    /// Columns flagged as KPIs (semantic layer hook — empty for now)
+    /// Columns flagged as KPIs (from the semantic layer)
     pub kpi_columns: HashSet<String>,
     /// Min effect size (override DEFAULT_MIN_EFFECT)
     pub min_effect_size: Option<f64>,
@@ -75,33 +84,36 @@ impl ScoringContext {
 /// components into a final scalar via `total()`.
 pub fn score(analysis: &AnalysisType, ctx: &ScoringContext) -> ScoreBreakdown {
     let sig = significance_component(analysis);
-    let effect = effect_size_component(analysis);
-    // Surprise is within-run; without history, we use the effect size as a
-    // proxy weighted by significance. Replaceable later with JS divergence
-    // vs run-baseline once we accumulate per-detector populations.
-    let surprise = (sig * effect).sqrt();
+    // For legacy detectors the normalized effect size stands in for impact;
+    // the derived-series pipeline computes true volume impact directly.
+    let impact = effect_size_component(analysis);
     let kpi_boost = kpi_boost_for(analysis, ctx);
 
     ScoreBreakdown {
         significance: sig,
-        effect_size: effect,
-        surprise,
+        impact,
+        // Novelty defaults to 1.0 (never seen) until insight history lands (1C).
+        novelty: 1.0,
         kpi_boost,
     }
 }
 
 /// Combine the breakdown into a single scalar.
+///
+/// Product form: a finding must be both significant and material; sqrt on
+/// impact softens its dominance; novelty modulates rather than vetoes (a
+/// fully known story loses half its score).
 pub fn total(b: &ScoreBreakdown) -> f64 {
-    let weighted = W_SURPRISE.mul_add(
-        b.surprise,
-        W_EFFECT.mul_add(b.effect_size, W_SIG * b.significance),
-    );
-    weighted * b.kpi_boost
+    b.significance
+        * b.impact.max(0.0).sqrt()
+        * 0.5f64.mul_add(b.novelty.clamp(0.0, 1.0), 0.5)
+        * b.kpi_boost
 }
 
-/// Returns true if a finding should be kept (effect size above the floor)
+/// Returns true if a finding should be kept: impact above the floor AND the
+/// type-specific null rejected with at least MIN_SIGNIFICANCE confidence.
 pub fn passes_floor(b: &ScoreBreakdown, ctx: &ScoringContext) -> bool {
-    b.effect_size >= ctx.min_effect()
+    b.impact >= ctx.min_effect() && b.significance >= MIN_SIGNIFICANCE
 }
 
 // ─── Component computations ───────────────────────────────────────────────────
@@ -110,7 +122,6 @@ fn significance_component(a: &AnalysisType) -> f64 {
     let p = match a {
         AnalysisType::Anomaly { z_score, .. } => {
             // No explicit p-value on anomalies — derive from |z| via normal CDF approx
-            // p ≈ 2 * (1 - Φ(|z|)) ; quick approximation below saves a call
             two_tailed_p_from_z(*z_score)
         },
         AnalysisType::Segment { p_value, .. } => *p_value,
@@ -120,26 +131,81 @@ fn significance_component(a: &AnalysisType) -> f64 {
         AnalysisType::PeriodAnomaly { p_value, .. } => *p_value,
         AnalysisType::Seasonality { p_value, .. } => *p_value,
         AnalysisType::ForecastDeviation { p_value, .. } => *p_value,
-        AnalysisType::OutlierCluster { cluster_size, .. } => {
-            // Bigger clusters less likely under H0 — synthetic p
-            (-(*cluster_size as f64) * 0.5).exp()
-        },
-        AnalysisType::Concentration { hhi, .. } => {
-            // Higher HHI is more "significant" — synthetic
-            (1.0 - hhi).clamp(0.0, 1.0)
-        },
+        AnalysisType::OutlierCluster {
+            cluster_size,
+            columns_tested,
+            n_periods,
+            ..
+        } => p_outlier_cluster(*cluster_size, *columns_tested, *n_periods),
+        AnalysisType::Concentration {
+            hhi,
+            n_segments,
+            n_rows,
+            ..
+        } => p_concentration_vs_uniform(*hhi, *n_segments, *n_rows),
         AnalysisType::DistributionShift { p_value, .. } => *p_value,
         AnalysisType::MembershipChange {
             added_count,
             removed_count,
+            prev_size,
             ..
-        } => {
-            // More changes = more significant — synthetic
-            (-((*added_count + *removed_count) as f64) * 0.3).exp()
-        },
+        } => p_membership_churn(*added_count, *removed_count, *prev_size),
         AnalysisType::ChangePoint { p_value, .. } => *p_value,
+        AnalysisType::RankChange { p_value, .. } => *p_value,
+        AnalysisType::TopDominance { p_value, .. } => *p_value,
     };
     (1.0 - p.clamp(0.0, 1.0)).clamp(0.0, 1.0)
+}
+
+/// P-value of the observed HHI against a uniform-multinomial null.
+///
+/// Uses the identity X² = n·k·(HHI − 1/k) where X² is the chi-square
+/// goodness-of-fit statistic against equal shares, with df = k − 1.
+/// The metric mass is treated as pseudo-counts distributed over `n_rows`
+/// observations — an approximation, but a directionally honest one: uniform
+/// shares now score p ≈ 1 instead of the old inverted `1 − HHI`.
+fn p_concentration_vs_uniform(hhi: f64, n_segments: usize, n_rows: usize) -> f64 {
+    if n_segments < 2 || n_rows < n_segments {
+        return 1.0;
+    }
+    let k = n_segments as f64;
+    let n = n_rows as f64;
+    let x2 = (n * k * (hhi - 1.0 / k)).max(0.0);
+    let df = k - 1.0;
+    match ChiSquared::new(df) {
+        Ok(dist) => (1.0 - dist.cdf(x2)).clamp(0.0, 1.0),
+        Err(_) => 1.0,
+    }
+}
+
+/// P-value that ≥ cluster_size of columns_tested columns show a
+/// same-direction period outlier by chance (binomial tail), Bonferroni-
+/// corrected for scanning every (period × direction) combination.
+fn p_outlier_cluster(cluster_size: usize, columns_tested: usize, n_periods: usize) -> f64 {
+    if cluster_size < 2 || columns_tested < cluster_size {
+        return 1.0;
+    }
+    let Ok(dist) = Binomial::new(OUTLIER_NULL_P, columns_tested as u64) else {
+        return 1.0;
+    };
+    // P(X >= cluster_size) = 1 - CDF(cluster_size - 1)
+    let tail = 1.0 - dist.cdf(cluster_size as u64 - 1);
+    let comparisons = (n_periods.max(1) * 2) as f64;
+    (tail * comparisons).clamp(0.0, 1.0)
+}
+
+/// P-value of the observed membership churn against a baseline churn rate.
+/// Exposure is the union of members seen in either period.
+fn p_membership_churn(added: usize, removed: usize, prev_size: usize) -> f64 {
+    let churn = added + removed;
+    let exposure = prev_size + added; // union of prev members and new arrivals
+    if churn == 0 || exposure == 0 {
+        return 1.0;
+    }
+    let Ok(dist) = Binomial::new(MEMBERSHIP_NULL_CHURN, exposure as u64) else {
+        return 1.0;
+    };
+    (1.0 - dist.cdf(churn.saturating_sub(1) as u64)).clamp(0.0, 1.0)
 }
 
 fn effect_size_component(a: &AnalysisType) -> f64 {
@@ -183,8 +249,17 @@ fn effect_size_component(a: &AnalysisType) -> f64 {
         AnalysisType::ForecastDeviation {
             deviation_percent, ..
         } => clamp_unit(deviation_percent.abs() / 100.0),
-        AnalysisType::OutlierCluster { cluster_size, .. } => {
-            clamp_unit((*cluster_size as f64) / 5.0)
+        AnalysisType::OutlierCluster {
+            cluster_size,
+            columns_tested,
+            ..
+        } => {
+            // Share of the measure space moving together
+            if *columns_tested == 0 {
+                0.0
+            } else {
+                clamp_unit(*cluster_size as f64 / *columns_tested as f64)
+            }
         },
         AnalysisType::Concentration { hhi, top_share, .. } => {
             // Concentration is interesting when HHI is high OR top_share is dominant
@@ -194,8 +269,13 @@ fn effect_size_component(a: &AnalysisType) -> f64 {
         AnalysisType::MembershipChange {
             added_count,
             removed_count,
+            prev_size,
             ..
-        } => clamp_unit(((*added_count + *removed_count) as f64) / 10.0),
+        } => {
+            // Churn as a share of the membership, not an absolute count
+            let exposure = (prev_size + added_count).max(1);
+            clamp_unit((*added_count + *removed_count) as f64 / exposure as f64)
+        },
         AnalysisType::ChangePoint {
             before_mean,
             after_mean,
@@ -205,6 +285,16 @@ fn effect_size_component(a: &AnalysisType) -> f64 {
             let denom = before_mean.abs().max(1e-6);
             clamp_unit((after_mean - before_mean).abs() / denom)
         },
+        AnalysisType::RankChange {
+            previous_rank,
+            new_rank,
+            n_siblings,
+            ..
+        } => {
+            let jump = previous_rank.abs_diff(*new_rank) as f64;
+            clamp_unit(jump / (*n_siblings).max(1) as f64)
+        },
+        AnalysisType::TopDominance { share, .. } => clamp_unit(*share),
     }
 }
 
@@ -224,6 +314,8 @@ fn kpi_boost_for(a: &AnalysisType, ctx: &ScoringContext) -> f64 {
         AnalysisType::Concentration { column, .. } => Some(column.as_str()),
         AnalysisType::DistributionShift { column, .. } => Some(column.as_str()),
         AnalysisType::ChangePoint { column, .. } => Some(column.as_str()),
+        AnalysisType::RankChange { measure, .. } => Some(measure.as_str()),
+        AnalysisType::TopDominance { measure, .. } => Some(measure.as_str()),
         AnalysisType::MembershipChange { .. } => None,
         AnalysisType::OutlierCluster { columns, .. } => {
             // KPI boost if any of the cluster's columns is a KPI
@@ -264,7 +356,11 @@ fn two_tailed_p_from_z(z: f64) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::shadow_unrelated)]
+#[allow(
+    clippy::shadow_unrelated,
+    clippy::suboptimal_flops,
+    clippy::redundant_clone
+)]
 mod tests {
     use super::*;
 
@@ -275,6 +371,19 @@ mod tests {
             mean: 0.0,
             std_dev: 1.0,
             z_score: z,
+        }
+    }
+
+    fn concentration(hhi: f64, top_share: f64, n_segments: usize, n_rows: usize) -> AnalysisType {
+        AnalysisType::Concentration {
+            column: "revenue".to_string(),
+            segment_column: "region".to_string(),
+            hhi,
+            top_n: 3,
+            top_share,
+            hhi_delta: None,
+            n_segments,
+            n_rows,
         }
     }
 
@@ -294,7 +403,7 @@ mod tests {
         let ctx_kpi = ScoringContext::new().with_kpis(kpis);
         let s_no = total(&score(&anomaly(3.0), &ctx_no));
         let s_kpi = total(&score(&anomaly(3.0), &ctx_kpi));
-        assert!(s_kpi > s_no * 2.0);
+        assert!((s_kpi / s_no - KPI_MULTIPLIER).abs() < 1e-9);
     }
 
     #[test]
@@ -307,6 +416,24 @@ mod tests {
     }
 
     #[test]
+    fn floor_requires_significance_not_just_effect() {
+        // Large effect but statistically meaningless: z=1.0 (p≈0.32) has
+        // effect 0.2 (above min effect) but significance ≈ 0.68... use a
+        // clearly insignificant case: uniform concentration over few rows.
+        let ctx = ScoringContext::new();
+        // HHI barely above uniform for 4 segments (uniform = 0.25) with only
+        // 8 rows — chi-square can't reject the null.
+        let weak = concentration(0.30, 62.0, 4, 8);
+        let b = score(&weak, &ctx);
+        assert!(
+            b.significance < MIN_SIGNIFICANCE,
+            "near-uniform shares on tiny n must not be significant: {}",
+            b.significance
+        );
+        assert!(!passes_floor(&b, &ctx));
+    }
+
+    #[test]
     fn z_to_p_approximation() {
         // Known: z=1.96 → p≈0.05
         let p = two_tailed_p_from_z(1.96);
@@ -314,5 +441,84 @@ mod tests {
         // z=2.58 → p≈0.01
         let p = two_tailed_p_from_z(2.58);
         assert!((p - 0.01).abs() < 0.001, "p={p}");
+    }
+
+    // ── Null-model behavior ────────────────────────────────────────────────
+
+    #[test]
+    fn concentration_uniform_shares_not_significant() {
+        // 10 equal segments → HHI = 0.1 = 1/k exactly: X² = 0, p = 1
+        let p = p_concentration_vs_uniform(0.1, 10, 1000);
+        assert!(p > 0.95, "uniform shares should have p≈1, got {p}");
+    }
+
+    #[test]
+    fn concentration_dominant_segment_significant() {
+        // One segment holds ~90% over 10 segments and plenty of rows
+        let hhi = 0.9f64.powi(2) + 9.0 * (0.1f64 / 9.0).powi(2);
+        let p = p_concentration_vs_uniform(hhi, 10, 500);
+        assert!(p < 0.001, "dominant segment should be significant, got {p}");
+    }
+
+    #[test]
+    fn concentration_needs_data() {
+        // Same HHI but almost no rows → cannot reject
+        let p = p_concentration_vs_uniform(0.5, 4, 3);
+        assert!((p - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn outlier_cluster_small_share_not_significant() {
+        // 2 of 100 columns co-moving across 20 scanned periods is expected noise
+        let p = p_outlier_cluster(2, 100, 20);
+        assert!(p > 0.5, "2/100 cluster should be unconvincing, got {p}");
+    }
+
+    #[test]
+    fn outlier_cluster_large_share_significant() {
+        // 5 of 6 columns moving together in the same period
+        let p = p_outlier_cluster(5, 6, 20);
+        assert!(p < 0.01, "5/6 cluster should be significant, got {p}");
+    }
+
+    #[test]
+    fn membership_small_churn_of_large_base_not_significant() {
+        // 5 changed of 500 members — 1% churn, below the 5% baseline
+        let p = p_membership_churn(3, 2, 500);
+        assert!(p > 0.5, "1% churn should be ordinary, got {p}");
+    }
+
+    #[test]
+    fn membership_mass_churn_significant() {
+        // 30 changed of 60 members — 50% churn
+        let p = p_membership_churn(15, 15, 60);
+        assert!(p < 0.001, "50% churn should be significant, got {p}");
+    }
+
+    #[test]
+    fn total_is_product_form() {
+        // Zero significance zeroes the total no matter the impact
+        let b = ScoreBreakdown {
+            significance: 0.0,
+            impact: 1.0,
+            novelty: 1.0,
+            kpi_boost: 2.5,
+        };
+        assert!(total(&b).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn novelty_halves_stale_stories() {
+        let fresh = ScoreBreakdown {
+            significance: 1.0,
+            impact: 1.0,
+            novelty: 1.0,
+            kpi_boost: 1.0,
+        };
+        let stale = ScoreBreakdown {
+            novelty: 0.0,
+            ..fresh.clone()
+        };
+        assert!((total(&stale) / total(&fresh) - 0.5).abs() < 1e-9);
     }
 }

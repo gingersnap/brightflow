@@ -281,11 +281,31 @@ async fn execute_sync(
 
         // Enrich with text-derived columns if applicable (issues today; PRs/comments later)
         let workspace_root = paths.root();
+        let enrichment_overrides = match store.db().get_table(&source_id, &ep_result.name).await {
+            Ok(Some(table)) => store
+                .db()
+                .get_enrichment_settings(&table.id)
+                .await
+                .ok()
+                .flatten()
+                .map(|row| {
+                    brightflow_engine::enrichment::EnrichmentOverrides::from_stored(
+                        row.text_columns.as_deref(),
+                        row.cleaning_profile,
+                        row.language_column,
+                        row.embedder,
+                        row.min_cluster_size,
+                        row.algorithm,
+                    )
+                }),
+            _ => None,
+        };
         if let Err(e) = text_enrichment::maybe_enrich_parquet(
             &parquet_file,
             &ep_result.name,
             &source_id,
             &workspace_root,
+            enrichment_overrides.as_ref(),
         ) {
             warn!("Text enrichment skipped for {}: {e}", ep_result.name);
         }

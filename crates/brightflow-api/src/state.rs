@@ -29,6 +29,13 @@ pub struct AppState {
     pub schema_overrides: Arc<DashMap<String, Vec<ColumnOverride>>>,
     /// Table analysis settings overrides keyed by table name
     pub settings_overrides: Arc<DashMap<String, TableSettingsOverride>>,
+    /// Per-table enrichment overrides, keyed by `cache_key(source_id, table)`.
+    /// Hydrated from `table_enrichment_settings` at startup, updated by the
+    /// enrichment settings endpoints.
+    pub enrichment_overrides:
+        Arc<DashMap<String, brightflow_engine::enrichment::EnrichmentOverrides>>,
+    /// Abort handles for in-flight agent runs, keyed by run id.
+    pub agent_runs: Arc<DashMap<i64, tokio::task::AbortHandle>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
     /// Authentication database
@@ -64,6 +71,8 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
+            enrichment_overrides: Arc::new(DashMap::new()),
+            agent_runs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -85,6 +94,8 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
+            enrichment_overrides: Arc::new(DashMap::new()),
+            agent_runs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -242,6 +253,8 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
+            enrichment_overrides: Arc::new(DashMap::new()),
+            agent_runs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -283,6 +296,8 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
+            enrichment_overrides: Arc::new(DashMap::new()),
+            agent_runs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -505,6 +520,44 @@ fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
 }
 
 /// Convert a `TableAnalysisSettingsRow` to a `TableSettingsOverride`.
+/// Load stored enrichment overrides into the state map at startup.
+pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore) {
+    let Ok(rows) = store.db().get_all_enrichment_settings().await else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    let tables = store.list_tables().await.unwrap_or_default();
+    // table_id ("{source}:{name}"-agnostic opaque id) → cache key
+    let mut id_to_key = std::collections::HashMap::new();
+    for t in &tables {
+        if let Ok(Some(row)) = store.db().get_table(&t.source_id, &t.name).await {
+            id_to_key.insert(row.id, cache_key(&t.source_id, &t.name));
+        }
+    }
+    let mut hydrated = 0;
+    for row in rows {
+        if let Some(key) = id_to_key.get(&row.table_id) {
+            state.enrichment_overrides.insert(
+                key.clone(),
+                brightflow_engine::enrichment::EnrichmentOverrides::from_stored(
+                    row.text_columns.as_deref(),
+                    row.cleaning_profile,
+                    row.language_column,
+                    row.embedder,
+                    row.min_cluster_size,
+                    row.algorithm,
+                ),
+            );
+            hydrated += 1;
+        }
+    }
+    if hydrated > 0 {
+        tracing::info!("Hydrated {hydrated} table enrichment overrides");
+    }
+}
+
 /// Seed known TOML schema data into SQLite if `column_semantics` is empty.
 pub async fn seed_column_semantics(store: &ParquetStore) {
     // Only seed if we have tables but no semantics yet

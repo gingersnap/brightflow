@@ -1,13 +1,46 @@
+//! Dense k-means over L2-normalized embedding vectors (cosine similarity).
+//!
+//! Fixes over the naive version this replaces:
+//! - **True D² k-means++ seeding** (probabilistic, seeded PRNG) instead of
+//!   deterministic max-min, which always planted centroids on the extreme
+//!   outliers of the dataset.
+//! - **`n_init` restarts** keeping the lowest-inertia run, so one unlucky
+//!   seeding doesn't define the topics.
+//! - **Empty-cluster reseeding from the largest cluster's farthest member**
+//!   (splits the biggest blob) instead of adopting the globally worst-fit
+//!   point (which re-planted centroids on outliers).
+//! - **Post-convergence outlier trim**: members far below their cluster's
+//!   typical similarity are unassigned (`None`) rather than polluting the
+//!   cluster, and per-cluster assignment thresholds are exported so later
+//!   rows are only attached when they genuinely fit.
+
 /// Result of dense k-means clustering over `Vec<f32>` vectors.
 #[derive(Debug, Clone)]
 pub struct DenseClusterResult {
-    /// Cluster index for each input vector.
-    pub assignments: Vec<usize>,
+    /// Cluster index per input vector; `None` = trimmed outlier.
+    pub assignments: Vec<Option<usize>>,
     /// L2-normalized centroids.
     pub centroids: Vec<Vec<f32>>,
-    /// Number of iterations performed.
+    /// Number of Lloyd iterations of the winning restart.
     pub iterations: usize,
+    /// Sum of cosine distances (1 − sim) of assigned members — lower is better.
+    pub inertia: f32,
+    /// Per-cluster minimum cosine similarity for assignment. New rows below
+    /// the threshold should stay unassigned.
+    pub assign_thresholds: Vec<f32>,
 }
+
+/// (assignments, centroids, iterations, inertia) of one k-means restart.
+type RunOutcome = (Vec<usize>, Vec<Vec<f32>>, usize, f32);
+
+const N_INIT: usize = 4;
+/// Fixed base seed — clustering must be reproducible run-to-run.
+const BASE_SEED: u64 = 0x00b1_1235_eed5_eed5;
+/// Members more than this many std-devs below their cluster's mean similarity
+/// are trimmed as outliers.
+const TRIM_SIGMA: f32 = 2.0;
+/// Clusters smaller than this are never trimmed (stats too noisy).
+const MIN_TRIM_CLUSTER: usize = 8;
 
 /// K-means over L2-normalized dense vectors using cosine similarity.
 ///
@@ -20,13 +53,49 @@ pub fn kmeans_dense(vectors: &[Vec<f32>], k: usize, max_iter: usize) -> DenseClu
             assignments: Vec::new(),
             centroids: Vec::new(),
             iterations: 0,
+            inertia: 0.0,
+            assign_thresholds: Vec::new(),
         };
     }
 
-    let dim = vectors[0].len();
     let k = k.min(vectors.len());
 
-    let mut centroids = kmeans_pp_init(vectors, k);
+    let mut best: Option<RunOutcome> = None;
+    for restart in 0..N_INIT {
+        let mut rng = SplitMix64::new(BASE_SEED.wrapping_add(restart as u64));
+        let (assignments, centroids, iterations) = lloyd_run(vectors, k, max_iter, &mut rng);
+        let inertia = compute_inertia(vectors, &assignments, &centroids);
+        let better = best.as_ref().is_none_or(|(_, _, _, b)| inertia < *b);
+        if better {
+            best = Some((assignments, centroids, iterations, inertia));
+        }
+    }
+
+    // `best` is always Some: N_INIT >= 1 and vectors is non-empty.
+    let Some((assignments, centroids, iterations, inertia)) = best else {
+        unreachable!("at least one k-means restart must run");
+    };
+
+    let (assignments, assign_thresholds) = trim_outliers(vectors, assignments, &centroids);
+
+    DenseClusterResult {
+        assignments,
+        centroids,
+        iterations,
+        inertia,
+        assign_thresholds,
+    }
+}
+
+/// One full Lloyd run from a fresh D² seeding.
+fn lloyd_run(
+    vectors: &[Vec<f32>],
+    k: usize,
+    max_iter: usize,
+    rng: &mut SplitMix64,
+) -> (Vec<usize>, Vec<Vec<f32>>, usize) {
+    let dim = vectors[0].len();
+    let mut centroids = kmeans_pp_init(vectors, k, rng);
     let mut assignments = vec![0usize; vectors.len()];
     let mut iterations = 0;
 
@@ -56,34 +125,53 @@ pub fn kmeans_dense(vectors: &[Vec<f32>], k: usize, max_iter: usize) -> DenseClu
         }
     }
 
-    DenseClusterResult {
-        assignments,
-        centroids,
-        iterations,
-    }
+    (assignments, centroids, iterations)
 }
 
-/// K-means++ seeding: pick the vector furthest from existing centroids each round.
-/// Deterministic — uses max-min distance rather than the standard probabilistic
-/// variant so repeated fits on the same data give the same clusters.
-fn kmeans_pp_init(vectors: &[Vec<f32>], k: usize) -> Vec<Vec<f32>> {
+/// True D² k-means++ seeding: first centroid uniform at random, each next
+/// centroid sampled with probability proportional to its squared cosine
+/// distance to the nearest already-chosen centroid.
+fn kmeans_pp_init(vectors: &[Vec<f32>], k: usize, rng: &mut SplitMix64) -> Vec<Vec<f32>> {
+    let n = vectors.len();
     let mut centroids: Vec<Vec<f32>> = Vec::with_capacity(k);
-    centroids.push(vectors[0].clone());
+    let first = rng.next_bounded(n);
+    centroids.push(vectors[first].clone());
+
+    // min squared distance to any chosen centroid, updated incrementally
+    let mut min_d2: Vec<f32> = vectors
+        .iter()
+        .map(|v| {
+            let d = (1.0 - dot(v, &centroids[0])).max(0.0);
+            d * d
+        })
+        .collect();
 
     for _ in 1..k {
-        let mut best_idx = 0;
-        let mut best_min_dist = f32::NEG_INFINITY;
-        for (i, vec) in vectors.iter().enumerate() {
-            let min_dist = centroids
-                .iter()
-                .map(|c| 1.0 - dot(vec, c))
-                .fold(f32::INFINITY, f32::min);
-            if min_dist > best_min_dist {
-                best_min_dist = min_dist;
-                best_idx = i;
+        let total: f32 = min_d2.iter().sum();
+        let idx = if total <= f32::EPSILON {
+            // All points coincide with chosen centroids — pick uniformly.
+            rng.next_bounded(n)
+        } else {
+            let mut target = rng.next_f32() * total;
+            let mut chosen = n - 1;
+            for (i, &d2) in min_d2.iter().enumerate() {
+                target -= d2;
+                if target <= 0.0 {
+                    chosen = i;
+                    break;
+                }
+            }
+            chosen
+        };
+        let new_centroid = vectors[idx].clone();
+        for (i, v) in vectors.iter().enumerate() {
+            let d = (1.0 - dot(v, &new_centroid)).max(0.0);
+            let d2 = d * d;
+            if d2 < min_d2[i] {
+                min_d2[i] = d2;
             }
         }
-        centroids.push(vectors[best_idx].clone());
+        centroids.push(new_centroid);
     }
 
     centroids
@@ -155,10 +243,18 @@ pub fn dense_cosine(a: &[f32], b: &[f32]) -> f32 {
     dot(a, b)
 }
 
-/// Detect empty clusters and re-seed each one from the data point that fits its
-/// current cluster *least well* (smallest cosine to its assigned centroid).
-/// Without this fix, an emptied cluster has a zero centroid and `dot(*, 0) == 0`,
-/// so it can never recover assignments.
+/// Sum of cosine distances of every point to its assigned centroid.
+fn compute_inertia(vectors: &[Vec<f32>], assignments: &[usize], centroids: &[Vec<f32>]) -> f32 {
+    vectors
+        .iter()
+        .zip(assignments.iter())
+        .map(|(v, &a)| (1.0 - dot(v, &centroids[a])).max(0.0))
+        .sum()
+}
+
+/// Detect empty clusters and re-seed each from the *largest* cluster's member
+/// farthest from its centroid — splitting the biggest blob instead of adopting
+/// the globally worst-fit point (which planted centroids on outliers).
 ///
 /// Returns `true` if any cluster was re-seeded.
 fn reseed_empty_clusters(
@@ -176,33 +272,111 @@ fn reseed_empty_clusters(
         if counts[empty_idx] != 0 {
             continue;
         }
-        // Find the worst-fit vector overall — the one with the lowest similarity
-        // to its currently assigned centroid (and not from an already-tiny cluster).
+        // Largest cluster with at least 2 members
+        let Some(largest) = (0..centroids.len())
+            .filter(|&c| counts[c] >= 2)
+            .max_by_key(|&c| counts[c])
+        else {
+            continue;
+        };
+        // Its farthest member becomes the new centroid's seed
         let mut worst_vec_idx: Option<usize> = None;
         let mut worst_sim = f32::INFINITY;
         for (i, vec) in vectors.iter().enumerate() {
-            let cur_cluster = assignments[i];
-            // Don't strip the last member from another cluster.
-            if counts[cur_cluster] <= 1 {
+            if assignments[i] != largest {
                 continue;
             }
-            let sim = dot(vec, &centroids[cur_cluster]);
+            let sim = dot(vec, &centroids[largest]);
             if sim < worst_sim {
                 worst_sim = sim;
                 worst_vec_idx = Some(i);
             }
         }
         if let Some(i) = worst_vec_idx {
-            // Move this point: copy as new centroid, update assignment + counts.
             centroids[empty_idx].copy_from_slice(&vectors[i]);
-            let prev = assignments[i];
             assignments[i] = empty_idx;
-            counts[prev] -= 1;
+            counts[largest] -= 1;
             counts[empty_idx] += 1;
             reseeded = true;
         }
     }
     reseeded
+}
+
+/// Unassign members whose similarity to their centroid is far below the
+/// cluster's typical similarity. Returns the (possibly trimmed) assignments
+/// and the per-cluster assignment thresholds.
+fn trim_outliers(
+    vectors: &[Vec<f32>],
+    assignments: Vec<usize>,
+    centroids: &[Vec<f32>],
+) -> (Vec<Option<usize>>, Vec<f32>) {
+    let k = centroids.len();
+    let mut sims_by_cluster: Vec<Vec<f32>> = vec![Vec::new(); k];
+    let sims: Vec<f32> = vectors
+        .iter()
+        .zip(assignments.iter())
+        .map(|(v, &a)| {
+            let s = dot(v, &centroids[a]);
+            sims_by_cluster[a].push(s);
+            s
+        })
+        .collect();
+
+    let thresholds: Vec<f32> = sims_by_cluster
+        .iter()
+        .map(|member_sims| {
+            if member_sims.len() < MIN_TRIM_CLUSTER {
+                return f32::NEG_INFINITY;
+            }
+            let n = member_sims.len() as f32;
+            let mean = member_sims.iter().sum::<f32>() / n;
+            let var = member_sims
+                .iter()
+                .map(|s| (s - mean) * (s - mean))
+                .sum::<f32>()
+                / (n - 1.0);
+            TRIM_SIGMA.mul_add(-var.sqrt(), mean)
+        })
+        .collect();
+
+    let assignments = assignments
+        .into_iter()
+        .zip(sims)
+        .map(|(a, sim)| if sim < thresholds[a] { None } else { Some(a) })
+        .collect();
+
+    (assignments, thresholds)
+}
+
+// ─── Seeded PRNG ─────────────────────────────────────────────────────────────
+
+/// SplitMix64 — tiny, fast, statistically fine for seeding; avoids a `rand`
+/// dependency and guarantees reproducible clustering across builds.
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform f32 in [0, 1).
+    fn next_f32(&mut self) -> f32 {
+        ((self.next_u64() >> 40) as f32) / ((1u32 << 24) as f32)
+    }
+
+    /// Uniform usize in [0, bound).
+    fn next_bounded(&mut self, bound: usize) -> usize {
+        (self.next_u64() % (bound as u64)) as usize
+    }
 }
 
 #[cfg(test)]
@@ -234,6 +408,24 @@ mod tests {
         vecs
     }
 
+    /// Planted clusters around orthogonal axes plus deterministic jitter.
+    fn planted_clusters(per_cluster: usize, n_clusters: usize, dim: usize) -> Vec<Vec<f32>> {
+        let mut rng = SplitMix64::new(42);
+        let mut out = Vec::new();
+        for c in 0..n_clusters {
+            for _ in 0..per_cluster {
+                let mut v = vec![0.0f32; dim];
+                v[c] = 1.0;
+                for x in &mut v {
+                    *x += (rng.next_f32() - 0.5) * 0.2;
+                }
+                norm(&mut v);
+                out.push(v);
+            }
+        }
+        out
+    }
+
     #[test]
     fn test_kmeans_two_clusters() {
         let vecs = make_vectors();
@@ -244,6 +436,8 @@ mod tests {
         assert_eq!(r.assignments[3], r.assignments[4]);
         assert_eq!(r.assignments[4], r.assignments[5]);
         assert_ne!(r.assignments[0], r.assignments[3]);
+        // Tiny clusters are never trimmed
+        assert!(r.assignments.iter().all(Option::is_some));
     }
 
     #[test]
@@ -261,5 +455,64 @@ mod tests {
         let r = kmeans_dense(&[], 3, 10);
         assert!(r.assignments.is_empty());
         assert!(r.centroids.is_empty());
+    }
+
+    #[test]
+    fn deterministic_across_runs() {
+        let vecs = planted_clusters(40, 3, 8);
+        let a = kmeans_dense(&vecs, 3, 50);
+        let b = kmeans_dense(&vecs, 3, 50);
+        assert_eq!(a.assignments, b.assignments);
+        assert_eq!(a.inertia, b.inertia);
+    }
+
+    #[test]
+    fn recovers_planted_clusters_and_trims_noise() {
+        let mut vecs = planted_clusters(50, 3, 8);
+        // Inject noise points pointing into unused dimensions
+        let mut rng = SplitMix64::new(7);
+        let n_clean = vecs.len();
+        for _ in 0..12 {
+            let mut v = vec![0.0f32; 8];
+            for x in v.iter_mut().skip(3) {
+                *x = rng.next_f32() - 0.5;
+            }
+            norm(&mut v);
+            vecs.push(v);
+        }
+        let r = kmeans_dense(&vecs, 3, 100);
+
+        // Every planted cluster must be pure: all members of one plant share
+        // an assignment (ignoring trimmed members).
+        for c in 0..3 {
+            let assigned: Vec<usize> = (c * 50..(c + 1) * 50)
+                .filter_map(|i| r.assignments[i])
+                .collect();
+            assert!(
+                assigned.len() >= 45,
+                "cluster {c} lost too many members: {}",
+                assigned.len()
+            );
+            let first = assigned[0];
+            assert!(
+                assigned.iter().all(|&a| a == first),
+                "planted cluster {c} split"
+            );
+        }
+        // The noise points should mostly be trimmed or at least not dominate
+        let noise_assigned = (n_clean..vecs.len())
+            .filter(|&i| r.assignments[i].is_some())
+            .count();
+        assert!(
+            noise_assigned <= 6,
+            "too many noise points kept: {noise_assigned}/12"
+        );
+    }
+
+    #[test]
+    fn thresholds_len_matches_k() {
+        let vecs = planted_clusters(30, 2, 6);
+        let r = kmeans_dense(&vecs, 2, 50);
+        assert_eq!(r.assign_thresholds.len(), r.centroids.len());
     }
 }

@@ -20,8 +20,10 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { AnalysisNode, AnalysisTree } from '@/services/api';
+import { useCurationStore } from '@/stores/curation';
 import { useInsightsStore } from '@/stores/insights';
 import { useQueryStore } from '@/stores/query';
+import type { DismissReason } from '@/types/generated';
 
 import { rendererFor } from './renderers';
 
@@ -73,6 +75,105 @@ const childNodes = computed(() =>
 const hasChildren = computed(() => childNodes.value.length > 0);
 
 const renderer = computed(() => rendererFor(props.node.analysis.type));
+
+// ── Curation actions (dismiss / pin / annotate / suppress) ────────────────
+const curation = useCurationStore();
+
+function actionScope(): { sourceId: string; table: string } | null {
+  const sourceId = insightsStore.selectedSourceId ?? String(route.params['sourceId'] ?? '');
+  const table = insightsStore.selectedTable ?? String(route.params['table'] ?? '');
+  if (!sourceId || !table || !props.node.fingerprint) {
+    return null;
+  }
+  return { sourceId, table };
+}
+
+async function dismiss(reason: DismissReason): Promise<void> {
+  const scope = actionScope();
+  if (!scope) {
+    return;
+  }
+  await curation.dispatch({
+    kind: 'dismiss_insight',
+    source_id: scope.sourceId,
+    table: scope.table,
+    fingerprint: props.node.fingerprint,
+    reason,
+  });
+}
+
+async function pin(): Promise<void> {
+  const scope = actionScope();
+  if (!scope) {
+    return;
+  }
+  await curation.dispatch({
+    kind: 'pin_insight',
+    source_id: scope.sourceId,
+    table: scope.table,
+    fingerprint: props.node.fingerprint,
+    pinned: true,
+  });
+}
+
+async function annotate(): Promise<void> {
+  const scope = actionScope();
+  if (!scope) {
+    return;
+  }
+  const note = window.prompt('Note for this insight');
+  if (note == null || note.trim() === '') {
+    return;
+  }
+  await curation.dispatch({
+    kind: 'annotate_insight',
+    source_id: scope.sourceId,
+    table: scope.table,
+    fingerprint: props.node.fingerprint,
+    note: note.trim(),
+  });
+}
+
+async function suppressDimension(): Promise<void> {
+  const scope = actionScope();
+  if (!scope) {
+    return;
+  }
+  const target = props.node.filterChain[0]?.column ?? window.prompt('Column to suppress') ?? '';
+  if (target === '') {
+    return;
+  }
+  await curation.dispatch({
+    kind: 'suppress_target',
+    source_id: scope.sourceId,
+    table: scope.table,
+    target_kind: 'segment',
+    target,
+  });
+}
+
+const curationItems = computed(() => [
+  [
+    { label: 'Pin to top', icon: 'i-lucide-pin', onSelect: () => void pin() },
+    { label: 'Annotate…', icon: 'i-lucide-message-square-text', onSelect: () => void annotate() },
+  ],
+  [
+    {
+      label: 'Dismiss — boring',
+      icon: 'i-lucide-eye-off',
+      onSelect: () => void dismiss('boring'),
+    },
+    { label: 'Dismiss — known', icon: 'i-lucide-eye-off', onSelect: () => void dismiss('known') },
+    { label: 'Dismiss — wrong', icon: 'i-lucide-eye-off', onSelect: () => void dismiss('wrong') },
+  ],
+  [
+    {
+      label: 'Suppress this segment',
+      icon: 'i-lucide-ban',
+      onSelect: () => void suppressDimension(),
+    },
+  ],
+]);
 
 const analysisTypeConfig = computed(() => {
   const { type } = props.node.analysis;
@@ -176,6 +277,22 @@ const analysisTypeConfig = computed(() => {
         label: 'Change Point',
       };
     }
+    case 'RankChange': {
+      return {
+        bg: 'bg-sky-500/10',
+        color: 'text-sky-500',
+        icon: ArrowLeftRight,
+        label: 'Rank Change',
+      };
+    }
+    case 'TopDominance': {
+      return {
+        bg: 'bg-fuchsia-500/10',
+        color: 'text-fuchsia-500',
+        icon: PieChart,
+        label: 'Dominance',
+      };
+    }
   }
 });
 </script>
@@ -207,12 +324,27 @@ const analysisTypeConfig = computed(() => {
       <div class="min-w-0 flex-1">
         <!-- Summary -->
         <p class="text-sm leading-relaxed text-highlighted">
-          {{ node.summary }}
+          <span
+            v-if="node.rank != null && currentDepth === 0"
+            class="mr-1.5 font-mono-data text-xs text-muted"
+            >#{{ node.rank }}</span
+          >{{ node.summary }}
         </p>
         <!-- Tech summary badge -->
         <p class="mt-1 font-mono-data text-sm text-muted">
           {{ node.tech_summary }}
         </p>
+        <!-- Provenance chips: how the underlying series was derived -->
+        <div v-if="node.provenance.length > 0" class="mt-1.5 flex flex-wrap items-center gap-1">
+          <span
+            v-for="(step, i) in node.provenance"
+            :key="i"
+            class="rounded border border-default bg-elevated/60 px-1.5 py-0.5 font-mono-data text-xs text-muted"
+            :title="step.kind"
+          >
+            {{ step.label }}
+          </span>
+        </div>
       </div>
 
       <!-- Expand/collapse indicator -->
@@ -245,22 +377,35 @@ const analysisTypeConfig = computed(() => {
         Open in Explore
       </button>
       <span class="ml-auto font-mono-data">score {{ node.significance.toFixed(2) }}</span>
+      <UDropdownMenu v-if="node.fingerprint" :items="curationItems">
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-more-horizontal"
+          aria-label="Insight actions"
+          @click.stop
+        />
+      </UDropdownMenu>
     </div>
 
     <div
       v-if="showScore"
       class="mx-4 mb-3 rounded-md border border-default bg-elevated/40 p-3 font-mono-data text-xs text-muted"
     >
+      <p v-if="node.why" class="mb-2 font-sans text-sm text-highlighted">
+        {{ node.why }}
+      </p>
       <div class="mb-1 grid grid-cols-4 gap-2">
         <span>significance</span>
-        <span>effect size</span>
-        <span>surprise</span>
+        <span>impact</span>
+        <span>novelty</span>
         <span>kpi boost</span>
       </div>
       <div class="grid grid-cols-4 gap-2 text-highlighted">
         <span>{{ node.scoreBreakdown.significance.toFixed(3) }}</span>
-        <span>{{ node.scoreBreakdown.effectSize.toFixed(3) }}</span>
-        <span>{{ node.scoreBreakdown.surprise.toFixed(3) }}</span>
+        <span>{{ node.scoreBreakdown.impact.toFixed(3) }}</span>
+        <span>{{ node.scoreBreakdown.novelty.toFixed(2) }}</span>
         <span>×{{ node.scoreBreakdown.kpiBoost.toFixed(2) }}</span>
       </div>
       <div v-if="node.filterChain.length > 0" class="mt-2 border-t border-default pt-2">

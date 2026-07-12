@@ -35,7 +35,7 @@ pub struct PeriodStats {
 }
 
 /// Group by time periods using pre-cached data
-fn aggregate_by_period_cached(
+pub fn aggregate_by_period_cached(
     metric_values: &[f64],
     period_labels: &[Option<String>],
 ) -> Vec<PeriodStats> {
@@ -377,13 +377,14 @@ fn extract_period_labels(
                 })
                 .collect())
         },
-        DataType::Datetime(_, _) => {
+        DataType::Datetime(unit, _) => {
             let dt_series = series.datetime()?;
+            let divisor = time_unit_divisor(*unit);
             Ok(dt_series
                 .into_iter()
-                .map(|opt_us| {
-                    opt_us.and_then(|us| {
-                        let secs = us / 1_000_000;
+                .map(|opt_ticks| {
+                    opt_ticks.and_then(|ticks| {
+                        let secs = ticks / divisor;
                         chrono::DateTime::from_timestamp(secs, 0).map(
                             |dt: chrono::DateTime<chrono::Utc>| {
                                 format_period(dt.date_naive(), granularity)
@@ -436,6 +437,16 @@ fn extract_period_labels(
     }
 }
 
+/// Ticks-per-second for a polars datetime unit. Assuming microseconds for
+/// millisecond columns collapsed years of data into a single 1970 period.
+fn time_unit_divisor(unit: TimeUnit) -> i64 {
+    match unit {
+        TimeUnit::Nanoseconds => 1_000_000_000,
+        TimeUnit::Microseconds => 1_000_000,
+        TimeUnit::Milliseconds => 1_000,
+    }
+}
+
 fn format_period(date: NaiveDate, granularity: TimeGranularity) -> String {
     match granularity {
         TimeGranularity::Day => date.format("%Y-%m-%d").to_string(),
@@ -470,11 +481,12 @@ pub fn extract_timestamps(series: &Column) -> Result<Vec<Option<i64>>> {
                 })
                 .collect())
         },
-        DataType::Datetime(_, _) => {
+        DataType::Datetime(unit, _) => {
             let dt_series = series.datetime()?;
+            let divisor = time_unit_divisor(*unit);
             Ok(dt_series
                 .into_iter()
-                .map(|opt_us| opt_us.map(|us| us / 1_000_000))
+                .map(|opt_ticks| opt_ticks.map(|ticks| ticks / divisor))
                 .collect())
         },
         DataType::String => {

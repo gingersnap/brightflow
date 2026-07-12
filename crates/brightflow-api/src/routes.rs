@@ -5,11 +5,14 @@ use axum::{
     Json, Router,
 };
 
+use crate::actions::handlers as actions_handlers;
+use crate::agent::handlers as agent_handlers;
 use crate::analytics::handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::connect::handlers as connect_handlers;
 use crate::ingest::handlers as ingest_handlers;
 use crate::insights::handlers as insights_handlers;
+use crate::llm::handlers as llm_handlers;
 use crate::product_analytics::handlers as pa_handlers;
 use crate::scheduler::handlers as scheduler_handlers;
 use crate::semantics::handlers as semantics_handlers;
@@ -58,6 +61,38 @@ fn api_routes() -> Router<AppState> {
         // Insights
         .route("/insights/review", post(insights_handlers::run_review))
         .route("/insights/trends", post(insights_handlers::run_trends))
+        .route(
+            "/sources/{source_id}/tables/{table}/insights/history",
+            get(insights_handlers::get_history).delete(insights_handlers::reset_history),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/enrichment",
+            get(topics_handlers::get_enrichment_settings)
+                .put(topics_handlers::put_enrichment_settings),
+        )
+        .route(
+            "/actions",
+            get(actions_handlers::feed).post(actions_handlers::dispatch),
+        )
+        .route("/actions/manifest", get(actions_handlers::manifest))
+        .route("/actions/{id}/approve", post(actions_handlers::approve))
+        .route("/actions/{id}/reject", post(actions_handlers::reject))
+        .route("/actions/{id}/undo", post(actions_handlers::undo))
+        .route(
+            "/llm/providers",
+            get(llm_handlers::list_providers).post(llm_handlers::upsert_provider),
+        )
+        .route(
+            "/llm/providers/{id}",
+            delete(llm_handlers::delete_provider),
+        )
+        .route("/llm/providers/{id}/test", post(llm_handlers::test_provider))
+        .route(
+            "/agent/runs",
+            get(agent_handlers::list_runs).post(agent_handlers::start_run),
+        )
+        .route("/agent/runs/{id}", get(agent_handlers::get_run))
+        .route("/agent/runs/{id}/cancel", post(agent_handlers::cancel_run))
         // Column semantics & table settings (source-scoped)
         .route(
             "/sources/{source_id}/tables/{name}/semantics",

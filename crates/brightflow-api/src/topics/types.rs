@@ -17,6 +17,10 @@ pub struct ClusterSummary {
     pub sample_titles: Vec<String>,
     /// Top GitHub labels in this cluster with their share (0..=1).
     pub top_labels: Vec<LabelBucket>,
+    /// True when `name` comes from curation (a rename or an assigned label)
+    /// rather than auto-generated c-TF-IDF terms.
+    #[serde(default)]
+    pub curated: bool,
 }
 
 /// Overview returned by `GET …/topics`.
@@ -34,10 +38,35 @@ pub struct TopicsOverview {
     #[ts(optional)]
     pub k: Option<usize>,
     pub total_rows: usize,
+    /// Rows without a cluster: ineligible after cleaning, other-language,
+    /// or trimmed as outliers. Honesty metric — was silently hidden before.
+    #[serde(default)]
+    pub unassigned_rows: usize,
+    /// Clusters that exist but fall below the display size floor.
+    #[serde(default)]
+    pub hidden_clusters: usize,
+    /// Curation edits that lost their cluster after a re-fit (pending review).
+    #[serde(default)]
+    pub orphaned_edits: usize,
+    /// Language the fit covers (primary subtag), when the table has one.
+    #[ts(optional)]
+    pub language: Option<String>,
+    /// Distribution of languages at fit time.
+    #[serde(default)]
+    pub language_histogram: Vec<LanguageBucket>,
     /// Unix epoch seconds.
     #[ts(optional)]
     pub fitted_at: Option<i64>,
     pub clusters: Vec<ClusterSummary>,
+}
+
+/// One language's row count in the fitted table.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageBucket {
+    pub language: String,
+    pub count: usize,
 }
 
 /// One issue reference returned in cluster details.
@@ -101,4 +130,57 @@ pub struct ClusterDetail {
 pub struct ReclusterRequest {
     #[ts(optional)]
     pub k: Option<usize>,
+    /// Fit on this language (primary subtag, e.g. "ja") instead of the
+    /// dominant one.
+    #[ts(optional)]
+    pub language: Option<String>,
+    /// Embedder id override for this fit (only `"potion-base-32M"` today).
+    #[ts(optional)]
+    pub embedder: Option<String>,
+    /// Minimum cluster size (used by density clustering; advisory for k-means).
+    #[ts(optional)]
+    pub min_cluster_size: Option<usize>,
+    /// Clustering algorithm: "kmeans" (default) or "hdbscan".
+    #[ts(optional)]
+    pub algorithm: Option<String>,
+}
+
+/// Effective enrichment settings for a table (builtin default ⊕ overrides).
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentSettingsResponse {
+    pub table: String,
+    pub enrichable: bool,
+    pub text_columns: Vec<String>,
+    pub cleaning_profile: String,
+    #[ts(optional)]
+    pub language_column: Option<String>,
+    pub embedder: String,
+    #[ts(optional)]
+    pub min_cluster_size: Option<usize>,
+    /// Clustering algorithm: "kmeans" or "hdbscan".
+    pub algorithm: String,
+    /// True when stored overrides exist for this table.
+    pub has_overrides: bool,
+}
+
+/// Body for `PUT …/enrichment`. All fields optional deltas.
+#[derive(Debug, Deserialize, TS, Default)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEnrichmentSettingsRequest {
+    #[ts(optional)]
+    pub text_columns: Option<Vec<String>>,
+    /// "kmeans" | "hdbscan"
+    #[ts(optional)]
+    pub algorithm: Option<String>,
+    #[ts(optional)]
+    pub cleaning_profile: Option<String>,
+    #[ts(optional)]
+    pub language_column: Option<String>,
+    #[ts(optional)]
+    pub embedder: Option<String>,
+    #[ts(optional)]
+    pub min_cluster_size: Option<usize>,
 }

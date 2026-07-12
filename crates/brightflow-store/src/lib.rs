@@ -32,7 +32,11 @@ mod table;
 
 pub use error::{StoreError, StoreResult};
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
-pub use models::{ColumnSemanticRow, FileColumnStatRow, TableAnalysisSettingsRow, TableRow};
+pub use models::{
+    ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, ExcludedTermRow,
+    FileColumnStatRow, InsightHistoryRow, InsightStateRow, InsightSuppressionRow,
+    TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableRow,
+};
 pub use scan::ScanFilter;
 pub use stats::extract_file_column_stats;
 pub use table::{TableInfo, TableRef};

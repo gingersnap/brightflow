@@ -9,6 +9,10 @@ pub struct OutlierCluster {
     pub columns: Vec<String>,
     pub direction: String,                      // "spike" or "dip"
     pub common_segments: Vec<(String, String)>, // (dimension, value) pairs
+    /// How many numeric columns were scanned (binomial-null denominator)
+    pub columns_tested: usize,
+    /// How many distinct periods were scanned (multiple-comparison correction)
+    pub n_periods: usize,
 }
 
 /// Find outlier clusters across multiple columns.
@@ -37,7 +41,13 @@ pub fn find_outlier_clusters(
     let column_outliers = find_column_outliers(&period_stats, z_threshold);
 
     // Step 3: Cluster outliers by period and direction
-    let clusters = cluster_outliers(&column_outliers);
+    let columns_tested = cache.numeric.len();
+    let n_periods = period_labels
+        .iter()
+        .flatten()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    let clusters = cluster_outliers(&column_outliers, columns_tested, n_periods);
 
     // Step 4: Find common dimension values for each cluster
     enrich_with_common_segments(clusters, cache, period_labels)
@@ -134,7 +144,11 @@ fn find_column_outliers(
 }
 
 /// Cluster outliers by period and direction
-fn cluster_outliers(outliers: &[ColumnOutlier]) -> Vec<OutlierCluster> {
+fn cluster_outliers(
+    outliers: &[ColumnOutlier],
+    columns_tested: usize,
+    n_periods: usize,
+) -> Vec<OutlierCluster> {
     // Group by (period, direction)
     let mut groups: HashMap<(String, String), Vec<String>> = HashMap::new();
 
@@ -154,6 +168,8 @@ fn cluster_outliers(outliers: &[ColumnOutlier]) -> Vec<OutlierCluster> {
                 columns,
                 direction,
                 common_segments: Vec::new(),
+                columns_tested,
+                n_periods,
             }
         })
         .collect()

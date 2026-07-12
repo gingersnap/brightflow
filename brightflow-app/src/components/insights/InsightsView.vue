@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ArrowLeft, Play, Table2 } from 'lucide-vue-next';
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import ActivityFeed from '@/components/actions/ActivityFeed.vue';
+import AgentActions from '@/components/actions/AgentActions.vue';
+import { insightHistoryApi } from '@/services/api';
 import { type Cadence, type ReportType, useInsightsStore } from '@/stores/insights';
 import { useSourceStore } from '@/stores/source';
 
@@ -16,6 +19,17 @@ const props = defineProps<{
 const router = useRouter();
 const sourceStore = useSourceStore();
 const insightsStore = useInsightsStore();
+const activityOpen = ref(false);
+const historyResetNote = ref<string | null>(null);
+
+async function resetHistory(): Promise<void> {
+  if (insightsStore.selectedTable == null) {
+    return;
+  }
+  const result = await insightHistoryApi.reset(props.sourceId, insightsStore.selectedTable);
+  historyResetNote.value =
+    result == null ? 'Reset failed' : `Cleared ${result.deleted} remembered insights`;
+}
 
 const tables = computed(() => sourceStore.getSourceById(props.sourceId)?.tables ?? []);
 
@@ -158,10 +172,51 @@ watch(
         </UButton>
       </div>
 
+      <!-- Agent curation (visible only with an LLM provider) -->
+      <div v-if="insightsStore.selectedTable" class="px-4 pt-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <AgentActions
+            :source-id="sourceId"
+            :table="insightsStore.selectedTable"
+            :kinds="[
+              { kind: 'triage_insights', label: 'Triage', icon: 'i-lucide-list-checks' },
+              { kind: 'narrate_insights', label: 'Summarize', icon: 'i-lucide-scroll-text' },
+            ]"
+          />
+          <UButton
+            size="md"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-brain"
+            title="Forget which insights were already shown — novelty scores reset to fresh"
+            @click="resetHistory"
+          >
+            Reset insight memory
+          </UButton>
+          <span v-if="historyResetNote" class="text-sm text-muted">{{ historyResetNote }}</span>
+        </div>
+      </div>
+
       <!-- Results -->
       <div class="min-h-0 flex-1">
         <InsightsPanel />
       </div>
+
+      <UButton
+        size="md"
+        color="neutral"
+        variant="soft"
+        icon="i-lucide-history"
+        class="fixed right-4 bottom-4 z-10 shadow-lg"
+        @click="activityOpen = true"
+      >
+        Activity
+      </UButton>
+      <USlideover v-model:open="activityOpen" title="Activity">
+        <template #body>
+          <ActivityFeed />
+        </template>
+      </USlideover>
     </template>
   </div>
 </template>
