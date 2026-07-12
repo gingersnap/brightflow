@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { ArrowLeft } from 'lucide-vue-next';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import ExploreTablePicker from '@/components/explore/ExploreTablePicker.vue';
 import FilterBar from '@/components/query/FilterBar.vue';
 import QueryBuilder from '@/components/query/QueryBuilder.vue';
 import ResultsPanel from '@/components/results/ResultsPanel.vue';
+import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { tableApi } from '@/services/api';
 import { resetAllStores } from '@/stores';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
+import { useUiStore } from '@/stores/ui';
 import type { SourceTable } from '@/types';
 
 const props = defineProps<{
@@ -21,6 +21,7 @@ const props = defineProps<{
 const router = useRouter();
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
+const uiStore = useUiStore();
 
 const loadingTable = ref(false);
 
@@ -42,18 +43,32 @@ function handleSelectTable(table: SourceTable): void {
   router.push({ name: 'explore-table', params: { sourceId: props.sourceId, table: table.name } });
 }
 
-function handleBackToTables(): void {
-  connectionStore.disconnect();
-  resetAllStores();
-  router.push({ name: 'source-tool', params: { sourceId: props.sourceId, tool: 'explore' } });
+function handleAutoSelectTable(table: SourceTable): void {
+  router.replace({
+    name: 'explore-table',
+    params: { sourceId: props.sourceId, table: table.name },
+  });
 }
 
-// Watch table prop — load when it changes
+// Watch table prop — load when it changes, clean up on the bare route
 watch(
-  () => props.table,
-  (name) => {
+  () => [props.sourceId, props.table] as const,
+  ([, name], prev) => {
     if (name) {
+      if (prev && prev[1] == null) {
+        // Arriving from the bare route: reopen sections to their defaults
+        uiStore.filterCollapsed = true;
+        uiStore.summarizeCollapsed = false;
+        uiStore.resultsCollapsed = false;
+      }
       loadTable(name);
+    } else {
+      connectionStore.disconnect();
+      resetAllStores();
+      // Downstream sections render greyed out — keep them collapsed too
+      uiStore.filterCollapsed = true;
+      uiStore.summarizeCollapsed = true;
+      uiStore.resultsCollapsed = true;
     }
   },
   { immediate: true },
@@ -62,30 +77,31 @@ watch(
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- Table picker phase -->
-    <template v-if="!table">
-      <div v-if="loadingTable" class="flex flex-1 items-center justify-center">
-        <p class="text-muted">Loading table...</p>
-      </div>
-      <ExploreTablePicker :source-id="sourceId" @select-table="handleSelectTable" />
-    </template>
+    <TableSectionPane
+      :source-id="sourceId"
+      :selected-table="table"
+      @select-table="handleSelectTable"
+      @auto-select-table="handleAutoSelectTable"
+    />
 
-    <!-- Query builder phase -->
-    <template v-else>
-      <div class="border-b border-default px-4 py-2">
-        <button
-          class="flex cursor-pointer items-center gap-1 text-sm text-muted transition-colors hover:text-highlighted"
-          @click="handleBackToTables"
-        >
-          <ArrowLeft class="h-3 w-3" />
-          Back to tables
-        </button>
-      </div>
+    <div :inert="!table" :class="{ 'opacity-50': !table }">
       <FilterBar />
       <QueryBuilder />
-      <div class="min-h-0 flex-1 overflow-hidden">
+    </div>
+
+    <div class="relative min-h-0 flex-1 overflow-hidden">
+      <div class="h-full" :inert="!table" :class="{ 'opacity-50': !table }">
         <ResultsPanel />
       </div>
-    </template>
+      <div v-if="!table" class="absolute inset-0 flex items-center justify-center bg-default/60">
+        <p class="text-sm text-muted">Choose a table above to start exploring</p>
+      </div>
+      <div
+        v-else-if="loadingTable"
+        class="absolute inset-0 flex items-center justify-center bg-default/60"
+      >
+        <p class="text-muted">Loading table...</p>
+      </div>
+    </div>
   </div>
 </template>

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ArrowLeft, Play, Table2 } from 'lucide-vue-next';
-import { computed, ref, watch } from 'vue';
+import { Play } from 'lucide-vue-next';
+import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
+import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { insightHistoryApi } from '@/services/api';
 import { type Cadence, type ReportType, useInsightsStore } from '@/stores/insights';
-import { useSourceStore } from '@/stores/source';
+import type { SourceTable } from '@/types';
 
 import InsightsPanel from './InsightsPanel.vue';
 
@@ -17,7 +18,6 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const sourceStore = useSourceStore();
 const insightsStore = useInsightsStore();
 const activityOpen = ref(false);
 const historyResetNote = ref<string | null>(null);
@@ -30,8 +30,6 @@ async function resetHistory(): Promise<void> {
   historyResetNote.value =
     result == null ? 'Reset failed' : `Cleared ${result.deleted} remembered insights`;
 }
-
-const tables = computed(() => sourceStore.getSourceById(props.sourceId)?.tables ?? []);
 
 const reportTypes: { value: ReportType; label: string }[] = [
   { label: 'Review', value: 'review' },
@@ -60,24 +58,28 @@ function selectCadence(c: Cadence): void {
   insightsStore.cadence = c;
 }
 
-function handleSelectTable(name: string): void {
+function handleSelectTable(table: SourceTable): void {
   router.push({
     name: 'insights-table',
-    params: { sourceId: props.sourceId, table: name },
+    params: { sourceId: props.sourceId, table: table.name },
   });
 }
 
-function handleBackToTables(): void {
-  insightsStore.reset();
-  router.push({ name: 'source-tool', params: { sourceId: props.sourceId, tool: 'insights' } });
+function handleAutoSelectTable(table: SourceTable): void {
+  router.replace({
+    name: 'insights-table',
+    params: { sourceId: props.sourceId, table: table.name },
+  });
 }
 
-// Watch table prop — select in store when it changes
+// Watch table prop — select in store when it changes, reset on the bare route
 watch(
   () => [props.sourceId, props.table] as const,
   ([sourceId, name]) => {
     if (name) {
       insightsStore.selectTable(sourceId, name);
+    } else {
+      insightsStore.reset();
     }
   },
   { immediate: true },
@@ -86,45 +88,16 @@ watch(
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- Table picker phase -->
-    <template v-if="!table">
-      <div class="p-6">
-        <h2 class="mb-4 text-lg font-semibold text-highlighted">Select a table to analyze</h2>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <button
-            v-for="t in tables"
-            :key="t.name"
-            class="flex cursor-pointer items-center gap-3 rounded-lg border border-default bg-elevated p-4 text-left transition-all hover:border-primary-500/50 hover:shadow-sm"
-            @click="handleSelectTable(t.name)"
-          >
-            <Table2 class="h-5 w-5 text-muted" />
-            <div>
-              <p class="text-sm font-medium text-highlighted">{{ t.name }}</p>
-              <p v-if="t.numRows != null" class="text-sm text-muted">
-                {{ t.numRows.toLocaleString() }} rows
-              </p>
-            </div>
-          </button>
-        </div>
-      </div>
-    </template>
+    <TableSectionPane
+      :source-id="sourceId"
+      :selected-table="table"
+      @select-table="handleSelectTable"
+      @auto-select-table="handleAutoSelectTable"
+    />
 
-    <!-- Analysis phase -->
-    <template v-else>
+    <div :inert="!table" :class="{ 'opacity-50': !table }">
       <!-- Toolbar -->
       <div class="flex items-center gap-3 border-b border-default bg-default px-4 py-2.5">
-        <button
-          class="flex cursor-pointer items-center gap-1 text-sm text-muted transition-colors hover:text-highlighted"
-          @click="handleBackToTables"
-        >
-          <ArrowLeft class="h-3 w-3" />
-          Back to tables
-        </button>
-
-        <span class="text-sm font-medium text-highlighted">{{ table }}</span>
-
-        <div class="mx-1 h-4 w-px bg-default" />
-
         <!-- Report type selector -->
         <div class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
           <button
@@ -171,52 +144,57 @@ watch(
           Run Analysis
         </UButton>
       </div>
+    </div>
 
-      <!-- Agent curation (visible only with an LLM provider) -->
-      <div v-if="insightsStore.selectedTable" class="px-4 pt-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <AgentActions
-            :source-id="sourceId"
-            :table="insightsStore.selectedTable"
-            :kinds="[
-              { kind: 'triage_insights', label: 'Triage', icon: 'i-lucide-list-checks' },
-              { kind: 'narrate_insights', label: 'Summarize', icon: 'i-lucide-scroll-text' },
-            ]"
-          />
-          <UButton
-            size="md"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-brain"
-            title="Forget which insights were already shown — novelty scores reset to fresh"
-            @click="resetHistory"
-          >
-            Reset insight memory
-          </UButton>
-          <span v-if="historyResetNote" class="text-sm text-muted">{{ historyResetNote }}</span>
-        </div>
+    <!-- Agent curation (visible only with an LLM provider) -->
+    <div v-if="insightsStore.selectedTable" class="px-4 pt-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <AgentActions
+          :source-id="sourceId"
+          :table="insightsStore.selectedTable"
+          :kinds="[
+            { kind: 'triage_insights', label: 'Triage', icon: 'i-lucide-list-checks' },
+            { kind: 'narrate_insights', label: 'Summarize', icon: 'i-lucide-scroll-text' },
+          ]"
+        />
+        <UButton
+          size="md"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-brain"
+          title="Forget which insights were already shown — novelty scores reset to fresh"
+          @click="resetHistory"
+        >
+          Reset insight memory
+        </UButton>
+        <span v-if="historyResetNote" class="text-sm text-muted">{{ historyResetNote }}</span>
       </div>
+    </div>
 
-      <!-- Results -->
-      <div class="min-h-0 flex-1">
+    <!-- Results -->
+    <div class="relative min-h-0 flex-1">
+      <div class="h-full" :inert="!table" :class="{ 'opacity-50': !table }">
         <InsightsPanel />
       </div>
+      <div v-if="!table" class="absolute inset-0 flex items-center justify-center bg-default/60">
+        <p class="text-sm text-muted">Choose a table above to run an analysis</p>
+      </div>
+    </div>
 
-      <UButton
-        size="md"
-        color="neutral"
-        variant="soft"
-        icon="i-lucide-history"
-        class="fixed right-4 bottom-4 z-10 shadow-lg"
-        @click="activityOpen = true"
-      >
-        Activity
-      </UButton>
-      <USlideover v-model:open="activityOpen" title="Activity">
-        <template #body>
-          <ActivityFeed />
-        </template>
-      </USlideover>
-    </template>
+    <UButton
+      size="md"
+      color="neutral"
+      variant="soft"
+      icon="i-lucide-history"
+      class="fixed right-4 bottom-4 z-10 shadow-lg"
+      @click="activityOpen = true"
+    >
+      Activity
+    </UButton>
+    <USlideover v-model:open="activityOpen" title="Activity">
+      <template #body>
+        <ActivityFeed />
+      </template>
+    </USlideover>
   </div>
 </template>
