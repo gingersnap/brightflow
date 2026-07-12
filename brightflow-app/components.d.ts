@@ -29,6 +29,7 @@ declare module 'vue' {
     DatasetPickerModal: typeof import('./src/components/layout/DatasetPickerModal.vue')['default']
     DataTable: typeof import('./src/components/results/DataTable.vue')['default']
     DistributionShiftRenderer: typeof import('./src/components/insights/renderers/DistributionShiftRenderer.vue')['default']
+    DocDrawer: typeof import('./src/components/topics/DocDrawer.vue')['default']
     EnrichmentSettingsPanel: typeof import('./src/components/topics/EnrichmentSettingsPanel.vue')['default']
     EventListPanel: typeof import('./src/components/analytics/EventListPanel.vue')['default']
     ExploreTablePicker: typeof import('./src/components/explore/ExploreTablePicker.vue')['default']

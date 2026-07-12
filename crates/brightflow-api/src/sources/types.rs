@@ -32,6 +32,8 @@ pub struct SourceTable {
     pub name: String,
     #[ts(type = "number | null")]
     pub num_rows: Option<i64>,
+    /// True when the table type supports text enrichment (Topics).
+    pub enrichable: bool,
 }
 
 /// Unified view of a data source (event source or connector)

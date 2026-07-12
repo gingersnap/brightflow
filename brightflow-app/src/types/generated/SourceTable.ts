@@ -3,4 +3,8 @@
 /**
  * A table belonging to a source
  */
-export type SourceTable = { name: string, numRows: number | null, };
+export type SourceTable = { name: string, numRows: number | null, 
+/**
+ * True when the table type supports text enrichment (Topics).
+ */
+enrichable: boolean, };

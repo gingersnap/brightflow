@@ -1,6 +1,6 @@
 //! Per-table enrichment configuration.
 //!
-//! Replaces the hardcoded `ENRICHABLE_TABLES` lookup as the source of truth:
+//! Source of truth for which tables are enrichable and how:
 //! builtin defaults per table type, overlaid with user overrides stored in
 //! `table_enrichment_settings` (loaded by the API/scheduler — the engine
 //! itself stays DB-free).

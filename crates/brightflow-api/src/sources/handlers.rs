@@ -1,5 +1,6 @@
 use axum::extract::State;
 use axum::Json;
+use brightflow_engine::enrichment::EnrichmentConfig;
 
 use crate::shared::AppResult;
 use crate::state::AppState;
@@ -27,6 +28,7 @@ pub async fn list_unified_sources(
                         .map(|t| SourceTable {
                             name: t.name.clone(),
                             num_rows: Some(t.total_rows),
+                            enrichable: EnrichmentConfig::builtin_default(&t.name).is_some(),
                         })
                         .collect(),
                     None => Vec::new(),
@@ -62,6 +64,7 @@ pub async fn list_unified_sources(
                         .map(|t| SourceTable {
                             name: t.name.clone(),
                             num_rows: Some(t.total_rows),
+                            enrichable: EnrichmentConfig::builtin_default(&t.name).is_some(),
                         })
                         .collect(),
                     None => Vec::new(),

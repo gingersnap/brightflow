@@ -15,7 +15,8 @@ pub struct ClusterSummary {
     /// Representative document titles closest to the cluster centroid,
     /// to give the user a sense of the cluster's content.
     pub sample_titles: Vec<String>,
-    /// Top GitHub labels in this cluster with their share (0..=1).
+    /// Top labels/tags from the table's label column (GitHub labels,
+    /// Bluesky hashtags) with their share (0..=1).
     pub top_labels: Vec<LabelBucket>,
     /// True when `name` comes from curation (a rename or an assigned label)
     /// rather than auto-generated c-TF-IDF terms.
@@ -69,12 +70,14 @@ pub struct LanguageBucket {
     pub count: usize,
 }
 
-/// One issue reference returned in cluster details.
+/// One document reference returned in cluster details (a GitHub issue, a
+/// Bluesky post, …).
 #[derive(Debug, Serialize, Deserialize, TS, Clone)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
-pub struct IssueRef {
-    pub id: i64,
+pub struct DocRef {
+    /// Row identifier, stringified (issue id, at:// uri, …).
+    pub id: String,
     #[ts(optional)]
     pub number: Option<i64>,
     #[ts(optional)]
@@ -116,8 +119,8 @@ pub struct ClusterDetail {
     pub name: String,
     pub size: usize,
     pub top_terms: Vec<String>,
-    pub samples: Vec<IssueRef>,
-    pub outliers: Vec<IssueRef>,
+    pub samples: Vec<DocRef>,
+    pub outliers: Vec<DocRef>,
     pub purity: f32,
     pub label_distribution: Vec<LabelBucket>,
     pub timeseries: Vec<TimeseriesPoint>,

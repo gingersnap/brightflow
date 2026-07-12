@@ -78,7 +78,7 @@ export type { UserTimelineEvent } from './UserTimelineEvent';
 // Topics types
 export type { ClusterDetail } from './ClusterDetail';
 export type { ClusterSummary } from './ClusterSummary';
-export type { IssueRef } from './IssueRef';
+export type { DocRef } from './DocRef';
 export type { LabelBucket } from './LabelBucket';
 export type { ReclusterRequest } from './ReclusterRequest';
 export type { TopicsOverview } from './TopicsOverview';

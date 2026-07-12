@@ -16,7 +16,8 @@ topTerms: Array<string>,
  */
 sampleTitles: Array<string>, 
 /**
- * Top GitHub labels in this cluster with their share (0..=1).
+ * Top labels/tags from the table's label column (GitHub labels,
+ * Bluesky hashtags) with their share (0..=1).
  */
 topLabels: Array<LabelBucket>, 
 /**

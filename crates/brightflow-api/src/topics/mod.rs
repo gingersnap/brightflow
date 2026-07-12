@@ -8,6 +8,7 @@
     clippy::shadow_unrelated
 )]
 
+mod display;
 pub mod handlers;
 pub mod overlay;
 pub mod types;

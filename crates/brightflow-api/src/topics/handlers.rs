@@ -16,9 +16,10 @@ use tracing::info;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::{cache_key, AppState};
+use crate::topics::display::{bluesky_post_url, DocDisplay, UrlSpec};
 use crate::topics::overlay::{apply_to_summaries, CurationOverlay};
 use crate::topics::types::{
-    ClusterDetail, ClusterSummary, IssueRef, LabelBucket, LanguageBucket, ReclusterRequest,
+    ClusterDetail, ClusterSummary, DocRef, LabelBucket, LanguageBucket, ReclusterRequest,
     TimeseriesPoint, TopicsOverview,
 };
 
@@ -86,8 +87,9 @@ pub async fn get_overview(
 
     let df = load_table(&state, &source_id, &table).await?;
 
+    let display = DocDisplay::for_table(&table);
     let (mut summaries, hidden_clusters, assigned_rows) =
-        build_cluster_summaries(&df, &clustering)?;
+        build_cluster_summaries(&df, &clustering, display.label_column)?;
     let total_rows = df.height();
 
     // Curation overlay: renames, noise, merges, excluded terms
@@ -163,7 +165,18 @@ pub async fn get_cluster_detail(
 
     let df = load_table(&state, &source_id, &table).await?;
 
-    let mut detail = build_cluster_detail(&df, &clustering, cid, tfidf.as_ref())?;
+    let display = DocDisplay::for_table(&table);
+    let text_columns = resolve_enrichment(&state, &source_id, &table)
+        .map(|c| c.text_columns)
+        .unwrap_or_default();
+    let mut detail = build_cluster_detail(
+        &df,
+        &clustering,
+        cid,
+        tfidf.as_ref(),
+        &display,
+        &text_columns,
+    )?;
     let curation = load_overlay(&state, &source_id, &table).await;
     if let Some(name) = curation.display_name(i64::from(detail.id)) {
         detail.name = name.to_string();
@@ -393,8 +406,8 @@ fn read_cluster_id_column(df: &DataFrame) -> AppResult<Vec<Option<i32>>> {
         .map_err(|e| AppError::Internal(format!("topic_cluster_id type: {e}")))
 }
 
-fn read_label_names_column(df: &DataFrame) -> Vec<Option<String>> {
-    df.column("label_names")
+fn read_labels_column(df: &DataFrame, col: &str) -> Vec<Option<String>> {
+    df.column(col)
         .ok()
         .and_then(|c| {
             c.as_materialized_series()
@@ -432,9 +445,13 @@ fn top_labels_for(
 fn build_cluster_summaries(
     df: &DataFrame,
     clustering: &ClusteringArtifact,
+    label_column: Option<&str>,
 ) -> AppResult<(Vec<ClusterSummary>, usize, usize)> {
     let cluster_ids = read_cluster_id_column(df)?;
-    let labels = read_label_names_column(df);
+    let labels = label_column.map_or_else(
+        || vec![None; df.height()],
+        |col| read_labels_column(df, col),
+    );
     let mut counts = vec![0_usize; clustering.centroids.len()];
     let mut label_counts: Vec<HashMap<String, usize>> = (0..clustering.centroids.len())
         .map(|_| HashMap::new())
@@ -505,6 +522,8 @@ fn build_cluster_detail(
     clustering: &ClusteringArtifact,
     cluster_id: usize,
     _tfidf: Option<&TfIdfArtifact>,
+    display: &DocDisplay,
+    text_columns: &[String],
 ) -> AppResult<ClusterDetail> {
     let cluster_ids = read_cluster_id_column(df)?;
 
@@ -590,6 +609,7 @@ fn build_cluster_detail(
         df,
         &sims,
         &top_terms,
+        text_columns,
         SAMPLES_PER_CLUSTER,
         SAMPLE_RERANK_POOL,
     );
@@ -600,11 +620,11 @@ fn build_cluster_detail(
         .copied()
         .collect();
 
-    let samples = sims_to_refs(df, &samples_idx);
-    let outliers = sims_to_refs(df, &outliers_idx);
+    let samples = sims_to_refs(df, &samples_idx, display);
+    let outliers = sims_to_refs(df, &outliers_idx, display);
 
-    let label_distribution = build_label_distribution(df, &member_indices);
-    let timeseries = build_timeseries(df, &member_indices);
+    let label_distribution = build_label_distribution(df, &member_indices, display.label_column);
+    let timeseries = build_timeseries(df, &member_indices, display.timestamp_column);
 
     Ok(ClusterDetail {
         id: i32::try_from(cluster_id).unwrap_or(0),
@@ -640,7 +660,26 @@ fn read_i64_at(df: &DataFrame, col: &str, row: usize) -> Option<i64> {
     None
 }
 
+/// Read an identifier cell as a string, whatever its physical type
+/// (issue ids are i64, post ids are at:// uri strings).
+fn read_id_at(df: &DataFrame, col: &str, row: usize) -> Option<String> {
+    read_string_at(df, col, row).or_else(|| read_i64_at(df, col, row).map(|v| v.to_string()))
+}
+
 const BODY_TRUNCATE_CHARS: usize = 8000;
+const DERIVED_TITLE_CHARS: usize = 120;
+
+/// Headline for tables without a title column: first line of the body,
+/// truncated at a char boundary.
+fn derive_title(body: &str) -> String {
+    let first_line = body.lines().next().unwrap_or("").trim();
+    if first_line.chars().count() > DERIVED_TITLE_CHARS {
+        let head: String = first_line.chars().take(DERIVED_TITLE_CHARS).collect();
+        format!("{head}…")
+    } else {
+        first_line.to_string()
+    }
+}
 
 /// Re-rank a similarity-sorted candidate list to favor docs that contain the
 /// cluster's distinctive terms. Score = sim + α × (terms_present / total_terms).
@@ -648,10 +687,11 @@ fn pick_illustrative_samples(
     df: &DataFrame,
     sims_desc: &[(usize, f32)],
     distinctive_terms: &[String],
+    text_columns: &[String],
     take: usize,
     pool: usize,
 ) -> Vec<(usize, f32)> {
-    if distinctive_terms.is_empty() || take == 0 {
+    if distinctive_terms.is_empty() || text_columns.is_empty() || take == 0 {
         return sims_desc.iter().take(take).copied().collect();
     }
     let lower_terms: Vec<String> = distinctive_terms
@@ -667,15 +707,14 @@ fn pick_illustrative_samples(
         .iter()
         .take(pool)
         .map(|&(i, sim)| {
-            let title = read_string_at(df, "title", i)
-                .unwrap_or_default()
-                .to_lowercase();
-            let body = read_string_at(df, "body", i)
-                .unwrap_or_default()
-                .to_lowercase();
+            let texts: Vec<String> = text_columns
+                .iter()
+                .filter_map(|col| read_string_at(df, col, i))
+                .map(|s| s.to_lowercase())
+                .collect();
             let matches = lower_terms
                 .iter()
-                .filter(|t| title.contains(t.as_str()) || body.contains(t.as_str()))
+                .filter(|t| texts.iter().any(|text| text.contains(t.as_str())))
                 .count();
             #[allow(clippy::cast_precision_loss)]
             let term_share = (matches as f32) / (lower_terms.len() as f32);
@@ -691,14 +730,31 @@ fn pick_illustrative_samples(
         .collect()
 }
 
-fn sims_to_refs(df: &DataFrame, indices: &[(usize, f32)]) -> Vec<IssueRef> {
+fn sims_to_refs(df: &DataFrame, indices: &[(usize, f32)], display: &DocDisplay) -> Vec<DocRef> {
     let mut out = Vec::with_capacity(indices.len());
     for &(i, sim) in indices {
-        let id = read_i64_at(df, "id", i).unwrap_or(0);
-        let number = read_i64_at(df, "number", i);
-        let title = read_string_at(df, "title", i);
-        let html_url = read_string_at(df, "html_url", i);
-        let body = read_string_at(df, "body", i).map(|s| {
+        let id = read_id_at(df, display.id_column, i).unwrap_or_default();
+        let number = display
+            .number_column
+            .and_then(|col| read_i64_at(df, col, i));
+        let raw_body = display
+            .body_column
+            .and_then(|col| read_string_at(df, col, i));
+        let title = match display.title_column {
+            Some(col) => read_string_at(df, col, i),
+            None => raw_body.as_deref().map(derive_title),
+        };
+        let html_url = match display.url {
+            UrlSpec::Column(col) => read_string_at(df, col, i),
+            UrlSpec::BlueskyPost => {
+                let uri = read_string_at(df, "uri", i).unwrap_or_default();
+                let handle = read_string_at(df, "author_handle", i);
+                let did = read_string_at(df, "author_did", i);
+                bluesky_post_url(&uri, handle.as_deref(), did.as_deref())
+            },
+            UrlSpec::None => None,
+        };
+        let body = raw_body.map(|s| {
             if s.chars().count() > BODY_TRUNCATE_CHARS {
                 let head: String = s.chars().take(BODY_TRUNCATE_CHARS).collect();
                 format!("{head}…")
@@ -706,7 +762,7 @@ fn sims_to_refs(df: &DataFrame, indices: &[(usize, f32)]) -> Vec<IssueRef> {
                 s
             }
         });
-        out.push(IssueRef {
+        out.push(DocRef {
             id,
             number,
             title,
@@ -718,8 +774,15 @@ fn sims_to_refs(df: &DataFrame, indices: &[(usize, f32)]) -> Vec<IssueRef> {
     out
 }
 
-fn build_label_distribution(df: &DataFrame, member_indices: &[usize]) -> Vec<LabelBucket> {
-    let labels = read_label_names_column(df);
+fn build_label_distribution(
+    df: &DataFrame,
+    member_indices: &[usize],
+    label_column: Option<&str>,
+) -> Vec<LabelBucket> {
+    let Some(col) = label_column else {
+        return Vec::new();
+    };
+    let labels = read_labels_column(df, col);
     let mut counts: HashMap<String, usize> = HashMap::new();
     let cluster_size = member_indices.len();
     for &i in member_indices {
@@ -750,10 +813,14 @@ fn build_label_distribution(df: &DataFrame, member_indices: &[usize]) -> Vec<Lab
     buckets
 }
 
-fn build_timeseries(df: &DataFrame, member_indices: &[usize]) -> Vec<TimeseriesPoint> {
+fn build_timeseries(
+    df: &DataFrame,
+    member_indices: &[usize],
+    timestamp_column: &str,
+) -> Vec<TimeseriesPoint> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for &i in member_indices {
-        if let Some(s) = read_string_at(df, "created_at", i) {
+        if let Some(s) = read_string_at(df, timestamp_column, i) {
             let date = s.get(..10).map_or_else(|| s.clone(), str::to_string);
             *counts.entry(date).or_insert(0) += 1;
         }
@@ -893,5 +960,125 @@ fn enrichment_response(
             algorithm: String::new(),
             has_overrides: false,
         },
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn issues_df() -> DataFrame {
+        let long_body: String = "x".repeat(BODY_TRUNCATE_CHARS + 10);
+        df!(
+            "id" => [101_i64, 102],
+            "number" => [7_i64, 8],
+            "title" => ["Crash on startup", "Slow queries"],
+            "body" => ["stack trace here", long_body.as_str()],
+            "html_url" => ["https://github.com/o/r/issues/7", "https://github.com/o/r/issues/8"],
+            "label_names" => ["bug, crash", "performance"],
+        )
+        .unwrap()
+    }
+
+    fn posts_df() -> DataFrame {
+        df!(
+            "uri" => [
+                "at://did:plc:aaa/app.bsky.feed.post/3k111",
+                "at://did:plc:bbb/app.bsky.feed.post/3k222",
+            ],
+            "author_handle" => ["alice.bsky.social", ""],
+            "author_did" => ["did:plc:aaa", "did:plc:bbb"],
+            "text" => [
+                "First line of a post\nsecond line ignored",
+                "Short post",
+            ],
+            "hashtags" => ["rustlang, polars", ""],
+            "created_at" => ["2026-07-01T10:00:00Z", "2026-07-02T11:00:00Z"],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn sims_to_refs_issues_shape() {
+        let df = issues_df();
+        let display = DocDisplay::for_table("issues");
+        let refs = sims_to_refs(&df, &[(0, 0.9), (1, 0.8)], &display);
+
+        assert_eq!(refs[0].id, "101");
+        assert_eq!(refs[0].number, Some(7));
+        assert_eq!(refs[0].title.as_deref(), Some("Crash on startup"));
+        assert_eq!(
+            refs[0].html_url.as_deref(),
+            Some("https://github.com/o/r/issues/7")
+        );
+        assert_eq!(refs[0].body.as_deref(), Some("stack trace here"));
+
+        // Body over the cap is truncated with an ellipsis
+        let body = refs[1].body.as_deref().unwrap();
+        assert_eq!(body.chars().count(), BODY_TRUNCATE_CHARS + 1);
+        assert!(body.ends_with('…'));
+    }
+
+    #[test]
+    fn sims_to_refs_posts_shape() {
+        let df = posts_df();
+        let display = DocDisplay::for_table("posts");
+        let refs = sims_to_refs(&df, &[(0, 0.9), (1, 0.8)], &display);
+
+        assert_eq!(refs[0].id, "at://did:plc:aaa/app.bsky.feed.post/3k111");
+        assert_eq!(refs[0].number, None);
+        // Derived headline: first line of the text
+        assert_eq!(refs[0].title.as_deref(), Some("First line of a post"));
+        assert_eq!(
+            refs[0].html_url.as_deref(),
+            Some("https://bsky.app/profile/alice.bsky.social/post/3k111")
+        );
+
+        // Empty handle falls back to the DID in the permalink
+        assert_eq!(
+            refs[1].html_url.as_deref(),
+            Some("https://bsky.app/profile/did:plc:bbb/post/3k222")
+        );
+    }
+
+    #[test]
+    fn derive_title_truncates_long_first_line() {
+        let long_line: String = "ab".repeat(200);
+        let title = derive_title(&long_line);
+        assert_eq!(title.chars().count(), DERIVED_TITLE_CHARS + 1);
+        assert!(title.ends_with('…'));
+
+        assert_eq!(derive_title("short\nrest"), "short");
+        assert_eq!(derive_title(""), "");
+    }
+
+    #[test]
+    fn label_distribution_respects_column_config() {
+        let df = posts_df();
+        let buckets = build_label_distribution(&df, &[0, 1], Some("hashtags"));
+        assert_eq!(buckets.len(), 2);
+        assert!(buckets.iter().any(|b| b.label == "rustlang"));
+        assert!(buckets.iter().all(|b| (b.share - 0.5).abs() < 1e-6));
+
+        assert!(build_label_distribution(&df, &[0, 1], None).is_empty());
+    }
+
+    #[test]
+    fn illustrative_samples_rerank_by_text_columns() {
+        let df = df!(
+            "text" => ["nothing relevant", "all about rustlang here"],
+        )
+        .unwrap();
+        // Doc 0 has higher similarity but doc 1 contains the distinctive term.
+        let sims = [(0_usize, 0.80_f32), (1, 0.75)];
+        let terms = vec!["rustlang".to_string()];
+        let cols = vec!["text".to_string()];
+        let picked = pick_illustrative_samples(&df, &sims, &terms, &cols, 1, 10);
+        assert_eq!(picked[0].0, 1);
+
+        // Without text columns, ranking degrades to pure similarity.
+        let picked = pick_illustrative_samples(&df, &sims, &terms, &[], 1, 10);
+        assert_eq!(picked[0].0, 0);
     }
 }
