@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
+import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { topicsApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
-import type { IssueRef } from '@/types/generated';
+import type { SourceTable } from '@/types';
+import type { DocRef } from '@/types/generated';
 
 import ClusterCard from './ClusterCard.vue';
-import IssueDrawer from './IssueDrawer.vue';
+import DocDrawer from './DocDrawer.vue';
 import TopicsHeader from './TopicsHeader.vue';
 import TopicsPie from './TopicsPie.vue';
 
@@ -22,25 +24,24 @@ const props = defineProps<{
 const router = useRouter();
 const sourceStore = useSourceStore();
 
-// Topics currently only supports the `issues` table.
-const ISSUES_TABLE = 'issues';
-
-const tables = computed(() => sourceStore.getSourceById(props.sourceId)?.tables ?? []);
-const hasIssuesTable = computed(() => tables.value.some((t) => t.name === ISSUES_TABLE));
-const activeTable = computed(() => props.table ?? ISSUES_TABLE);
-
-watch(
-  () => [props.sourceId, props.table, hasIssuesTable.value] as const,
-  ([sourceId, table, hasIssues]) => {
-    if (!table && hasIssues) {
-      router.replace({
-        name: 'topics-table',
-        params: { sourceId, table: ISSUES_TABLE },
-      });
-    }
-  },
-  { immediate: true },
+const enrichableTables = computed(
+  () => sourceStore.getSourceById(props.sourceId)?.tables.filter((t) => t.enrichable) ?? [],
 );
+const activeTable = computed(() => props.table);
+
+function handleSelectTable(table: SourceTable): void {
+  router.push({
+    name: 'topics-table',
+    params: { sourceId: props.sourceId, table: table.name },
+  });
+}
+
+function handleAutoSelectTable(table: SourceTable): void {
+  router.replace({
+    name: 'topics-table',
+    params: { sourceId: props.sourceId, table: table.name },
+  });
+}
 
 const queryCache = useQueryCache();
 const queryKey = computed(() => ['topics', props.sourceId, activeTable.value]);
@@ -51,13 +52,13 @@ const {
   error,
 } = useQuery({
   key: () => queryKey.value,
-  query: () => topicsApi.overview(props.sourceId, activeTable.value),
-  enabled: () => hasIssuesTable.value,
+  query: () => topicsApi.overview(props.sourceId, activeTable.value ?? ''),
+  enabled: () => activeTable.value != null,
 });
 
 const reclusterMutation = useMutation({
   mutation: (k?: number) =>
-    topicsApi.recluster(props.sourceId, activeTable.value, k != null ? { k } : {}),
+    topicsApi.recluster(props.sourceId, activeTable.value ?? '', k != null ? { k } : {}),
   onSuccess: () => {
     queryCache.invalidateQueries({ key: queryKey.value });
   },
@@ -66,25 +67,40 @@ const reclusterMutation = useMutation({
 const k = ref<number | undefined>(undefined);
 
 function triggerRecluster(): void {
+  if (activeTable.value == null) {
+    return;
+  }
   reclusterMutation.mutate(k.value);
 }
 
 const drawerOpen = ref(false);
-const drawerIssue = ref<IssueRef | null>(null);
+const drawerDoc = ref<DocRef | null>(null);
 const activityOpen = ref(false);
 
-function openIssue(issue: IssueRef): void {
-  drawerIssue.value = issue;
+function openDoc(doc: DocRef): void {
+  drawerDoc.value = doc;
   drawerOpen.value = true;
 }
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <div v-if="!hasIssuesTable" class="p-6">
+    <TableSectionPane
+      enrichable-only
+      :source-id="sourceId"
+      :selected-table="table"
+      @select-table="handleSelectTable"
+      @auto-select-table="handleAutoSelectTable"
+    />
+
+    <div v-if="enrichableTables.length === 0" class="p-6">
       <p class="text-sm text-muted">
-        Topics requires an <code>issues</code> table. Sync this source to populate it.
+        Topics needs a table with text content (issues, posts). Sync this source to populate one.
       </p>
+    </div>
+
+    <div v-else-if="activeTable == null" class="p-6">
+      <p class="text-sm text-muted">Choose a table above to explore topics.</p>
     </div>
 
     <template v-else>
@@ -134,13 +150,13 @@ function openIssue(issue: IssueRef): void {
               :index="idx"
               :source-id="sourceId"
               :table="activeTable"
-              @open-issue="openIssue"
+              @open-doc="openDoc"
             />
           </div>
         </div>
       </div>
 
-      <IssueDrawer v-model="drawerOpen" :issue="drawerIssue" />
+      <DocDrawer v-model="drawerOpen" :doc="drawerDoc" />
 
       <UButton
         size="md"

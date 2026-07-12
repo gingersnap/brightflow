@@ -4,7 +4,7 @@ import { computed, ref } from 'vue';
 
 import { topicsApi } from '@/services/api';
 import { useCurationStore } from '@/stores/curation';
-import type { ClusterSummary, IssueRef } from '@/types/generated';
+import type { ClusterSummary, DocRef } from '@/types/generated';
 
 import { clusterColor } from './colors';
 
@@ -16,7 +16,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  openIssue: [issue: IssueRef];
+  openDoc: [doc: DocRef];
 }>();
 
 const expanded = ref(false);
@@ -177,7 +177,7 @@ const menuItems = [
             <button
               type="button"
               class="line-clamp-2 w-full rounded px-2 py-1.5 text-left text-sm text-default transition-colors hover:bg-accented/60"
-              @click="emit('openIssue', sample)"
+              @click="emit('openDoc', sample)"
             >
               <span v-if="sample.number != null" class="text-muted">#{{ sample.number }}</span>
               {{ sample.title ?? '(untitled)' }}

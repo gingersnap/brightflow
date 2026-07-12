@@ -8,6 +8,8 @@ import type { SourceTable } from '@/types';
 const props = defineProps<{
   sourceId: string;
   selectedTable?: string;
+  /** Only offer tables that support text enrichment (Topics). */
+  enrichableOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -19,7 +21,8 @@ const sourceStore = useSourceStore();
 
 const sourceTables = computed(() => {
   const src = sourceStore.getSourceById(props.sourceId);
-  return src?.tables ?? [];
+  const tables = src?.tables ?? [];
+  return props.enrichableOnly ? tables.filter((t) => t.enrichable) : tables;
 });
 
 const selected = computed(() => sourceTables.value.find((t) => t.name === props.selectedTable));

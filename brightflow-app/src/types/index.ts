@@ -58,6 +58,7 @@ export type ToolId =
 export interface SourceTable {
   name: string;
   numRows: number | null;
+  enrichable: boolean;
 }
 
 export interface UnifiedSource {
