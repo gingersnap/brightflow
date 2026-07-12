@@ -25,23 +25,25 @@ const chartOption = computed(() => {
   const series: Record<string, unknown>[] = [];
 
   if (bandLow && bandHigh) {
-    series.push({
-      type: 'line',
-      data: bandLow,
-      stack: 'band',
-      lineStyle: { opacity: 0 },
-      symbol: 'none',
-      silent: true,
-    });
-    series.push({
-      type: 'line',
-      data: bandHigh.map((h, i) => h - (bandLow[i] ?? 0)),
-      stack: 'band',
-      lineStyle: { opacity: 0 },
-      areaStyle: { color: `${colors[3] ?? '#888'}22` },
-      symbol: 'none',
-      silent: true,
-    });
+    series.push(
+      {
+        type: 'line',
+        data: bandLow,
+        stack: 'band',
+        lineStyle: { opacity: 0 },
+        symbol: 'none',
+        silent: true,
+      },
+      {
+        type: 'line',
+        data: bandHigh.map((h, i) => h - (bandLow[i] ?? 0)),
+        stack: 'band',
+        lineStyle: { opacity: 0 },
+        areaStyle: { color: `${colors[3] ?? '#888'}22` },
+        symbol: 'none',
+        silent: true,
+      },
+    );
   }
 
   series.push({

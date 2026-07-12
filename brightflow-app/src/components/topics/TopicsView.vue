@@ -58,7 +58,7 @@ const {
 
 const reclusterMutation = useMutation({
   mutation: (k?: number) =>
-    topicsApi.recluster(props.sourceId, activeTable.value ?? '', k != null ? { k } : {}),
+    topicsApi.recluster(props.sourceId, activeTable.value ?? '', k == null ? {} : { k }),
   onSuccess: () => {
     queryCache.invalidateQueries({ key: queryKey.value });
   },

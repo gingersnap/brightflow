@@ -81,7 +81,7 @@ const chartOption = computed(() => {
       },
       {
         areaStyle: { color: `${colors[4] ?? '#f59e0b'}22` },
-        data: piHigh.map((h, i) => (h !== null ? h - (piLow[i] ?? 0) : null)),
+        data: piHigh.map((h, i) => (h === null ? null : h - (piLow[i] ?? 0))),
         lineStyle: { opacity: 0 },
         showSymbol: false,
         silent: true,

@@ -46,7 +46,7 @@ function handleKInput(event: Event): void {
     emit('update:kInput');
     return;
   }
-  const n = Number.parseInt(value, 10);
+  const n = Math.trunc(Number(value));
   emit('update:kInput', Number.isNaN(n) ? undefined : n);
 }
 </script>

@@ -66,7 +66,7 @@ async function renameCluster(): Promise<void> {
 
 async function mergeInto(): Promise<void> {
   const target = window.prompt('Merge into cluster id');
-  const targetId = target == null ? Number.NaN : Number.parseInt(target, 10);
+  const targetId = target == null || target.trim() === '' ? Number.NaN : Math.trunc(Number(target));
   if (Number.isNaN(targetId)) {
     return;
   }

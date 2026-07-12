@@ -7,7 +7,7 @@ import type { Aggregation as AggFn, FilterOp } from './generated';
 
 // Re-export generated types from Rust backend
 export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './generated';
-export type { AggFn, FilterOp };
+export type { Aggregation as AggFn, FilterOp } from './generated';
 // Also re-export remaining generated types used across the app
 export type {
   AvailableConnectorResponse,

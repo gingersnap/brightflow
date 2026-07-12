@@ -16,7 +16,7 @@ const props = defineProps<{
 const router = useRouter();
 const queryCache = useQueryCache();
 
-const presetId = computed(() => props.source.id.replace(/^connector:/, ''));
+const presetId = computed(() => props.source.id.replace(/^connector:/u, ''));
 const configKey = computed(() => ['connector-config', presetId.value]);
 
 const { data: config, refresh: refreshConfig } = useQuery({

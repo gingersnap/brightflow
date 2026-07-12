@@ -122,15 +122,15 @@ export const useQueryStore = defineStore('query', () => {
       groupByColumns.value.length > 0 ? `By: ${groupByColumns.value.join(', ')}` : 'Not grouped',
     limit: `${limit.value.toLocaleString()} rows`,
     pivot:
-      pivot.value.values != null
-        ? `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`
-        : 'Not configured',
+      pivot.value.values == null
+        ? 'Not configured'
+        : `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`,
     select:
       selectedColumns.value.length > 0 ? `${selectedColumns.value.length} columns` : 'All columns',
     sort:
-      sortBy.value != null
-        ? `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}`
-        : 'Not sorted',
+      sortBy.value == null
+        ? 'Not sorted'
+        : `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}`,
   }));
 
   const isValid = computed(() => true);

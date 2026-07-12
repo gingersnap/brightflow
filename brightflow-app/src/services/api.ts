@@ -115,7 +115,7 @@ export const api = {
 
 // Re-export generated TableInfo from Rust backend
 import type { TableInfo } from '@/types/generated/TableInfo';
-export type { TableInfo };
+export type { TableInfo } from '@/types/generated/TableInfo';
 
 // Table API - for lazy loading Parquet tables
 export const tableApi = {

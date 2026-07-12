@@ -80,7 +80,7 @@ export function useOperators() {
    */
   function operatorNeedsValue(operatorKey: string): boolean {
     const op = OPERATORS[operatorKey];
-    return op != null ? op.noValue !== true : true;
+    return op == null ? true : op.noValue !== true;
   }
 
   /**

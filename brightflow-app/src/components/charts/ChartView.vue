@@ -289,7 +289,7 @@ const chartOption = computed(() => {
     }
 
     case 'pie': {
-      const yData = firstYIdx !== undefined ? chartRows.value.map((row) => row[firstYIdx]) : [];
+      const yData = firstYIdx === undefined ? [] : chartRows.value.map((row) => row[firstYIdx]);
       return {
         color: colors,
         legend: { orient: 'vertical' as const, left: 'left' },
@@ -322,9 +322,9 @@ const chartOption = computed(() => {
           {
             type: 'scatter' as const,
             data:
-              firstYIdx !== undefined
-                ? chartRows.value.map((row) => [row[xIndex], row[firstYIdx]])
-                : [],
+              firstYIdx === undefined
+                ? []
+                : chartRows.value.map((row) => [row[xIndex], row[firstYIdx]]),
             itemStyle: { color: colors[0] },
           },
         ],
