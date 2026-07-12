@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Play } from 'lucide-vue-next';
+import { Play } from '@lucide/vue';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight, Table2 } from 'lucide-vue-next';
+import { ChevronDown, ChevronRight, Table2 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 
 import { useSourceStore } from '@/stores/source';

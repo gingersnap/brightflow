@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Plus, Trash2 } from '@lucide/vue';
 import { useQuery } from '@pinia/colada';
-import { Plus, Trash2 } from 'lucide-vue-next';
 import { ref, computed } from 'vue';
 
 import { productAnalyticsApi } from '@/services/api';

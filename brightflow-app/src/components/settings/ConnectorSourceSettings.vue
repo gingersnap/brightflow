@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Check, Eye, EyeOff, Key, Pencil, Trash2, X } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
-import { Check, Eye, EyeOff, Key, Pencil, Trash2, X } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 

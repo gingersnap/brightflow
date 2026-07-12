@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cable, Check, Globe, Table2 } from 'lucide-vue-next';
+import { Cable, Check, Globe, Table2 } from '@lucide/vue';
 
 import type { UnifiedSource } from '@/types';
 

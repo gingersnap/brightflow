@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Check, RotateCcw, User, X } from 'lucide-vue-next';
+import { Bot, Check, RotateCcw, User, X } from '@lucide/vue';
 import { computed, onMounted } from 'vue';
 
 import { useCurationStore } from '@/stores/curation';

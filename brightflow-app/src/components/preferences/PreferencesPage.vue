@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Moon, Sun } from '@lucide/vue';
 import { useColorMode } from '@vueuse/core';
-import { Moon, Sun } from 'lucide-vue-next';
 import { computed } from 'vue';
 
 import LlmSettings from '@/components/settings/LlmSettings.vue';

@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Play } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
-import { Play } from 'lucide-vue-next';
 import { computed, onUnmounted, watch } from 'vue';
 
 import { connectApi } from '@/services/api';

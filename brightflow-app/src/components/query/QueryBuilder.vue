@@ -11,7 +11,7 @@ import {
   HelpCircle,
   RotateCcw,
   Type,
-} from 'lucide-vue-next';
+} from '@lucide/vue';
 import { type Component, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 

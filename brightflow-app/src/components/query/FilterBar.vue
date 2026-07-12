@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight, Plus, X } from 'lucide-vue-next';
+import { ChevronDown, ChevronRight, Plus, X } from '@lucide/vue';
 import { computed, watch } from 'vue';
 
 import { useOperators } from '@/composables/useOperators';

@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Database, Globe } from '@lucide/vue';
 import { useQuery, useQueryCache } from '@pinia/colada';
-import { Database, Globe } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 

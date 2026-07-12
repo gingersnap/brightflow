@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Check, Copy, Pencil, Trash2, X } from '@lucide/vue';
 import { useMutation, useQueryCache } from '@pinia/colada';
-import { Check, Copy, Pencil, Trash2, X } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 

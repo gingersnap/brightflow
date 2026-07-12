@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertCircle, Database, Loader2, Table2, X } from 'lucide-vue-next';
+import { AlertCircle, Database, Loader2, Table2, X } from '@lucide/vue';
 import { ref, watch } from 'vue';
 
 import { type TableInfo, tableApi } from '@/services/api';

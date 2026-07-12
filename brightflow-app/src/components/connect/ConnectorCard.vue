@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown, ChevronRight, Key, Play } from 'lucide-vue-next';
+import { AlertTriangle, ChevronDown, ChevronRight, Key, Play } from '@lucide/vue';
 import { computed, ref } from 'vue';
 
 import type { SyncRun, UnifiedConnector } from '@/types';

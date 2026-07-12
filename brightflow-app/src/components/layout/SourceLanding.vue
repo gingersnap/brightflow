@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Plus } from '@lucide/vue';
 import { useQuery } from '@pinia/colada';
-import { Plus } from 'lucide-vue-next';
 import { useRouter } from 'vue-router';
 
 import SourceCard from '@/components/layout/SourceCard.vue';

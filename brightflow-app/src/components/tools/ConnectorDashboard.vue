@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cable, Search, Table2 } from 'lucide-vue-next';
+import { Cable, Search, Table2 } from '@lucide/vue';
 import { useRouter } from 'vue-router';
 
 import type { UnifiedSource } from '@/types';

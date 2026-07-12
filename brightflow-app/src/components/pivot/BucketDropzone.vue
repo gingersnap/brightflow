@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { GripVertical, Hash, HelpCircle, Type, X } from 'lucide-vue-next';
+import { GripVertical, Hash, HelpCircle, Type, X } from '@lucide/vue';
 import { type Component, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 

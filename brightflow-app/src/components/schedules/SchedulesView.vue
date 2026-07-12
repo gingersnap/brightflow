@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { RefreshCw } from '@lucide/vue';
 import { useQueryCache } from '@pinia/colada';
-import { RefreshCw } from 'lucide-vue-next';
 
 import SchedulesPanel from '@/components/connect/SchedulesPanel.vue';
 

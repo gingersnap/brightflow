@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { BarChart3, Copy, Globe, Plus, Trash2 } from '@lucide/vue';
 import { useQuery, useMutation } from '@pinia/colada';
 import { LineChart, BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { BarChart3, Copy, Globe, Plus, Trash2 } from 'lucide-vue-next';
 import { ref, computed, watch } from 'vue';
 import VChart from 'vue-echarts';
 

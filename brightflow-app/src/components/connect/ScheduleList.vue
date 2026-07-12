@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Play, Trash2 } from 'lucide-vue-next';
+import { Play, Trash2 } from '@lucide/vue';
 import { computed } from 'vue';
 
 import type { UnifiedConnector } from '@/types';

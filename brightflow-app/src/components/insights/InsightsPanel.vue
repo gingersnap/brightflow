@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileSearch, Filter as FilterIcon } from 'lucide-vue-next';
+import { FileSearch, Filter as FilterIcon } from '@lucide/vue';
 import { computed, ref } from 'vue';
 
 import { useInsightsStore } from '@/stores/insights';

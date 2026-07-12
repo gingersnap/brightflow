@@ -9,7 +9,7 @@ import {
   Split,
   Table,
   TableProperties,
-} from 'lucide-vue-next';
+} from '@lucide/vue';
 import { type Component, computed } from 'vue';
 
 import { usePivotStore } from '@/stores/pivot';

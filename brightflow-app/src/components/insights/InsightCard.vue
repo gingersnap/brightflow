@@ -15,7 +15,7 @@ import {
   TrendingUp,
   Users,
   Waves,
-} from 'lucide-vue-next';
+} from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
