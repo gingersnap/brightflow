@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Search } from '@lucide/vue';
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 
@@ -61,15 +60,12 @@ function parseTraits(traitsJson: string): Record<string, unknown> {
   <div class="flex gap-6">
     <!-- User list -->
     <div class="w-1/3 min-w-0">
-      <div class="relative mb-3">
-        <Search class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search users..."
-          class="w-full rounded-lg border border-default bg-default py-1.5 pr-3 pl-9 text-sm"
-        />
-      </div>
+      <UInput
+        v-model="searchQuery"
+        icon="i-lucide-search"
+        placeholder="Search users..."
+        class="mb-3 w-full"
+      />
       <div class="space-y-1">
         <button
           v-for="user in userList"

@@ -75,48 +75,36 @@ function retentionColor(value: number): string {
   <div>
     <!-- Config form -->
     <div class="mb-6 flex flex-wrap items-end gap-3">
-      <div>
-        <label class="mb-1 block text-sm text-muted">Cohort event</label>
-        <select
-          v-model="cohortEvent"
-          class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
-        >
-          <option value="" disabled>Select...</option>
-          <option v-for="name in eventNames" :key="name" :value="name">{{ name }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="mb-1 block text-sm text-muted">Return event</label>
-        <select
-          v-model="returnEvent"
-          class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
-        >
-          <option value="" disabled>Select...</option>
-          <option v-for="name in eventNames" :key="name" :value="name">{{ name }}</option>
-        </select>
-      </div>
-      <div>
-        <label class="mb-1 block text-sm text-muted">Period</label>
-        <select
+      <UFormField label="Cohort event">
+        <USelect v-model="cohortEvent" :items="eventNames" placeholder="Select..." class="w-44" />
+      </UFormField>
+      <UFormField label="Return event">
+        <USelect v-model="returnEvent" :items="eventNames" placeholder="Select..." class="w-44" />
+      </UFormField>
+      <UFormField label="Period">
+        <USelect
           v-model="periodType"
-          class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
-        >
-          <option value="week">Weekly</option>
-          <option value="month">Monthly</option>
-        </select>
-      </div>
-      <div>
-        <label class="mb-1 block text-sm text-muted">Periods</label>
-        <select
-          v-model.number="numPeriods"
-          class="rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
-        >
-          <option :value="4">4</option>
-          <option :value="6">6</option>
-          <option :value="8">8</option>
-          <option :value="12">12</option>
-        </select>
-      </div>
+          :items="[
+            { label: 'Weekly', value: 'week' },
+            { label: 'Monthly', value: 'month' },
+          ]"
+          value-key="value"
+          class="w-32"
+        />
+      </UFormField>
+      <UFormField label="Periods">
+        <USelect
+          v-model="numPeriods"
+          :items="[
+            { label: '4', value: 4 },
+            { label: '6', value: 6 },
+            { label: '8', value: 8 },
+            { label: '12', value: 12 },
+          ]"
+          value-key="value"
+          class="w-24"
+        />
+      </UFormField>
       <UButton size="md" :disabled="!cohortEvent || !returnEvent" @click="runRetention">
         Analyze
       </UButton>

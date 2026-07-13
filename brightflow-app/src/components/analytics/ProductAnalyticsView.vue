@@ -13,14 +13,14 @@ const props = defineProps<{
   sourceId: string;
 }>();
 
-const tab = ref<'events' | 'funnels' | 'retention' | 'users'>('events');
+const tab = ref<string>('events');
 const period = ref('30d');
 
 const tabs = [
-  { label: 'Events', value: 'events' as const },
-  { label: 'Funnels', value: 'funnels' as const },
-  { label: 'Retention', value: 'retention' as const },
-  { label: 'Users', value: 'users' as const },
+  { label: 'Events', value: 'events' },
+  { label: 'Funnels', value: 'funnels' },
+  { label: 'Retention', value: 'retention' },
+  { label: 'Users', value: 'users' },
 ];
 
 // Fetch event names for funnel/retention dropdowns
@@ -36,21 +36,13 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
   <div>
     <!-- Sub-tabs and period selector -->
     <div class="mb-6 flex items-center justify-between">
-      <div class="flex items-center gap-1 rounded-lg bg-elevated p-0.5">
-        <button
-          v-for="t in tabs"
-          :key="t.value"
-          class="rounded-md px-3 py-1 text-sm font-medium transition-colors"
-          :class="
-            tab === t.value
-              ? 'bg-default text-highlighted shadow-sm'
-              : 'cursor-pointer text-muted hover:text-highlighted'
-          "
-          @click="tab = t.value"
-        >
-          {{ t.label }}
-        </button>
-      </div>
+      <UTabs
+        :model-value="tab"
+        :items="tabs"
+        :content="false"
+        size="md"
+        @update:model-value="(v) => (tab = String(v))"
+      />
 
       <PeriodSelector
         v-if="tab !== 'users'"

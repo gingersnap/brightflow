@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Eye, EyeOff } from '@lucide/vue';
-import { computed, ref, watch } from 'vue';
+import type { FormError } from '@nuxt/ui';
+import { computed, reactive, ref, watch } from 'vue';
 
 import { hintsFor, type FieldHint } from './connectorHints';
 
@@ -49,16 +49,17 @@ const tokenField = computed(() =>
     : { label: 'API token', placeholder: 'Paste API token...', help: '' },
 );
 
-const name = ref('');
-const token = ref('');
+const state = reactive({ name: '', token: '' });
 const showToken = ref(false);
+// Dynamic keys don't fit UForm field-name paths, so hint/extra values stay
+// Outside the validated state.
 const hintValues = ref<Record<string, string>>({});
 const extraEntries = ref<{ key: string; value: string }[]>([]);
 
 function initFromProps(): void {
   const initial = props.initialValues;
-  name.value = initial?.name ?? '';
-  token.value = initial?.token ?? '';
+  state.name = initial?.name ?? '';
+  state.token = initial?.token ?? '';
 
   const hintKeys = new Set(hints.value.map((h) => h.key));
   const nextHintValues: Record<string, string> = {};
@@ -87,6 +88,10 @@ watch(
   },
 );
 
+function validate(s: { name: string; token: string }): FormError[] {
+  return s.name.trim() ? [] : [{ name: 'name', message: 'Name is required' }];
+}
+
 function addConfigEntry(): void {
   extraEntries.value.push({ key: '', value: '' });
 }
@@ -95,7 +100,7 @@ function removeConfigEntry(index: number): void {
   extraEntries.value.splice(index, 1);
 }
 
-function handleSubmit(): void {
+function onSubmit(): void {
   const config: Record<string, string> = {};
   for (const hint of hints.value) {
     if (isHintVisible(hint)) {
@@ -111,75 +116,83 @@ function handleSubmit(): void {
       config[key] = entry.value;
     }
   }
-  emit('submit', { name: name.value.trim(), token: token.value, config });
+  emit('submit', { name: state.name.trim(), token: state.token, config });
 }
 
 const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create source'));
 </script>
 
 <template>
-  <form class="space-y-3" autocomplete="off" @submit.prevent="handleSubmit">
+  <UForm
+    :state="state"
+    :validate="validate"
+    class="space-y-3"
+    autocomplete="off"
+    @submit="onSubmit"
+  >
     <!-- Name -->
-    <div>
-      <label class="mb-1 block text-sm font-medium text-muted">Name</label>
-      <input
-        v-model="name"
-        type="text"
+    <UFormField label="Name" name="name">
+      <UInput
+        v-model="state.name"
         name="brightflow-source-name"
         autocomplete="off"
         data-1p-ignore
         data-lpignore="true"
         :placeholder="`${connectorName}-default`"
-        class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
+        class="w-full"
       />
-    </div>
+    </UFormField>
 
     <!-- Token (create mode only; edit mode manages token separately) -->
-    <div v-if="mode === 'create' && requiresToken">
-      <label class="mb-1 block text-sm font-medium text-muted">{{ tokenField.label }}</label>
-      <div class="relative">
-        <input
-          v-model="token"
-          :type="showToken ? 'text' : 'password'"
-          name="brightflow-source-token"
-          autocomplete="new-password"
-          data-1p-ignore
-          data-lpignore="true"
-          :placeholder="tokenField.placeholder"
-          class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 pr-8 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          type="button"
-          class="absolute inset-y-0 right-0 flex cursor-pointer items-center px-2 text-muted hover:text-highlighted"
-          :aria-label="showToken ? 'Hide token' : 'Show token'"
-          @click="showToken = !showToken"
-        >
-          <EyeOff v-if="showToken" class="h-4 w-4" />
-          <Eye v-else class="h-4 w-4" />
-        </button>
-      </div>
-      <p v-if="tokenField.help" class="mt-1 text-sm text-muted">{{ tokenField.help }}</p>
-    </div>
+    <UFormField
+      v-if="mode === 'create' && requiresToken"
+      :label="tokenField.label"
+      :help="tokenField.help"
+    >
+      <UInput
+        v-model="state.token"
+        :type="showToken ? 'text' : 'password'"
+        name="brightflow-source-token"
+        autocomplete="new-password"
+        data-1p-ignore
+        data-lpignore="true"
+        :placeholder="tokenField.placeholder"
+        class="w-full"
+      >
+        <template #trailing>
+          <UButton
+            size="xs"
+            variant="link"
+            color="neutral"
+            :icon="showToken ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+            :aria-label="showToken ? 'Hide token' : 'Show token'"
+            @click="showToken = !showToken"
+          />
+        </template>
+      </UInput>
+    </UFormField>
 
     <!-- Typed hint fields -->
-    <div v-for="hint in hints" v-show="isHintVisible(hint)" :key="hint.key">
-      <label class="mb-1 block text-sm font-medium text-muted">{{ hint.label }}</label>
-      <select
+    <UFormField
+      v-for="hint in hints"
+      v-show="isHintVisible(hint)"
+      :key="hint.key"
+      :label="hint.label"
+      :help="hint.helperText ?? ''"
+    >
+      <USelect
         v-if="hint.options"
         v-model="hintValues[hint.key]"
-        class="w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-      >
-        <option v-for="opt in hint.options" :key="opt" :value="opt">{{ opt }}</option>
-      </select>
-      <input
+        :items="hint.options"
+        class="w-full"
+      />
+      <UInput
         v-else
         v-model="hintValues[hint.key]"
-        type="text"
         :placeholder="hint.placeholder ?? ''"
-        class="placeholder-muted w-full rounded border border-default bg-elevated px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
+        class="w-full"
       />
-      <p v-if="hint.helperText" class="mt-1 text-sm text-muted">{{ hint.helperText }}</p>
-    </div>
+    </UFormField>
 
     <!-- Generic config key-value pairs -->
     <div>
@@ -187,41 +200,21 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
         <label class="text-sm font-medium text-muted">
           {{ hints.length > 0 ? 'Additional config' : 'Config' }}
         </label>
-        <button
-          type="button"
-          class="cursor-pointer text-sm text-blue-500 hover:text-blue-400"
-          @click="addConfigEntry"
-        >
-          + Add field
-        </button>
+        <UButton size="md" variant="link" @click="addConfigEntry">+ Add field</UButton>
       </div>
       <div v-for="(entry, i) in extraEntries" :key="i" class="mb-1.5 flex gap-2">
-        <input
-          v-model="entry.key"
-          type="text"
-          placeholder="key"
-          class="placeholder-muted w-1/3 rounded border border-default bg-elevated px-2 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-        />
-        <input
-          v-model="entry.value"
-          type="text"
-          placeholder="value"
-          class="placeholder-muted flex-1 rounded border border-default bg-elevated px-2 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          type="button"
-          class="cursor-pointer text-sm text-red-400 hover:text-red-300"
-          @click="removeConfigEntry(i)"
-        >
+        <UInput v-model="entry.key" placeholder="key" class="w-1/3" />
+        <UInput v-model="entry.value" placeholder="value" class="flex-1" />
+        <UButton size="md" variant="ghost" color="error" @click="removeConfigEntry(i)">
           Remove
-        </button>
+        </UButton>
       </div>
     </div>
 
     <!-- Actions -->
     <div class="flex justify-end gap-2 pt-1">
       <UButton type="button" variant="ghost" size="md" @click="emit('cancel')">Cancel</UButton>
-      <UButton type="submit" size="md" :disabled="!name.trim()">{{ submitLabel }}</UButton>
+      <UButton type="submit" size="md" :disabled="!state.name.trim()">{{ submitLabel }}</UButton>
     </div>
-  </form>
+  </UForm>
 </template>

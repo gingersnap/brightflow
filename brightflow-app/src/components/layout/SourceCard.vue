@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { Cable, Check, Globe, Table2 } from '@lucide/vue';
-
 import type { UnifiedSource } from '@/types';
 
 defineProps<{
@@ -13,13 +11,19 @@ defineEmits<{
 </script>
 
 <template>
-  <button
-    class="flex cursor-pointer flex-col gap-2 rounded-xl border border-default bg-elevated p-5 text-left transition-all hover:border-primary-500/50 hover:shadow-md"
+  <UCard
+    as="button"
+    class="cursor-pointer text-left transition-all hover:border-primary-500/50 hover:shadow-md"
+    :ui="{ body: 'flex h-full flex-col gap-2' }"
     @click="$emit('select', source.id)"
   >
     <div class="flex items-center gap-2">
-      <Globe v-if="source.kind === 'web-analytics'" class="h-5 w-5 text-primary-500" />
-      <Cable v-else class="h-5 w-5 text-muted" />
+      <UIcon
+        v-if="source.kind === 'web-analytics'"
+        name="i-lucide-globe"
+        class="size-5 text-primary-500"
+      />
+      <UIcon v-else name="i-lucide-cable" class="size-5 text-muted" />
       <h3 class="text-sm font-semibold text-highlighted">{{ source.name }}</h3>
     </div>
 
@@ -29,17 +33,13 @@ defineEmits<{
 
     <div class="mt-auto flex items-center gap-3 pt-2">
       <span v-if="source.tables.length > 0" class="flex items-center gap-1 text-sm text-muted">
-        <Table2 class="h-3.5 w-3.5" />
+        <UIcon name="i-lucide-table-2" class="size-3.5" />
         {{ source.tables.length }} table{{ source.tables.length === 1 ? '' : 's' }}
       </span>
-      <span
-        v-if="source.ready"
-        class="flex items-center gap-1 text-xs text-green-600 dark:text-green-400"
-      >
-        <Check class="h-3.5 w-3.5" />
+      <UBadge v-if="source.ready" icon="i-lucide-check" color="success" variant="subtle" size="md">
         Ready
-      </span>
-      <span v-else class="text-xs text-yellow-600 dark:text-yellow-400">Pending</span>
+      </UBadge>
+      <UBadge v-else color="warning" variant="subtle" size="md">Pending</UBadge>
     </div>
-  </button>
+  </UCard>
 </template>

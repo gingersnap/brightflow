@@ -96,3 +96,12 @@ UBadge's default `size="md"` renders 12px text. No UBadge usages exist in the co
 - Smaller sizes only for status chips and decorative markers.
 
 **UTooltip:** hardcoded at 12px in Nuxt UI's theme. Accept as-is — tooltips are conventionally compact and transient.
+
+## Nuxt UI First
+
+Before hand-rolling any UI element (button, badge, tabs, table, form field, select,
+collapsible, spinner), reach for the Nuxt UI 4 component and accept its default styling —
+no `:ui` overrides to pixel-match old markup. Collapsible sections use
+`src/components/common/CollapsibleSection.vue`. Loading states: `UButton :loading` when the
+spinner belongs to an action, otherwise `UIcon name="i-lucide-loader-circle"` + `animate-spin`.
+Raw markup is the exception and needs a justifying comment (e.g. PivotTable's domain grid).

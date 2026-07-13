@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight, Table2 } from '@lucide/vue';
+import { Table2 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 
+import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useSourceStore } from '@/stores/source';
 import type { SourceTable } from '@/types';
 
@@ -27,12 +28,12 @@ const sourceTables = computed(() => {
 
 const selected = computed(() => sourceTables.value.find((t) => t.name === props.selectedTable));
 
-const collapsed = ref(props.selectedTable != null);
+const expanded = ref(props.selectedTable == null);
 
 watch(
   () => props.selectedTable,
   (name) => {
-    collapsed.value = name != null;
+    expanded.value = name == null;
   },
 );
 
@@ -49,7 +50,7 @@ watch(
 );
 
 function handleCardClick(table: SourceTable): void {
-  collapsed.value = true;
+  expanded.value = false;
   if (table.name !== props.selectedTable) {
     emit('select-table', table);
   }
@@ -57,13 +58,8 @@ function handleCardClick(table: SourceTable): void {
 </script>
 
 <template>
-  <div class="border-b border-default">
-    <!-- Section Header -->
-    <button
-      class="flex w-full items-center gap-2 bg-muted/30 px-4 py-2 text-left transition-colors hover:bg-muted/40"
-      @click="collapsed = !collapsed"
-    >
-      <component :is="collapsed ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted" />
+  <CollapsibleSection v-model:open="expanded" class="border-b border-default">
+    <template #title>
       <h2 class="text-sm font-medium text-default">
         {{ selectedTable ? `Table: ${selectedTable}` : 'Table' }}
       </h2>
@@ -71,10 +67,10 @@ function handleCardClick(table: SourceTable): void {
         ({{ selected.numRows.toLocaleString() }} rows)
       </span>
       <span v-else-if="!selectedTable" class="text-xs text-muted">(none selected)</span>
-    </button>
+    </template>
 
     <!-- Content -->
-    <div v-if="!collapsed" class="border-t border-default bg-muted/10 p-4">
+    <div class="border-t border-default bg-muted/10 p-4">
       <div
         v-if="sourceTables.length > 0"
         class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
@@ -102,5 +98,5 @@ function handleCardClick(table: SourceTable): void {
       </div>
       <p v-else class="text-muted">No tables available for this source.</p>
     </div>
-  </div>
+  </CollapsibleSection>
 </template>

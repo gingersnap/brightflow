@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronRight, Plus, X } from '@lucide/vue';
+import { Plus, X } from '@lucide/vue';
 import { computed, watch } from 'vue';
 
+import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useOperators } from '@/composables/useOperators';
 import { useWsQuery } from '@/composables/useWsQuery';
 import { useConnectionStore } from '@/stores/connection';
@@ -17,7 +18,10 @@ const connectionStore = useConnectionStore();
 const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators();
 const { loadTableData } = useWsQuery();
 
-const isCollapsed = computed(() => uiStore.filterCollapsed);
+const filtersOpen = computed({
+  get: () => !uiStore.filterCollapsed,
+  set: () => uiStore.toggleSection('filter'),
+});
 
 // Limit options
 const limitOptions = [
@@ -95,21 +99,16 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
 </script>
 
 <template>
-  <div class="border-b border-default">
-    <!-- Section Header -->
-    <button
-      class="flex w-full items-center gap-2 bg-muted/30 px-4 py-2 text-left transition-colors hover:bg-muted/40"
-      @click="uiStore.toggleSection('filter')"
-    >
-      <component :is="isCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted" />
+  <CollapsibleSection v-model:open="filtersOpen" class="border-b border-default">
+    <template #title>
       <h2 class="text-sm font-medium text-default">Filters & Options</h2>
       <span v-if="hasActiveFilters" class="text-xs text-muted">
         ({{ queryStore.filters.filter((f) => f.column).length }} active)
       </span>
-    </button>
+    </template>
 
     <!-- Content -->
-    <div v-if="!isCollapsed" class="space-y-2 border-t border-default bg-muted/10 px-4 py-2">
+    <div class="space-y-2 border-t border-default bg-muted/10 px-4 py-2">
       <!-- Filters Row -->
       <div class="flex flex-wrap items-center gap-2">
         <span class="w-12 text-sm font-medium text-muted">Filter:</span>
@@ -187,5 +186,5 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
         <span class="text-sm text-muted">rows</span>
       </div>
     </div>
-  </div>
+  </CollapsibleSection>
 </template>

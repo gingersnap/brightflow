@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Plus, Trash2 } from '@lucide/vue';
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 
@@ -60,37 +59,37 @@ const { data: funnelResult } = useQuery({
     <div class="mb-6 space-y-3">
       <div v-for="(step, i) in steps" :key="i" class="flex items-center gap-2">
         <span class="w-6 text-center text-xs font-medium text-muted">{{ i + 1 }}</span>
-        <select
+        <USelect
           v-model="step.name"
-          class="flex-1 rounded-lg border border-default bg-default px-3 py-1.5 text-sm"
-        >
-          <option value="" disabled>Select event...</option>
-          <option v-for="name in eventNames" :key="name" :value="name">{{ name }}</option>
-        </select>
-        <button
+          :items="eventNames"
+          placeholder="Select event..."
+          class="flex-1"
+        />
+        <UButton
           v-if="steps.length > 2"
-          class="rounded p-1 text-muted hover:text-highlighted"
+          size="md"
+          variant="ghost"
+          color="neutral"
+          icon="i-lucide-trash-2"
+          aria-label="Remove step"
           @click="removeStep(i)"
-        >
-          <Trash2 class="h-3.5 w-3.5" />
-        </button>
+        />
       </div>
       <div class="flex items-center gap-3">
-        <UButton size="md" variant="ghost" @click="addStep">
-          <Plus class="h-3.5 w-3.5" />
-          Add step
-        </UButton>
+        <UButton size="md" variant="ghost" icon="i-lucide-plus" @click="addStep">Add step</UButton>
         <div class="flex items-center gap-2 text-sm text-muted">
           <span>Window:</span>
-          <select
-            v-model.number="windowDays"
-            class="rounded border border-default bg-default px-2 py-1 text-sm"
-          >
-            <option :value="1">1 day</option>
-            <option :value="7">7 days</option>
-            <option :value="14">14 days</option>
-            <option :value="30">30 days</option>
-          </select>
+          <USelect
+            v-model="windowDays"
+            :items="[
+              { label: '1 day', value: 1 },
+              { label: '7 days', value: 7 },
+              { label: '14 days', value: 14 },
+              { label: '30 days', value: 30 },
+            ]"
+            value-key="value"
+            class="w-32"
+          />
         </div>
         <UButton size="md" :disabled="validSteps.length < 2" @click="runFunnel">Analyze</UButton>
       </div>

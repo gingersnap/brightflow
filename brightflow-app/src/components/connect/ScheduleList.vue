@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Play, Trash2 } from '@lucide/vue';
+import { Trash2 } from '@lucide/vue';
 import { computed } from 'vue';
 
 import type { UnifiedConnector } from '@/types';
@@ -119,11 +119,11 @@ function lastCompletedLabel(c: UnifiedConnector): string | null {
       <UButton
         size="md"
         variant="ghost"
+        icon="i-lucide-play"
         :disabled="isRunning(c)"
         :loading="isRunning(c)"
         @click="emit('run', c.name)"
       >
-        <Play v-if="!isRunning(c)" class="mr-1 h-3 w-3" />
         {{ isRunning(c) ? 'Running' : 'Run Now' }}
       </UButton>
 

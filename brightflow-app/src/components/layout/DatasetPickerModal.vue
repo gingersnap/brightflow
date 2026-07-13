@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertCircle, Database, Loader2, Table2, X } from '@lucide/vue';
+import { AlertCircle, Database, Table2, X } from '@lucide/vue';
 import { ref, watch } from 'vue';
 
 import { type TableInfo, tableApi } from '@/services/api';
@@ -98,7 +98,7 @@ watch(
 
         <!-- Fetching tables state -->
         <div v-if="fetching" class="flex items-center justify-center py-12">
-          <Loader2 class="h-6 w-6 animate-spin text-muted" />
+          <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-muted" />
           <span class="ml-2 text-muted">Loading available tables...</span>
         </div>
 
@@ -134,9 +134,10 @@ watch(
           >
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-3">
-                <Loader2
+                <UIcon
                   v-if="loading && selectedTable === table.name"
-                  class="h-5 w-5 animate-spin text-primary-500"
+                  name="i-lucide-loader-circle"
+                  class="size-5 animate-spin text-primary-500"
                 />
                 <Table2
                   v-else

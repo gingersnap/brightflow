@@ -4,8 +4,6 @@ import {
   ArrowLeftRight,
   ArrowUp,
   ArrowUpDown,
-  ChevronDown,
-  ChevronRight,
   GripVertical,
   Hash,
   HelpCircle,
@@ -15,6 +13,7 @@ import {
 import { type Component, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 
+import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useWsQuery } from '@/composables/useWsQuery';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
@@ -40,7 +39,10 @@ const connectionStore = useConnectionStore();
 const uiStore = useUiStore();
 const { execute, canExecute } = useWsQuery();
 
-const isCollapsed = computed(() => uiStore.summarizeCollapsed);
+const summarizeOpen = computed({
+  get: () => !uiStore.summarizeCollapsed,
+  set: () => uiStore.toggleSection('summarize'),
+});
 
 // Columns for the sidebar
 const columns = computed((): ColumnItem[] =>
@@ -188,39 +190,34 @@ const sortColumnOptions = computed(() =>
 </script>
 
 <template>
-  <div class="border-b border-default">
-    <!-- Section Header -->
-    <div class="flex items-center justify-between bg-muted/30">
-      <button
-        class="flex items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-muted/40"
-        @click="uiStore.toggleSection('summarize')"
-      >
-        <component :is="isCollapsed ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted" />
-        <h2 class="text-sm font-medium text-default">Summarize</h2>
-        <span v-if="pivotStore.isConfigured" class="text-xs text-muted">
-          ({{ pivotStore.valueFields.length }} value{{
-            pivotStore.valueFields.length !== 1 ? 's' : ''
-          }})
-        </span>
-      </button>
+  <CollapsibleSection v-model:open="summarizeOpen" class="border-b border-default">
+    <template #title>
+      <h2 class="text-sm font-medium text-default">Summarize</h2>
+      <span v-if="pivotStore.isConfigured" class="text-xs text-muted">
+        ({{ pivotStore.valueFields.length }} value{{
+          pivotStore.valueFields.length !== 1 ? 's' : ''
+        }})
+      </span>
+    </template>
 
-      <div v-if="!isCollapsed" class="flex items-center gap-3 pr-4">
+    <template #actions="{ open }">
+      <template v-if="open">
         <!-- Settings toggles -->
-        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted">
           <USwitch v-model="pivotStore.showSubtotals" size="xs" />
           Subtotals
         </label>
-        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted">
           <USwitch v-model="pivotStore.showColumnTotals" size="xs" />
           Totals
         </label>
-        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted" @click.stop>
+        <label class="flex cursor-pointer items-center gap-1.5 text-sm text-muted">
           <USwitch v-model="pivotStore.showConditionalFormatting" size="xs" />
           Heatmap
         </label>
 
         <!-- Decimals -->
-        <div class="flex items-center gap-1.5 text-sm text-muted" @click.stop>
+        <div class="flex items-center gap-1.5 text-sm text-muted">
           <span>Dec:</span>
           <USelectMenu
             v-model="pivotStore.decimalPlaces"
@@ -237,14 +234,14 @@ const sortColumnOptions = computed(() =>
         </div>
 
         <!-- Reset -->
-        <UButton variant="ghost" size="md" @click.stop="pivotStore.reset()">
+        <UButton variant="ghost" size="md" @click="pivotStore.reset()">
           <RotateCcw class="h-3 w-3" />
         </UButton>
-      </div>
-    </div>
+      </template>
+    </template>
 
     <!-- Content -->
-    <div v-if="!isCollapsed" class="flex border-t border-default bg-muted/10">
+    <div class="flex border-t border-default bg-muted/10">
       <!-- Column List (left side) -->
       <div class="w-48 border-r border-default bg-muted/20 p-3">
         <div v-if="columns.length" class="max-h-48 space-y-1 overflow-y-auto">
@@ -361,5 +358,5 @@ const sortColumnOptions = computed(() =>
         </div>
       </div>
     </div>
-  </div>
+  </CollapsibleSection>
 </template>

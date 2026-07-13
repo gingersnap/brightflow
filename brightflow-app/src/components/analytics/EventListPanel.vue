@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui';
 import { useQuery } from '@pinia/colada';
 import { computed } from 'vue';
 
@@ -16,28 +17,24 @@ const { data: events } = useQuery({
 });
 
 const eventList = computed<EventListRow[]>(() => events.value ?? []);
+
+const columns: TableColumn<EventListRow>[] = [
+  { accessorKey: 'name', header: 'Event' },
+  {
+    accessorKey: 'count',
+    header: 'Count',
+    cell: ({ row }) => Number(row.original.count).toLocaleString(),
+    meta: { class: { th: 'text-right', td: 'text-right' } },
+  },
+  {
+    accessorKey: 'uniqueUsers',
+    header: 'Unique Users',
+    cell: ({ row }) => Number(row.original.uniqueUsers).toLocaleString(),
+    meta: { class: { th: 'text-right', td: 'text-right' } },
+  },
+];
 </script>
 
 <template>
-  <div>
-    <table v-if="eventList.length > 0" class="w-full text-sm">
-      <thead>
-        <tr class="border-b border-default text-sm text-muted">
-          <th class="pb-2 text-left font-medium">Event</th>
-          <th class="pb-2 text-right font-medium">Count</th>
-          <th class="pb-2 text-right font-medium">Unique Users</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="row in eventList" :key="row.name" class="border-b border-default last:border-0">
-          <td class="py-2 text-highlighted">{{ row.name }}</td>
-          <td class="py-2 text-right text-muted">{{ Number(row.count).toLocaleString() }}</td>
-          <td class="py-2 text-right text-muted">
-            {{ Number(row.uniqueUsers).toLocaleString() }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <p v-else class="py-8 text-center text-sm text-muted">No events recorded yet</p>
-  </div>
+  <UTable :data="eventList" :columns="columns" empty="No events recorded yet" />
 </template>

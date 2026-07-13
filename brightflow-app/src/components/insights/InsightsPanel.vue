@@ -42,8 +42,9 @@ const directionOptions: { label: string; value: 'up' | 'down' | 'both' }[] = [
     <!-- Loading -->
     <div v-if="insightsStore.loading" class="flex h-64 items-center justify-center">
       <div class="text-center">
-        <div
-          class="mb-3 inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"
+        <UIcon
+          name="i-lucide-loader-circle"
+          class="mb-3 inline-block size-6 animate-spin text-primary"
         />
         <p class="text-sm text-muted">Running analysis...</p>
       </div>

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { TableColumn } from '@nuxt/ui';
+import { h } from 'vue';
+
 import type { EnrichedSyncRun } from '@/types';
 
 import SyncStatusBadge from './SyncStatusBadge.vue';
@@ -25,26 +28,44 @@ function duration(startedAt: string, finishedAt: string): string {
   const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
   return `${Math.round(ms / 1000)}s`;
 }
+
+const columns: TableColumn<EnrichedSyncRun>[] = [
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) =>
+      h(SyncStatusBadge, {
+        status: row.original.status as 'pending' | 'running' | 'completed' | 'failed',
+      }),
+  },
+  { accessorKey: 'connectorName', header: 'Connector' },
+  {
+    accessorKey: 'startedAt',
+    header: 'Started',
+    cell: ({ row }) => relativeTime(row.original.startedAt),
+  },
+  {
+    accessorKey: 'finishedAt',
+    header: 'Duration',
+    cell: ({ row }) =>
+      row.original.finishedAt ? duration(row.original.startedAt, row.original.finishedAt) : '—',
+  },
+  {
+    accessorKey: 'rowsSynced',
+    header: 'Rows',
+    cell: ({ row }) =>
+      row.original.rowsSynced > 0 ? row.original.rowsSynced.toLocaleString() : '—',
+  },
+  {
+    accessorKey: 'error',
+    header: 'Error',
+    cell: ({ row }) =>
+      row.original.status === 'failed' && row.original.error ? row.original.error : '—',
+    meta: { class: { td: 'break-all' } },
+  },
+];
 </script>
 
 <template>
-  <div v-if="runs.length === 0" class="py-4 text-center text-sm text-muted">No runs yet</div>
-  <div v-else class="divide-y divide-default">
-    <div
-      v-for="run in runs"
-      :key="run.id"
-      class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 py-2 text-sm"
-    >
-      <SyncStatusBadge :status="run.status as 'pending' | 'running' | 'completed' | 'failed'" />
-      <span class="font-medium text-highlighted">{{ run.connectorName }}</span>
-      <span class="text-muted">{{ relativeTime(run.startedAt) }}</span>
-      <span v-if="run.finishedAt" class="text-muted">
-        ({{ duration(run.startedAt, run.finishedAt) }})
-      </span>
-      <span v-if="run.rowsSynced > 0" class="text-muted">{{ run.rowsSynced }} rows</span>
-      <span v-if="run.status === 'failed' && run.error" class="break-all text-red-400">
-        {{ run.error }}
-      </span>
-    </div>
-  </div>
+  <UTable :data="runs" :columns="columns" empty="No runs yet" />
 </template>

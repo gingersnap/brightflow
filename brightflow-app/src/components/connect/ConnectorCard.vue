@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown, ChevronRight, Key, Play } from '@lucide/vue';
+import { AlertTriangle, ChevronDown, ChevronRight, Key } from '@lucide/vue';
 import { computed, ref } from 'vue';
 
 import type { SyncRun, UnifiedConnector } from '@/types';
@@ -142,11 +142,11 @@ function duration(startedAt: string, finishedAt: string): string {
       <!-- Sync Now button -->
       <UButton
         size="md"
+        icon="i-lucide-play"
         :disabled="!connector.valid || running"
         :loading="running"
         @click="emit('run')"
       >
-        <Play v-if="!running" class="mr-1 h-3.5 w-3.5" />
         {{ running ? 'Syncing...' : 'Sync Now' }}
       </UButton>
     </div>
