@@ -189,7 +189,7 @@ pub fn apply_to_summaries(summaries: &mut Vec<ClusterSummary>, overlay: &Curatio
         .into_iter()
         .filter_map(|t| by_target.remove(&t))
         .collect();
-    summaries.sort_by(|a, b| b.size.cmp(&a.size));
+    summaries.sort_by_key(|s| std::cmp::Reverse(s.size));
 
     // 4. Excluded terms
     for s in summaries.iter_mut() {

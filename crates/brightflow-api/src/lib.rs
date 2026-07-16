@@ -213,8 +213,7 @@ pub async fn serve(
         // Any 'running' agent run from a previous process crashed mid-flight
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
-            .unwrap_or(0);
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
         if let Ok(n) = store.db().fail_stuck_agent_runs(now).await {
             if n > 0 {
                 tracing::warn!("Marked {n} stuck agent runs as failed");
@@ -300,7 +299,7 @@ pub async fn serve(
     let deletion_task = tokio::task::spawn(
         session_store
             .clone()
-            .continuously_delete_expired(Duration::from_secs(3600)),
+            .continuously_delete_expired(Duration::from_hours(1)),
     );
 
     let session_layer = SessionManagerLayer::new(session_store)

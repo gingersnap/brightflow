@@ -47,8 +47,7 @@ fn now_epoch() -> i64 {
     i64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0),
+            .map_or(0, |d| d.as_secs()),
     )
     .unwrap_or(0)
 }
@@ -334,12 +333,12 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
                     format!("stored action unreadable: {e}"),
                 );
                 // Mark it failed so it stops showing as pending forever.
-                if let Err(e) = store
+                if let Err(db_err) = store
                     .db()
                     .update_action_result(row.id, "failed", None, None, now_epoch())
                     .await
                 {
-                    tracing::warn!("could not mark action {} failed: {e}", row.id);
+                    tracing::warn!("could not mark action {} failed: {db_err}", row.id);
                 }
                 continue;
             },

@@ -245,8 +245,7 @@ async fn reconcile_cluster_edits(state: &AppState, source_id: &str, table: &str)
     let outcomes = reconcile_edits(&centroids, &clustering.centroids, RECONCILE_MIN_COSINE);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| i64::try_from(d.as_secs()).unwrap_or(0))
-        .unwrap_or(0);
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
     let mut reattached = 0;
     let mut orphaned = 0;
     for outcome in outcomes {
@@ -529,7 +528,7 @@ fn build_cluster_summaries(
         })
         .collect::<Vec<_>>();
     let mut summaries = summaries;
-    summaries.sort_by(|a, b| b.size.cmp(&a.size));
+    summaries.sort_by_key(|s| std::cmp::Reverse(s.size));
 
     Ok((summaries, hidden, assigned_rows))
 }
