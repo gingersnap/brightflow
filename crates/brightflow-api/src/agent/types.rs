@@ -7,6 +7,7 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 pub struct StartAgentRunRequest {
     /// "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
+    /// | "propose_taxonomy" | "label_documents"
     pub kind: String,
     pub source_id: String,
     pub table: String,

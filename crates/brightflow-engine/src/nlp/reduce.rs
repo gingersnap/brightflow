@@ -86,7 +86,7 @@ impl Pca {
                         continue;
                     }
                     for j in i..d {
-                        cov[i][j] += xi * x[j];
+                        cov[i][j] = xi.mul_add(x[j], cov[i][j]);
                     }
                 }
             }
@@ -175,7 +175,7 @@ fn power_iteration(matrix: &[Vec<f32>], salt: usize) -> Option<(Vec<f32>, f32)> 
 fn deflate(matrix: &mut [Vec<f32>], eigvec: &[f32], eigval: f32) {
     for (i, row) in matrix.iter_mut().enumerate() {
         for (j, m) in row.iter_mut().enumerate() {
-            *m -= eigval * eigvec[i] * eigvec[j];
+            *m = (eigval * eigvec[i]).mul_add(-eigvec[j], *m);
         }
     }
 }

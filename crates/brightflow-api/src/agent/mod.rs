@@ -8,4 +8,5 @@
 
 pub mod handlers;
 pub mod runner;
+pub mod sampling;
 pub mod types;

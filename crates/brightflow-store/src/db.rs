@@ -4,11 +4,12 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
 
-use crate::error::StoreResult;
+use crate::error::{StoreError, StoreResult};
 use crate::models::{
-    ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, ColumnStatRow, ExcludedTermRow,
-    FileColumnStatRow, InsightHistoryRow, InsightStateRow, InsightSuppressionRow,
-    TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableFileRow, TableRow,
+    ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, ColumnStatRow, DocumentLabelRow,
+    DocumentLabelWithName, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightStateRow,
+    InsightSuppressionRow, TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableFileRow,
+    TableRow, TaxonomyCategoryRow,
 };
 use crate::scan::ScanFilter;
 
@@ -846,6 +847,31 @@ impl StoreDb {
         Ok(rows)
     }
 
+    /// Every action awaiting approval, **oldest first**.
+    ///
+    /// Ascending id is load-bearing, not cosmetic: proposals have ordering
+    /// dependencies. `propose_taxonomy` defines a category and `label_documents`
+    /// then references it by name, so approving the label before the category
+    /// exists fails with "not a category in this table's taxonomy". Creation
+    /// order is the order they were meant to apply in.
+    pub async fn list_proposed_actions(&self) -> StoreResult<Vec<ActionLogRow>> {
+        let rows = sqlx::query_as::<_, ActionLogRow>(
+            "SELECT * FROM action_log WHERE status = 'proposed' ORDER BY id ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Count of actions awaiting approval. Cheap enough to poll for a badge.
+    pub async fn count_proposed_actions(&self) -> StoreResult<i64> {
+        let (n,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM action_log WHERE status = 'proposed'")
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(n)
+    }
+
     pub async fn list_actions_for_agent_run(&self, run_id: i64) -> StoreResult<Vec<ActionLogRow>> {
         let rows = sqlx::query_as::<_, ActionLogRow>(
             "SELECT * FROM action_log WHERE agent_run_id = ? ORDER BY id",
@@ -1050,6 +1076,375 @@ impl StoreDb {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    // =====================================================
+    // Intent taxonomy
+    // =====================================================
+
+    pub async fn get_taxonomy_categories(
+        &self,
+        table_id: &str,
+    ) -> StoreResult<Vec<TaxonomyCategoryRow>> {
+        let rows = sqlx::query_as::<_, TaxonomyCategoryRow>(
+            "SELECT * FROM taxonomy_categories WHERE table_id = ? ORDER BY name",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Define (or touch) an intent category. Idempotent on (table, name).
+    pub async fn upsert_taxonomy_category(
+        &self,
+        table_id: &str,
+        name: &str,
+        description: Option<&str>,
+        now_epoch: i64,
+    ) -> StoreResult<TaxonomyCategoryRow> {
+        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
+            r"INSERT INTO taxonomy_categories (table_id, name, description, created_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT (table_id, name) DO UPDATE SET
+                description = COALESCE(excluded.description, taxonomy_categories.description)
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(name)
+        .bind(description)
+        .bind(now_epoch)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn get_taxonomy_category(
+        &self,
+        category_id: i64,
+    ) -> StoreResult<Option<TaxonomyCategoryRow>> {
+        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
+            "SELECT * FROM taxonomy_categories WHERE id = ?",
+        )
+        .bind(category_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn get_taxonomy_category_by_name(
+        &self,
+        table_id: &str,
+        name: &str,
+    ) -> StoreResult<Option<TaxonomyCategoryRow>> {
+        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
+            "SELECT * FROM taxonomy_categories WHERE table_id = ? AND name = ?",
+        )
+        .bind(table_id)
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Rename a category. The human's right to fix the LLM's wording.
+    pub async fn rename_taxonomy_category(
+        &self,
+        category_id: i64,
+        name: &str,
+    ) -> StoreResult<Option<TaxonomyCategoryRow>> {
+        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
+            "UPDATE taxonomy_categories SET name = ? WHERE id = ? RETURNING *",
+        )
+        .bind(name)
+        .bind(category_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Restore a category's name and description (undo path).
+    pub async fn update_taxonomy_category(
+        &self,
+        category_id: i64,
+        name: &str,
+        description: Option<&str>,
+    ) -> StoreResult<Option<TaxonomyCategoryRow>> {
+        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
+            "UPDATE taxonomy_categories SET name = ?, description = ? WHERE id = ? RETURNING *",
+        )
+        .bind(name)
+        .bind(description)
+        .bind(category_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    /// Delete a category. `document_labels` cascade via the FK
+    /// (`foreign_keys(true)` is set on the pool, so the cascade really fires).
+    pub async fn delete_taxonomy_category(&self, category_id: i64) -> StoreResult<bool> {
+        let result = sqlx::query("DELETE FROM taxonomy_categories WHERE id = ?")
+            .bind(category_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Recreate a deleted category under its ORIGINAL id, along with the row
+    /// labels that cascaded away (undo path).
+    ///
+    /// The explicit id is load-bearing: labels reference categories by id, so
+    /// reinserting under a fresh autoincrement id would restore the category
+    /// but silently orphan every label that pointed at it.
+    pub async fn recreate_taxonomy_category(
+        &self,
+        category_id: i64,
+        table_id: &str,
+        name: &str,
+        description: Option<&str>,
+        created_at: i64,
+        labels: &[(String, String, i64)],
+    ) -> StoreResult<()> {
+        // The table carries TWO uniqueness constraints — the primary key AND
+        // UNIQUE(table_id, name) — so `ON CONFLICT (id)` alone does not make
+        // this insert safe. If the name was re-defined under a NEW id after the
+        // delete, reinserting the old row violates the name constraint, the
+        // transaction rolls back, and the snapshotted labels are unrecoverable.
+        // Detect that case and say so, instead of surfacing a raw 500.
+        if let Some(existing) = self.get_taxonomy_category_by_name(table_id, name).await? {
+            if existing.id != category_id {
+                return Err(StoreError::Other(format!(
+                    "cannot restore category '{name}': a different category (id {}) now uses \
+                     that name. Rename or remove it first, then retry the undo.",
+                    existing.id
+                )));
+            }
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r"INSERT INTO taxonomy_categories (id, table_id, name, description, created_at)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT (id) DO UPDATE SET
+                name = excluded.name,
+                description = excluded.description",
+        )
+        .bind(category_id)
+        .bind(table_id)
+        .bind(name)
+        .bind(description)
+        .bind(created_at)
+        .execute(&mut *tx)
+        .await?;
+
+        for (row_id, source, label_created_at) in labels {
+            sqlx::query(
+                r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
+                  VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT (table_id, row_id, category_id) DO NOTHING",
+            )
+            .bind(table_id)
+            .bind(row_id)
+            .bind(category_id)
+            .bind(source)
+            .bind(label_created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    // =====================================================
+    // Document labels (row-level supervision)
+    // =====================================================
+
+    /// Every labelled row for a table, with category names — the training feed.
+    pub async fn get_document_labels(
+        &self,
+        table_id: &str,
+    ) -> StoreResult<Vec<DocumentLabelWithName>> {
+        let rows = sqlx::query_as::<_, DocumentLabelWithName>(
+            r"SELECT dl.row_id, dl.category_id, tc.name, dl.source
+              FROM document_labels dl
+              JOIN taxonomy_categories tc ON tc.id = dl.category_id
+              WHERE dl.table_id = ?
+              ORDER BY dl.row_id, tc.name",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Labels for one row.
+    pub async fn get_labels_for_row(
+        &self,
+        table_id: &str,
+        row_id: &str,
+    ) -> StoreResult<Vec<DocumentLabelWithName>> {
+        let rows = sqlx::query_as::<_, DocumentLabelWithName>(
+            r"SELECT dl.row_id, dl.category_id, tc.name, dl.source
+              FROM document_labels dl
+              JOIN taxonomy_categories tc ON tc.id = dl.category_id
+              WHERE dl.table_id = ? AND dl.row_id = ?
+              ORDER BY tc.name",
+        )
+        .bind(table_id)
+        .bind(row_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Replace a row's entire label set, transactionally.
+    ///
+    /// Replace rather than merge: the curation UI shows a row's labels as a set
+    /// and the human edits that set, so a partial write would leave labels the
+    /// curator thought they had removed. The delete+insert runs in one
+    /// transaction so a failure can't leave the row unlabelled.
+    pub async fn set_document_labels(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        category_ids: &[i64],
+        source: &str,
+        now_epoch: i64,
+    ) -> StoreResult<Vec<DocumentLabelRow>> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query("DELETE FROM document_labels WHERE table_id = ? AND row_id = ?")
+            .bind(table_id)
+            .bind(row_id)
+            .execute(&mut *tx)
+            .await?;
+
+        for category_id in category_ids {
+            sqlx::query(
+                r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
+                  VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT (table_id, row_id, category_id) DO UPDATE SET
+                    source = excluded.source,
+                    created_at = excluded.created_at",
+            )
+            .bind(table_id)
+            .bind(row_id)
+            .bind(category_id)
+            .bind(source)
+            .bind(now_epoch)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        let rows = sqlx::query_as::<_, DocumentLabelRow>(
+            "SELECT * FROM document_labels WHERE table_id = ? AND row_id = ? ORDER BY category_id",
+        )
+        .bind(table_id)
+        .bind(row_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Raw label rows for one document row (undo capture needs `source` and
+    /// `created_at`, which the name-joined view drops).
+    pub async fn get_label_rows_for_row(
+        &self,
+        table_id: &str,
+        row_id: &str,
+    ) -> StoreResult<Vec<DocumentLabelRow>> {
+        let rows = sqlx::query_as::<_, DocumentLabelRow>(
+            "SELECT * FROM document_labels WHERE table_id = ? AND row_id = ? ORDER BY category_id",
+        )
+        .bind(table_id)
+        .bind(row_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Every label attached to a category — snapshotted before a delete so the
+    /// cascade can be undone.
+    pub async fn get_document_labels_for_category(
+        &self,
+        category_id: i64,
+    ) -> StoreResult<Vec<DocumentLabelRow>> {
+        let rows = sqlx::query_as::<_, DocumentLabelRow>(
+            "SELECT * FROM document_labels WHERE category_id = ? ORDER BY row_id",
+        )
+        .bind(category_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Restore a row's exact prior label set, preserving each label's original
+    /// `source` and `created_at` (undo path).
+    ///
+    /// An empty `labels` clears the row — that is a real prior state ("this row
+    /// was unlabelled"), not a no-op.
+    pub async fn restore_document_labels(
+        &self,
+        table_id: &str,
+        row_id: &str,
+        labels: &[(i64, String, i64)],
+    ) -> StoreResult<()> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query("DELETE FROM document_labels WHERE table_id = ? AND row_id = ?")
+            .bind(table_id)
+            .bind(row_id)
+            .execute(&mut *tx)
+            .await?;
+
+        for (category_id, source, created_at) in labels {
+            sqlx::query(
+                r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
+                  VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT (table_id, row_id, category_id) DO UPDATE SET
+                    source = excluded.source,
+                    created_at = excluded.created_at",
+            )
+            .bind(table_id)
+            .bind(row_id)
+            .bind(category_id)
+            .bind(source)
+            .bind(created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Per-category labelled-row counts — drives `MIN_LABEL_SUPPORT` feedback in
+    /// the curation UI ("this category has too few examples to train on").
+    pub async fn count_labels_per_category(&self, table_id: &str) -> StoreResult<Vec<(i64, i64)>> {
+        let rows: Vec<(i64, i64)> = sqlx::query_as(
+            r"SELECT category_id, COUNT(*) as n
+              FROM document_labels WHERE table_id = ?
+              GROUP BY category_id",
+        )
+        .bind(table_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Distinct rows carrying at least one label.
+    pub async fn count_labelled_rows(&self, table_id: &str) -> StoreResult<i64> {
+        let (n,): (i64,) =
+            sqlx::query_as("SELECT COUNT(DISTINCT row_id) FROM document_labels WHERE table_id = ?")
+                .bind(table_id)
+                .fetch_one(&self.pool)
+                .await?;
+        Ok(n)
     }
 
     // =====================================================

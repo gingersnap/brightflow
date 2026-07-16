@@ -9,8 +9,8 @@ use polars::prelude::*;
 
 use brightflow_engine::embedding::{topics_artifact_dir, EmbedderId};
 use brightflow_engine::enrichment::{
-    fit_topics, ArtifactMeta, ClusteringArtifact, EnrichmentConfig, EnrichmentOverrides,
-    FitOptions, TfIdfArtifact, ARTIFACT_VERSION, DEFAULT_K,
+    fit_topics, read_existing_embeddings, ArtifactMeta, ClusteringArtifact, EnrichmentConfig,
+    EnrichmentOverrides, FitOptions, TfIdfArtifact, ARTIFACT_VERSION, DEFAULT_K,
 };
 use tracing::info;
 
@@ -324,13 +324,30 @@ pub async fn post_recluster(
     if let Some(mcs) = body.min_cluster_size {
         config.min_cluster_size = Some(mcs);
     }
+    let df = load_table(&state, &source_id, &table).await?;
+
+    // Curated row labels train the classifier head. None => the fit falls back
+    // to the table's own `label_names` column, as it did before taxonomies.
+    let labels = match state.store() {
+        Some(store) => {
+            crate::topics::labels::load_label_targets(store, &source_id, &table, &df).await
+        },
+        None => None,
+    };
+    if let Some(t) = labels.as_ref() {
+        info!(
+            "fitting with {} curated categories over {} labelled rows",
+            t.names.len(),
+            t.labelled_rows()
+        );
+    }
+
     let options = FitOptions {
         num_clusters: body.k.unwrap_or(DEFAULT_K),
         language: body.language.clone(),
         algorithm: body.algorithm.clone(),
+        labels,
     };
-
-    let df = load_table(&state, &source_id, &table).await?;
 
     let root_for_task = root.clone();
     let source_owned = source_id.clone();
@@ -547,26 +564,29 @@ fn build_cluster_detail(
         .cloned()
         .unwrap_or_else(|| format!("cluster_{cluster_id}"));
 
-    // Read embedding column once into Vec<Option<Vec<f32>>>.
+    // Read the embedding column once via the engine helper. It validates the
+    // column shape itself, so check presence/type first to keep the specific
+    // errors this endpoint has always returned.
     let emb_col = df
         .column("embedding")
         .map_err(|_| AppError::Internal("embedding column missing".to_string()))?
         .as_materialized_series()
         .clone();
-    let emb_list = emb_col
+    emb_col
         .list()
         .map_err(|e| AppError::Internal(format!("embedding not List<f32>: {e}")))?;
-    let mut all_embeddings: Vec<Option<Vec<f32>>> = Vec::with_capacity(emb_list.len());
-    #[allow(clippy::explicit_into_iter_loop)]
-    for opt_s in emb_list.into_iter() {
-        match opt_s {
-            None => all_embeddings.push(None),
-            Some(s) => match s.f32() {
-                Ok(ca) => all_embeddings.push(Some(ca.into_no_null_iter().collect())),
-                Err(_) => all_embeddings.push(None),
-            },
-        }
-    }
+
+    // The helper is all-or-nothing on `dim`: ONE row that is not exactly
+    // `centroid.len()` f32s makes it return None for the whole column, whereas
+    // the inline reader this replaced skipped just that row.
+    //
+    // The divergence is real but unreachable in practice: `write_embedding_columns`
+    // rewrites this column wholesale with a single model, so widths cannot vary
+    // within it. The reachable case — a stale artifact whose centroid width
+    // disagrees with every stored vector — behaves identically either way
+    // (every row skipped, empty sims, zero purity).
+    let all_embeddings: Vec<Option<Vec<f32>>> =
+        read_existing_embeddings(df, centroid.len()).unwrap_or_else(|| vec![None; df.height()]);
 
     // Compute (index, similarity) for cluster members.
     let mut sims: Vec<(usize, f32)> = Vec::with_capacity(member_indices.len());

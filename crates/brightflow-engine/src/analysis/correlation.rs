@@ -16,13 +16,7 @@ pub fn correlate(df: &DataFrame, col_a: &str, col_b: &str) -> Result<Option<Corr
     let a = df.column(col_a)?;
     let b = df.column(col_b)?;
 
-    let a_values: Vec<f64> = a
-        .cast(&DataType::Float64)?
-        .f64()?
-        .into_iter()
-        .flatten()
-        .collect();
-
+    let a_cast = a.cast(&DataType::Float64)?;
     let b_values: Vec<f64> = b
         .cast(&DataType::Float64)?
         .f64()?
@@ -30,7 +24,12 @@ pub fn correlate(df: &DataFrame, col_a: &str, col_b: &str) -> Result<Option<Corr
         .flatten()
         .collect();
 
-    let pairs: Vec<(f64, f64)> = a_values.into_iter().zip(b_values).collect();
+    let pairs: Vec<(f64, f64)> = a_cast
+        .f64()?
+        .into_iter()
+        .flatten()
+        .zip(b_values)
+        .collect();
 
     if pairs.len() < 3 {
         return Ok(None);

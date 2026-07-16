@@ -190,3 +190,38 @@ pub struct ExcludedTermRow {
     pub term: String,
     pub created_at: i64,
 }
+
+/// One intent category — an entry in the supervised taxonomy vocabulary.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct TaxonomyCategoryRow {
+    pub id: i64,
+    pub table_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: i64,
+}
+
+/// One ROW-level intent label.
+///
+/// Row-level (not cluster-level) on purpose: cluster labels would re-teach the
+/// format bias the classifier exists to defeat.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DocumentLabelRow {
+    pub id: i64,
+    pub table_id: String,
+    pub row_id: String,
+    pub category_id: i64,
+    /// "agent" (proposed) or "human" (ratified). Human wins on conflict.
+    pub source: String,
+    pub created_at: i64,
+}
+
+/// A document label joined to its category name — what training and the
+/// curation UI actually need.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DocumentLabelWithName {
+    pub row_id: String,
+    pub category_id: i64,
+    pub name: String,
+    pub source: String,
+}

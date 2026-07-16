@@ -53,13 +53,51 @@ pub enum Action {
         cluster_id: i64,
         is_noise: bool,
     },
-    /// Attach a classification label to a cluster; regenerates the label
-    /// centroids artifact used for `predicted_label`.
+    /// Attach a classification label to a cluster (display/curation only).
+    ///
+    /// This does NOT drive `predicted_label` any more. It used to, via a
+    /// circular path: the label's centroid was built from the CLUSTER centroid,
+    /// so `predicted_label` was just the cluster assignment wearing a nicer
+    /// name — and since clusters are format-shaped, that re-taught the format
+    /// bias. Row-level intent labels (`LabelDocument`) train the classifier
+    /// head, which supersedes this as the labeler.
     AssignClusterLabel {
         source_id: String,
         table: String,
         cluster_id: i64,
         label: String,
+    },
+    /// Add an intent category to the table's taxonomy — the vocabulary of what
+    /// tickets are ABOUT. Idempotent on (table, name).
+    DefineTaxonomyCategory {
+        source_id: String,
+        table: String,
+        name: String,
+        description: Option<String>,
+    },
+    /// Rename an intent category. The human's right to fix the LLM's wording.
+    RenameTaxonomyCategory {
+        source_id: String,
+        table: String,
+        category_id: i64,
+        name: String,
+    },
+    /// Remove an intent category; its row labels cascade away with it.
+    DeleteTaxonomyCategory {
+        source_id: String,
+        table: String,
+        category_id: i64,
+    },
+    /// Set a row's intent labels, replacing whatever it had. Multi-label: a
+    /// ticket may have several intents, or none (pass an empty list to clear).
+    ///
+    /// Row-level on purpose — this is the supervision that breaks the
+    /// format-cluster loop.
+    LabelDocument {
+        source_id: String,
+        table: String,
+        row_id: String,
+        categories: Vec<String>,
     },
     /// Refit topic clusters. Not undoable.
     Recluster {
@@ -137,6 +175,10 @@ impl Action {
             Self::ExcludeTerm { .. } => "exclude_term",
             Self::MarkClusterNoise { .. } => "mark_cluster_noise",
             Self::AssignClusterLabel { .. } => "assign_cluster_label",
+            Self::DefineTaxonomyCategory { .. } => "define_taxonomy_category",
+            Self::RenameTaxonomyCategory { .. } => "rename_taxonomy_category",
+            Self::DeleteTaxonomyCategory { .. } => "delete_taxonomy_category",
+            Self::LabelDocument { .. } => "label_document",
             Self::Recluster { .. } => "recluster",
             Self::DismissInsight { .. } => "dismiss_insight",
             Self::PinInsight { .. } => "pin_insight",
@@ -165,6 +207,18 @@ impl Action {
                 source_id, table, ..
             }
             | Self::AssignClusterLabel {
+                source_id, table, ..
+            }
+            | Self::DefineTaxonomyCategory {
+                source_id, table, ..
+            }
+            | Self::RenameTaxonomyCategory {
+                source_id, table, ..
+            }
+            | Self::DeleteTaxonomyCategory {
+                source_id, table, ..
+            }
+            | Self::LabelDocument {
                 source_id, table, ..
             }
             | Self::Recluster {
@@ -218,6 +272,44 @@ pub struct ActionResponse {
     pub status: ActionStatus,
     #[ts(type = "unknown")]
     pub result: serde_json::Value,
+}
+
+/// Outcome of a bulk approval.
+///
+/// Reports failures rather than throwing on the first one: proposals are
+/// independent, and one bad apple (say a `label_document` naming a category that
+/// was since deleted) must not block the other 1,199.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkApproveResponse {
+    /// Proposals that were pending when the sweep started.
+    pub total: usize,
+    pub approved: usize,
+    pub failed: usize,
+    /// Log ids that failed, with why — capped so a pathological run cannot
+    /// return a megabyte of errors.
+    pub failures: Vec<BulkApproveFailure>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkApproveFailure {
+    pub log_id: i64,
+    pub action_kind: String,
+    pub error: String,
+}
+
+/// Number of proposals awaiting review.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCount {
+    /// `usize`, not `i64`: ts-rs maps i64 to `bigint`, and a count that arrives
+    /// as a bigint cannot be compared or rendered alongside plain numbers
+    /// without ceremony. A count is never negative anyway.
+    pub count: usize,
 }
 
 /// One manifest entry: everything an LLM (or the UI) needs to know about an
@@ -303,6 +395,39 @@ pub enum UndoOp {
         role: String,
         is_kpi: bool,
     },
+    /// Undo of define/rename: put a category's name and description back, or
+    /// delete it outright when it did not exist before the action.
+    RestoreTaxonomyCategory {
+        category_id: i64,
+        /// True when the category did not exist before the action.
+        delete_row: bool,
+        name: Option<String>,
+        description: Option<String>,
+    },
+    /// Undo of delete: recreate the category AND the row labels that cascaded
+    /// away with it.
+    ///
+    /// The labels are the whole point — deleting a category silently destroys
+    /// human curation effort, which is the most expensive input to this system,
+    /// so the undo has to bring them back rather than just the category name.
+    /// Reinserting under the original `category_id` is what keeps them attached.
+    RecreateTaxonomyCategory {
+        table_id: String,
+        category_id: i64,
+        name: String,
+        description: Option<String>,
+        created_at: i64,
+        /// (row_id, source, created_at) of every cascaded label.
+        labels: Vec<(String, String, i64)>,
+    },
+    /// Undo of label_document: restore a row's exact prior label set (empty =
+    /// the row was unlabelled).
+    RestoreDocumentLabels {
+        table_id: String,
+        row_id: String,
+        /// (category_id, source, created_at).
+        labels: Vec<(i64, String, i64)>,
+    },
 }
 
 /// Static list of action kinds with undoability — the manifest registry.
@@ -334,7 +459,34 @@ pub const ACTION_KINDS: &[(&str, &str, bool)] = &[
     ),
     (
         "assign_cluster_label",
-        "Attach a classification label to a cluster",
+        "Attach a classification label to a cluster (display only)",
+        true,
+    ),
+    (
+        "define_taxonomy_category",
+        "Define one problem-intent category: what is WRONG for the user (e.g. \
+         'authentication failure', 'data loss on sync'). Never categorize by \
+         tooling, file format, or mechanism (e.g. 'backport commits', 'stack \
+         traces') — those describe how a ticket is written, not what it is about. \
+         Give a short name and a one-sentence description of the symptom.",
+        true,
+    ),
+    (
+        "rename_taxonomy_category",
+        "Rename an existing intent category",
+        true,
+    ),
+    (
+        "delete_taxonomy_category",
+        "Delete an intent category and all of its row labels",
+        true,
+    ),
+    (
+        "label_document",
+        "Assign intent categories to ONE ticket, replacing its current labels. \
+         Choose from the approved taxonomy only. Judge by what problem the ticket \
+         describes, not by how it is formatted. Pass an empty list if no category \
+         applies; pass several if several genuinely apply.",
         true,
     ),
     ("recluster", "Refit topic clusters", false),
@@ -358,9 +510,66 @@ pub const ACTION_KINDS: &[(&str, &str, bool)] = &[
 ];
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    /// Every Action variant must have an `ACTION_KINDS` entry, checked against
+    /// the schema **derived from the enum** rather than a hand-written list.
+    ///
+    /// This closes the hole in `manifest_registry_is_complete`: that test only
+    /// compares two hand-maintained lists, so adding a variant while forgetting
+    /// BOTH the sample and the manifest entry keeps the counts equal and passes
+    /// silently. schemars reads the real enum, so nothing can drift past it.
+    #[test]
+    fn every_variant_has_a_manifest_entry() {
+        let root = schemars::schema_for!(Action);
+        let value = serde_json::to_value(&root).expect("schema serializes");
+        let variants = value
+            .get("oneOf")
+            .and_then(|v| v.as_array())
+            .expect("Action is an internally-tagged enum, so schemars emits oneOf");
+
+        let schema_kinds: Vec<String> = variants
+            .iter()
+            .filter_map(|v| {
+                v.pointer("/properties/kind/const")
+                    .and_then(|c| c.as_str())
+                    .map(str::to_string)
+            })
+            .collect();
+        assert_eq!(
+            schema_kinds.len(),
+            variants.len(),
+            "every variant must carry a kind const"
+        );
+
+        for kind in &schema_kinds {
+            assert!(
+                ACTION_KINDS.iter().any(|(k, _, _)| k == kind),
+                "Action variant '{kind}' has no ACTION_KINDS entry — the LLM manifest \
+                 and the frontend would silently not know about it"
+            );
+        }
+        for (kind, _, _) in ACTION_KINDS {
+            assert!(
+                schema_kinds.iter().any(|k| k == kind),
+                "ACTION_KINDS lists '{kind}' but no such Action variant exists"
+            );
+        }
+    }
+
+    /// Manifest tool descriptions are fed verbatim to the LLM, so an empty one
+    /// ships a nameless tool.
+    #[test]
+    fn manifest_descriptions_are_non_empty() {
+        for (kind, description, _) in ACTION_KINDS {
+            assert!(
+                !description.trim().is_empty(),
+                "'{kind}' needs a description — it becomes the LLM tool description"
+            );
+        }
+    }
 
     /// The manifest registry must cover every Action variant — adding a
     /// variant without a manifest entry is a compile-adjacent error.
@@ -400,6 +609,29 @@ mod tests {
                 table: String::new(),
                 cluster_id: 0,
                 label: String::new(),
+            },
+            Action::DefineTaxonomyCategory {
+                source_id: String::new(),
+                table: String::new(),
+                name: String::new(),
+                description: None,
+            },
+            Action::RenameTaxonomyCategory {
+                source_id: String::new(),
+                table: String::new(),
+                category_id: 0,
+                name: String::new(),
+            },
+            Action::DeleteTaxonomyCategory {
+                source_id: String::new(),
+                table: String::new(),
+                category_id: 0,
+            },
+            Action::LabelDocument {
+                source_id: String::new(),
+                table: String::new(),
+                row_id: String::new(),
+                categories: Vec::new(),
             },
             Action::Recluster {
                 source_id: String::new(),

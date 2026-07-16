@@ -9,9 +9,44 @@ const curation = useCurationStore();
 
 onMounted(() => {
   void curation.refreshFeed();
+  void curation.refreshPendingCount();
 });
 
 const entries = computed(() => curation.feed);
+const pending = computed(() => curation.pendingCount);
+
+/**
+ * Bulk approve. Confirms first, because this applies every pending proposal at
+ * once and there is no matching "undo all" — reversing it means the same
+ * one-by-one grind this button exists to avoid.
+ *
+ * The count comes from the server, not from the visible feed (capped at 100), so
+ * the dialog promises exactly what happens. The wording deliberately does NOT
+ * claim the batch is undoable: some action kinds aren't, and even
+ * `define_taxonomy_category` refuses to undo once rows carry its label. The feed
+ * shows an undo control per action where one genuinely exists.
+ */
+async function approveAll(): Promise<void> {
+  const n = pending.value;
+  if (n === 0) {
+    return;
+  }
+  const confirmed = window.confirm(
+    `Approve all ${n} pending proposal${n === 1 ? '' : 's'}?\n\n` +
+      `They are applied oldest first, in the order they were proposed. ` +
+      `There is no bulk undo — reversing this means undoing them individually.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+  const result = await curation.approveAll();
+  if (result != null && result.failed > 0) {
+    window.alert(
+      `Applied ${result.approved} of ${result.total}. ${result.failed} failed — ` +
+        `see the feed for details.`,
+    );
+  }
+}
 
 function formatTime(epoch: number): string {
   return new Date(epoch * 1000).toLocaleString();
@@ -50,10 +85,28 @@ const statusColor: Record<string, string> = {
 
 <template>
   <div class="flex h-full flex-col">
-    <div class="border-b border-default px-4 py-3">
-      <h2 class="text-sm font-semibold text-highlighted">Activity</h2>
-      <p class="text-sm text-muted">Every curation action — by you or an agent.</p>
+    <div class="flex items-start justify-between gap-3 border-b border-default px-4 py-3">
+      <div class="min-w-0">
+        <h2 class="text-sm font-semibold text-highlighted">Activity</h2>
+        <p class="text-sm text-muted">Every curation action — by you or an agent.</p>
+      </div>
+      <UButton
+        v-if="pending > 0"
+        size="md"
+        color="primary"
+        variant="soft"
+        icon="i-lucide-check-check"
+        class="flex-shrink-0"
+        :loading="curation.approvingAll"
+        @click="() => void approveAll()"
+      >
+        Accept all ({{ pending }})
+      </UButton>
     </div>
+
+    <p v-if="curation.lastError" class="border-b border-default px-4 py-2 text-sm text-red-500">
+      {{ curation.lastError }}
+    </p>
     <div class="flex-1 overflow-y-auto">
       <p v-if="curation.feedLoading && entries.length === 0" class="p-4 text-sm text-muted">
         Loading…

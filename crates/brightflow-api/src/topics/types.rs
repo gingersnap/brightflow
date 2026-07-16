@@ -1,6 +1,92 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// One intent category in a table's taxonomy.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxonomyCategory {
+    pub id: i64,
+    pub name: String,
+    #[ts(optional)]
+    pub description: Option<String>,
+    /// Rows currently carrying this category.
+    pub labelled_rows: usize,
+    /// False when `labelled_rows` is under the engine's `MIN_LABEL_SUPPORT`, so
+    /// the classifier would drop this category at fit time. The curation UI uses
+    /// this to point a human at the categories that actually need work.
+    pub trainable: bool,
+}
+
+/// A table's taxonomy plus the numbers a curator needs to judge it.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxonomyOverview {
+    pub categories: Vec<TaxonomyCategory>,
+    /// Distinct rows carrying at least one label.
+    pub labelled_rows: usize,
+    pub total_rows: usize,
+    /// Minimum examples a category needs before the head will train on it.
+    pub min_label_support: usize,
+    /// Minimum labelled rows before a head can be trained at all.
+    pub min_train_rows: usize,
+    /// Held-out macro-F1 of the current head, when one is fitted.
+    #[ts(optional)]
+    pub classifier_val_macro_f1: Option<f32>,
+    /// Whether a trained head exists beside the current fit.
+    pub has_classifier: bool,
+}
+
+/// One sampled ticket in the curation queue, with its current labels.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CurationDoc {
+    pub row_id: String,
+    #[ts(optional)]
+    pub title: Option<String>,
+    #[ts(optional)]
+    pub body: Option<String>,
+    #[ts(optional)]
+    pub html_url: Option<String>,
+    /// Category names currently on this row.
+    pub categories: Vec<String>,
+    /// "agent" when every label was proposed by the agent and not yet touched
+    /// by a human, "human" when a person has curated this row, absent when
+    /// unlabelled. This is what lets a curator see what still needs review.
+    #[ts(optional)]
+    pub source: Option<String>,
+    /// The row's format cluster — shown so a curator can see that intent and
+    /// format are NOT the same thing.
+    #[ts(optional)]
+    pub cluster_id: Option<i64>,
+}
+
+/// The curation review queue.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CurationQueue {
+    pub docs: Vec<CurationDoc>,
+    pub categories: Vec<TaxonomyCategory>,
+    /// Docs the agent labelled that no human has confirmed yet.
+    pub pending_review: usize,
+}
+
+/// Query for `GET …/taxonomy/queue`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CurationQueueQuery {
+    /// Max docs to return.
+    #[ts(optional)]
+    pub limit: Option<usize>,
+    /// "unlabelled" | "agent" | "human" | "all" (default "all").
+    #[ts(optional)]
+    pub filter: Option<String>,
+}
+
 /// Compact summary of one topic cluster, used for list views.
 #[derive(Debug, Serialize, Deserialize, TS, Clone)]
 #[ts(export)]

@@ -6,5 +6,6 @@
 export type StartAgentRunRequest = { 
 /**
  * "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
+ * | "propose_taxonomy" | "label_documents"
  */
 kind: string, sourceId: string, table: string, };

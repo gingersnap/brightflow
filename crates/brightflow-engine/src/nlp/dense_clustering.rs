@@ -14,6 +14,8 @@
 //!   cluster, and per-cluster assignment thresholds are exported so later
 //!   rows are only attached when they genuinely fit.
 
+use super::rng::SplitMix64;
+
 /// Result of dense k-means clustering over `Vec<f32>` vectors.
 #[derive(Debug, Clone)]
 pub struct DenseClusterResult {
@@ -349,36 +351,6 @@ fn trim_outliers(
     (assignments, thresholds)
 }
 
-// ─── Seeded PRNG ─────────────────────────────────────────────────────────────
-
-/// SplitMix64 — tiny, fast, statistically fine for seeding; avoids a `rand`
-/// dependency and guarantees reproducible clustering across builds.
-struct SplitMix64(u64);
-
-impl SplitMix64 {
-    fn new(seed: u64) -> Self {
-        Self(seed)
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    /// Uniform f32 in [0, 1).
-    fn next_f32(&mut self) -> f32 {
-        ((self.next_u64() >> 40) as f32) / ((1u32 << 24) as f32)
-    }
-
-    /// Uniform usize in [0, bound).
-    fn next_bounded(&mut self, bound: usize) -> usize {
-        (self.next_u64() % (bound as u64)) as usize
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::float_cmp)]
 mod tests {
@@ -417,7 +389,7 @@ mod tests {
                 let mut v = vec![0.0f32; dim];
                 v[c] = 1.0;
                 for x in &mut v {
-                    *x += (rng.next_f32() - 0.5) * 0.2;
+                    *x = (rng.next_f32() - 0.5).mul_add(0.2, *x);
                 }
                 norm(&mut v);
                 out.push(v);

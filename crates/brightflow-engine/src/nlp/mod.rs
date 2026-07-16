@@ -1,12 +1,16 @@
+pub mod classification_metrics;
 pub mod clean;
 pub mod cluster_metrics;
 pub mod clustering;
 pub mod dense_clustering;
 pub mod density;
 pub mod error;
+pub mod linear;
+pub mod near_dup;
 pub mod ngrams;
 pub mod polars;
 pub mod reduce;
+pub mod rng;
 pub mod similarity;
 pub mod sparse;
 pub mod tfidf;
@@ -20,8 +24,16 @@ pub use clustering::{kmeans, ClusterResult};
 pub use dense_clustering::{dense_cosine, kmeans_dense, DenseClusterResult};
 pub use density::{default_min_cluster_size, hdbscan_dense};
 pub use error::SubtextError;
+pub use linear::{
+    best_threshold, fit_centroid_baseline, fit_multilabel_linear, train_val_split,
+    MultiLabelLinear, TrainOutcome,
+};
+pub use near_dup::{
+    find_near_duplicates, NearDupError, NearDupGroup, DEFAULT_NEAR_DUP_THRESHOLD, MAX_NEAR_DUP_ROWS,
+};
 pub use ngrams::ngrams;
 pub use reduce::Pca;
+pub use rng::SplitMix64;
 pub use similarity::{cosine, cosine_unnormalized};
 pub use sparse::SparseVec;
 pub use tfidf::{FittedTfIdf, TfIdf};

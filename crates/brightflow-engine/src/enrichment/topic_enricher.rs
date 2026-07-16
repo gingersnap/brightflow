@@ -10,13 +10,13 @@ use crate::embedding::{
     get_backend, sanitize_source_id, topics_artifact_dir, EmbedderBackend, EmbedderError,
 };
 use crate::nlp::{
-    clean_for_embedding, default_min_cluster_size, effective_model_id, hdbscan_dense, kmeans_dense,
-    CleaningProfile, FittedTfIdf, TfIdf, Tokenizer, TokenizerPreset,
+    clean_for_embedding, default_min_cluster_size, effective_model_id, fit_multilabel_linear,
+    hdbscan_dense, kmeans_dense, CleaningProfile, FittedTfIdf, TfIdf, Tokenizer, TokenizerPreset,
 };
 
 use super::artifacts::{
-    ArtifactError, ArtifactMeta, ClusteringArtifact, LabelCentroidsArtifact, TfIdfArtifact,
-    ARTIFACT_VERSION,
+    ArtifactError, ArtifactMeta, ClassifierArtifact, ClusteringArtifact, LabelCentroidsArtifact,
+    TfIdfArtifact, ARTIFACT_VERSION,
 };
 use super::config::EnrichmentConfig;
 
@@ -44,6 +44,13 @@ pub struct FitOptions {
     pub language: Option<String>,
     /// Clustering algorithm: "kmeans" (default) or "hdbscan".
     pub algorithm: Option<String>,
+    /// Curated per-row intent labels, aligned with the DataFrame.
+    ///
+    /// The engine is storage-agnostic, so the API/CLI reads curated
+    /// `document_labels` from SQLite and passes them here rather than the
+    /// engine growing a database dependency. When absent, the fit falls back to
+    /// the table's own `label_names` column so existing behaviour is preserved.
+    pub labels: Option<LabelTargets>,
 }
 
 impl Default for FitOptions {
@@ -52,6 +59,7 @@ impl Default for FitOptions {
             num_clusters: DEFAULT_K,
             language: None,
             algorithm: None,
+            labels: None,
         }
     }
 }
@@ -68,6 +76,12 @@ pub struct FitOutcome {
     /// Language the fit covers, when a language column was present.
     pub language: Option<String>,
     pub has_labels: bool,
+    /// Held-out macro-F1 of the trained head, when one was trained. `None`
+    /// means there was too little labelled signal — the fit degrades to the
+    /// centroid fallback rather than failing.
+    pub classifier_val_macro_f1: Option<f32>,
+    /// Labels the trained head covers (after `MIN_LABEL_SUPPORT` filtering).
+    pub classifier_labels: Vec<String>,
 }
 
 /// Default k-means cluster count. Tiny outlier clusters get filtered from the
@@ -266,10 +280,13 @@ fn apply_language_gate(cleaned: &mut [Option<String>], facet: &LanguageFacet) {
 // ─── Embeddings ───────────────────────────────────────────────────────────────
 
 /// Per-row optional embedding vectors, aligned with the DataFrame.
-type RowEmbeddings = Vec<Option<Vec<f32>>>;
+pub type RowEmbeddings = Vec<Option<Vec<f32>>>;
 
 /// Read an existing `embedding` column. Returns None if absent or wrong shape.
-fn read_existing_embeddings(df: &DataFrame, dim: usize) -> Option<RowEmbeddings> {
+///
+/// Public because near-duplicate detection and the API both need to read
+/// embeddings back out of an enriched frame; this is the single definition.
+pub fn read_existing_embeddings(df: &DataFrame, dim: usize) -> Option<RowEmbeddings> {
     let col = df.column("embedding").ok()?;
     let list = col.as_materialized_series().list().ok()?;
     let mut out = Vec::with_capacity(list.len());
@@ -402,6 +419,7 @@ fn drop_enrichment_columns(df: &mut DataFrame) {
         "topic_cluster",
         "topic_cluster_id",
         "predicted_label",
+        "predicted_labels",
         "confidence",
     ] {
         drop(df.drop_in_place(col));
@@ -425,40 +443,118 @@ fn write_embedding_columns(
     Ok(())
 }
 
+/// Per-row label assignments in a compact index space.
+///
+/// This is the supervision signal, decoupled from where it came from. The
+/// engine is storage-agnostic, so curated row labels are **passed in** by the
+/// API/CLI caller rather than read from SQLite here.
+#[derive(Debug, Clone, Default)]
+pub struct LabelTargets {
+    /// Label names, indexed by the values in `per_row`.
+    pub names: Vec<String>,
+    /// Per-row label-index sets, aligned with the DataFrame. Empty = unlabelled.
+    pub per_row: Vec<Vec<usize>>,
+}
+
+impl LabelTargets {
+    /// Build from per-row label-name sets aligned with the DataFrame.
+    pub fn from_row_labels(rows: &[Vec<String>]) -> Self {
+        let mut names: Vec<String> = Vec::new();
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        // Two passes so `names` ends up in first-appearance order, which is
+        // stable for a given input and therefore keeps fits reproducible.
+        for row in rows {
+            for label in row {
+                let label = label.trim();
+                if label.is_empty() {
+                    continue;
+                }
+                if !index.contains_key(label) {
+                    index.insert(label, names.len());
+                    names.push(label.to_string());
+                }
+            }
+        }
+        let per_row = rows
+            .iter()
+            .map(|row| {
+                let mut ids: Vec<usize> = row
+                    .iter()
+                    .filter_map(|l| index.get(l.trim()).copied())
+                    .collect();
+                ids.sort_unstable();
+                ids.dedup();
+                ids
+            })
+            .collect();
+        Self { names, per_row }
+    }
+
+    /// Rows carrying at least one label.
+    pub fn labelled_rows(&self) -> usize {
+        self.per_row.iter().filter(|r| !r.is_empty()).count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+}
+
+/// Read comma-encoded labels from a string column into [`LabelTargets`].
+///
+/// Used for the legacy `label_names` path and by callers that keep labels in a
+/// parquet column. Returns `None` when the column is absent or carries no
+/// labels at all.
+pub fn parse_label_targets(df: &DataFrame, column: &str) -> Option<LabelTargets> {
+    let label_ca = df
+        .column(column)
+        .ok()
+        .and_then(|c| c.as_materialized_series().str().ok().cloned())?;
+    let rows: Vec<Vec<String>> = label_ca
+        .into_iter()
+        .map(|opt| {
+            opt.map(|s| {
+                s.split(',')
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+        })
+        .collect();
+    let targets = LabelTargets::from_row_labels(&rows);
+    if targets.is_empty() {
+        None
+    } else {
+        Some(targets)
+    }
+}
+
 /// Build dense label centroids by averaging row embeddings per label.
+///
+/// Note this averages **row** embeddings, which is what makes it a legitimate
+/// (if format-biased) baseline. The API's `refresh_label_artifact` writes the
+/// same `labels.bin` from *cluster* centroids — a semantically different object
+/// under one filename.
 fn build_dense_label_centroids(
-    df: &DataFrame,
+    targets: &LabelTargets,
     embeddings: &[Option<Vec<f32>>],
     dim: usize,
 ) -> HashMap<String, Vec<f32>> {
-    let Some(label_ca) = df
-        .column("label_names")
-        .ok()
-        .and_then(|c| c.as_materialized_series().str().ok().cloned())
-    else {
-        return HashMap::new();
-    };
+    let mut accum: HashMap<usize, (Vec<f32>, u32)> = HashMap::new();
 
-    let mut accum: HashMap<String, (Vec<f32>, u32)> = HashMap::new();
-
-    for (i, opt) in label_ca.into_iter().enumerate() {
-        let labels = match opt {
-            Some(s) if !s.is_empty() => s,
-            _ => continue,
-        };
+    for (i, label_ids) in targets.per_row.iter().enumerate() {
         let Some(Some(emb)) = embeddings.get(i) else {
             continue;
         };
-        for label in labels.split(',') {
-            let label = label.trim();
-            if label.is_empty() {
-                continue;
-            }
-            let entry = accum
-                .entry(label.to_string())
-                .or_insert_with(|| (vec![0.0_f32; dim], 0));
-            for (j, val) in emb.iter().enumerate() {
-                entry.0[j] += val;
+        if emb.len() != dim {
+            continue;
+        }
+        for &id in label_ids {
+            let entry = accum.entry(id).or_insert_with(|| (vec![0.0_f32; dim], 0));
+            for (slot, val) in entry.0.iter_mut().zip(emb.iter()) {
+                *slot += val;
             }
             entry.1 += 1;
         }
@@ -466,10 +562,11 @@ fn build_dense_label_centroids(
 
     accum
         .into_iter()
-        .filter_map(|(label, (mut sum, count))| {
+        .filter_map(|(id, (mut sum, count))| {
             if count == 0 {
                 return None;
             }
+            let name = targets.names.get(id)?.clone();
             let count_f = count as f32;
             let mut norm_sq = 0.0_f32;
             for v in &mut sum {
@@ -482,9 +579,66 @@ fn build_dense_label_centroids(
                     *v /= norm;
                 }
             }
-            Some((label, sum))
+            Some((name, sum))
         })
         .collect()
+}
+
+/// Train the supervised head over rows having both an embedding and >=1 label.
+///
+/// Returns `None` when there is too little signal to train — that is graceful
+/// degradation, not an error: the caller falls back to label centroids.
+fn train_classifier(
+    targets: &LabelTargets,
+    embeddings: &[Option<Vec<f32>>],
+    dim: usize,
+    model_id: &str,
+) -> Option<ClassifierArtifact> {
+    if targets.is_empty() {
+        return None;
+    }
+    let mut features: Vec<Vec<f32>> = Vec::new();
+    let mut row_targets: Vec<Vec<usize>> = Vec::new();
+    for (i, label_ids) in targets.per_row.iter().enumerate() {
+        if label_ids.is_empty() {
+            continue;
+        }
+        let Some(Some(emb)) = embeddings.get(i) else {
+            continue;
+        };
+        if emb.len() != dim {
+            continue;
+        }
+        features.push(emb.clone());
+        row_targets.push(label_ids.clone());
+    }
+
+    let outcome = fit_multilabel_linear(&features, &row_targets, targets.names.len(), dim)?;
+
+    // Map the head's retained label indices back to names. The head's weight
+    // rows are parallel to `retained_labels`, NOT to the caller's label space —
+    // `MIN_LABEL_SUPPORT` drops under-supported labels, so these must be
+    // re-aligned or every score would be attributed to the wrong label.
+    let labels: Vec<String> = outcome
+        .retained_labels
+        .iter()
+        .filter_map(|&i| targets.names.get(i).cloned())
+        .collect();
+    if labels.len() != outcome.head.weights.len() {
+        return None;
+    }
+
+    Some(ClassifierArtifact {
+        head: outcome.head,
+        labels,
+        dim,
+        embedding_model_id: model_id.to_string(),
+        fitted_at: Utc::now().timestamp(),
+        artifact_version: ARTIFACT_VERSION,
+        val_macro_f1: outcome.val_macro_f1,
+        support: outcome.support,
+        train_rows: outcome.train_rows,
+    })
 }
 
 #[inline]
@@ -832,15 +986,39 @@ pub fn fit_topics(
         })
         .collect();
 
-    // 7. Build dense label centroids.
+    // 7. Resolve label supervision, then build dense label centroids.
+    //    Curated row labels win; `label_names` is the backward-compatible
+    //    fallback so tables without curation keep their current behaviour.
     let t_labels = std::time::Instant::now();
-    let label_centroids = build_dense_label_centroids(df, &embeddings, backend.dim());
+    let targets = options
+        .labels
+        .clone()
+        .or_else(|| parse_label_targets(df, "label_names"))
+        .unwrap_or_default();
+    let label_centroids = build_dense_label_centroids(&targets, &embeddings, backend.dim());
     let has_labels = !label_centroids.is_empty();
     info!(
-        "Built {} label centroids in {:?}",
+        "Built {} label centroids from {} labelled rows in {:?}",
         label_centroids.len(),
+        targets.labelled_rows(),
         t_labels.elapsed()
     );
+
+    // 7b. Train the supervised head. This is what turns format clusters into
+    //     intent labels; centroids remain only as a fallback.
+    let t_train = std::time::Instant::now();
+    let classifier = train_classifier(&targets, &embeddings, backend.dim(), &model_id);
+    if let Some(c) = &classifier {
+        info!(
+            "Trained classifier: {} labels, {} train rows, val_macro_f1={:.3} in {:?}",
+            c.labels.len(),
+            c.train_rows,
+            c.val_macro_f1,
+            t_train.elapsed()
+        );
+    } else {
+        info!("No classifier trained (insufficient labelled signal); using centroids");
+    }
 
     // 8. Persist artifacts.
     std::fs::create_dir_all(&artifact_dir).map_err(|e| ArtifactError::Io {
@@ -881,6 +1059,14 @@ pub fn fit_topics(
         labels_artifact.save(&artifact_dir)?;
     }
 
+    match &classifier {
+        Some(c) => c.save(&artifact_dir)?,
+        // Remove any previous head: a refit that finds too little signal must
+        // not leave a stale head behind scoring rows against labels that no
+        // longer exist.
+        None => ClassifierArtifact::remove(&artifact_dir)?,
+    }
+
     let total_rows = df.height();
     let meta = ArtifactMeta {
         embedding_model_id: model_id.clone(),
@@ -893,6 +1079,8 @@ pub fn fit_topics(
         algorithm: algorithm.clone(),
         min_cluster_size: effective_min_cluster,
         pca_dims: (algorithm == "hdbscan").then_some(12),
+        has_classifier: classifier.is_some(),
+        classifier_val_macro_f1: classifier.as_ref().map(|c| c.val_macro_f1),
     };
     meta.save(&artifact_dir)?;
     info!("Saved artifacts to {}", artifact_dir.display());
@@ -903,17 +1091,18 @@ pub fn fit_topics(
     drop_enrichment_columns(&mut work);
     write_embedding_columns(&mut work, &embeddings, &model_id, backend.dim())?;
 
+    // Classifier wins when present; centroids are the fallback.
+    let labeler = classifier
+        .as_ref()
+        .map(Labeler::Classifier)
+        .or_else(|| has_labels.then_some(Labeler::Centroids(&label_centroids)));
     apply_topics(
         &mut work,
         &embeddings,
         &tfidf_vectors,
         &fitted_tfidf,
         Some(&clustering),
-        if has_labels {
-            Some(&label_centroids)
-        } else {
-            None
-        },
+        labeler.as_ref(),
     )?;
     info!(
         "Built enriched DataFrame ({} rows, {} cols) in {:?}",
@@ -932,6 +1121,8 @@ pub fn fit_topics(
             eligible_rows: eligible.len(),
             language: facet.target,
             has_labels,
+            classifier_val_macro_f1: classifier.as_ref().map(|c| c.val_macro_f1),
+            classifier_labels: classifier.map(|c| c.labels).unwrap_or_default(),
         },
     ))
 }
@@ -991,7 +1182,13 @@ pub fn enrich_with_topics(
         .as_ref()
         .map(|a| a.fitted.transform_batch(&texts_full));
 
-    let labels = LabelCentroidsArtifact::load(&artifact_dir)
+    // Prefer the trained head; fall back to label centroids. A missing or
+    // incompatible `classifier.bin` degrades to the old behaviour rather than
+    // failing — this is what keeps pre-classifier artifact dirs working.
+    let classifier = ClassifierArtifact::load(&artifact_dir)
+        .ok()
+        .filter(|a| a.is_compatible(&model_id, backend.dim()));
+    let centroids = LabelCentroidsArtifact::load(&artifact_dir)
         .ok()
         .filter(|a| a.embedding_model_id == model_id)
         .map(|a| a.centroids);
@@ -1001,20 +1198,37 @@ pub fn enrich_with_topics(
     write_embedding_columns(&mut work, &embeddings, &model_id, backend.dim())?;
 
     if let (Some(t_artifact), Some(t_vectors)) = (tfidf_artifact.as_ref(), tfidf_vectors.as_ref()) {
+        let labeler = classifier
+            .as_ref()
+            .map(Labeler::Classifier)
+            .or_else(|| centroids.as_ref().map(Labeler::Centroids));
         apply_topics(
             &mut work,
             &embeddings,
             t_vectors,
             &t_artifact.fitted,
             clustering.as_ref(),
-            labels.as_ref(),
+            labeler.as_ref(),
         )?;
     }
 
     Ok(work)
 }
 
-/// Apply enrichment columns: topic_terms, topic_cluster*, predicted_label, confidence.
+/// How rows get labelled.
+///
+/// `Classifier` is the answer; `Centroids` is a compatibility fallback for
+/// artifact directories fitted before the head existed. The distinction is not
+/// cosmetic — a centroid model has no multi-label decision rule, so it cannot
+/// honestly populate `predicted_labels`.
+#[derive(Debug, Clone, Copy)]
+pub enum Labeler<'a> {
+    Classifier(&'a ClassifierArtifact),
+    Centroids(&'a HashMap<String, Vec<f32>>),
+}
+
+/// Apply enrichment columns: topic_terms, topic_cluster*, predicted_label,
+/// predicted_labels, confidence.
 ///
 /// Rows without an embedding get null topic columns. Cluster assignment is
 /// gated by the fitted per-cluster similarity thresholds — rows that don't
@@ -1026,7 +1240,7 @@ fn apply_topics(
     tfidf_vectors: &[crate::nlp::SparseVec],
     fitted: &FittedTfIdf,
     clustering: Option<&ClusteringArtifact>,
-    label_centroids: Option<&HashMap<String, Vec<f32>>>,
+    labeler: Option<&Labeler<'_>>,
 ) -> Result<(), TopicError> {
     let n = embeddings.len();
 
@@ -1085,47 +1299,304 @@ fn apply_topics(
             }
         }
         df.with_column(Int32Chunked::new("topic_cluster_id".into(), cluster_ids).into_series())?;
+        // KNOWN DRIFT: `topic_cluster` snapshots the cluster NAME at fit time,
+        // but no reader consumes it — the topics API resolves names from
+        // `clusters.bin` through the curation overlay, keyed on
+        // `topic_cluster_id`. So a rename or a merge updates what the UI shows
+        // while this column keeps the old name until the next refit. It is kept
+        // only for external parquet consumers; treat `topic_cluster_id` as the
+        // identity and never join on this string.
         df.with_column(StringChunked::new("topic_cluster".into(), cluster_names).into_series())?;
     }
 
-    // predicted_label + confidence
-    if let Some(centroids) = label_centroids {
-        let mut labels: Vec<Option<String>> = Vec::with_capacity(n);
-        let mut scores: Vec<Option<f32>> = Vec::with_capacity(n);
-        for emb_opt in embeddings {
-            let Some(emb) = emb_opt else {
-                labels.push(None);
-                scores.push(None);
-                continue;
-            };
-            if centroids.is_empty() {
-                labels.push(None);
-                scores.push(None);
-                continue;
-            }
-            let mut best_label: Option<&String> = None;
-            let mut best_sim = f32::NEG_INFINITY;
-            for (label, centroid) in centroids {
-                let sim = dot(emb, centroid);
-                if sim > best_sim {
-                    best_sim = sim;
-                    best_label = Some(label);
-                }
-            }
-            labels.push(best_label.cloned());
-            scores.push(Some(best_sim));
-        }
-        df.with_column(StringChunked::new("predicted_label".into(), labels).into_series())?;
-        df.with_column(Float32Chunked::new("confidence".into(), scores).into_series())?;
+    // predicted_label + confidence (+ predicted_labels under a trained head)
+    if let Some(labeler) = labeler {
+        write_label_columns(df, embeddings, *labeler)?;
     }
 
     Ok(())
 }
 
+/// Write `predicted_label`, `confidence` and (head only) `predicted_labels`.
+///
+/// `Labeler` is `Copy` (it holds only references), so it is taken by value.
+fn write_label_columns(
+    df: &mut DataFrame,
+    embeddings: &[Option<Vec<f32>>],
+    labeler: Labeler<'_>,
+) -> Result<(), TopicError> {
+    let n = embeddings.len();
+    let mut labels: Vec<Option<String>> = Vec::with_capacity(n);
+    let mut scores: Vec<Option<f32>> = Vec::with_capacity(n);
+    let mut multi: Vec<Option<String>> = Vec::with_capacity(n);
+
+    for emb_opt in embeddings {
+        let Some(emb) = emb_opt else {
+            labels.push(None);
+            scores.push(None);
+            multi.push(None);
+            continue;
+        };
+        match labeler {
+            Labeler::Classifier(artifact) => {
+                let best = artifact
+                    .head
+                    .argmax(emb)
+                    .and_then(|(i, s)| artifact.labels.get(i).map(|l| (l.clone(), s)));
+                if let Some((label, score)) = best {
+                    labels.push(Some(label));
+                    scores.push(Some(score));
+                } else {
+                    labels.push(None);
+                    scores.push(None);
+                }
+                let hits: Vec<&str> = artifact
+                    .head
+                    .predict(emb)
+                    .into_iter()
+                    .filter_map(|(i, _)| artifact.labels.get(i).map(String::as_str))
+                    .collect();
+                // Empty means "no intent confidently applies" — encode that as
+                // null, not "", so consumers can tell it apart from a label.
+                multi.push(if hits.is_empty() {
+                    None
+                } else {
+                    Some(hits.join(", "))
+                });
+            },
+            Labeler::Centroids(centroids) => {
+                if centroids.is_empty() {
+                    labels.push(None);
+                    scores.push(None);
+                } else {
+                    let mut best_label: Option<&String> = None;
+                    let mut best_sim = f32::NEG_INFINITY;
+                    for (label, centroid) in centroids {
+                        if centroid.len() != emb.len() {
+                            continue;
+                        }
+                        let sim = dot(emb, centroid);
+                        if sim > best_sim {
+                            best_sim = sim;
+                            best_label = Some(label);
+                        }
+                    }
+                    labels.push(best_label.cloned());
+                    scores.push(best_label.map(|_| best_sim));
+                }
+                // A centroid model has no multi-label decision rule. Faking one
+                // (e.g. "every centroid above some cosine") would make the
+                // column lie about what the model actually decided.
+                multi.push(None);
+            },
+        }
+    }
+
+    df.with_column(StringChunked::new("predicted_label".into(), labels).into_series())?;
+    df.with_column(Float32Chunked::new("confidence".into(), scores).into_series())?;
+    df.with_column(StringChunked::new("predicted_labels".into(), multi).into_series())?;
+    Ok(())
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::cast_possible_wrap
+)]
 mod tests {
     use super::*;
+    use crate::nlp::MultiLabelLinear;
+
+    fn test_head() -> ClassifierArtifact {
+        ClassifierArtifact {
+            head: MultiLabelLinear {
+                // Label 0 fires on dim 0, label 1 on dim 1.
+                weights: vec![vec![10.0, 0.0], vec![0.0, 10.0]],
+                biases: vec![-1.0, -1.0],
+                thresholds: vec![0.5, 0.5],
+            },
+            labels: vec!["auth failure".to_string(), "data loss".to_string()],
+            dim: 2,
+            embedding_model_id: "test-model".to_string(),
+            fitted_at: 0,
+            artifact_version: ARTIFACT_VERSION,
+            val_macro_f1: 0.9,
+            support: vec![50, 50],
+            train_rows: 100,
+        }
+    }
+
+    fn frame(n: usize) -> DataFrame {
+        DataFrame::new(vec![Column::new(
+            "id".into(),
+            (0..n as i32).collect::<Vec<_>>(),
+        )])
+        .expect("frame")
+    }
+
+    #[test]
+    fn label_targets_index_labels_in_first_appearance_order() {
+        let rows = vec![
+            vec!["beta".to_string(), "alpha".to_string()],
+            vec!["alpha".to_string()],
+            vec![],
+        ];
+        let t = LabelTargets::from_row_labels(&rows);
+        assert_eq!(t.names, vec!["beta".to_string(), "alpha".to_string()]);
+        assert_eq!(t.per_row, vec![vec![0, 1], vec![1], vec![]]);
+        assert_eq!(t.labelled_rows(), 2);
+    }
+
+    #[test]
+    fn label_targets_dedupe_and_trim() {
+        let rows = vec![vec![" a ".to_string(), "a".to_string(), String::new()]];
+        let t = LabelTargets::from_row_labels(&rows);
+        assert_eq!(t.names, vec!["a".to_string()]);
+        assert_eq!(
+            t.per_row,
+            vec![vec![0]],
+            "a repeated label must not double-count"
+        );
+    }
+
+    #[test]
+    fn parse_label_targets_reads_comma_encoding() {
+        let df = DataFrame::new(vec![Column::new(
+            "label_names".into(),
+            vec![Some("bug, perf"), Some("bug"), None],
+        )])
+        .expect("frame");
+        let t = parse_label_targets(&df, "label_names").expect("labels");
+        assert_eq!(t.names, vec!["bug".to_string(), "perf".to_string()]);
+        assert_eq!(t.per_row, vec![vec![0, 1], vec![0], vec![]]);
+    }
+
+    #[test]
+    fn parse_label_targets_none_when_column_absent_or_empty() {
+        let df = frame(3);
+        assert!(parse_label_targets(&df, "label_names").is_none());
+
+        let empty = DataFrame::new(vec![Column::new(
+            "label_names".into(),
+            vec![None::<&str>, None, None],
+        )])
+        .expect("frame");
+        assert!(parse_label_targets(&empty, "label_names").is_none());
+    }
+
+    #[test]
+    fn classifier_labeler_writes_all_three_columns() {
+        let artifact = test_head();
+        let mut df = frame(3);
+        let embeddings = vec![
+            Some(vec![1.0, 0.0]), // label 0 only
+            Some(vec![1.0, 1.0]), // both labels
+            None,                 // ineligible row
+        ];
+        write_label_columns(&mut df, &embeddings, Labeler::Classifier(&artifact)).expect("write");
+
+        let predicted = df.column("predicted_label").unwrap().str().unwrap();
+        assert_eq!(predicted.get(0), Some("auth failure"));
+        assert_eq!(predicted.get(2), None, "no embedding -> null label");
+
+        let multi = df.column("predicted_labels").unwrap().str().unwrap();
+        assert_eq!(multi.get(0), Some("auth failure"));
+        let both = multi.get(1).expect("row 1 clears both thresholds");
+        assert!(
+            both.contains("auth failure") && both.contains("data loss"),
+            "got {both}"
+        );
+        assert_eq!(multi.get(2), None, "no embedding -> null");
+
+        let conf = df.column("confidence").unwrap().f32().unwrap();
+        assert!(conf.get(0).unwrap_or(0.0) > 0.5);
+        assert_eq!(conf.get(2), None);
+    }
+
+    #[test]
+    fn classifier_labeler_writes_null_when_nothing_clears_threshold() {
+        let artifact = test_head();
+        let mut df = frame(1);
+        // Origin scores sigmoid(-1) ~= 0.27 for both labels: under threshold.
+        let embeddings = vec![Some(vec![0.0, 0.0])];
+        write_label_columns(&mut df, &embeddings, Labeler::Classifier(&artifact)).expect("write");
+
+        let multi = df.column("predicted_labels").unwrap().str().unwrap();
+        assert_eq!(
+            multi.get(0),
+            None,
+            "no label over threshold must be null, never an empty string"
+        );
+        // predicted_label is an unconditional argmax, so it still reports.
+        assert!(df
+            .column("predicted_label")
+            .unwrap()
+            .str()
+            .unwrap()
+            .get(0)
+            .is_some());
+    }
+
+    #[test]
+    fn centroid_labeler_leaves_predicted_labels_null() {
+        // A centroid model has no multi-label decision rule. Populating
+        // predicted_labels under the fallback would make the column lie.
+        let mut centroids: HashMap<String, Vec<f32>> = HashMap::new();
+        centroids.insert("auth failure".to_string(), vec![1.0, 0.0]);
+        centroids.insert("data loss".to_string(), vec![0.0, 1.0]);
+
+        let mut df = frame(2);
+        let embeddings = vec![Some(vec![1.0, 0.0]), Some(vec![0.0, 1.0])];
+        write_label_columns(&mut df, &embeddings, Labeler::Centroids(&centroids)).expect("write");
+
+        let predicted = df.column("predicted_label").unwrap().str().unwrap();
+        assert_eq!(predicted.get(0), Some("auth failure"));
+        assert_eq!(predicted.get(1), Some("data loss"));
+
+        let multi = df.column("predicted_labels").unwrap().str().unwrap();
+        assert_eq!(multi.get(0), None);
+        assert_eq!(multi.get(1), None);
+    }
+
+    #[test]
+    fn drop_enrichment_columns_removes_predicted_labels() {
+        // Without this, a refit leaves a stale predicted_labels column behind.
+        let mut df = DataFrame::new(vec![
+            Column::new("id".into(), vec![1]),
+            Column::new("predicted_labels".into(), vec![Some("stale")]),
+            Column::new("predicted_label".into(), vec![Some("stale")]),
+        ])
+        .expect("frame");
+        drop_enrichment_columns(&mut df);
+        assert!(df.column("predicted_labels").is_err(), "must be dropped");
+        assert!(df.column("predicted_label").is_err());
+        assert!(
+            df.column("id").is_ok(),
+            "non-enrichment columns must survive"
+        );
+    }
+
+    #[test]
+    fn build_dense_label_centroids_averages_row_embeddings() {
+        let targets = LabelTargets::from_row_labels(&[
+            vec!["a".to_string()],
+            vec!["a".to_string()],
+            vec!["b".to_string()],
+        ]);
+        let embeddings = vec![
+            Some(vec![1.0, 0.0]),
+            Some(vec![0.0, 1.0]),
+            Some(vec![0.0, 1.0]),
+        ];
+        let centroids = build_dense_label_centroids(&targets, &embeddings, 2);
+        assert_eq!(centroids.len(), 2);
+        // "a" averages (1,0) and (0,1) -> (0.5,0.5) -> normalized ~ (0.707,0.707)
+        let a = centroids.get("a").expect("a");
+        assert!((a[0] - 0.707).abs() < 0.01, "got {a:?}");
+        assert!((a[1] - 0.707).abs() < 0.01, "got {a:?}");
+    }
 
     #[test]
     fn normalize_lang_extracts_primary_subtag() {

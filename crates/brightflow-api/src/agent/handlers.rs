@@ -9,11 +9,15 @@ use crate::agent::types::{AgentRunResponse, StartAgentRunRequest};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
+/// Must stay in sync with `runner::tools_for`, `runner::build_context`, and the
+/// `agent_runs.kind` CHECK constraint (migration 014).
 const VALID_KINDS: &[&str] = &[
     "auto_label",
     "propose_merges",
     "narrate_insights",
     "triage_insights",
+    "propose_taxonomy",
+    "label_documents",
 ];
 
 fn now_epoch() -> i64 {

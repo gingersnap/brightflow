@@ -261,7 +261,7 @@ pub(super) fn build_scatter_data(
     let mut num = 0.0;
     let mut den = 0.0;
     for (xi, yi) in x.iter().zip(y.iter()) {
-        num += (xi - mean_x) * (yi - mean_y);
+        num = (xi - mean_x).mul_add(yi - mean_y, num);
         den += (xi - mean_x).powi(2);
     }
     let (slope, intercept) = if (den - 0.0).abs() > f64::EPSILON {

@@ -75,6 +75,11 @@ fn api_routes() -> Router<AppState> {
             get(actions_handlers::feed).post(actions_handlers::dispatch),
         )
         .route("/actions/manifest", get(actions_handlers::manifest))
+        .route(
+            "/actions/pending-count",
+            get(actions_handlers::pending_count),
+        )
+        .route("/actions/approve-all", post(actions_handlers::approve_all))
         .route("/actions/{id}/approve", post(actions_handlers::approve))
         .route("/actions/{id}/reject", post(actions_handlers::reject))
         .route("/actions/{id}/undo", post(actions_handlers::undo))
@@ -121,6 +126,15 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/sources/{source_id}/tables/{table}/topics/recluster",
             post(topics_handlers::post_recluster),
+        )
+        // Intent taxonomy (read-only; writes go through POST /api/actions)
+        .route(
+            "/sources/{source_id}/tables/{table}/taxonomy",
+            get(crate::topics::taxonomy::get_taxonomy),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/taxonomy/queue",
+            get(crate::topics::taxonomy::get_curation_queue),
         )
         // WebSocket
         .route("/ws", get(handlers::ws_handler))

@@ -82,12 +82,22 @@ export type { DocRef } from './DocRef';
 export type { LabelBucket } from './LabelBucket';
 export type { ReclusterRequest } from './ReclusterRequest';
 export type { TopicsOverview } from './TopicsOverview';
+
+// Intent taxonomy types
+export type { CurationDoc } from './CurationDoc';
+export type { CurationQueue } from './CurationQueue';
+export type { CurationQueueQuery } from './CurationQueueQuery';
+export type { TaxonomyCategory } from './TaxonomyCategory';
+export type { TaxonomyOverview } from './TaxonomyOverview';
 export type { Action } from './Action';
 export type { ActionLogEntry } from './ActionLogEntry';
 export type { ActionManifestEntry } from './ActionManifestEntry';
 export type { ActionRequest } from './ActionRequest';
 export type { ActionResponse } from './ActionResponse';
 export type { ActionStatus } from './ActionStatus';
+export type { BulkApproveFailure } from './BulkApproveFailure';
+export type { BulkApproveResponse } from './BulkApproveResponse';
+export type { PendingCount } from './PendingCount';
 export type { DismissReason } from './DismissReason';
 export type { SuppressKind } from './SuppressKind';
 export type { EnrichmentSettingsResponse } from './EnrichmentSettingsResponse';

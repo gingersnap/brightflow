@@ -13,8 +13,10 @@ import type {
   UpsertLlmProviderRequest,
   AvailableConnectorResponse,
   BreakdownRow,
+  BulkApproveResponse,
   ClusterDetail,
   ConnectorConfigResponse,
+  CurationQueue,
   DashboardStats,
   DatasetInfo,
   EnrichedSyncRun,
@@ -22,6 +24,7 @@ import type {
   FunnelResult,
   InsightsResponse,
   LoadTableResponse,
+  PendingCount,
   QueryResponse,
   ReclusterRequest,
   RetentionResult,
@@ -29,6 +32,7 @@ import type {
   ScheduleResponse,
   Source,
   SyncRun,
+  TaxonomyOverview,
   TimeseriesPoint,
   TopicsOverview,
   UnifiedConnector,
@@ -392,6 +396,32 @@ export const topicsApi = {
     ),
 };
 
+// Intent taxonomy: read-only. Every write goes through actionsApi.dispatch so
+// Human edits and agent proposals share one path, one audit log and one undo.
+export const taxonomyApi = {
+  overview: (sourceId: string, table: string): Promise<TaxonomyOverview | null> =>
+    api.get<TaxonomyOverview>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/taxonomy`,
+    ),
+  queue: (
+    sourceId: string,
+    table: string,
+    params: { limit?: number; filter?: string } = {},
+  ): Promise<CurationQueue | null> => {
+    const search = new URLSearchParams();
+    if (params.limit != null) {
+      search.set('limit', String(params.limit));
+    }
+    if (params.filter != null) {
+      search.set('filter', params.filter);
+    }
+    const query = search.size > 0 ? `?${search.toString()}` : '';
+    return api.get<CurationQueue>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/taxonomy/queue${query}`,
+    );
+  },
+};
+
 // Insight history (novelty memory) inspection + reset
 export const insightHistoryApi = {
   reset: (sourceId: string, table: string): Promise<{ deleted: number } | null> =>
@@ -408,6 +438,12 @@ export const actionsApi = {
     api.get<ActionLogEntry[]>(`/api/actions?limit=${limit}`),
   approve: (id: number): Promise<ActionResponse | null> =>
     api.post<ActionResponse>(`/api/actions/${id}/approve`),
+  /** Approve every pending proposal, oldest first. */
+  approveAll: (): Promise<BulkApproveResponse | null> =>
+    api.post<BulkApproveResponse>('/api/actions/approve-all'),
+  /** True pending count — the feed is truncated, so don't count it client-side. */
+  pendingCount: (): Promise<PendingCount | null> =>
+    api.get<PendingCount>('/api/actions/pending-count'),
   reject: (id: number): Promise<ActionResponse | null> =>
     api.post<ActionResponse>(`/api/actions/${id}/reject`),
   undo: (id: number): Promise<ActionResponse | null> =>

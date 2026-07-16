@@ -33,9 +33,10 @@ mod table;
 pub use error::{StoreError, StoreResult};
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use models::{
-    ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, ExcludedTermRow,
-    FileColumnStatRow, InsightHistoryRow, InsightStateRow, InsightSuppressionRow,
-    TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableRow,
+    ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, DocumentLabelRow,
+    DocumentLabelWithName, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightStateRow,
+    InsightSuppressionRow, TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableRow,
+    TaxonomyCategoryRow,
 };
 pub use scan::ScanFilter;
 pub use stats::extract_file_column_stats;
@@ -633,5 +634,219 @@ mod tests {
             .expect("failed to create store");
         let tables = store.list_tables().await.expect("failed to list tables");
         assert!(tables.is_empty());
+    }
+
+    async fn temp_store(tmp: &TempDir) -> ParquetStore {
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        ParquetStore::new(tmp.path(), &db_url)
+            .await
+            .expect("failed to create store")
+    }
+
+    /// Bulk approve applies proposals **oldest first**, and this is the accessor
+    /// that guarantees it.
+    ///
+    /// The ordering is a correctness requirement, not a preference: an agent
+    /// proposes `define_taxonomy_category` before the `label_document` that
+    /// names it, so applying newest-first would fail every label with "not a
+    /// category in this table's taxonomy". The neighbouring `list_actions`
+    /// (the audit feed) is deliberately DESC, so this is an easy thing to get
+    /// backwards by copy-paste.
+    #[tokio::test]
+    async fn list_proposed_actions_is_oldest_first_and_only_proposed() {
+        let tmp = TempDir::new().expect("temp dir");
+        let store = temp_store(&tmp).await;
+        let db = store.db();
+
+        // Insert in creation order: two proposals, one already applied, one more.
+        for (request_id, kind, status) in [
+            ("r1", "define_taxonomy_category", "proposed"),
+            ("r2", "label_document", "proposed"),
+            ("r3", "rename_cluster", "applied"),
+            ("r4", "label_document", "proposed"),
+        ] {
+            let row = db
+                .insert_action(request_id, "agent", Some(1), kind, "{}", status, 0)
+                .await
+                .expect("insert")
+                .expect("no request_id conflict");
+            if status == "applied" {
+                db.update_action_result(row.id, "applied", None, None, 0)
+                    .await
+                    .expect("mark applied");
+            }
+        }
+
+        let proposed = db.list_proposed_actions().await.expect("list");
+        assert_eq!(proposed.len(), 3, "the applied action must not be returned");
+
+        let ids: Vec<i64> = proposed.iter().map(|r| r.id).collect();
+        let mut ascending = ids.clone();
+        ascending.sort_unstable();
+        assert_eq!(
+            ids, ascending,
+            "must be oldest-first, or dependent proposals fail"
+        );
+        assert_eq!(
+            proposed.first().map(|r| r.action_kind.as_str()),
+            Some("define_taxonomy_category"),
+            "the category must be applied before the label that names it"
+        );
+
+        assert_eq!(db.count_proposed_actions().await.expect("count"), 3);
+    }
+
+    #[tokio::test]
+    async fn count_proposed_actions_is_zero_on_a_fresh_store() {
+        let tmp = TempDir::new().expect("temp dir");
+        let store = temp_store(&tmp).await;
+        assert_eq!(store.db().count_proposed_actions().await.expect("count"), 0);
+        assert!(store
+            .db()
+            .list_proposed_actions()
+            .await
+            .expect("list")
+            .is_empty());
+    }
+
+    /// Deleting a category must take its row labels with it — the FK cascade
+    /// only fires because the pool sets `foreign_keys(true)`, which is easy to
+    /// lose in a refactor and silent when it breaks.
+    #[tokio::test]
+    async fn deleting_a_category_cascades_to_its_labels() {
+        let tmp = TempDir::new().expect("temp dir");
+        let store = temp_store(&tmp).await;
+        let db = store.db();
+
+        let cat = db
+            .upsert_taxonomy_category("t1", "auth failure", Some("cannot log in"), 0)
+            .await
+            .expect("define");
+        db.set_document_labels("t1", "row-1", &[cat.id], "human", 0)
+            .await
+            .expect("label");
+        assert_eq!(db.count_labelled_rows("t1").await.expect("count"), 1);
+
+        assert!(db.delete_taxonomy_category(cat.id).await.expect("delete"));
+        assert_eq!(
+            db.count_labelled_rows("t1").await.expect("count"),
+            0,
+            "labels must cascade away with their category"
+        );
+    }
+
+    /// The undo path reinserts a deleted category under its ORIGINAL id so the
+    /// restored labels still point at it.
+    #[tokio::test]
+    async fn recreating_a_category_restores_its_labels() {
+        let tmp = TempDir::new().expect("temp dir");
+        let store = temp_store(&tmp).await;
+        let db = store.db();
+
+        let cat = db
+            .upsert_taxonomy_category("t1", "data loss", None, 0)
+            .await
+            .expect("define");
+        db.set_document_labels("t1", "row-1", &[cat.id], "agent", 0)
+            .await
+            .expect("label");
+
+        let snapshot: Vec<(String, String, i64)> = db
+            .get_document_labels_for_category(cat.id)
+            .await
+            .expect("snapshot")
+            .into_iter()
+            .map(|l| (l.row_id, l.source, l.created_at))
+            .collect();
+        db.delete_taxonomy_category(cat.id).await.expect("delete");
+
+        db.recreate_taxonomy_category(cat.id, "t1", "data loss", None, 0, &snapshot)
+            .await
+            .expect("recreate");
+
+        let labels = db.get_document_labels("t1").await.expect("labels");
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels.first().map(|l| l.name.as_str()), Some("data loss"));
+        assert_eq!(labels.first().map(|l| l.category_id), Some(cat.id));
+    }
+
+    /// Restoring under an id whose NAME has since been taken must fail loudly
+    /// rather than roll back with a raw constraint error.
+    #[tokio::test]
+    async fn recreating_a_category_reports_a_name_clash() {
+        let tmp = TempDir::new().expect("temp dir");
+        let store = temp_store(&tmp).await;
+        let db = store.db();
+
+        let original = db
+            .upsert_taxonomy_category("t1", "billing", None, 0)
+            .await
+            .expect("define");
+        db.delete_taxonomy_category(original.id)
+            .await
+            .expect("delete");
+        // The same name is re-defined and gets a NEW id.
+        let replacement = db
+            .upsert_taxonomy_category("t1", "billing", None, 0)
+            .await
+            .expect("redefine");
+        assert_ne!(replacement.id, original.id);
+
+        let err = db
+            .recreate_taxonomy_category(original.id, "t1", "billing", None, 0, &[])
+            .await
+            .expect_err("must refuse rather than violate UNIQUE(table_id, name)");
+        assert!(
+            err.to_string().contains("billing"),
+            "the error must name the clash: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_document_labels_replaces_the_whole_set() {
+        let tmp = TempDir::new().expect("temp dir");
+        let store = temp_store(&tmp).await;
+        let db = store.db();
+
+        let a = db
+            .upsert_taxonomy_category("t1", "a", None, 0)
+            .await
+            .expect("a");
+        let b = db
+            .upsert_taxonomy_category("t1", "b", None, 0)
+            .await
+            .expect("b");
+
+        db.set_document_labels("t1", "row-1", &[a.id, b.id], "agent", 0)
+            .await
+            .expect("set both");
+        assert_eq!(
+            db.get_labels_for_row("t1", "row-1")
+                .await
+                .expect("get")
+                .len(),
+            2
+        );
+
+        // Replace, not merge.
+        db.set_document_labels("t1", "row-1", &[a.id], "human", 0)
+            .await
+            .expect("replace");
+        let rows = db.get_labels_for_row("t1", "row-1").await.expect("get");
+        assert_eq!(rows.len(), 1, "the removed label must be gone, not merged");
+        assert_eq!(rows.first().map(|r| r.source.as_str()), Some("human"));
+
+        // An empty set clears the row — a real prior state, not a no-op.
+        db.set_document_labels("t1", "row-1", &[], "human", 0)
+            .await
+            .expect("clear");
+        assert!(db
+            .get_labels_for_row("t1", "row-1")
+            .await
+            .expect("get")
+            .is_empty());
     }
 }

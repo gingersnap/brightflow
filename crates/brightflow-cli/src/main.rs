@@ -292,6 +292,35 @@ enum TopicsAction {
         #[arg(long, default_value = "issues")]
         table: String,
     },
+
+    /// Report near-duplicate rows (read-only): groups rows whose text is
+    /// substantially the same. Does NOT find differently-worded reports of the
+    /// same issue.
+    NearDup {
+        /// Source id
+        #[arg(long)]
+        source: String,
+
+        /// Table name
+        #[arg(long, default_value = "issues")]
+        table: String,
+
+        /// Cosine similarity threshold. Defaults to the engine's tuned value.
+        #[arg(long)]
+        threshold: Option<f32>,
+    },
+
+    /// Compare the trained classifier head against the nearest-centroid
+    /// baseline on curated labels. Read-only — the go/no-go check.
+    EvalClassifier {
+        /// Source id
+        #[arg(long)]
+        source: String,
+
+        /// Table name
+        #[arg(long, default_value = "issues")]
+        table: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -924,7 +953,243 @@ async fn handle_topics(action: TopicsAction) -> Result<()> {
             k,
         } => topics_eval(&source, &table, &algorithms, k).await,
         TopicsAction::Embed { source, table } => topics_embed(&source, &table).await,
+        TopicsAction::NearDup {
+            source,
+            table,
+            threshold,
+        } => topics_near_dup(&source, &table, threshold).await,
+        TopicsAction::EvalClassifier { source, table } => {
+            topics_eval_classifier(&source, &table).await
+        },
     }
+}
+
+/// Read-only: does the trained head actually beat nearest-centroid on THIS
+/// data? The go/no-go check — if the head doesn't win here, the whole
+/// supervised-taxonomy thesis is wrong for this corpus.
+///
+/// Reads the embeddings already on disk rather than re-embedding, so it is
+/// cheap and reflects exactly what a fit would train on.
+async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
+    use brightflow_engine::embedding::get_backend;
+    use brightflow_engine::enrichment::read_existing_embeddings;
+    use brightflow_engine::nlp::linear::{min_examples_per_label, min_labelled_rows_to_train};
+    use brightflow_engine::nlp::{fit_centroid_baseline, fit_multilabel_linear};
+
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+    let config = resolve_enrichment_config(&store, source, table).await?;
+    let df = store.read_table(source, table).await?;
+
+    let backend = get_backend(&wp.root(), config.embedder)
+        .map_err(|e| anyhow::anyhow!("embedder unavailable: {e}"))?;
+    let dim = backend.dim();
+
+    let embeddings = read_existing_embeddings(&df, dim).ok_or_else(|| {
+        anyhow::anyhow!("no usable `embedding` column on {source}/{table} — run `topics fit` first")
+    })?;
+
+    let targets = brightflow_api::topics::labels::load_label_targets(&store, source, table, &df)
+        .await
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no curated labels for {source}/{table} — run the propose_taxonomy and \
+                 label_documents agents, then approve their proposals"
+            )
+        })?;
+
+    // Train on rows having BOTH an embedding and >=1 label — the same rule
+    // `fit_topics` step 7b applies.
+    let mut features: Vec<Vec<f32>> = Vec::new();
+    let mut row_targets: Vec<Vec<usize>> = Vec::new();
+    for (i, ids) in targets.per_row.iter().enumerate() {
+        if ids.is_empty() {
+            continue;
+        }
+        if let Some(Some(v)) = embeddings.get(i) {
+            if v.len() == dim {
+                features.push(v.clone());
+                row_targets.push(ids.clone());
+            }
+        }
+    }
+
+    println!("Classifier eval: {source}/{table}");
+    println!(
+        "  {} labelled rows over {} categories (dim {dim})",
+        features.len(),
+        targets.names.len()
+    );
+    if features.is_empty() {
+        anyhow::bail!("no rows have both an embedding and a label");
+    }
+
+    let Some(outcome) = fit_multilabel_linear(&features, &row_targets, targets.names.len(), dim)
+    else {
+        println!(
+            "\n  Not enough signal to train (need >= {} labelled rows and >= {} examples \
+             for at least one category).",
+            min_labelled_rows_to_train(),
+            min_examples_per_label()
+        );
+        return Ok(());
+    };
+
+    let base = fit_centroid_baseline(&features, &row_targets, &outcome.retained_labels, dim);
+
+    println!(
+        "  train {} rows / {} retained categories\n",
+        outcome.train_rows,
+        outcome.retained_labels.len()
+    );
+    println!("  {:<28} {:>10}", "model", "macro-F1");
+    println!("  {:-<28} {:->10}", "", "");
+    match base {
+        Some(b) => println!("  {:<28} {b:>10.3}", "nearest-centroid baseline"),
+        None => println!("  {:<28} {:>10}", "nearest-centroid baseline", "n/a"),
+    }
+    println!("  {:<28} {:>10.3}", "trained head", outcome.val_macro_f1);
+
+    if let Some(b) = base {
+        let delta = outcome.val_macro_f1 - b;
+        println!("\n  head - baseline = {delta:+.3}");
+        if delta <= 0.0 {
+            println!(
+                "  ⚠ The head does NOT beat the baseline on this data. Either the seed \
+                 labels are too noisy//thin, or intent is not linearly recoverable from \
+                 these embeddings. Investigate before trusting predicted_labels."
+            );
+        }
+    }
+
+    // Per-category support: the labels that got dropped are the ones a curator
+    // should spend the next hour on.
+    println!("\n  per-category support (retained by the head):");
+    for (i, &label) in outcome.retained_labels.iter().enumerate() {
+        let name = targets.names.get(label).map_or("?", String::as_str);
+        let n = outcome.support.get(i).copied().unwrap_or(0);
+        println!("    {n:>6}  {name}");
+    }
+    let dropped: Vec<&String> = targets
+        .names
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !outcome.retained_labels.contains(i))
+        .map(|(_, n)| n)
+        .collect();
+    if !dropped.is_empty() {
+        println!(
+            "\n  dropped (need ~{} labelled examples each — label more of these):",
+            min_examples_per_label()
+        );
+        for name in dropped {
+            println!("    {name}");
+        }
+    }
+    Ok(())
+}
+
+/// Read-only near-duplicate report. Embeds the table's rows, groups
+/// near-identical text, and prints the groups. Writes nothing.
+async fn topics_near_dup(source: &str, table: &str, threshold: Option<f32>) -> Result<()> {
+    use brightflow_engine::embedding::get_backend;
+    use brightflow_engine::nlp::{
+        clean_for_embedding, find_near_duplicates, DEFAULT_NEAR_DUP_THRESHOLD,
+    };
+
+    /// Characters of each member's text shown in the report.
+    const SNIPPET_LEN: usize = 100;
+
+    let threshold = threshold.unwrap_or(DEFAULT_NEAR_DUP_THRESHOLD);
+    let wp = brightflow_core::WorkspacePaths::from_env();
+    let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
+    let config = resolve_enrichment_config(&store, source, table).await?;
+    let df = store.read_table(source, table).await?;
+    println!(
+        "Near-dup scan on {source}/{table}: {} rows, threshold {threshold}",
+        df.height()
+    );
+
+    // Clean the configured text columns into one string per row.
+    let mut texts: Vec<Option<String>> = Vec::with_capacity(df.height());
+    {
+        let mut per_col: Vec<Vec<String>> = Vec::new();
+        for col in &config.text_columns {
+            let values = df
+                .column(col)
+                .map_err(|e| anyhow::anyhow!("column {col}: {e}"))?
+                .as_materialized_series()
+                .str()
+                .map_err(|e| anyhow::anyhow!("column {col} not string: {e}"))?
+                .into_iter()
+                .map(|o| o.unwrap_or("").to_string())
+                .collect::<Vec<_>>();
+            per_col.push(values);
+        }
+        for row in 0..df.height() {
+            let raw = per_col
+                .iter()
+                .filter_map(|c| c.get(row).map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" ");
+            texts.push(clean_for_embedding(&raw, config.cleaning_profile));
+        }
+    }
+
+    // Embed only the eligible rows, then scatter back so indices line up with
+    // `texts` (and therefore with the DataFrame's rows).
+    let eligible: Vec<usize> = texts
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| t.as_ref().map(|_| i))
+        .collect();
+    let clean_texts: Vec<String> = eligible
+        .iter()
+        .filter_map(|&i| texts.get(i).cloned().flatten())
+        .collect();
+    println!("  {} rows eligible after cleaning", eligible.len());
+
+    let backend = get_backend(&wp.root(), config.embedder)
+        .map_err(|e| anyhow::anyhow!("embedder unavailable: {e}"))?;
+    let vectors = backend
+        .embed(&clean_texts)
+        .map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
+
+    let mut embeddings: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+    for (slot, vector) in eligible.iter().zip(vectors) {
+        if let Some(cell) = embeddings.get_mut(*slot) {
+            *cell = Some(vector);
+        }
+    }
+
+    let groups = find_near_duplicates(&embeddings, &texts, threshold)
+        .map_err(|e| anyhow::anyhow!("near-dup detection failed: {e}"))?;
+
+    if groups.is_empty() {
+        println!("\nNo near-duplicate groups found.");
+        return Ok(());
+    }
+
+    let duplicated: usize = groups.iter().map(|g| g.rows.len()).sum();
+    println!("\n{} group(s) covering {duplicated} rows:", groups.len());
+    for (n, group) in groups.iter().enumerate() {
+        let kind = if group.exact { "exact" } else { "near" };
+        println!("\n  Group {} — {} rows ({kind})", n + 1, group.rows.len());
+        for &row in &group.rows {
+            let snippet = texts
+                .get(row)
+                .cloned()
+                .flatten()
+                .unwrap_or_default()
+                .chars()
+                .take(SNIPPET_LEN)
+                .collect::<String>()
+                .replace('\n', " ");
+            println!("    row {row:>6}: {snippet}");
+        }
+    }
+
+    Ok(())
 }
 
 async fn resolve_enrichment_config(
@@ -972,6 +1237,19 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
     let df = store.read_table(source, table).await?;
     println!("  Loaded {} rows", df.height());
 
+    // Curated row labels train the classifier head. Absent => fall back to the
+    // table's own `label_names` column, as before taxonomies existed.
+    let labels =
+        brightflow_api::topics::labels::load_label_targets(&store, source, table, &df).await;
+    match labels.as_ref() {
+        Some(t) => println!(
+            "  {} curated categories over {} labelled rows",
+            t.names.len(),
+            t.labelled_rows()
+        ),
+        None => println!("  No curated labels — falling back to label_names if present"),
+    }
+
     let workspace_root = wp.root();
     let source_owned = source.to_string();
     let table_owned = table.to_string();
@@ -986,6 +1264,7 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
                 num_clusters,
                 language: None,
                 algorithm: None,
+                labels,
             },
         )
     })
@@ -1001,6 +1280,15 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
         outcome.has_labels,
         outcome.language.as_deref().unwrap_or("-")
     );
+    match outcome.classifier_val_macro_f1 {
+        Some(f1) => println!(
+            "  classifier: {} labels, val macro-F1 = {:.3} ({})",
+            outcome.classifier_labels.len(),
+            f1,
+            outcome.classifier_labels.join(", ")
+        ),
+        None => println!("  classifier: not trained (too little labelled signal)"),
+    }
     for (i, name) in outcome.cluster_names.iter().enumerate() {
         let size = outcome.cluster_sizes.get(i).copied().unwrap_or(0);
         println!("    cluster {i}: {size:>6} docs · {name}");

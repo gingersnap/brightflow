@@ -15,7 +15,7 @@ use brightflow_engine::enrichment::{
 
 use crate::actions::types::{
     Action, ActionLogEntry, ActionManifestEntry, ActionRequest, ActionResponse, ActionStatus,
-    SuppressKind, UndoOp, ACTION_KINDS,
+    BulkApproveFailure, BulkApproveResponse, PendingCount, SuppressKind, UndoOp, ACTION_KINDS,
 };
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -282,6 +282,101 @@ pub async fn approve(
     let action: Action = serde_json::from_str(&row.params_json)
         .map_err(|e| AppError::Internal(format!("stored action unreadable: {e}")))?;
     execute_and_record(&state, id, action).await.map(Json)
+}
+
+/// Cap on how many failure details a bulk approve reports back.
+const MAX_REPORTED_FAILURES: usize = 20;
+
+/// `GET /api/actions/pending-count` — proposals awaiting review.
+///
+/// Separate from the feed because the feed is truncated (100 by default) while
+/// a `label_documents` run can propose a thousand. Counting the visible page
+/// would put a wrong number on the "approve all" button.
+pub async fn pending_count(State(state): State<AppState>) -> AppResult<Json<PendingCount>> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let count = store.db().count_proposed_actions().await?;
+    Ok(Json(PendingCount {
+        count: usize::try_from(count).unwrap_or(0),
+    }))
+}
+
+/// `POST /api/actions/approve-all` — approve every pending proposal.
+///
+/// Applies them **oldest first** because proposals have ordering dependencies
+/// (a category must exist before a label can name it), and runs each through the
+/// same `execute_and_record` a single approval uses — so the audit log, undo
+/// records and failure handling are identical. Nothing here is a shortcut around
+/// the normal path; it is the normal path in a loop.
+pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkApproveResponse>> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = std::sync::Arc::clone(store);
+    let rows = store.db().list_proposed_actions().await?;
+
+    let total = rows.len();
+    let mut approved = 0usize;
+    let mut failures: Vec<BulkApproveFailure> = Vec::new();
+
+    for row in rows {
+        // A proposal whose stored params no longer deserialize is a failure for
+        // that row alone — record it and keep going.
+        let parsed: Result<Action, _> = serde_json::from_str(&row.params_json);
+        let action = match parsed {
+            Ok(a) => a,
+            Err(e) => {
+                push_failure(
+                    &mut failures,
+                    row.id,
+                    &row.action_kind,
+                    format!("stored action unreadable: {e}"),
+                );
+                // Mark it failed so it stops showing as pending forever.
+                if let Err(e) = store
+                    .db()
+                    .update_action_result(row.id, "failed", None, None, now_epoch())
+                    .await
+                {
+                    tracing::warn!("could not mark action {} failed: {e}", row.id);
+                }
+                continue;
+            },
+        };
+        match execute_and_record(&state, row.id, action).await {
+            Ok(response) if response.status == ActionStatus::Applied => approved += 1,
+            Ok(response) => {
+                let detail = response
+                    .result
+                    .get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("action did not apply")
+                    .to_string();
+                push_failure(&mut failures, row.id, &row.action_kind, detail);
+            },
+            Err(e) => push_failure(&mut failures, row.id, &row.action_kind, e.to_string()),
+        }
+    }
+
+    let failed = total.saturating_sub(approved);
+    tracing::info!("bulk approve: {approved}/{total} applied, {failed} failed");
+    Ok(Json(BulkApproveResponse {
+        total,
+        approved,
+        failed,
+        failures,
+    }))
+}
+
+fn push_failure(out: &mut Vec<BulkApproveFailure>, log_id: i64, kind: &str, error: String) {
+    if out.len() < MAX_REPORTED_FAILURES {
+        out.push(BulkApproveFailure {
+            log_id,
+            action_kind: kind.to_string(),
+            error,
+        });
+    }
 }
 
 /// `POST /api/actions/{id}/reject`
@@ -635,7 +730,195 @@ pub async fn execute_action(
                 }),
             ))
         },
+        Action::DefineTaxonomyCategory {
+            source_id,
+            table,
+            name,
+            description,
+        } => {
+            let name = name.trim();
+            if name.is_empty() {
+                return Err(AppError::BadRequest(
+                    "category name cannot be empty".to_string(),
+                ));
+            }
+            let (store, table_id) = table_ctx(state, source_id, table).await?;
+            let previous = store
+                .db()
+                .get_taxonomy_category_by_name(&table_id, name)
+                .await?;
+            let row = store
+                .db()
+                .upsert_taxonomy_category(&table_id, name, description.as_deref(), now_epoch())
+                .await?;
+            Ok((
+                json!({
+                    "categoryId": row.id,
+                    "name": row.name,
+                    "description": row.description,
+                    "created": previous.is_none(),
+                }),
+                Some(UndoOp::RestoreTaxonomyCategory {
+                    category_id: row.id,
+                    delete_row: previous.is_none(),
+                    name: previous.as_ref().map(|p| p.name.clone()),
+                    description: previous.and_then(|p| p.description),
+                }),
+            ))
+        },
+        Action::RenameTaxonomyCategory {
+            source_id,
+            table,
+            category_id,
+            name,
+        } => {
+            let name = name.trim();
+            if name.is_empty() {
+                return Err(AppError::BadRequest(
+                    "category name cannot be empty".to_string(),
+                ));
+            }
+            let (store, table_id) = table_ctx(state, source_id, table).await?;
+            let previous = owned_category(&store, &table_id, *category_id).await?;
+            // UNIQUE(table_id, name) would otherwise surface as an opaque 500.
+            if let Some(clash) = store
+                .db()
+                .get_taxonomy_category_by_name(&table_id, name)
+                .await?
+            {
+                if clash.id != *category_id {
+                    return Err(AppError::BadRequest(format!(
+                        "'{name}' is already a category in this table"
+                    )));
+                }
+            }
+            let row = store
+                .db()
+                .rename_taxonomy_category(*category_id, name)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("category {category_id} not found")))?;
+            Ok((
+                json!({ "categoryId": row.id, "name": row.name }),
+                Some(UndoOp::RestoreTaxonomyCategory {
+                    category_id: row.id,
+                    delete_row: false,
+                    name: Some(previous.name),
+                    description: previous.description,
+                }),
+            ))
+        },
+        Action::DeleteTaxonomyCategory {
+            source_id,
+            table,
+            category_id,
+        } => {
+            let (store, table_id) = table_ctx(state, source_id, table).await?;
+            let previous = owned_category(&store, &table_id, *category_id).await?;
+            // Snapshot the labels BEFORE deleting — the FK cascade is about to
+            // destroy them, and they are curated human work.
+            let labels: Vec<(String, String, i64)> = store
+                .db()
+                .get_document_labels_for_category(*category_id)
+                .await?
+                .into_iter()
+                .map(|l| (l.row_id, l.source, l.created_at))
+                .collect();
+            let deleted = store.db().delete_taxonomy_category(*category_id).await?;
+            if !deleted {
+                return Err(AppError::NotFound(format!(
+                    "category {category_id} not found"
+                )));
+            }
+            Ok((
+                json!({ "categoryId": category_id, "labelsRemoved": labels.len() }),
+                Some(UndoOp::RecreateTaxonomyCategory {
+                    table_id,
+                    category_id: *category_id,
+                    name: previous.name,
+                    description: previous.description,
+                    created_at: previous.created_at,
+                    labels,
+                }),
+            ))
+        },
+        Action::LabelDocument {
+            source_id,
+            table,
+            row_id,
+            categories,
+        } => {
+            let (store, table_id) = table_ctx(state, source_id, table).await?;
+
+            // Resolve names -> ids against the APPROVED taxonomy. An unknown
+            // name is an error, not an implicit create: the taxonomy is the
+            // ratified vocabulary, and letting a labeling call invent
+            // categories would route around human approval entirely.
+            let mut category_ids = Vec::with_capacity(categories.len());
+            for name in categories {
+                let name = name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                let row = store
+                    .db()
+                    .get_taxonomy_category_by_name(&table_id, name)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::BadRequest(format!(
+                            "'{name}' is not a category in this table's taxonomy — \
+                             define it first"
+                        ))
+                    })?;
+                category_ids.push(row.id);
+            }
+            category_ids.sort_unstable();
+            category_ids.dedup();
+
+            let previous: Vec<(i64, String, i64)> = store
+                .db()
+                .get_label_rows_for_row(&table_id, row_id)
+                .await?
+                .into_iter()
+                .map(|l| (l.category_id, l.source, l.created_at))
+                .collect();
+
+            let written = store
+                .db()
+                .set_document_labels(&table_id, row_id, &category_ids, "human", now_epoch())
+                .await?;
+            Ok((
+                json!({ "rowId": row_id, "categories": categories, "count": written.len() }),
+                Some(UndoOp::RestoreDocumentLabels {
+                    table_id,
+                    row_id: row_id.clone(),
+                    labels: previous,
+                }),
+            ))
+        },
     }
+}
+
+/// Fetch a category, verifying it belongs to `table_id`.
+///
+/// The ownership check is the authorization boundary: `category_id` arrives
+/// from the client while the table scope comes from the URL, so without this a
+/// caller could rename or delete another table's categories by guessing ids.
+async fn owned_category(
+    store: &StoreHandle,
+    table_id: &str,
+    category_id: i64,
+) -> AppResult<brightflow_store::TaxonomyCategoryRow> {
+    let row = store
+        .db()
+        .get_taxonomy_category(category_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("category {category_id} not found")))?;
+    if row.table_id != table_id {
+        return Err(AppError::NotFound(format!(
+            "category {category_id} not found"
+        )));
+    }
+    Ok(row)
 }
 
 /// Apply an inverse operation.
@@ -746,6 +1029,72 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             kpi_store
                 .db()
                 .upsert_column_semantic(&table_id, column, role, *is_kpi, None, None)
+                .await?;
+            Ok(())
+        },
+        UndoOp::RestoreTaxonomyCategory {
+            category_id,
+            delete_row,
+            name,
+            description,
+        } => {
+            if *delete_row {
+                // Undoing a *define* deletes the category, and document_labels
+                // cascade off it. Between the define and the undo, rows may have
+                // been labelled — the labels are curated human work, and the
+                // undo op was captured before they existed, so it has no
+                // snapshot to restore them from. Refuse rather than silently
+                // destroy them; `delete_taxonomy_category` is the deliberate
+                // path, and it DOES snapshot.
+                let labels = store
+                    .db()
+                    .get_document_labels_for_category(*category_id)
+                    .await?;
+                if !labels.is_empty() {
+                    return Err(AppError::BadRequest(format!(
+                        "cannot undo: {} row label(s) now use this category. Delete the \
+                         category explicitly instead — that path preserves the labels for undo.",
+                        labels.len()
+                    )));
+                }
+                store.db().delete_taxonomy_category(*category_id).await?;
+            } else if let Some(name) = name {
+                store
+                    .db()
+                    .update_taxonomy_category(*category_id, name, description.as_deref())
+                    .await?;
+            }
+            Ok(())
+        },
+        UndoOp::RecreateTaxonomyCategory {
+            table_id,
+            category_id,
+            name,
+            description,
+            created_at,
+            labels,
+        } => {
+            store
+                .db()
+                .recreate_taxonomy_category(
+                    *category_id,
+                    table_id,
+                    name,
+                    description.as_deref(),
+                    *created_at,
+                    labels,
+                )
+                .await?;
+            Ok(())
+        },
+        UndoOp::RestoreDocumentLabels {
+            table_id,
+            row_id,
+            labels,
+        } => {
+            store
+                .db()
+                .restore_document_labels(table_id, row_id, labels)
                 .await?;
             Ok(())
         },

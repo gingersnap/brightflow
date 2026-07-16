@@ -7,6 +7,7 @@ use serde_json::json;
 
 use crate::actions::handlers::{dispatch_action, Actor};
 use crate::actions::types::Action;
+use crate::agent::sampling::SampleDoc;
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
@@ -16,6 +17,26 @@ const MAX_ITERATIONS: usize = 12;
 const MAX_TOTAL_TOKENS: u64 = 120_000;
 /// Top insight candidates fed to triage/narrate runs.
 const TRIAGE_CANDIDATES: usize = 12;
+
+/// Iteration cap for a run kind.
+///
+/// `label_documents` works through a ~1–2k row seed a batch at a time, so the
+/// cluster-sized default of 12 would stop it a few percent in. This is still
+/// the bounded cold path: cost is O(seed sample), never O(rows).
+fn max_iterations(kind: &str) -> usize {
+    match kind {
+        "label_documents" => 80,
+        _ => MAX_ITERATIONS,
+    }
+}
+
+/// Token budget for a run kind.
+fn max_total_tokens(kind: &str) -> u64 {
+    match kind {
+        "label_documents" => 900_000,
+        _ => MAX_TOTAL_TOKENS,
+    }
+}
 
 fn now_epoch() -> i64 {
     i64::try_from(
@@ -67,8 +88,9 @@ async fn run_inner(
     let mut proposed = 0usize;
     let mut total_tokens = 0u64;
     let mut narration = String::new();
+    let (iteration_cap, token_cap) = (max_iterations(kind), max_total_tokens(kind));
 
-    for iteration in 0..MAX_ITERATIONS {
+    for iteration in 0..iteration_cap {
         let outcome = chat_with_retry(&client, &messages, &tools).await?;
         total_tokens += outcome.total_tokens.unwrap_or(0);
 
@@ -120,8 +142,8 @@ async fn run_inner(
         if finished {
             break;
         }
-        if total_tokens > MAX_TOTAL_TOKENS {
-            tracing::warn!("agent run {run_id} hit token budget");
+        if total_tokens > token_cap {
+            tracing::warn!("agent run {run_id} hit token budget ({token_cap})");
             break;
         }
     }
@@ -176,6 +198,8 @@ fn tools_for(kind: &str) -> Vec<ToolDef> {
         "auto_label" => &["assign_cluster_label", "rename_cluster"],
         "propose_merges" => &["merge_clusters", "mark_cluster_noise"],
         "triage_insights" => &["dismiss_insight", "pin_insight", "annotate_insight"],
+        "propose_taxonomy" => &["define_taxonomy_category"],
+        "label_documents" => &["label_document"],
         _ => &[], // narrate_insights: text only
     };
     let manifest = manifest_schemas();
@@ -239,6 +263,25 @@ fn manifest_schemas() -> Vec<(String, String, serde_json::Value)> {
             Some(((*kind).to_string(), (*description).to_string(), schema))
         })
         .collect()
+}
+
+/// The table's approved intent taxonomy, as prompt JSON.
+async fn existing_taxonomy(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+) -> AppResult<Vec<serde_json::Value>> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let Some(table_row) = store.db().get_table(source_id, table).await? else {
+        return Ok(Vec::new());
+    };
+    let categories = store.db().get_taxonomy_categories(&table_row.id).await?;
+    Ok(categories
+        .into_iter()
+        .map(|c| json!({ "name": c.name, "description": c.description }))
+        .collect())
 }
 
 /// Kind-specific context: what the model sees.
@@ -330,6 +373,103 @@ async fn build_context(
                 system.to_string(),
                 serde_json::to_string_pretty(&json!({ "insights": candidates }))
                     .unwrap_or_default(),
+            ))
+        },
+        "propose_taxonomy" => {
+            let docs = crate::agent::sampling::stratified_sample(
+                state,
+                source_id,
+                table,
+                crate::agent::sampling::TAXONOMY_SAMPLE,
+            )
+            .await?;
+            if docs.is_empty() {
+                return Err(AppError::BadRequest(
+                    "no documents to sample — sync the table first".to_string(),
+                ));
+            }
+            let existing = existing_taxonomy(state, source_id, table).await?;
+            let samples: Vec<serde_json::Value> = docs.iter().map(SampleDoc::to_json).collect();
+
+            // The negative instruction is the entire point of this run. Left to
+            // itself the model reliably proposes format buckets ("Automated
+            // Backport Commits") — which are *accurate* descriptions of what it
+            // was shown and *useless* as intents.
+            let system = "You are defining a problem-intent taxonomy for a support/issue \
+                 corpus. Read the sample tickets and propose 8-15 categories via \
+                 define_taxonomy_category, then call done.\n\n\
+                 Categorize by WHAT IS WRONG for the user — the symptom or failure. \
+                 Good: 'authentication failure', 'data loss on sync', 'slow query \
+                 performance', 'incorrect billing amount'.\n\n\
+                 NEVER categorize by tooling, file format, mechanism, or how the ticket \
+                 is written. Bad: 'backport commits', 'stack traces', 'issues with code \
+                 snippets', 'templated bug reports', 'force push'. Those describe the \
+                 SHAPE of the text, not the problem. If a proposed category would still \
+                 make sense after someone rewrote the ticket in different words, it is a \
+                 real intent; if it would evaporate, it is a format bucket — discard it.\n\n\
+                 Categories should be mutually distinguishable, cover the corpus, and be \
+                 specific enough to act on. Give each a short name and a one-sentence \
+                 description of the symptom.";
+
+            Ok((
+                system.to_string(),
+                serde_json::to_string_pretty(&json!({
+                    "existingCategories": existing,
+                    "sampleTickets": samples,
+                }))
+                .unwrap_or_default(),
+            ))
+        },
+        "label_documents" => {
+            let existing = existing_taxonomy(state, source_id, table).await?;
+            if existing.is_empty() {
+                return Err(AppError::BadRequest(
+                    "no taxonomy defined — run propose_taxonomy and approve categories first"
+                        .to_string(),
+                ));
+            }
+            let docs = crate::agent::sampling::stratified_sample(
+                state,
+                source_id,
+                table,
+                crate::agent::sampling::LABEL_SAMPLE,
+            )
+            .await?;
+            if docs.is_empty() {
+                return Err(AppError::BadRequest(
+                    "no documents to sample — sync the table first".to_string(),
+                ));
+            }
+
+            // Batch: one label_document call per row, but many rows per model
+            // turn. One row per turn would burn the iteration budget on protocol
+            // overhead long before the seed sample was covered.
+            let batches: Vec<serde_json::Value> = docs
+                .chunks(crate::agent::sampling::LABEL_BATCH)
+                .map(|chunk| json!(chunk.iter().map(SampleDoc::to_json).collect::<Vec<_>>()))
+                .collect();
+
+            let system = "You are labelling support tickets with problem intents. For EVERY \
+                 ticket shown, call label_document with its rowId and the categories that \
+                 apply, drawn ONLY from the approved taxonomy below. Use the exact category \
+                 names given.\n\n\
+                 Judge by WHAT PROBLEM the ticket describes, not by how it is written. \
+                 Ignore whether it contains a stack trace, a backport script, a template, \
+                 or code — formatting is not intent. Two tickets in totally different \
+                 formats can share an intent; two tickets in identical formats often do \
+                 not.\n\n\
+                 A ticket may have several intents, or none — pass an empty list rather \
+                 than forcing a bad fit. Work through the batches in order, calling \
+                 label_document once per ticket. Call done only after every ticket has \
+                 been labelled.";
+
+            Ok((
+                system.to_string(),
+                serde_json::to_string_pretty(&json!({
+                    "approvedTaxonomy": existing,
+                    "batches": batches,
+                }))
+                .unwrap_or_default(),
             ))
         },
         other => Err(AppError::BadRequest(format!(

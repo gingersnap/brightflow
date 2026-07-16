@@ -20,6 +20,12 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 - `crates/brightflow-api` - HTTP API server (Axum + Polars) with integrated event ingestion
 - `brightflow-app/` - Vue 3 frontend (see its CLAUDE.md for detailed style rules and conventions)
 
+## Key Docs
+
+- `docs/supervised_topics.md` - Why topic clusters group by format and not intent,
+  and how the supervised classifier head fixes it. Read before touching
+  `topic_enricher.rs`, `nlp/linear.rs`, or anything named `predicted_label*`.
+
 ## Code Style
 
 - **Rust**: `cargo fmt`, `cargo clippy`, `cargo audit`
@@ -40,6 +46,11 @@ cargo build --release             # release build (always run after debug succee
 cargo fmt --check                 # check formatting
 cargo clippy                      # lint
 cargo audit                       # check dependencies for vulnerabilities
+
+# Topics / intent classification (see docs/supervised_topics.md)
+cargo run -- topics fit --source <s> --table issues        # refit + train the head
+cargo run -- topics eval-classifier --source <s> --table issues  # head vs baseline macro-F1
+cargo run -- topics near-dup --source <s> --table issues   # near-duplicate report
 
 # Frontend (from brightflow-app/)
 npm run dev                       # vp dev server

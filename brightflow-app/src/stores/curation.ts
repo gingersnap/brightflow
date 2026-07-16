@@ -2,7 +2,12 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 import { actionsApi } from '@/services/api';
-import type { Action, ActionLogEntry, ActionResponse } from '@/types/generated';
+import type {
+  Action,
+  ActionLogEntry,
+  ActionResponse,
+  BulkApproveResponse,
+} from '@/types/generated';
 
 /**
  * Curation actions store: dispatches first-class actions (same path an LLM
@@ -13,6 +18,9 @@ export const useCurationStore = defineStore('curation', () => {
   const feed = ref<ActionLogEntry[]>([]);
   const feedLoading = ref(false);
   const dispatching = ref(false);
+  const approvingAll = ref(false);
+  /** Proposals awaiting review — the true count, not the feed's visible slice. */
+  const pendingCount = ref(0);
   const lastError = ref<string | null>(null);
   /** Bumped after every applied action so views can refetch. */
   const version = ref(0);
@@ -61,22 +69,65 @@ export const useCurationStore = defineStore('curation', () => {
   async function approve(id: number): Promise<void> {
     await actionsApi.approve(id);
     version.value += 1;
-    await refreshFeed();
+    await Promise.all([refreshFeed(), refreshPendingCount()]);
+  }
+
+  /**
+   * Approve every pending proposal in one server-side sweep.
+   *
+   * Deliberately NOT a client-side loop over `approve()`: an agent labelling run
+   * proposes one action per ticket, so a 1–2k-row seed would mean 1–2k requests
+   * — each of which also refetches the whole feed. The server applies them
+   * oldest-first (proposals have ordering dependencies) and reports what failed.
+   */
+  async function approveAll(): Promise<BulkApproveResponse | null> {
+    approvingAll.value = true;
+    lastError.value = null;
+    try {
+      const result = await actionsApi.approveAll();
+      version.value += 1;
+      if (result != null && result.failed > 0) {
+        const first = result.failures[0];
+        const example = first == null ? '' : ` — e.g. ${first.actionKind}: ${first.error}`;
+        lastError.value = `${result.failed} of ${result.total} could not be applied${example}`;
+      }
+      await Promise.all([refreshFeed(), refreshPendingCount()]);
+      return result;
+      // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
+    } catch (err) {
+      lastError.value = err instanceof Error ? err.message : 'Bulk approve failed';
+      return null;
+    } finally {
+      approvingAll.value = false;
+    }
+  }
+
+  /**
+   * True pending count. The feed is capped server-side, so counting `feed` would
+   * under-report once an agent proposes more than one page of actions.
+   */
+  async function refreshPendingCount(): Promise<void> {
+    const response = await actionsApi.pendingCount();
+    pendingCount.value = response?.count ?? 0;
   }
 
   async function reject(id: number): Promise<void> {
     await actionsApi.reject(id);
-    await refreshFeed();
+    await Promise.all([refreshFeed(), refreshPendingCount()]);
   }
 
   return {
     approve,
+    approveAll,
+    approvingAll,
     dispatch,
     dispatching,
     feed,
     feedLoading,
     lastError,
+    pendingCount,
     refreshFeed,
+    refreshPendingCount,
     reject,
     undo,
     version,
