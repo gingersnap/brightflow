@@ -77,7 +77,7 @@ export default defineConfig({
         colors: {
           primary: 'purple',
           secondary: 'teal',
-          neutral: 'mauve',
+          neutral: 'stone',
           info: 'info',
           success: 'success',
           warning: 'warning',

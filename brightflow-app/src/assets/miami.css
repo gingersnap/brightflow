@@ -1,12 +1,12 @@
 /* ============================================================================
-   MIAMI — Design Tokens v0.0.4
+   MIAMI — Design Tokens v0.0.5
    ============================================================================
 
    Colors:
      brand (pink)      — Logo, identity, marketing CTAs, gradients
      primary (purple)  — UI actions, buttons, focus rings
      secondary (teal)  — Supporting actions, highlights
-     neutral (mauve)   — Neutral backgrounds, borders, text
+     neutral (stone)   — Neutral backgrounds, borders, text
      info/success/warning/error — Semantic UI states
 
    Fonts:
@@ -22,7 +22,7 @@
      Marketing: @import "tailwindcss"; @import "./miami.css";
 
    Nuxt UI (vite.config.ts):
-     ui.colors: { primary: 'purple', secondary: 'teal', neutral: 'mauve',
+     ui.colors: { primary: 'purple', secondary: 'teal', neutral: 'stone',
                   info: 'info', success: 'success', warning: 'warning',
                   error: 'error' }
 
@@ -54,7 +54,7 @@
        browsers without scroll-timeline support.
 
    Font loading is the consumer's responsibility.
-   Neutral is aliased to Tailwind's mauve palette.
+   Neutral is aliased to Tailwind's stone palette.
 
    ============================================================================ */
 
@@ -105,19 +105,19 @@
   --color-secondary-900: var(--color-teal-900);
   --color-secondary-950: var(--color-teal-950);
 
-  /* ── Neutral (→ mauve) — Surfaces, borders, text ──────────────────────── */
+  /* ── Neutral (→ stone) — Surfaces, borders, text ──────────────────────── */
 
-  --color-neutral-50: var(--color-mauve-50);
-  --color-neutral-100: var(--color-mauve-100);
-  --color-neutral-200: var(--color-mauve-200);
-  --color-neutral-300: var(--color-mauve-300);
-  --color-neutral-400: var(--color-mauve-400);
-  --color-neutral-500: var(--color-mauve-500);
-  --color-neutral-600: var(--color-mauve-600);
-  --color-neutral-700: var(--color-mauve-700);
-  --color-neutral-800: var(--color-mauve-800);
-  --color-neutral-900: var(--color-mauve-900);
-  --color-neutral-950: var(--color-mauve-950);
+  --color-neutral-50: var(--color-stone-50);
+  --color-neutral-100: var(--color-stone-100);
+  --color-neutral-200: var(--color-stone-200);
+  --color-neutral-300: var(--color-stone-300);
+  --color-neutral-400: var(--color-stone-400);
+  --color-neutral-500: var(--color-stone-500);
+  --color-neutral-600: var(--color-stone-600);
+  --color-neutral-700: var(--color-stone-700);
+  --color-neutral-800: var(--color-stone-800);
+  --color-neutral-900: var(--color-stone-900);
+  --color-neutral-950: var(--color-stone-950);
 
   /* ── Info (→ sky) ──────────────────────────────────────────────────────── */
 
