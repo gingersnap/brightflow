@@ -10,6 +10,7 @@ use crate::agent::handlers as agent_handlers;
 use crate::analytics::handlers;
 use crate::auth::handlers as auth_handlers;
 use crate::connect::handlers as connect_handlers;
+use crate::enrichment::handlers as enrichment_handlers;
 use crate::ingest::handlers as ingest_handlers;
 use crate::insights::handlers as insights_handlers;
 use crate::llm::handlers as llm_handlers;
@@ -19,6 +20,7 @@ use crate::semantics::handlers as semantics_handlers;
 use crate::sources::handlers as sources_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
+use crate::textexplore::handlers as textexplore_handlers;
 use crate::topics::handlers as topics_handlers;
 use crate::web_analytics::handlers as wa_handlers;
 
@@ -69,6 +71,46 @@ fn api_routes() -> Router<AppState> {
             "/sources/{source_id}/tables/{table}/enrichment",
             get(topics_handlers::get_enrichment_settings)
                 .put(topics_handlers::put_enrichment_settings),
+        )
+        // Enrichment functions (versioned derived columns)
+        .route(
+            "/sources/{source_id}/tables/{table}/functions",
+            get(enrichment_handlers::list_functions).post(enrichment_handlers::create_function),
+        )
+        .route(
+            "/functions/{id}",
+            get(enrichment_handlers::get_function)
+                .put(enrichment_handlers::update_function)
+                .delete(enrichment_handlers::delete_function),
+        )
+        .route(
+            "/functions/{id}/versions",
+            get(enrichment_handlers::list_versions),
+        )
+        .route(
+            "/functions/{id}/promote",
+            post(enrichment_handlers::promote_function),
+        )
+        .route(
+            "/functions/{id}/demote",
+            post(enrichment_handlers::demote_function),
+        )
+        .route(
+            "/functions/{id}/sample-run",
+            post(enrichment_handlers::sample_run),
+        )
+        .route(
+            "/functions/{id}/estimate",
+            get(enrichment_handlers::estimate),
+        )
+        .route("/functions/{id}/runs", post(enrichment_handlers::start_run))
+        .route(
+            "/enrichment/runs/{rid}",
+            get(enrichment_handlers::get_run),
+        )
+        .route(
+            "/enrichment/runs/{rid}/cancel",
+            post(enrichment_handlers::cancel_run),
         )
         .route(
             "/actions",
@@ -126,6 +168,11 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/sources/{source_id}/tables/{table}/topics/recluster",
             post(topics_handlers::post_recluster),
+        )
+        // Text Explorer (no-LLM text filtering + words widget)
+        .route(
+            "/sources/{source_id}/tables/{table}/textexplore/search",
+            post(textexplore_handlers::search),
         )
         // Intent taxonomy (read-only; writes go through POST /api/actions)
         .route(
@@ -219,6 +266,8 @@ fn api_routes() -> Router<AppState> {
         .route("/system/ws", get(system_handlers::system_ws_handler))
         // Unified sources (must be before /sources/{id})
         .route("/sources/unified", get(sources_handlers::list_unified_sources))
+        // Persistent CSV uploads (must be before /sources/{id})
+        .route("/sources/upload", post(handlers::upload_source))
         // Source management
         .route(
             "/sources",

@@ -1,5 +1,5 @@
 /* ============================================================================
-   MIAMI — Design Tokens v0.0.5
+   MIAMI — Design Tokens v0.0.6
    ============================================================================
 
    Colors:
@@ -16,6 +16,28 @@
    App vs marketing use the same names, different emphasis:
      App — primary (purple) driven, dense, Linear-style. font-sans only.
      Marketing — brand (pink) driven, roomy, gradients. font-brand for display.
+
+   Design rules — "Linear discipline, Miami skin":
+     1. Identity is loud, behavior is calm. Pink/purple/teal, Poppins
+        display, pills and rounded corners carry the Miami feel;
+        restraint carries the quality feel.
+     2. No glows. Nothing radiates colored light — no glow shadows, no
+        blurred color halos behind surfaces.
+     3. Shadows are neutral. Elevation uses stone/black drop shadows;
+        color never bleeds past an element's edge.
+     4. No looping motion. Entry animation only (animate-fade-*,
+        reveal-*), fires once. Sole exception: loading states
+        (animate-shimmer, app skeletons).
+     5. Hover feedback means clickable. Only interactive elements react
+        to the pointer; decorative cards and panels stay inert.
+     6. Backgrounds stay calm. Sections sit on flat canvas — no gradient
+        bands or ambient blobs behind content. Color lives in content.
+        bg-grid at ≤ 0.07 opacity is the one sanctioned texture.
+     7. Gradients are flat and in-surface: card backgrounds, icon tiles,
+        chart fills. Never blurred, never floating, never on buttons or
+        app UI.
+     8. Information over spectacle. When decoration carries content
+        (logo strips, tech lists), render it static.
 
    Import:
      App:       @import "tailwindcss"; @import "@nuxt/ui"; @import "./miami.css";
@@ -36,7 +58,7 @@
      text-accent-brand / text-accent-primary / text-accent-secondary
 
    Presentation utilities (on-demand; no CSS emitted unless used):
-     glass / card-glow / card-glow-hover — surface effects
+     glass / card-surface / card-surface-hover — surface effects
      bg-grid — grid background
      mask-fade-b / mask-fade-x — edge masks
      scrollbar-hide — chrome hide
@@ -45,10 +67,7 @@
    Motion:
      --ease-out-expo — signature spring curve (use for all transitions)
      animate-fade-up / animate-fade-in — entry motion, fires on mount
-     animate-float — ambient drift (marketing only)
-     animate-shimmer — skeleton loaders (app) / hover emphasis (marketing)
-     animate-pulse-glow — CTA emphasis (marketing)
-     animate-marquee — tickers + logo bars (app + marketing)
+     animate-shimmer — skeleton loaders (app) only
      reveal-up / reveal-in — scroll-driven entry motion via
        animation-timeline: view(); zero JS. Graceful fallback on
        browsers without scroll-timeline support.
@@ -328,6 +347,8 @@
    BRAND — Gradients
    ============================================================================
    The Miami identity. For hero sections, decorative cards, and accents.
+   Flat and in-surface only — never blurred into backdrop halos, never
+   floating behind content (rules 6–7).
    Never use gradients in app UI or on buttons.
    All gradients flow 135° (top-left to bottom-right).
    ============================================================================ */
@@ -377,10 +398,9 @@
    route change). Coverage is what makes motion feel like Miami/Linear/Vercel —
    consistency > novelty.
 
-   Named animate-* keyframes are for entry motion (fade-up / fade-in), one
-   ambient drift (float, marketing-only), loading states (shimmer), CTA
-   emphasis (pulse-glow), and scrolling strips (marquee). All @theme entries
-   are on-demand — unused names emit no CSS.
+   Named animate-* keyframes are for entry motion (fade-up / fade-in) and
+   loading states (shimmer) — the one sanctioned loop (rule 4). All @theme
+   entries are on-demand — unused names emit no CSS.
    ============================================================================ */
 
 @theme {
@@ -388,10 +408,7 @@
 
   --animate-fade-up: fade-up 0.8s var(--ease-out-expo) both;
   --animate-fade-in: fade-in 0.8s var(--ease-out-expo) both;
-  --animate-float: float 8s ease-in-out infinite;
   --animate-shimmer: shimmer 3s linear infinite;
-  --animate-pulse-glow: pulse-glow 3.5s ease-in-out infinite;
-  --animate-marquee: marquee 30s linear infinite;
 
   @keyframes fade-up {
     from {
@@ -411,15 +428,6 @@
       opacity: 1;
     }
   }
-  @keyframes float {
-    0%,
-    100% {
-      transform: translateY(0) translateX(0);
-    }
-    50% {
-      transform: translateY(-1.25rem) translateX(0.5rem);
-    }
-  }
   @keyframes shimmer {
     0% {
       background-position: -200% 0;
@@ -428,38 +436,20 @@
       background-position: 200% 0;
     }
   }
-  @keyframes pulse-glow {
-    0%,
-    100% {
-      box-shadow:
-        0 0 0 0 color-mix(in oklab, var(--color-brand-400) 40%, transparent),
-        0 0 40px 0 color-mix(in oklab, var(--color-brand-500) 20%, transparent);
-    }
-    50% {
-      box-shadow:
-        0 0 0 6px color-mix(in oklab, var(--color-brand-400) 0%, transparent),
-        0 0 60px 4px color-mix(in oklab, var(--color-brand-500) 35%, transparent);
-    }
-  }
-  @keyframes marquee {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(-50%);
-    }
-  }
 }
 
 /* ============================================================================
    UTILITIES — Presentation layer
    ============================================================================
-   Surface effects (glass, card-glow / card-glow-hover), textures
+   Surface effects (glass, card-surface / card-surface-hover), textures
    (bg-grid, bg-noise), and masks (mask-fade-b, mask-fade-x) that recur
    across marketing compositions. Used as Tailwind classes:
 
      <div class="glass rounded-2xl p-6"> ... </div>
-     <article class="card-glow p-6 hover:card-glow-hover"> ... </article>
+     <a class="card-surface p-6 hover:card-surface-hover"> ... </a>
+
+   card-surface-hover only on genuinely clickable cards (rule 5) —
+   decorative cards get card-surface alone and stay inert.
 
    Bound to --ui-* tokens so they follow light/dark mode automatically.
    Each @utility is on-demand: no CSS emitted unless the class is used.
@@ -472,22 +462,20 @@
   border: 1px solid color-mix(in oklab, var(--ui-border) 60%, transparent);
 }
 
-@utility card-glow {
+@utility card-surface {
   background: linear-gradient(
     180deg,
     color-mix(in oklab, var(--ui-bg-muted) 80%, transparent) 0%,
     color-mix(in oklab, var(--ui-bg) 80%, transparent) 100%
   );
-  border: 1px solid color-mix(in oklab, var(--ui-border) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ui-border) 90%, transparent);
   transition:
     border-color 0.3s ease,
-    transform 0.3s ease,
-    box-shadow 0.3s ease;
+    transform 0.3s ease;
 }
 
-@utility card-glow-hover {
+@utility card-surface-hover {
   border-color: color-mix(in oklab, var(--color-brand-400) 50%, transparent);
-  box-shadow: 0 0 40px -12px color-mix(in oklab, var(--color-brand-500) 40%, transparent);
   transform: translateY(-2px);
 }
 

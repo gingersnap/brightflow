@@ -298,13 +298,28 @@ pub(crate) async fn run_recluster_for_action(
     Ok(overview.0)
 }
 
-/// Effective enrichment config for a table: builtin default ⊕ stored overrides.
-fn resolve_enrichment(state: &AppState, source_id: &str, table: &str) -> Option<EnrichmentConfig> {
+/// Effective enrichment config for a table.
+///
+/// Stored overrides (hydrated from the table's topic_model function) make ANY
+/// table enrichable — builtin defaults ⊕ overrides for known tables, a
+/// plain-profile base for arbitrary ones. Without overrides, only builtin
+/// tables resolve. A config with no text columns is unusable and yields None.
+pub(crate) fn resolve_enrichment(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+) -> Option<EnrichmentConfig> {
     let overrides = state
         .enrichment_overrides
         .get(&cache_key(source_id, table))
         .map(|v| v.value().clone());
-    EnrichmentConfig::resolve(table, overrides.as_ref())
+    let config = match overrides {
+        Some(o) => {
+            Some(brightflow_engine::enrichment::TopicModelSpec { overrides: o }.to_config(table))
+        },
+        None => EnrichmentConfig::resolve(table, None),
+    };
+    config.filter(|c| !c.text_columns.is_empty())
 }
 
 /// `POST /api/sources/{source_id}/tables/{table}/topics/recluster`
@@ -859,6 +874,10 @@ fn build_timeseries(
 use crate::topics::types::{EnrichmentSettingsResponse, UpdateEnrichmentSettingsRequest};
 
 /// `GET /api/sources/{source_id}/tables/{table}/enrichment`
+///
+/// Adapter over the table's topic_model enrichment function (the DashMap is
+/// hydrated from functions at startup and kept in sync by PUT). Tables with a
+/// text column are enrichable even before any settings exist.
 pub async fn get_enrichment_settings(
     State(state): State<AppState>,
     Path((source_id, table)): Path<(String, String)>,
@@ -867,21 +886,39 @@ pub async fn get_enrichment_settings(
         .enrichment_overrides
         .get(&cache_key(&source_id, &table))
         .map(|v| v.value().clone());
-    let effective = EnrichmentConfig::resolve(&table, overrides.as_ref());
+    let mut effective = match overrides.clone() {
+        Some(o) => {
+            Some(brightflow_engine::enrichment::TopicModelSpec { overrides: o }.to_config(&table))
+        },
+        None => EnrichmentConfig::resolve(&table, None),
+    };
+
+    // Unconfigured non-builtin table: enrichable when it has a text column —
+    // surface the plain-profile base so the settings form has defaults.
+    if effective.is_none() {
+        if let Some(store) = state.store() {
+            if let Ok(Some(table_row)) = store.db().get_table(&source_id, &table).await {
+                if crate::shared::schema_has_text_column(table_row.schema_json.as_deref()) {
+                    effective = Some(
+                        brightflow_engine::enrichment::TopicModelSpec::default().to_config(&table),
+                    );
+                }
+            }
+        }
+    }
     Ok(Json(enrichment_response(&table, effective, overrides)))
 }
 
 /// `PUT /api/sources/{source_id}/tables/{table}/enrichment`
+///
+/// Adapter over the topic_model enrichment function: writes a new function
+/// version (creating a promoted function if none exists) and dual-writes the
+/// deprecated `table_enrichment_settings` row for one release.
 pub async fn put_enrichment_settings(
     State(state): State<AppState>,
     Path((source_id, table)): Path<(String, String)>,
     Json(body): Json<UpdateEnrichmentSettingsRequest>,
 ) -> AppResult<Json<EnrichmentSettingsResponse>> {
-    if EnrichmentConfig::builtin_default(&table).is_none() {
-        return Err(AppError::BadRequest(format!(
-            "Table '{table}' is not enrichable"
-        )));
-    }
     if let Some(profile) = body.cleaning_profile.as_deref() {
         if brightflow_engine::nlp::CleaningProfile::parse(profile).is_none() {
             return Err(AppError::BadRequest(format!(
@@ -913,6 +950,72 @@ pub async fn put_enrichment_settings(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Table '{table}' not found")))?;
 
+    // Schema-based gate: builtin tables always qualify; any other table needs
+    // at least one text column, and non-builtin tables need explicit columns.
+    let is_builtin = EnrichmentConfig::builtin_default(&table).is_some();
+    if !is_builtin {
+        if !crate::shared::schema_has_text_column(table_row.schema_json.as_deref()) {
+            return Err(AppError::BadRequest(format!(
+                "Table '{table}' has no text columns to enrich"
+            )));
+        }
+        let has_columns = body.text_columns.as_ref().is_some_and(|c| !c.is_empty())
+            || state
+                .enrichment_overrides
+                .get(&cache_key(&source_id, &table))
+                .is_some_and(|o| o.text_columns.as_ref().is_some_and(|c| !c.is_empty()));
+        if !has_columns {
+            return Err(AppError::BadRequest(format!(
+                "Table '{table}' needs textColumns to enable enrichment"
+            )));
+        }
+    }
+
+    let overrides = EnrichmentOverrides {
+        text_columns: body.text_columns.clone(),
+        cleaning_profile: body.cleaning_profile.clone(),
+        language_column: body.language_column.clone(),
+        embedder: body.embedder.clone(),
+        min_cluster_size: body.min_cluster_size,
+        algorithm: body.algorithm.clone(),
+    };
+
+    // Source of truth: the table's topic_model function (new version per
+    // edit; created promoted on first save).
+    let spec = brightflow_engine::enrichment::FunctionSpec::TopicModel(
+        brightflow_engine::enrichment::TopicModelSpec {
+            overrides: overrides.clone(),
+        },
+    );
+    let config_json = serde_json::to_string(&spec).map_err(AppError::Json)?;
+    let existing = store
+        .db()
+        .list_enrichment_functions(&table_row.id)
+        .await?
+        .into_iter()
+        .find(|f| f.kind == "topic_model");
+    match existing {
+        Some(function) => {
+            store
+                .db()
+                .update_enrichment_function_config(&function.id, &config_json)
+                .await?;
+        },
+        None => {
+            store
+                .db()
+                .create_enrichment_function(
+                    &table_row.id,
+                    "topics",
+                    "topic_model",
+                    "promoted",
+                    &config_json,
+                )
+                .await?;
+        },
+    }
+
+    // Dual-write the deprecated settings table for one release.
     let text_columns_json = body
         .text_columns
         .as_ref()
@@ -931,19 +1034,16 @@ pub async fn put_enrichment_settings(
         )
         .await?;
 
-    let overrides = EnrichmentOverrides {
-        text_columns: body.text_columns.clone(),
-        cleaning_profile: body.cleaning_profile.clone(),
-        language_column: body.language_column.clone(),
-        embedder: body.embedder.clone(),
-        min_cluster_size: body.min_cluster_size,
-        algorithm: body.algorithm.clone(),
-    };
     state
         .enrichment_overrides
         .insert(cache_key(&source_id, &table), overrides.clone());
 
-    let effective = EnrichmentConfig::resolve(&table, Some(&overrides));
+    let effective = Some(
+        brightflow_engine::enrichment::TopicModelSpec {
+            overrides: overrides.clone(),
+        }
+        .to_config(&table),
+    );
     Ok(Json(enrichment_response(
         &table,
         effective,

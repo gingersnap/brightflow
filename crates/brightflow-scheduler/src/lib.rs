@@ -29,6 +29,17 @@ use tracing::{error, info, warn};
 
 mod text_enrichment;
 
+/// Hook invoked after each endpoint's merge, with `(source_id, table_name)`.
+///
+/// Failures must be handled inside the hook — they never fail the sync. The
+/// API installs one to trigger incremental LLM-enrichment runs; the
+/// scheduler itself gains no LLM dependency.
+pub type PostSyncHook = Arc<
+    dyn Fn(String, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// The scheduler reads job definitions from SQLite and manages execution.
 #[derive(Clone)]
 pub struct Scheduler {
@@ -37,6 +48,7 @@ pub struct Scheduler {
     #[allow(dead_code)]
     paths: WorkspacePaths,
     running: Arc<RwLock<HashSet<String>>>,
+    post_sync_hook: Arc<RwLock<Option<PostSyncHook>>>,
 }
 
 impl Scheduler {
@@ -48,7 +60,13 @@ impl Scheduler {
             store,
             paths,
             running: Arc::new(RwLock::new(HashSet::new())),
+            post_sync_hook: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Install the post-sync hook (called once at API startup).
+    pub async fn set_post_sync_hook(&self, hook: PostSyncHook) {
+        *self.post_sync_hook.write().await = Some(hook);
     }
 
     /// Start the scheduler background loop (ticks every 30 seconds)
@@ -152,6 +170,7 @@ impl Scheduler {
 
         let run_id = run.id.clone();
         let run_id_clone = run_id.clone();
+        let hook = self.post_sync_hook.read().await.clone();
 
         // Mark as running
         running.write().await.insert(
@@ -168,6 +187,7 @@ impl Scheduler {
                 &run.id,
                 job_id_owned.as_ref(),
                 &paths,
+                hook.as_ref(),
             )
             .await;
 
@@ -191,6 +211,46 @@ impl Scheduler {
     }
 }
 
+/// Effective topic-model config for a table at sync time.
+///
+/// A promoted `topic_model` function makes ANY table enrichable (its config
+/// resolves builtin defaults ⊕ overrides, or a plain-profile base for
+/// arbitrary tables). With no promoted function, builtin-default tables keep
+/// enriching as before; everything else skips.
+async fn resolve_topic_config(
+    store: &ParquetStore,
+    source_id: &str,
+    table_name: &str,
+) -> Option<brightflow_engine::enrichment::EnrichmentConfig> {
+    use brightflow_engine::enrichment::{EnrichmentConfig, FunctionSpec};
+    if let Ok(Some(table)) = store.db().get_table(source_id, table_name).await {
+        if let Ok(functions) = store
+            .db()
+            .list_promoted_functions(&table.id, "topic_model")
+            .await
+        {
+            if let Some(function) = functions.first() {
+                if let Ok(Some(version)) = store
+                    .db()
+                    .get_enrichment_function_version(&function.id, function.current_version)
+                    .await
+                {
+                    if let Ok(FunctionSpec::TopicModel(tm)) =
+                        serde_json::from_str::<FunctionSpec>(&version.config_json)
+                    {
+                        return Some(tm.to_config(table_name));
+                    }
+                    warn!(
+                        "topic_model function {} has unreadable config — falling back to builtin",
+                        function.id
+                    );
+                }
+            }
+        }
+    }
+    EnrichmentConfig::builtin_default(table_name)
+}
+
 /// Execute a full sync: load config, run connector, merge results, update state
 async fn execute_sync(
     db: &SchedulerDb,
@@ -199,6 +259,7 @@ async fn execute_sync(
     run_id: &str,
     _job_id: Option<&String>,
     paths: &WorkspacePaths,
+    post_sync_hook: Option<&PostSyncHook>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 1. Load connector config
     let config = db
@@ -279,33 +340,16 @@ async fn execute_sync(
 
         let source_id = format!("connector:{connector_id}");
 
-        // Enrich with text-derived columns if applicable (issues today; PRs/comments later)
+        // Enrich with text-derived columns when a promoted topic_model
+        // function (or a builtin default) applies.
         let workspace_root = paths.root();
-        let enrichment_overrides = match store.db().get_table(&source_id, &ep_result.name).await {
-            Ok(Some(table)) => store
-                .db()
-                .get_enrichment_settings(&table.id)
-                .await
-                .ok()
-                .flatten()
-                .map(|row| {
-                    brightflow_engine::enrichment::EnrichmentOverrides::from_stored(
-                        row.text_columns.as_deref(),
-                        row.cleaning_profile,
-                        row.language_column,
-                        row.embedder,
-                        row.min_cluster_size,
-                        row.algorithm,
-                    )
-                }),
-            _ => None,
-        };
+        let enrichment_config = resolve_topic_config(store, &source_id, &ep_result.name).await;
         if let Err(e) = text_enrichment::maybe_enrich_parquet(
             &parquet_file,
             &ep_result.name,
             &source_id,
             &workspace_root,
-            enrichment_overrides.as_ref(),
+            enrichment_config.as_ref(),
         ) {
             warn!("Text enrichment skipped for {}: {e}", ep_result.name);
         }
@@ -338,6 +382,12 @@ async fn execute_sync(
             rows,
         )
         .await?;
+
+        // Post-sync hook (e.g. incremental LLM enrichment). The hook handles
+        // its own failures; it never fails the sync.
+        if let Some(hook) = post_sync_hook {
+            hook(source_id.clone(), ep_result.name.clone()).await;
+        }
     }
 
     // 9. Update sync run as completed

@@ -106,7 +106,7 @@ const KMEANS_MAX_ITER: usize = 30;
 const LANGUAGE_COLUMNS: &[&str] = &["lang", "language"];
 
 /// Build the English stopword set used during cluster-naming TF-IDF.
-fn english_stopwords() -> std::collections::HashSet<String> {
+pub fn english_stopwords() -> std::collections::HashSet<String> {
     let mut set: std::collections::HashSet<String> = stop_words::get(stop_words::LANGUAGE::English)
         .into_iter()
         .collect();

@@ -58,12 +58,32 @@ const router = createRouter({
       }),
     },
     {
+      path: '/:sourceId/enrich/:table',
+      name: 'enrich-table',
+      component: () => import('./components/layout/SourceLayout.vue'),
+      props: (route) => ({
+        sourceId: String(route.params['sourceId'] ?? ''),
+        tool: 'enrich' as const,
+        table: String(route.params['table'] ?? ''),
+      }),
+    },
+    {
       path: '/:sourceId/topics/:table',
       name: 'topics-table',
       component: () => import('./components/layout/SourceLayout.vue'),
       props: (route) => ({
         sourceId: String(route.params['sourceId'] ?? ''),
         tool: 'topics' as const,
+        table: String(route.params['table'] ?? ''),
+      }),
+    },
+    {
+      path: '/:sourceId/textexplore/:table',
+      name: 'textexplore-table',
+      component: () => import('./components/layout/SourceLayout.vue'),
+      props: (route) => ({
+        sourceId: String(route.params['sourceId'] ?? ''),
+        tool: 'textexplore' as const,
         table: String(route.params['table'] ?? ''),
       }),
     },

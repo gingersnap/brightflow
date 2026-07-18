@@ -320,6 +320,88 @@ pub async fn merge_parquet(
     Ok(metrics)
 }
 
+/// Replace a table's entire contents with `df` in one consolidated file.
+///
+/// Mirrors `merge_parquet`'s replace flow: write one uuidv7 parquet, swap the
+/// file registry transactionally, update table meta + stats, then delete the
+/// old files from disk. When `expected_version` is given, the swap is refused
+/// with `StoreError::VersionConflict` if the table's version moved (a sync
+/// merged concurrently) — the caller re-reads and retries.
+pub async fn replace_table_data(
+    db: &StoreDb,
+    root: &Path,
+    source_id: &str,
+    table_name: &str,
+    df: DataFrame,
+    expected_version: Option<i64>,
+) -> StoreResult<()> {
+    let table_row = db
+        .get_table(source_id, table_name)
+        .await?
+        .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+
+    if let Some(expected) = expected_version {
+        if table_row.version != expected {
+            return Err(StoreError::VersionConflict {
+                table: table_name.to_string(),
+                expected,
+                found: table_row.version,
+            });
+        }
+    }
+
+    let existing_files = db.list_table_files(&table_row.id).await?;
+    let old_paths: Vec<std::path::PathBuf> =
+        existing_files.iter().map(|f| root.join(&f.path)).collect();
+
+    let table_dir = root.join(source_id).join(table_name);
+    std::fs::create_dir_all(&table_dir)?;
+
+    let relative_path = new_parquet_path(source_id, table_name);
+    let dest_path = root.join(&relative_path);
+
+    let write_df = df.clone();
+    let write_path = dest_path.clone();
+    tokio::task::spawn_blocking(move || -> StoreResult<()> {
+        let mut rechunked = write_df;
+        rechunked.rechunk_mut();
+        let file = std::fs::File::create(&write_path)?;
+        ParquetWriter::new(file)
+            .with_compression(ParquetCompression::Zstd(None))
+            .finish(&mut rechunked)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| StoreError::Other(format!("Task join error: {e}")))??;
+
+    let file_size = i64::try_from(std::fs::metadata(&dest_path)?.len()).unwrap_or(0);
+    let num_rows = i64::try_from(df.height()).unwrap_or(0);
+    let schema_json = schema_to_json(df.schema().as_ref());
+    let schema_str =
+        serde_json::to_string(&schema_json).map_err(|e| StoreError::Other(e.to_string()))?;
+
+    db.replace_table_files(&table_row.id, &[(relative_path, num_rows, file_size)])
+        .await?;
+    db.update_table_meta(&table_row.id, Some(&schema_str), None, num_rows)
+        .await?;
+
+    let column_stats = stats::extract_column_stats(&df, &table_row.id);
+    db.upsert_column_stats(&table_row.id, &column_stats).await?;
+
+    for old_path in &old_paths {
+        // The new file has a fresh uuid name, so it can never be in this list.
+        if old_path.exists() {
+            std::fs::remove_file(old_path)?;
+        }
+    }
+
+    info!(
+        "Replaced table '{}' data for source '{}' ({} rows, 1 file)",
+        table_name, source_id, num_rows
+    );
+    Ok(())
+}
+
 /// Write a DataFrame to a parquet file
 fn write_parquet(df: &DataFrame, path: &Path) -> StoreResult<()> {
     let file = std::fs::File::create(path)?;

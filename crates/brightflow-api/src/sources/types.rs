@@ -8,6 +8,18 @@ use ts_rs::TS;
 pub enum SourceKind {
     WebAnalytics,
     Connector,
+    Upload,
+}
+
+/// Response for a persistent CSV upload (`POST /api/sources/upload`).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadSourceResponse {
+    pub source_id: String,
+    pub table: String,
+    pub row_count: usize,
+    pub columns: Vec<String>,
 }
 
 /// Tools available for a given source
@@ -22,6 +34,8 @@ pub enum SourceTool {
     Explore,
     Insights,
     Topics,
+    Textexplore,
+    Enrich,
 }
 
 /// A table belonging to a source

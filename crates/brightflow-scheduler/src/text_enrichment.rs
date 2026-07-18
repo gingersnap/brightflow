@@ -3,15 +3,17 @@ use std::path::Path;
 use polars::prelude::*;
 use tracing::{debug, info};
 
-use brightflow_engine::enrichment::{enrich_with_topics, EnrichmentConfig, EnrichmentOverrides};
+use brightflow_engine::enrichment::{enrich_with_topics, EnrichmentConfig};
 
 /// If the table supports text enrichment, embed each row and apply any existing
 /// topic / label artifacts. Writes the result back to the same parquet file.
 ///
-/// This function never fits artifacts — that is reserved for the manual
-/// `topics fit` flow (CLI / API). When no artifacts exist yet, only the
-/// `embedding` and `embedding_model_id` columns are written; topic columns
-/// stay null until the first manual fit.
+/// The caller resolves the effective config (promoted topic_model function ⇒
+/// enrich any table; none + no builtin ⇒ `None` ⇒ skip). This function never
+/// fits artifacts — that is reserved for the manual `topics fit` flow
+/// (CLI / API). When no artifacts exist yet, only the `embedding` and
+/// `embedding_model_id` columns are written; topic columns stay null until
+/// the first manual fit.
 ///
 /// Returns `Ok(true)` when enrichment was applied, `Ok(false)` when the table
 /// is not enrichable or required columns are missing.
@@ -20,11 +22,15 @@ pub fn maybe_enrich_parquet(
     table_name: &str,
     source_id: &str,
     workspace_root: &Path,
-    overrides: Option<&EnrichmentOverrides>,
+    maybe_config: Option<&EnrichmentConfig>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let Some(config) = EnrichmentConfig::resolve(table_name, overrides) else {
+    let Some(config) = maybe_config else {
         return Ok(false);
     };
+    if config.text_columns.is_empty() {
+        debug!("Skipping enrichment for {table_name}: no text columns configured");
+        return Ok(false);
+    }
 
     let df = read_parquet(parquet_path)?;
 
@@ -35,7 +41,7 @@ pub fn maybe_enrich_parquet(
         }
     }
 
-    let enriched = match enrich_with_topics(workspace_root, source_id, table_name, &df, &config) {
+    let enriched = match enrich_with_topics(workspace_root, source_id, table_name, &df, config) {
         Ok(d) => d,
         Err(e) => {
             // Embedder errors (e.g. missing model file) shouldn't fail the sync.

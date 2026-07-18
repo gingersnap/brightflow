@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { Database, Globe } from '@lucide/vue';
+import { Database, Globe, Upload } from '@lucide/vue';
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import PresetForm from '@/components/connect/PresetForm.vue';
+import UploadCsvForm from '@/components/sources/UploadCsvForm.vue';
 import { connectApi, sourceApi } from '@/services/api';
 import type { AvailableConnectorResponse } from '@/types';
 
 const router = useRouter();
 const queryCache = useQueryCache();
 
-type Tab = 'web' | 'connector';
+type Tab = 'web' | 'connector' | 'upload';
 const tab = ref<Tab>('web');
 
 // --- Web-analytics form ---
@@ -141,6 +142,18 @@ async function handlePresetCreate(data: {
               <Database class="h-4 w-4" />
               Connector
             </button>
+            <button
+              class="flex cursor-pointer items-center gap-2 rounded px-3 py-1.5 text-sm transition-colors"
+              :class="
+                tab === 'upload'
+                  ? 'bg-elevated text-highlighted'
+                  : 'text-muted hover:text-highlighted'
+              "
+              @click="tab = 'upload'"
+            >
+              <Upload class="h-4 w-4" />
+              CSV upload
+            </button>
           </div>
 
           <!-- Web tab -->
@@ -185,6 +198,9 @@ async function handlePresetCreate(data: {
               </div>
             </form>
           </section>
+
+          <!-- Upload tab -->
+          <UploadCsvForm v-else-if="tab === 'upload'" />
 
           <!-- Connector tab -->
           <section v-else class="space-y-4">

@@ -105,6 +105,10 @@ pub struct ChatOutcome {
     pub finish_reason: Option<String>,
     /// Total tokens reported by the provider, when available.
     pub total_tokens: Option<u64>,
+    /// Prompt-side tokens, when the provider reports the split.
+    pub prompt_tokens: Option<u64>,
+    /// Completion-side tokens, when the provider reports the split.
+    pub completion_tokens: Option<u64>,
 }
 
 impl ChatOutcome {
@@ -115,6 +119,72 @@ impl ChatOutcome {
     pub fn text(&self) -> &str {
         self.message.content.as_deref().unwrap_or("")
     }
+}
+
+/// Per-call knobs beyond messages and tools.
+#[derive(Debug, Clone, Default)]
+pub struct ChatOptions {
+    /// Force the model to call this tool (by name) instead of answering freely.
+    pub tool_choice: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u64>,
+}
+
+/// Exponential-backoff policy for `chat_with_backoff`.
+#[derive(Debug, Clone)]
+pub struct RetryPolicy {
+    pub max_attempts: u32,
+    pub base_delay_ms: u64,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            base_delay_ms: 2000,
+        }
+    }
+}
+
+/// One completion with retries on transient failures (rate limit, 5xx,
+/// timeout). Delay doubles each attempt with jitter; other errors and
+/// exhausted attempts surface as-is.
+pub async fn chat_with_backoff(
+    client: &ChatClient,
+    messages: &[ChatMessage],
+    tools: &[ToolDef],
+    options: &ChatOptions,
+    policy: &RetryPolicy,
+) -> Result<ChatOutcome, LlmError> {
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        let result = client.chat_with_options(messages, tools, options).await;
+        match result {
+            Ok(outcome) => return Ok(outcome),
+            Err(err @ (LlmError::RateLimited(_) | LlmError::Server { .. } | LlmError::Timeout)) => {
+                if attempt >= policy.max_attempts {
+                    return Err(err);
+                }
+                let exp = attempt.saturating_sub(1).min(10);
+                let backoff = policy.base_delay_ms.saturating_mul(1_u64 << exp);
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    backoff.saturating_add(jitter_ms(backoff)),
+                ))
+                .await;
+            },
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+/// Cheap decorrelated jitter in `[0, backoff/2]` without a rand dependency.
+fn jitter_ms(backoff: u64) -> u64 {
+    let half = (backoff / 2).max(1);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::from(d.subsec_nanos()));
+    nanos % half
 }
 
 /// Minimal chat-completions client.
@@ -158,28 +228,19 @@ impl ChatClient {
         messages: &[ChatMessage],
         tools: &[ToolDef],
     ) -> Result<ChatOutcome, LlmError> {
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "messages": messages,
-        });
-        if !tools.is_empty() {
-            let wire_tools: Vec<serde_json::Value> = tools
-                .iter()
-                .map(|t| {
-                    serde_json::json!({
-                        "type": "function",
-                        "function": {
-                            "name": t.name,
-                            "description": t.description,
-                            "parameters": t.parameters,
-                        }
-                    })
-                })
-                .collect();
-            if let Some(obj) = body.as_object_mut() {
-                obj.insert("tools".to_string(), serde_json::Value::Array(wire_tools));
-            }
-        }
+        self.chat_with_options(messages, tools, &ChatOptions::default())
+            .await
+    }
+
+    /// One completion turn with per-call options (forced tool choice,
+    /// temperature, max tokens). `tools` may be empty.
+    pub async fn chat_with_options(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDef],
+        options: &ChatOptions,
+    ) -> Result<ChatOutcome, LlmError> {
+        let body = build_request_body(&self.model, messages, tools, options);
 
         let url = format!("{}/chat/completions", self.base_url);
         let mut request = self.http.post(&url).json(&body);
@@ -228,6 +289,52 @@ impl ChatClient {
     }
 }
 
+/// Assemble the chat-completions request body (kept separate so tests can
+/// assert the exact wire shape without a server).
+fn build_request_body(
+    model: &str,
+    messages: &[ChatMessage],
+    tools: &[ToolDef],
+    options: &ChatOptions,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+    });
+    let Some(obj) = body.as_object_mut() else {
+        return body;
+    };
+    if !tools.is_empty() {
+        let wire_tools: Vec<serde_json::Value> = tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    }
+                })
+            })
+            .collect();
+        obj.insert("tools".to_string(), serde_json::Value::Array(wire_tools));
+    }
+    if let Some(name) = &options.tool_choice {
+        obj.insert(
+            "tool_choice".to_string(),
+            serde_json::json!({ "type": "function", "function": { "name": name } }),
+        );
+    }
+    if let Some(temperature) = options.temperature {
+        obj.insert("temperature".to_string(), serde_json::json!(temperature));
+    }
+    if let Some(max_tokens) = options.max_tokens {
+        obj.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
+    }
+    body
+}
+
 fn truncate(s: &str) -> String {
     let trimmed = s.trim();
     if trimmed.len() > 300 {
@@ -252,9 +359,14 @@ struct WireChoice {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(clippy::struct_field_names)]
 struct WireUsage {
     #[serde(default)]
     total_tokens: Option<u64>,
+    #[serde(default)]
+    prompt_tokens: Option<u64>,
+    #[serde(default)]
+    completion_tokens: Option<u64>,
 }
 
 fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
@@ -265,10 +377,17 @@ fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
         .into_iter()
         .next()
         .ok_or_else(|| LlmError::BadResponse("no choices in response".to_string()))?;
+    let usage = wire.usage.unwrap_or(WireUsage {
+        total_tokens: None,
+        prompt_tokens: None,
+        completion_tokens: None,
+    });
     Ok(ChatOutcome {
         message: choice.message,
         finish_reason: choice.finish_reason,
-        total_tokens: wire.usage.and_then(|u| u.total_tokens),
+        total_tokens: usage.total_tokens,
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
     })
 }
 
@@ -315,5 +434,60 @@ mod tests {
             parse_completion("not json"),
             Err(LlmError::BadResponse(_))
         ));
+    }
+
+    #[test]
+    fn parses_usage_token_split() {
+        let raw = r#"{
+            "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 30, "completion_tokens": 12, "total_tokens": 42}
+        }"#;
+        let outcome = parse_completion(raw).unwrap();
+        assert_eq!(outcome.prompt_tokens, Some(30));
+        assert_eq!(outcome.completion_tokens, Some(12));
+        assert_eq!(outcome.total_tokens, Some(42));
+    }
+
+    #[test]
+    fn missing_usage_split_is_none() {
+        let raw = r#"{
+            "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+            "usage": {"total_tokens": 42}
+        }"#;
+        let outcome = parse_completion(raw).unwrap();
+        assert_eq!(outcome.prompt_tokens, None);
+        assert_eq!(outcome.completion_tokens, None);
+        assert_eq!(outcome.total_tokens, Some(42));
+    }
+
+    #[test]
+    fn tool_choice_serializes_as_forced_function() {
+        let tools = [ToolDef {
+            name: "set_values".to_string(),
+            description: "Record output values".to_string(),
+            parameters: serde_json::json!({"type": "object"}),
+        }];
+        let options = ChatOptions {
+            tool_choice: Some("set_values".to_string()),
+            temperature: Some(0.0),
+            max_tokens: Some(512),
+        };
+        let body = build_request_body("m", &[ChatMessage::user("x")], &tools, &options);
+        assert_eq!(
+            body["tool_choice"],
+            serde_json::json!({"type": "function", "function": {"name": "set_values"}})
+        );
+        assert_eq!(body["temperature"], serde_json::json!(0.0));
+        assert_eq!(body["max_tokens"], serde_json::json!(512));
+        assert_eq!(body["tools"][0]["function"]["name"], "set_values");
+    }
+
+    #[test]
+    fn default_options_add_no_extra_fields() {
+        let body = build_request_body("m", &[ChatMessage::user("x")], &[], &ChatOptions::default());
+        assert!(body.get("tool_choice").is_none());
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("tools").is_none());
     }
 }

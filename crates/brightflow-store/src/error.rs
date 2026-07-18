@@ -44,6 +44,15 @@ pub enum StoreError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Optimistic concurrency check failed: the table changed underneath a
+    /// full-rewrite (e.g. a sync merged while enrichment was materializing).
+    #[error("Table '{table}' version conflict: expected {expected}, found {found}")]
+    VersionConflict {
+        table: String,
+        expected: i64,
+        found: i64,
+    },
+
     /// Other error
     #[error("{0}")]
     Other(String),

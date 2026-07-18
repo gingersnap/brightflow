@@ -3,4 +3,4 @@
 /**
  * The kind of data source
  */
-export type SourceKind = "web-analytics" | "connector";
+export type SourceKind = "web-analytics" | "connector" | "upload";

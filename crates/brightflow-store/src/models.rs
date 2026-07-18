@@ -225,3 +225,82 @@ pub struct DocumentLabelWithName {
     pub name: String,
     pub source: String,
 }
+
+/// One registered connector-less source (currently only CSV uploads).
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SourceRow {
+    pub source_id: String,
+    /// Only 'upload' today (CHECK-constrained).
+    pub kind: String,
+    pub name: String,
+    pub meta_json: Option<String>,
+    pub created_at: String,
+}
+
+/// One enrichment function header (the versioned config lives in
+/// `enrichment_function_versions`).
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct EnrichmentFunctionRow {
+    pub id: String,
+    pub table_id: String,
+    pub name: String,
+    /// 'llm_prompt' | 'topic_model' | 'classifier'
+    pub kind: String,
+    /// 'draft' | 'promoted'
+    pub status: String,
+    pub current_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// One immutable config snapshot of an enrichment function.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct EnrichmentFunctionVersionRow {
+    pub function_id: String,
+    pub version: i64,
+    /// Serde form of the engine `FunctionSpec` (tagged on "kind").
+    pub config_json: String,
+    pub created_at: String,
+}
+
+/// One enrichment run (sample runs are not recorded here; only full and
+/// incremental runs).
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct EnrichmentRunRow {
+    pub id: String,
+    pub function_id: String,
+    pub version: i64,
+    /// 'sample' | 'full' | 'incremental'
+    pub mode: String,
+    /// 'running' | 'completed' | 'failed' | 'cancelled'
+    pub status: String,
+    pub rows_total: i64,
+    pub rows_done: i64,
+    pub rows_failed: i64,
+    pub rows_cached: i64,
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub finished_at: Option<String>,
+}
+
+/// One cached per-cell enrichment result. Errors are cached too so a full
+/// re-run doesn't hammer the provider with known-bad rows; `scope=failed`
+/// clears them first.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct EnrichmentCacheRow {
+    pub function_id: String,
+    pub spec_hash: String,
+    pub input_hash: String,
+    /// 'ok' | 'error'
+    pub status: String,
+    pub value_json: Option<String>,
+    pub error: Option<String>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    /// Bookkeeping only — never part of the cache key.
+    pub version: i64,
+    pub created_at: String,
+}

@@ -17,6 +17,7 @@ pub mod agent;
 pub mod analytics;
 pub mod auth;
 pub mod connect;
+pub mod enrichment;
 pub mod ingest;
 pub mod insights;
 pub mod llm;
@@ -28,6 +29,7 @@ pub mod shared;
 pub mod sources;
 pub mod state;
 pub mod system;
+pub mod textexplore;
 pub mod topics;
 pub mod web_analytics;
 
@@ -219,6 +221,11 @@ pub async fn serve(
                 tracing::warn!("Marked {n} stuck agent runs as failed");
             }
         }
+        if let Ok(n) = store.db().fail_stuck_enrichment_runs().await {
+            if n > 0 {
+                tracing::warn!("Marked {n} stuck enrichment runs as failed");
+            }
+        }
     }
 
     // Load column semantic overrides from SQLite
@@ -262,6 +269,16 @@ pub async fn serve(
         let scheduler = Arc::new(scheduler);
         state.scheduler = Some(Arc::clone(&scheduler));
         state.scheduler_db = Some(scheduler_db);
+
+        // Post-sync hook: promoted llm_prompt functions run incrementally
+        // after each endpoint merge. The scheduler stays LLM-free.
+        let hook_state = state.clone();
+        scheduler
+            .set_post_sync_hook(Arc::new(move |source_id: String, table: String| {
+                let sync_state = hook_state.clone();
+                Box::pin(enrichment::post_sync(sync_state, source_id, table))
+            }))
+            .await;
 
         // Start scheduler background loop
         tokio::spawn(async move {

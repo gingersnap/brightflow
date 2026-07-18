@@ -34,8 +34,14 @@ pub struct AppState {
     /// enrichment settings endpoints.
     pub enrichment_overrides:
         Arc<DashMap<String, brightflow_engine::enrichment::EnrichmentOverrides>>,
+    /// Text Explorer indexes keyed by `cache_key(source_id, table)`.
+    /// Version-checked against `tables.version` on every request; bounded
+    /// eviction lives in `textexplore::index`.
+    pub text_indexes: Arc<DashMap<String, Arc<crate::textexplore::index::TextIndex>>>,
     /// Abort handles for in-flight agent runs, keyed by run id.
     pub agent_runs: Arc<DashMap<i64, tokio::task::AbortHandle>>,
+    /// Abort handles for in-flight enrichment runs, keyed by run id.
+    pub enrichment_jobs: Arc<DashMap<String, tokio::task::AbortHandle>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
     /// Authentication database
@@ -72,7 +78,9 @@ impl AppState {
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
             enrichment_overrides: Arc::new(DashMap::new()),
+            text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
+            enrichment_jobs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -95,7 +103,9 @@ impl AppState {
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
             enrichment_overrides: Arc::new(DashMap::new()),
+            text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
+            enrichment_jobs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -254,7 +264,9 @@ impl AppState {
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
             enrichment_overrides: Arc::new(DashMap::new()),
+            text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
+            enrichment_jobs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -297,7 +309,9 @@ impl AppState {
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
             enrichment_overrides: Arc::new(DashMap::new()),
+            text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
+            enrichment_jobs: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -521,40 +535,48 @@ fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
 
 /// Convert a `TableAnalysisSettingsRow` to a `TableSettingsOverride`.
 /// Load stored enrichment overrides into the state map at startup.
+///
+/// Source of truth is each table's `topic_model` enrichment function
+/// (migration 016 converted every legacy `table_enrichment_settings` row
+/// into one; the deprecated table is now write-only dual-write).
 pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore) {
-    let Ok(rows) = store.db().get_all_enrichment_settings().await else {
-        return;
-    };
-    if rows.is_empty() {
-        return;
-    }
     let tables = store.list_tables().await.unwrap_or_default();
-    // table_id ("{source}:{name}"-agnostic opaque id) → cache key
-    let mut id_to_key = std::collections::HashMap::new();
-    for t in &tables {
-        if let Ok(Some(row)) = store.db().get_table(&t.source_id, &t.name).await {
-            id_to_key.insert(row.id, cache_key(&t.source_id, &t.name));
-        }
-    }
     let mut hydrated = 0;
-    for row in rows {
-        if let Some(key) = id_to_key.get(&row.table_id) {
-            state.enrichment_overrides.insert(
-                key.clone(),
-                brightflow_engine::enrichment::EnrichmentOverrides::from_stored(
-                    row.text_columns.as_deref(),
-                    row.cleaning_profile,
-                    row.language_column,
-                    row.embedder,
-                    row.min_cluster_size,
-                    row.algorithm,
-                ),
+    for t in &tables {
+        let Ok(Some(row)) = store.db().get_table(&t.source_id, &t.name).await else {
+            continue;
+        };
+        let Ok(functions) = store.db().list_enrichment_functions(&row.id).await else {
+            continue;
+        };
+        let Some(function) = functions.into_iter().find(|f| f.kind == "topic_model") else {
+            continue;
+        };
+        let Ok(Some(version)) = store
+            .db()
+            .get_enrichment_function_version(&function.id, function.current_version)
+            .await
+        else {
+            continue;
+        };
+        let Ok(brightflow_engine::enrichment::FunctionSpec::TopicModel(tm)) =
+            serde_json::from_str::<brightflow_engine::enrichment::FunctionSpec>(
+                &version.config_json,
+            )
+        else {
+            tracing::warn!(
+                "topic_model function {} has unreadable config — not hydrated",
+                function.id
             );
-            hydrated += 1;
-        }
+            continue;
+        };
+        state
+            .enrichment_overrides
+            .insert(cache_key(&t.source_id, &t.name), tm.overrides);
+        hydrated += 1;
     }
     if hydrated > 0 {
-        tracing::info!("Hydrated {hydrated} table enrichment overrides");
+        tracing::info!("Hydrated {hydrated} table enrichment overrides from functions");
     }
 }
 

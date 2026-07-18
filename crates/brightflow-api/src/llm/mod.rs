@@ -36,6 +36,41 @@ pub async fn default_client(state: &AppState) -> AppResult<ChatClient> {
     ))
 }
 
+/// Build a chat client for a specific provider (by id) with an optional
+/// model override. `""` or `"default"` resolve to the default provider.
+pub async fn client_for(
+    state: &AppState,
+    provider_id: &str,
+    model_override: Option<&str>,
+) -> AppResult<ChatClient> {
+    let db = state
+        .auth_db
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("no database configured".to_string()))?;
+    let rows = handlers::list_provider_rows(db).await?;
+    let provider = if provider_id.is_empty() || provider_id == "default" {
+        rows.iter().find(|p| p.is_default).or_else(|| rows.first())
+    } else {
+        let id: i64 = provider_id
+            .parse()
+            .map_err(|_| AppError::BadRequest(format!("invalid provider id '{provider_id}'")))?;
+        rows.iter().find(|p| p.id == id)
+    }
+    .ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "LLM provider '{provider_id}' not found — configure one under Settings → LLM"
+        ))
+    })?;
+    let model = model_override
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or(&provider.model);
+    Ok(ChatClient::new(
+        provider.base_url.clone(),
+        provider.api_key.clone(),
+        model.to_string(),
+    ))
+}
+
 /// Seed a provider row from `BRIGHTFLOW_LLM_*` env vars when none exist.
 pub async fn seed_from_env(state: &AppState) {
     let Some(db) = state.auth_db.as_ref() else {

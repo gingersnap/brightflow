@@ -12,6 +12,17 @@ pub fn web_analytics_tools() -> Vec<SourceTool> {
     ]
 }
 
+/// Tools available for persistent CSV upload sources
+pub fn upload_tools() -> Vec<SourceTool> {
+    vec![
+        SourceTool::Explore,
+        SourceTool::Insights,
+        SourceTool::Topics,
+        SourceTool::Textexplore,
+        SourceTool::Enrich,
+    ]
+}
+
 /// Tools available for a connector source, based on connector name
 pub fn connector_tools(name: &str) -> Vec<SourceTool> {
     match name {
@@ -20,12 +31,20 @@ pub fn connector_tools(name: &str) -> Vec<SourceTool> {
             SourceTool::Explore,
             SourceTool::Insights,
             SourceTool::Topics,
+            SourceTool::Textexplore,
+            SourceTool::Enrich,
         ],
         "bluesky" => vec![
             SourceTool::Explore,
             SourceTool::Insights,
             SourceTool::Topics,
+            SourceTool::Textexplore,
+            SourceTool::Enrich,
         ],
-        _ => vec![SourceTool::Explore, SourceTool::Insights],
+        _ => vec![
+            SourceTool::Explore,
+            SourceTool::Insights,
+            SourceTool::Enrich,
+        ],
     }
 }

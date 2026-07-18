@@ -108,7 +108,7 @@ const tab = ref<'intent' | 'clusters'>('intent');
 
     <div v-if="enrichableTables.length === 0" class="p-6">
       <p class="text-sm text-muted">
-        Topics needs a table with text content (issues, posts). Sync this source to populate one.
+        Topics needs a table with at least one text column. Sync or upload data to populate one.
       </p>
     </div>
 

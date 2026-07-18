@@ -30,6 +30,13 @@ useQuery({
   },
 });
 
+function sourceIcon(kind: UnifiedSource['kind']): string {
+  if (kind === 'web-analytics') {
+    return 'i-lucide-globe';
+  }
+  return kind === 'upload' ? 'i-lucide-upload' : 'i-lucide-cable';
+}
+
 // Build nav items: Sources group + Settings group
 const navItems = computed(() => {
   const currentSourceId = route.params.sourceId as string | undefined;
@@ -39,7 +46,7 @@ const navItems = computed(() => {
     const tools = toolsForSource(source);
     return {
       label: source.name,
-      icon: source.kind === 'web-analytics' ? 'i-lucide-globe' : 'i-lucide-cable',
+      icon: sourceIcon(source.kind),
       value: source.id,
       type: 'trigger' as const,
       defaultOpen: source.id === currentSourceId,

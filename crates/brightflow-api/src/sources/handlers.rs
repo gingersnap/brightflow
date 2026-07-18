@@ -1,11 +1,9 @@
-use axum::extract::State;
-use axum::Json;
-use brightflow_engine::enrichment::EnrichmentConfig;
-
 use crate::shared::AppResult;
 use crate::state::AppState;
+use axum::extract::State;
+use axum::Json;
 
-use super::profiles::{connector_tools, web_analytics_tools};
+use super::profiles::{connector_tools, upload_tools, web_analytics_tools};
 use super::types::{SourceKind, SourceTable, UnifiedSource};
 
 /// GET /api/sources/unified — merged list of event sources + connector sources
@@ -28,7 +26,9 @@ pub async fn list_unified_sources(
                         .map(|t| SourceTable {
                             name: t.name.clone(),
                             num_rows: Some(t.total_rows),
-                            enrichable: EnrichmentConfig::builtin_default(&t.name).is_some(),
+                            enrichable: crate::shared::schema_has_text_column(
+                                t.schema_json.as_deref(),
+                            ),
                         })
                         .collect(),
                     None => Vec::new(),
@@ -64,7 +64,9 @@ pub async fn list_unified_sources(
                         .map(|t| SourceTable {
                             name: t.name.clone(),
                             num_rows: Some(t.total_rows),
-                            enrichable: EnrichmentConfig::builtin_default(&t.name).is_some(),
+                            enrichable: crate::shared::schema_has_text_column(
+                                t.schema_json.as_deref(),
+                            ),
                         })
                         .collect(),
                     None => Vec::new(),
@@ -90,6 +92,37 @@ pub async fn list_unified_sources(
                     tables,
                     tools,
                     created_at: config.created_at.clone(),
+                    ready,
+                });
+            }
+        }
+    }
+
+    // 3. Persistent CSV uploads
+    if let Some(store) = state.store() {
+        if let Ok(uploads) = store.db().list_registered_sources("upload").await {
+            for src in uploads {
+                let tables: Vec<SourceTable> = store
+                    .list_tables_by_source(&src.source_id)
+                    .await
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|t| SourceTable {
+                        name: t.name.clone(),
+                        num_rows: Some(t.total_rows),
+                        enrichable: crate::shared::schema_has_text_column(t.schema_json.as_deref()),
+                    })
+                    .collect();
+                let ready = !tables.is_empty();
+                sources.push(UnifiedSource {
+                    id: src.source_id.clone(),
+                    name: src.name.clone(),
+                    kind: SourceKind::Upload,
+                    connector_name: None,
+                    domain: None,
+                    tables,
+                    tools: upload_tools(),
+                    created_at: src.created_at.clone(),
                     ready,
                 });
             }

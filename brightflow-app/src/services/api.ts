@@ -33,6 +33,8 @@ import type {
   Source,
   SyncRun,
   TaxonomyOverview,
+  TextExploreRequest,
+  TextExploreResponse,
   TimeseriesPoint,
   TopicsOverview,
   UnifiedConnector,
@@ -306,6 +308,32 @@ export const sourceApi = {
   delete: (id: string): Promise<unknown> => api.delete(`/api/sources/${id}`),
   snippet: (id: string): Promise<{ snippet: string } | null> =>
     api.get<{ snippet: string }>(`/api/sources/${id}/snippet`),
+  /** Persist a CSV as a first-class upload source (survives restarts). */
+  uploadCsv: async (file: File, table?: string): Promise<UploadSourceResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (table != null && table.trim() !== '') {
+      formData.append('table', table.trim());
+    }
+    const response = await fetch(`${API_BASE}/api/sources/upload`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
+      const data: { message?: string; error?: { message?: string } } = await response
+        .json()
+        .catch(() => ({}));
+      throw new ApiError(
+        data.error?.message ?? data.message ?? 'Upload failed',
+        response.status,
+        data,
+      );
+    }
+    // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary
+    return response.json();
+  },
 };
 
 // Analytics Dashboard API
@@ -396,6 +424,19 @@ export const topicsApi = {
     ),
 };
 
+// Text Explorer: one POST returns filtered rows + words widget together.
+export const textExploreApi = {
+  search: (
+    sourceId: string,
+    table: string,
+    body: TextExploreRequest,
+  ): Promise<TextExploreResponse | null> =>
+    api.post<TextExploreResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/textexplore/search`,
+      body,
+    ),
+};
+
 // Intent taxonomy: read-only. Every write goes through actionsApi.dispatch so
 // Human edits and agent proposals share one path, one audit log and one undo.
 export const taxonomyApi = {
@@ -460,6 +501,61 @@ export const llmApi = {
     api.delete<LlmProviderResponse[]>(`/api/llm/providers/${id}`),
   testProvider: (id: number): Promise<LlmTestResponse | null> =>
     api.post<LlmTestResponse>(`/api/llm/providers/${id}/test`),
+};
+
+// Enrichment functions: versioned derived columns (llm_prompt / topic_model)
+import type {
+  EnrichEstimate,
+  EnrichFunction,
+  EnrichRun,
+  FunctionVersion,
+  RunScope,
+  SampleRunResult,
+  UploadSourceResult,
+} from '@/types/enrichment';
+
+export const enrichFnApi = {
+  list: (sourceId: string, table: string): Promise<EnrichFunction[] | null> =>
+    api.get<EnrichFunction[]>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/functions`,
+    ),
+  create: (
+    sourceId: string,
+    table: string,
+    body: { name: string; kind: string; config: unknown },
+  ): Promise<EnrichFunction | null> =>
+    api.post<EnrichFunction>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/functions`,
+      body,
+    ),
+  get: (id: string): Promise<EnrichFunction | null> =>
+    api.get<EnrichFunction>(`/api/functions/${encodeURIComponent(id)}`),
+  update: (
+    id: string,
+    body: { config: unknown; rerun?: 'none' | 'all' | 'missing' },
+  ): Promise<EnrichFunction | null> =>
+    api.put<EnrichFunction>(`/api/functions/${encodeURIComponent(id)}`, body),
+  delete: (id: string, dropColumns: boolean): Promise<unknown> =>
+    api.delete(`/api/functions/${encodeURIComponent(id)}?drop_columns=${String(dropColumns)}`),
+  versions: (id: string): Promise<FunctionVersion[] | null> =>
+    api.get<FunctionVersion[]>(`/api/functions/${encodeURIComponent(id)}/versions`),
+  promote: (id: string): Promise<EnrichFunction | null> =>
+    api.post<EnrichFunction>(`/api/functions/${encodeURIComponent(id)}/promote`),
+  demote: (id: string): Promise<EnrichFunction | null> =>
+    api.post<EnrichFunction>(`/api/functions/${encodeURIComponent(id)}/demote`),
+  sampleRun: (
+    id: string,
+    body: { limit?: number; config?: unknown },
+  ): Promise<SampleRunResult | null> =>
+    api.post<SampleRunResult>(`/api/functions/${encodeURIComponent(id)}/sample-run`, body),
+  estimate: (id: string, scope: RunScope): Promise<EnrichEstimate | null> =>
+    api.get<EnrichEstimate>(`/api/functions/${encodeURIComponent(id)}/estimate?scope=${scope}`),
+  startRun: (id: string, scope: RunScope): Promise<{ runId: string } | null> =>
+    api.post<{ runId: string }>(`/api/functions/${encodeURIComponent(id)}/runs`, { scope }),
+  getRun: (runId: string): Promise<EnrichRun | null> =>
+    api.get<EnrichRun>(`/api/enrichment/runs/${encodeURIComponent(runId)}`),
+  cancelRun: (runId: string): Promise<EnrichRun | null> =>
+    api.post<EnrichRun>(`/api/enrichment/runs/${encodeURIComponent(runId)}/cancel`),
 };
 
 // Agent runs: LLM curation through the same action layer

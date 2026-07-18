@@ -43,7 +43,7 @@ export type {
 } from './generated';
 
 // Unified source types (frontend-only, matching backend SourceKind/SourceTool)
-export type SourceKind = 'web-analytics' | 'connector';
+export type SourceKind = 'web-analytics' | 'connector' | 'upload';
 
 export type ToolId =
   | 'dashboard'
@@ -53,6 +53,8 @@ export type ToolId =
   | 'explore'
   | 'insights'
   | 'topics'
+  | 'textexplore'
+  | 'enrich'
   | 'settings';
 
 export interface SourceTable {
@@ -87,6 +89,8 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
   explore: { label: 'Explore', icon: 'i-lucide-search' },
   insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
   topics: { label: 'Topics', icon: 'i-lucide-shapes' },
+  textexplore: { label: 'Text Explorer', icon: 'i-lucide-text-search' },
+  enrich: { label: 'Enrich', icon: 'i-lucide-wand-sparkles' },
   settings: { label: 'Settings', icon: 'i-lucide-settings' },
 };
 

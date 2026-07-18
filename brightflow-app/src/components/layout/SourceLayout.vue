@@ -6,11 +6,13 @@ import EventListPanel from '@/components/analytics/EventListPanel.vue';
 import FunnelPanel from '@/components/analytics/FunnelPanel.vue';
 import RetentionPanel from '@/components/analytics/RetentionPanel.vue';
 import UserExplorerPanel from '@/components/analytics/UserExplorerPanel.vue';
+import EnrichTool from '@/components/enrich/EnrichTool.vue';
 import ExploreTool from '@/components/explore/ExploreTool.vue';
 import InsightsView from '@/components/insights/InsightsView.vue';
 import PeriodSelector from '@/components/layout/PeriodSelector.vue';
 import ConnectorSourceSettings from '@/components/settings/ConnectorSourceSettings.vue';
 import WebSourceSettings from '@/components/settings/WebSourceSettings.vue';
+import TextExploreTool from '@/components/textexplore/TextExploreTool.vue';
 import ConnectorDashboard from '@/components/tools/ConnectorDashboard.vue';
 import WebDashboard from '@/components/tools/WebDashboard.vue';
 import TopicsView from '@/components/topics/TopicsView.vue';
@@ -121,6 +123,16 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
 
       <!-- Topics -->
       <TopicsView v-else-if="activeTool === 'topics'" :source-id="sourceId" :table="table" />
+
+      <!-- Text Explorer -->
+      <TextExploreTool
+        v-else-if="activeTool === 'textexplore'"
+        :source-id="sourceId"
+        :table="table"
+      />
+
+      <!-- Enrich -->
+      <EnrichTool v-else-if="activeTool === 'enrich'" :source-id="sourceId" :table="table" />
 
       <!-- Settings -->
       <template v-else-if="activeTool === 'settings'">

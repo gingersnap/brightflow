@@ -23,12 +23,23 @@ defineEmits<{
         name="i-lucide-globe"
         class="size-5 text-primary-500"
       />
+      <UIcon
+        v-else-if="source.kind === 'upload'"
+        name="i-lucide-upload"
+        class="size-5 text-muted"
+      />
       <UIcon v-else name="i-lucide-cable" class="size-5 text-muted" />
       <h3 class="text-sm font-semibold text-highlighted">{{ source.name }}</h3>
     </div>
 
     <p class="text-sm text-muted">
-      {{ source.kind === 'web-analytics' ? source.domain : source.connectorName }}
+      {{
+        source.kind === 'web-analytics'
+          ? source.domain
+          : source.kind === 'upload'
+            ? 'CSV upload'
+            : source.connectorName
+      }}
     </p>
 
     <div class="mt-auto flex items-center gap-3 pt-2">

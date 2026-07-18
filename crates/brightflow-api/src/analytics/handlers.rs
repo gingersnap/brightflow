@@ -100,13 +100,13 @@ pub async fn delete_dataset(
     }
 }
 
-/// Upload a CSV file as a new dataset
-pub async fn upload_dataset(
-    State(state): State<AppState>,
-    mut multipart: Multipart,
-) -> AppResult<(StatusCode, Json<UploadResponse>)> {
+/// Read the `file` (and optional `table`) fields out of an upload multipart.
+async fn read_upload_multipart(
+    multipart: &mut Multipart,
+) -> AppResult<(Vec<u8>, String, Option<String>)> {
     let mut file_data: Option<Vec<u8>> = None;
     let mut file_name: Option<String> = None;
+    let mut table_override: Option<String> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -114,24 +114,78 @@ pub async fn upload_dataset(
         .map_err(|e| AppError::BadRequest(format!("Failed to read multipart field: {e}")))?
     {
         let name = field.name().unwrap_or_default().to_string();
-
-        if name == "file" {
-            file_name = field.file_name().map(String::from);
-            file_data = Some(
-                field
-                    .bytes()
+        match name.as_str() {
+            "file" => {
+                file_name = field.file_name().map(String::from);
+                file_data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            AppError::BadRequest(format!("Failed to read file data: {e}"))
+                        })?
+                        .to_vec(),
+                );
+            },
+            "table" => {
+                let value = field
+                    .text()
                     .await
-                    .map_err(|e| AppError::BadRequest(format!("Failed to read file data: {e}")))?
-                    .to_vec(),
-            );
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read table name: {e}")))?;
+                if !value.trim().is_empty() {
+                    table_override = Some(value.trim().to_string());
+                }
+            },
+            _ => {},
         }
     }
 
     let data = file_data.ok_or_else(|| AppError::BadRequest("No file provided".into()))?;
     let name = file_name.unwrap_or_else(|| "uploaded.csv".to_string());
+    Ok((data, name, table_override))
+}
 
-    // Parse CSV in blocking task
-    let df = tokio::task::spawn_blocking(move || -> Result<DataFrame, PolarsError> {
+/// Derive a legal table name from a filename ("Q3 Leads.csv" → "q3_leads").
+fn slugify_table_name(filename: &str) -> String {
+    let stem = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("table");
+    let mut slug: String = stem
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    slug = slug.trim_matches('_').to_string();
+    while slug.contains("__") {
+        slug = slug.replace("__", "_");
+    }
+    if slug.is_empty() {
+        slug = "table".to_string();
+    }
+    if slug.starts_with(|c: char| c.is_ascii_digit()) {
+        slug = format!("t_{slug}");
+    }
+    slug
+}
+
+/// Parse CSV bytes and persist them as a new `upload:{uuid}` source in the
+/// store. Returns (source_id, table, row_count, column names).
+async fn ingest_csv_as_source(
+    state: &AppState,
+    data: Vec<u8>,
+    filename: &str,
+    table_override: Option<&str>,
+) -> AppResult<(String, String, usize, Vec<String>)> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let paths = state
+        .paths
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("workspace paths unavailable".to_string()))?;
+
+    let mut df = tokio::task::spawn_blocking(move || -> Result<DataFrame, PolarsError> {
         let cursor = Cursor::new(data);
         CsvReadOptions::default()
             .with_infer_schema_length(Some(10000))
@@ -139,11 +193,147 @@ pub async fn upload_dataset(
             .finish()
     })
     .await??;
+    if df.height() == 0 {
+        return Err(AppError::BadRequest("CSV contains no data rows".into()));
+    }
 
-    let row_count = df.height();
-    let column_count = df.width();
-    let columns: Vec<session::ColumnInfo> = df
-        .get_columns()
+    let table = table_override.map_or_else(|| slugify_table_name(filename), slugify_table_name);
+    let source_id = format!("upload:{}", uuid::Uuid::now_v7());
+
+    // Stage a temp parquet under the workspace so ingest can copy it in.
+    let tmp_dir = paths.base().join("tmp");
+    std::fs::create_dir_all(&tmp_dir).map_err(AppError::Io)?;
+    let tmp_path = tmp_dir.join(format!("{}.parquet", uuid::Uuid::now_v7()));
+    {
+        let tmp_for_write = tmp_path.clone();
+        let mut frame = std::mem::take(&mut df);
+        df = tokio::task::spawn_blocking(move || -> Result<DataFrame, PolarsError> {
+            let file = std::fs::File::create(&tmp_for_write)
+                .map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
+            ParquetWriter::new(file).finish(&mut frame)?;
+            Ok(frame)
+        })
+        .await??;
+    }
+
+    let ingest_result = store
+        .ingest_parquet(
+            &source_id,
+            &table,
+            &tmp_path,
+            Some(brightflow_store::IngestOptions {
+                mode: brightflow_store::IngestMode::ErrorIfExists,
+                ..Default::default()
+            }),
+        )
+        .await;
+    if tmp_path.exists() {
+        drop(std::fs::remove_file(&tmp_path));
+    }
+    ingest_result?;
+
+    let meta = serde_json::json!({ "filename": filename }).to_string();
+    store
+        .db()
+        .register_source(&source_id, "upload", filename, Some(&meta))
+        .await?;
+    state.refresh_table_index().await;
+
+    let columns: Vec<String> = df
+        .get_column_names()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    Ok((source_id, table, df.height(), columns))
+}
+
+/// `POST /api/sources/upload` — persist a CSV as a first-class source.
+pub async fn upload_source(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> AppResult<(
+    StatusCode,
+    Json<crate::sources::types::UploadSourceResponse>,
+)> {
+    let (data, filename, table_override) = read_upload_multipart(&mut multipart).await?;
+    let (source_id, table, row_count, columns) =
+        ingest_csv_as_source(&state, data, &filename, table_override.as_deref()).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(crate::sources::types::UploadSourceResponse {
+            source_id,
+            table,
+            row_count,
+            columns,
+        }),
+    ))
+}
+
+/// Upload a CSV file as a new dataset (legacy shape).
+///
+/// Now delegates to the persistent upload flow — the data lands in the store
+/// and survives restarts — then bridges into the DatasetManager so existing
+/// explore flows keep working unchanged.
+pub async fn upload_dataset(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> AppResult<(StatusCode, Json<UploadResponse>)> {
+    let (data, name, table_override) = read_upload_multipart(&mut multipart).await?;
+
+    // No store configured (bare dev mode): keep the old in-memory behavior.
+    if state.store().is_none() {
+        let df = tokio::task::spawn_blocking(move || -> Result<DataFrame, PolarsError> {
+            let cursor = Cursor::new(data);
+            CsvReadOptions::default()
+                .with_infer_schema_length(Some(10000))
+                .into_reader_with_file_handle(cursor)
+                .finish()
+        })
+        .await??;
+        let row_count = df.height();
+        let column_count = df.width();
+        let columns = column_infos(&df);
+        let id = state.datasets.add_dataset(
+            name.clone(),
+            DatasetData::Uploaded(df),
+            DatasetSource::Upload {
+                filename: name.clone(),
+            },
+        );
+        return Ok((
+            StatusCode::CREATED,
+            Json(UploadResponse {
+                id,
+                name,
+                row_count,
+                column_count,
+                columns,
+            }),
+        ));
+    }
+
+    let (source_id, table, row_count, _columns) =
+        ingest_csv_as_source(&state, data, &name, table_override.as_deref()).await?;
+    let id = state.load_table(&source_id, &table).await?;
+    let dataset = state
+        .datasets
+        .get_dataset(&id)
+        .ok_or_else(|| AppError::Internal("Failed to retrieve uploaded dataset".into()))?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(UploadResponse {
+            id,
+            name,
+            row_count,
+            column_count: dataset.column_count().unwrap_or(0),
+            columns: dataset.columns(),
+        }),
+    ))
+}
+
+fn column_infos(df: &DataFrame) -> Vec<session::ColumnInfo> {
+    df.get_columns()
         .iter()
         .map(|col| session::ColumnInfo {
             name: col.name().to_string(),
@@ -152,26 +342,7 @@ pub async fn upload_dataset(
             is_kpi: None,
             label: None,
         })
-        .collect();
-
-    let id = state.datasets.add_dataset(
-        name.clone(),
-        DatasetData::Uploaded(df),
-        DatasetSource::Upload {
-            filename: name.clone(),
-        },
-    );
-
-    Ok((
-        StatusCode::CREATED,
-        Json(UploadResponse {
-            id,
-            name,
-            row_count,
-            column_count,
-            columns,
-        }),
-    ))
+        .collect()
 }
 
 /// Execute a query via REST (HTTP fallback)

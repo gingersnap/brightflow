@@ -83,6 +83,14 @@ export type { LabelBucket } from './LabelBucket';
 export type { ReclusterRequest } from './ReclusterRequest';
 export type { TopicsOverview } from './TopicsOverview';
 
+// Text Explorer types
+export type { SearchTerm } from './SearchTerm';
+export type { TextExploreRequest } from './TextExploreRequest';
+export type { TextExploreResponse } from './TextExploreResponse';
+export type { TextExploreRow } from './TextExploreRow';
+export type { TextRun } from './TextRun';
+export type { WordScore } from './WordScore';
+
 // Intent taxonomy types
 export type { CurationDoc } from './CurationDoc';
 export type { CurationQueue } from './CurationQueue';

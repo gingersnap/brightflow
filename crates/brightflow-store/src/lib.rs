@@ -34,9 +34,10 @@ pub use error::{StoreError, StoreResult};
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use models::{
     ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, DocumentLabelRow,
-    DocumentLabelWithName, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightStateRow,
-    InsightSuppressionRow, TableAnalysisSettingsRow, TableEnrichmentSettingsRow, TableRow,
-    TaxonomyCategoryRow,
+    DocumentLabelWithName, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow,
+    EnrichmentRunRow, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightStateRow,
+    InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow, TableEnrichmentSettingsRow,
+    TableRow, TaxonomyCategoryRow,
 };
 pub use scan::ScanFilter;
 pub use stats::extract_file_column_stats;
@@ -164,6 +165,31 @@ impl ParquetStore {
             table_name,
             parquet_path.as_ref(),
             primary_keys,
+        )
+        .await
+    }
+
+    /// Replace a table's entire contents with a DataFrame (one consolidated
+    /// file). `expected_version` enables an optimistic concurrency check —
+    /// see `StoreError::VersionConflict`.
+    pub async fn replace_table_data(
+        &self,
+        source_id: &str,
+        table_name: &str,
+        df: DataFrame,
+        expected_version: Option<i64>,
+    ) -> StoreResult<()> {
+        info!(
+            "Replacing table '{}' data for source '{}'",
+            table_name, source_id
+        );
+        ingest::replace_table_data(
+            &self.db,
+            &self.root_path,
+            source_id,
+            table_name,
+            df,
+            expected_version,
         )
         .await
     }
