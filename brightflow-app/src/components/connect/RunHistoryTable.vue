@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import type { TableColumn } from '@nuxt/ui';
-import { h } from 'vue';
+import type { TableColumn, TableRow, ContextMenuItem } from '@nuxt/ui';
+import { computed, h, ref } from 'vue';
 
 import type { EnrichedSyncRun } from '@/types';
 
 import SyncStatusBadge from './SyncStatusBadge.vue';
 
-defineProps<{
+const props = defineProps<{
   runs: EnrichedSyncRun[];
+}>();
+
+const emit = defineEmits<{
+  run: [connectorName: string];
 }>();
 
 function relativeTime(dateStr: string): string {
@@ -64,8 +68,68 @@ const columns: TableColumn<EnrichedSyncRun>[] = [
     meta: { class: { td: 'break-all' } },
   },
 ];
+
+// ── Row context menu (single shared instance) ──────────────────────────────
+// Documented UTable pattern: one UContextMenu wraps the table, controlled via
+// V-model:open; @contextmenu on UTable gives us the right-clicked row.
+const open = ref(false);
+const target = ref<EnrichedSyncRun | null>(null);
+const hovered = ref<EnrichedSyncRun | null>(null);
+
+function onContextMenu(e: Event, row: TableRow<EnrichedSyncRun>): void {
+  target.value = row.original;
+  e.preventDefault();
+  open.value = true;
+}
+
+function onHover(_e: Event, row: TableRow<EnrichedSyncRun> | null): void {
+  hovered.value = row?.original ?? null;
+}
+
+// `target` is set on right-click (menu); `hovered` drives the keyboard
+// Shortcut so ⌘↵ re-runs the row under the cursor without opening the menu.
+const activeRow = computed(() => target.value ?? hovered.value);
+
+const items = computed<ContextMenuItem[][]>(() => {
+  const row = activeRow.value;
+  if (row == null) {
+    return [];
+  }
+  return [
+    [
+      {
+        label: 'Re-run sync',
+        icon: 'i-lucide-refresh-cw',
+        kbds: ['meta', 'enter'],
+        onSelect: () => emit('run', row.connectorName),
+      },
+      {
+        label: 'Copy error',
+        icon: 'i-lucide-copy',
+        disabled: !row.error,
+        onSelect: () => {
+          if (row.error) {
+            void navigator.clipboard.writeText(row.error);
+          }
+        },
+      },
+    ],
+  ];
+});
+
+// ⌘↵ only fires while a row is hovered, so multiple RunHistoryTables on the
+// Same page don't all re-run their last target.
+defineShortcuts(computed(() => (hovered.value ? extractShortcuts(items.value) : {})));
 </script>
 
 <template>
-  <UTable :data="runs" :columns="columns" empty="No runs yet" />
+  <UContextMenu v-model:open="open" :items="items">
+    <UTable
+      :data="props.runs"
+      :columns="columns"
+      empty="No runs yet"
+      @contextmenu="onContextMenu"
+      @hover="onHover"
+    />
+  </UContextMenu>
 </template>

@@ -16,9 +16,11 @@ import {
   Users,
   Waves,
 } from '@lucide/vue';
+import type { ContextMenuItem } from '@nuxt/ui';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { usePromptAction } from '@/composables/usePromptAction';
 import type { AnalysisNode, AnalysisTree } from '@/services/api';
 import { useCurationStore } from '@/stores/curation';
 import { useInsightsStore } from '@/stores/insights';
@@ -78,6 +80,7 @@ const renderer = computed(() => rendererFor(props.node.analysis.type));
 
 // ── Curation actions (dismiss / pin / annotate / suppress) ────────────────
 const curation = useCurationStore();
+const prompt = usePromptAction();
 
 function actionScope(): { sourceId: string; table: string } | null {
   const sourceId = insightsStore.selectedSourceId ?? String(route.params['sourceId'] ?? '');
@@ -121,8 +124,8 @@ async function annotate(): Promise<void> {
   if (!scope) {
     return;
   }
-  const note = window.prompt('Note for this insight');
-  if (note == null || note.trim() === '') {
+  const note = await prompt('Note for this insight', { placeholder: 'Your note…' });
+  if (note == null) {
     return;
   }
   await curation.dispatch({
@@ -130,7 +133,7 @@ async function annotate(): Promise<void> {
     source_id: scope.sourceId,
     table: scope.table,
     fingerprint: props.node.fingerprint,
-    note: note.trim(),
+    note,
   });
 }
 
@@ -139,8 +142,9 @@ async function suppressDimension(): Promise<void> {
   if (!scope) {
     return;
   }
-  const target = props.node.filterChain[0]?.column ?? window.prompt('Column to suppress') ?? '';
-  if (target === '') {
+  const fromChain = props.node.filterChain[0]?.column;
+  const target = fromChain ?? (await prompt('Column to suppress', { placeholder: 'Column name' }));
+  if (target == null) {
     return;
   }
   await curation.dispatch({
@@ -152,9 +156,14 @@ async function suppressDimension(): Promise<void> {
   });
 }
 
-const curationItems = computed(() => [
+const curationItems = computed<ContextMenuItem[][]>(() => [
   [
-    { label: 'Pin to top', icon: 'i-lucide-pin', onSelect: () => void pin() },
+    {
+      label: 'Pin to top',
+      icon: 'i-lucide-pin',
+      kbds: ['meta', 'P'],
+      onSelect: () => void pin(),
+    },
     { label: 'Annotate…', icon: 'i-lucide-message-square-text', onSelect: () => void annotate() },
   ],
   [
@@ -174,6 +183,19 @@ const curationItems = computed(() => [
     },
   ],
 ]);
+
+// ⌘P only pins the hovered insight; the config is empty while not hovered so the
+// global listener doesn't fire (or preventDefault) elsewhere. Gated to
+// Top-level cards because nested cards share hover with their ancestor —
+// Right-click (context menu) covers the nested case unambiguously.
+const isHovered = ref(false);
+defineShortcuts(
+  computed(() =>
+    isHovered.value && currentDepth.value === 0 && props.node.fingerprint
+      ? extractShortcuts(curationItems.value)
+      : {},
+  ),
+);
 
 const analysisTypeConfig = computed(() => {
   const { type } = props.node.analysis;
@@ -298,130 +320,137 @@ const analysisTypeConfig = computed(() => {
 </script>
 
 <template>
-  <div
-    class="rounded-lg border transition-colors"
-    :class="[
-      currentDepth === 0 ? 'border-default bg-default' : 'border-default/50 bg-elevated/50',
-      currentDepth > 0 ? 'ml-6' : '',
-    ]"
-  >
-    <!-- Card header -->
-    <button
-      class="flex w-full items-start gap-3 p-4 text-left"
-      :class="{ 'cursor-pointer hover:bg-elevated/50': hasChildren }"
-      @click="hasChildren ? (expanded = !expanded) : undefined"
+  <UContextMenu :items="curationItems" :disabled="!node.fingerprint">
+    <div
+      class="rounded-lg border transition-colors"
+      :class="[
+        currentDepth === 0 ? 'border-default bg-default' : 'border-default/50 bg-elevated/50',
+        currentDepth > 0 ? 'ml-6' : '',
+      ]"
+      @mouseenter="isHovered = true"
+      @mouseleave="isHovered = false"
     >
-      <!-- Type icon -->
-      <div class="flex-shrink-0 rounded-md p-1.5" :class="analysisTypeConfig.bg">
-        <component
-          :is="analysisTypeConfig.icon"
-          class="h-4 w-4"
-          :class="analysisTypeConfig.color"
-        />
+      <!-- Card header -->
+      <button
+        class="flex w-full items-start gap-3 p-4 text-left"
+        :class="{ 'cursor-pointer hover:bg-elevated/50': hasChildren }"
+        @click="hasChildren ? (expanded = !expanded) : undefined"
+      >
+        <!-- Type icon -->
+        <div class="flex-shrink-0 rounded-md p-1.5" :class="analysisTypeConfig.bg">
+          <component
+            :is="analysisTypeConfig.icon"
+            class="h-4 w-4"
+            :class="analysisTypeConfig.color"
+          />
+        </div>
+
+        <!-- Content -->
+        <div class="min-w-0 flex-1">
+          <!-- Summary -->
+          <p class="text-sm leading-relaxed text-highlighted">
+            <span
+              v-if="node.rank != null && currentDepth === 0"
+              class="mr-1.5 font-mono-data text-xs text-muted"
+              >#{{ node.rank }}</span
+            >{{ node.summary }}
+          </p>
+          <!-- Tech summary badge -->
+          <p class="mt-1 font-mono-data text-sm text-muted">
+            {{ node.tech_summary }}
+          </p>
+          <!-- Provenance chips: how the underlying series was derived -->
+          <div v-if="node.provenance.length > 0" class="mt-1.5 flex flex-wrap items-center gap-1">
+            <span
+              v-for="(step, i) in node.provenance"
+              :key="i"
+              class="rounded border border-default bg-elevated/60 px-1.5 py-0.5 font-mono-data text-xs text-muted"
+              :title="step.kind"
+            >
+              {{ step.label }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Expand/collapse indicator -->
+        <div v-if="hasChildren" class="mt-0.5 flex-shrink-0">
+          <span class="mr-1 text-xs text-muted">{{ childNodes.length }}</span>
+          <component
+            :is="expanded ? ChevronDown : ChevronRight"
+            class="inline h-4 w-4 text-muted"
+          />
+        </div>
+      </button>
+
+      <!-- Per-type chart renderer -->
+      <div v-if="renderer && node.data" class="px-4 pb-3">
+        <component :is="renderer" :node="node" />
       </div>
 
-      <!-- Content -->
-      <div class="min-w-0 flex-1">
-        <!-- Summary -->
-        <p class="text-sm leading-relaxed text-highlighted">
-          <span
-            v-if="node.rank != null && currentDepth === 0"
-            class="mr-1.5 font-mono-data text-xs text-muted"
-            >#{{ node.rank }}</span
-          >{{ node.summary }}
+      <!-- Footer: actions + score breakdown -->
+      <div class="flex items-center gap-2 px-4 pb-3 text-xs text-muted">
+        <button
+          class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
+          @click.stop="showScore = !showScore"
+        >
+          <Info class="h-3 w-3" />
+          Why this finding?
+        </button>
+        <button
+          v-if="node.filterChain.length > 0"
+          class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
+          @click.stop="openInExplore"
+        >
+          <ExternalLink class="h-3 w-3" />
+          Open in Explore
+        </button>
+        <span class="ml-auto font-mono-data">score {{ node.significance.toFixed(2) }}</span>
+        <UDropdownMenu v-if="node.fingerprint" :items="curationItems">
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-more-horizontal"
+            aria-label="Insight actions"
+            @click.stop
+          />
+        </UDropdownMenu>
+      </div>
+
+      <div
+        v-if="showScore"
+        class="mx-4 mb-3 rounded-md border border-default bg-elevated/40 p-3 font-mono-data text-xs text-muted"
+      >
+        <p v-if="node.why" class="mb-2 font-sans text-sm text-highlighted">
+          {{ node.why }}
         </p>
-        <!-- Tech summary badge -->
-        <p class="mt-1 font-mono-data text-sm text-muted">
-          {{ node.tech_summary }}
-        </p>
-        <!-- Provenance chips: how the underlying series was derived -->
-        <div v-if="node.provenance.length > 0" class="mt-1.5 flex flex-wrap items-center gap-1">
-          <span
-            v-for="(step, i) in node.provenance"
-            :key="i"
-            class="rounded border border-default bg-elevated/60 px-1.5 py-0.5 font-mono-data text-xs text-muted"
-            :title="step.kind"
-          >
-            {{ step.label }}
-          </span>
+        <div class="mb-1 grid grid-cols-4 gap-2">
+          <span>significance</span>
+          <span>impact</span>
+          <span>novelty</span>
+          <span>kpi boost</span>
+        </div>
+        <div class="grid grid-cols-4 gap-2 text-highlighted">
+          <span>{{ node.scoreBreakdown.significance.toFixed(3) }}</span>
+          <span>{{ node.scoreBreakdown.impact.toFixed(3) }}</span>
+          <span>{{ node.scoreBreakdown.novelty.toFixed(2) }}</span>
+          <span>×{{ node.scoreBreakdown.kpiBoost.toFixed(2) }}</span>
+        </div>
+        <div v-if="node.filterChain.length > 0" class="mt-2 border-t border-default pt-2">
+          Drill path: {{ node.filterChain.map((s) => `${s.column}=${s.value}`).join(' › ') }}
         </div>
       </div>
 
-      <!-- Expand/collapse indicator -->
-      <div v-if="hasChildren" class="mt-0.5 flex-shrink-0">
-        <span class="mr-1 text-xs text-muted">{{ childNodes.length }}</span>
-        <component :is="expanded ? ChevronDown : ChevronRight" class="inline h-4 w-4 text-muted" />
-      </div>
-    </button>
-
-    <!-- Per-type chart renderer -->
-    <div v-if="renderer && node.data" class="px-4 pb-3">
-      <component :is="renderer" :node="node" />
-    </div>
-
-    <!-- Footer: actions + score breakdown -->
-    <div class="flex items-center gap-2 px-4 pb-3 text-xs text-muted">
-      <button
-        class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
-        @click.stop="showScore = !showScore"
-      >
-        <Info class="h-3 w-3" />
-        Why this finding?
-      </button>
-      <button
-        v-if="node.filterChain.length > 0"
-        class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
-        @click.stop="openInExplore"
-      >
-        <ExternalLink class="h-3 w-3" />
-        Open in Explore
-      </button>
-      <span class="ml-auto font-mono-data">score {{ node.significance.toFixed(2) }}</span>
-      <UDropdownMenu v-if="node.fingerprint" :items="curationItems">
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-more-horizontal"
-          aria-label="Insight actions"
-          @click.stop
+      <!-- Children (drill-down) -->
+      <div v-if="expanded && hasChildren" class="space-y-2 px-4 pb-4">
+        <InsightCard
+          v-for="child in childNodes"
+          :key="child.id"
+          :node="child"
+          :tree="tree"
+          :depth="currentDepth + 1"
         />
-      </UDropdownMenu>
-    </div>
-
-    <div
-      v-if="showScore"
-      class="mx-4 mb-3 rounded-md border border-default bg-elevated/40 p-3 font-mono-data text-xs text-muted"
-    >
-      <p v-if="node.why" class="mb-2 font-sans text-sm text-highlighted">
-        {{ node.why }}
-      </p>
-      <div class="mb-1 grid grid-cols-4 gap-2">
-        <span>significance</span>
-        <span>impact</span>
-        <span>novelty</span>
-        <span>kpi boost</span>
-      </div>
-      <div class="grid grid-cols-4 gap-2 text-highlighted">
-        <span>{{ node.scoreBreakdown.significance.toFixed(3) }}</span>
-        <span>{{ node.scoreBreakdown.impact.toFixed(3) }}</span>
-        <span>{{ node.scoreBreakdown.novelty.toFixed(2) }}</span>
-        <span>×{{ node.scoreBreakdown.kpiBoost.toFixed(2) }}</span>
-      </div>
-      <div v-if="node.filterChain.length > 0" class="mt-2 border-t border-default pt-2">
-        Drill path: {{ node.filterChain.map((s) => `${s.column}=${s.value}`).join(' › ') }}
       </div>
     </div>
-
-    <!-- Children (drill-down) -->
-    <div v-if="expanded && hasChildren" class="space-y-2 px-4 pb-4">
-      <InsightCard
-        v-for="child in childNodes"
-        :key="child.id"
-        :node="child"
-        :tree="tree"
-        :depth="currentDepth + 1"
-      />
-    </div>
-  </div>
+  </UContextMenu>
 </template>

@@ -181,7 +181,7 @@ function triggerRunNow(): void {
     <section v-if="activeRuns.length > 0">
       <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Active Runs</h3>
       <div class="rounded-lg border border-default bg-default px-3">
-        <RunHistoryTable :runs="activeRuns" />
+        <RunHistoryTable :runs="activeRuns" @run="syncNow($event)" />
       </div>
     </section>
 
@@ -199,7 +199,7 @@ function triggerRunNow(): void {
     <section>
       <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Run History</h3>
       <div class="rounded-lg border border-default bg-default px-3">
-        <RunHistoryTable :runs="historyRuns" />
+        <RunHistoryTable :runs="historyRuns" @run="syncNow($event)" />
       </div>
     </section>
   </div>
