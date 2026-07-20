@@ -2,12 +2,14 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { agentApi, llmApi } from '@/services/api';
-import { useCurationStore } from '@/stores/curation';
-import type { AgentRunResponse } from '@/types/generated';
+import { useConnectionStore } from '@/stores/connection';
+import type { AgentRunEventPayload, AgentRunResponse } from '@/types/generated';
 
 /**
  * Agent-run trigger buttons. Hidden entirely unless an LLM provider is
  * configured. Proposals land in the activity feed for approve/reject.
+ *
+ * Run progress arrives as pushed `agentRun` WS events — no polling.
  */
 const props = defineProps<{
   sourceId: string;
@@ -16,21 +18,44 @@ const props = defineProps<{
   kinds: { kind: string; label: string; icon: string }[];
 }>();
 
-const curation = useCurationStore();
+/** Structural guard for a pushed `agentRun` frame. */
+function isAgentRunEvent(
+  m: Record<string, unknown>,
+): m is Record<string, unknown> & AgentRunEventPayload {
+  return typeof m['run'] === 'object' && m['run'] != null;
+}
+
+const connection = useConnectionStore();
 const hasProvider = ref(false);
 const activeRun = ref<AgentRunResponse | null>(null);
 const lastResult = ref<string | null>(null);
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let unsubscribe: (() => void) | null = null;
 
 onMounted(async () => {
+  unsubscribe = connection.onMessage('agentRun', (message) => {
+    if (!isAgentRunEvent(message)) {
+      return;
+    }
+    const { run } = message;
+    if (activeRun.value == null || activeRun.value.id !== run.id) {
+      return;
+    }
+    if (run.status === 'running') {
+      activeRun.value = run;
+      return;
+    }
+    lastResult.value =
+      run.status === 'completed'
+        ? (run.detail ?? 'Done — review proposals in Activity')
+        : `${run.status}: ${run.detail ?? ''}`;
+    activeRun.value = null;
+  });
   const providers = await llmApi.listProviders();
   hasProvider.value = (providers?.length ?? 0) > 0;
 });
 
 onBeforeUnmount(() => {
-  if (pollTimer != null) {
-    clearInterval(pollTimer);
-  }
+  unsubscribe?.();
 });
 
 async function start(kind: string): Promise<void> {
@@ -41,30 +66,6 @@ async function start(kind: string): Promise<void> {
     return;
   }
   activeRun.value = run;
-  pollTimer = setInterval(() => void poll(), 2000);
-}
-
-async function poll(): Promise<void> {
-  if (activeRun.value == null) {
-    return;
-  }
-  const run = await agentApi.get(activeRun.value.id);
-  if (run == null) {
-    return;
-  }
-  activeRun.value = run;
-  if (run.status !== 'running') {
-    if (pollTimer != null) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-    lastResult.value =
-      run.status === 'completed'
-        ? (run.detail ?? 'Done — review proposals in Activity')
-        : `${run.status}: ${run.detail ?? ''}`;
-    activeRun.value = null;
-    await curation.refreshFeed();
-  }
 }
 
 async function cancel(): Promise<void> {

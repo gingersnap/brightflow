@@ -1,5 +1,6 @@
 //! First-class curation actions: one dispatch path for humans and agents.
 
+pub mod events;
 pub mod handlers;
 pub mod types;
 

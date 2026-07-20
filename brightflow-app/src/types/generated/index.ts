@@ -117,3 +117,8 @@ export type { LlmTestResponse } from './LlmTestResponse';
 export type { UpsertLlmProviderRequest } from './UpsertLlmProviderRequest';
 export type { AgentRunResponse } from './AgentRunResponse';
 export type { StartAgentRunRequest } from './StartAgentRunRequest';
+
+// Curation event stream (WS push)
+export type { ActionBatchPayload } from './ActionBatchPayload';
+export type { ActionEventPayload } from './ActionEventPayload';
+export type { AgentRunEventPayload } from './AgentRunEventPayload';

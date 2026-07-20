@@ -52,6 +52,10 @@ pub struct AppState {
     pub system_metrics: Arc<RwLock<SystemSnapshot>>,
     /// Broadcast sender for log entries (from custom tracing Layer)
     pub log_sender: broadcast::Sender<LogEntry>,
+    /// Broadcast sender for curation events (action log + agent runs),
+    /// fanned out to every `/api/ws` client. Capacity is deliberately modest:
+    /// a lagged subscriber gets an `ActionResync` and refetches.
+    pub curation_events: broadcast::Sender<crate::actions::events::CurationEvent>,
     /// Server start time (for uptime calculation)
     pub start_time: Instant,
     /// Event ingestion engine (sources, buffer, geo, UA parser)
@@ -87,6 +91,7 @@ impl AppState {
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
+            curation_events: broadcast::channel(1024).0,
             start_time: Instant::now(),
             ingest: None,
             paths: None,
@@ -112,6 +117,7 @@ impl AppState {
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
+            curation_events: broadcast::channel(1024).0,
             start_time: Instant::now(),
             ingest: None,
             paths: None,
@@ -273,6 +279,7 @@ impl AppState {
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
+            curation_events: broadcast::channel(1024).0,
             start_time: Instant::now(),
             ingest: None,
             paths: None,
@@ -318,6 +325,7 @@ impl AppState {
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
+            curation_events: broadcast::channel(1024).0,
             start_time: Instant::now(),
             ingest: None,
             paths: None,

@@ -8,6 +8,7 @@ import type { ActionLogEntry } from '@/types/generated';
 const curation = useCurationStore();
 
 onMounted(() => {
+  curation.initRealtime();
   void curation.refreshFeed();
   void curation.refreshPendingCount();
 });

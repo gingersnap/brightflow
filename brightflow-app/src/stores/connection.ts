@@ -76,7 +76,11 @@ export const useConnectionStore = defineStore('connection', () => {
       }
 
       case 'queryResult':
-      case 'error': {
+      case 'error':
+      case 'actionEvent':
+      case 'actionBatch':
+      case 'agentRun':
+      case 'actionResync': {
         // Route to registered handlers
         const handlers = messageHandlers.get(type) ?? [];
         log.debug('Routing to', handlers.length, 'handlers');

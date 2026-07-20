@@ -29,7 +29,10 @@ fn now_epoch() -> i64 {
     .unwrap_or(0)
 }
 
-fn to_response(row: brightflow_store::AgentRunRow, actions: Vec<i64>) -> AgentRunResponse {
+pub(crate) fn to_response(
+    row: brightflow_store::AgentRunRow,
+    actions: Vec<i64>,
+) -> AgentRunResponse {
     AgentRunResponse {
         id: row.id,
         kind: row.kind,
@@ -83,6 +86,7 @@ pub async fn start_run(
     });
     state.agent_runs.insert(run_id, handle.abort_handle());
 
+    crate::actions::events::emit_run_row(&state, row.clone(), Vec::new());
     Ok(Json(to_response(row, Vec::new())))
 }
 
@@ -160,5 +164,6 @@ pub async fn cancel_run(
         .get_agent_run(id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
+    crate::actions::events::emit_run_row(&state, updated.clone(), Vec::new());
     Ok(Json(to_response(updated, Vec::new())))
 }

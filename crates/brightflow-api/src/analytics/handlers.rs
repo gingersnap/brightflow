@@ -390,38 +390,68 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     }
 
-    // Handle incoming messages
-    while let Some(Ok(msg)) = receiver.next().await {
-        tracing::debug!("Received WebSocket message: {:?}", msg);
-        let response = match msg {
-            Message::Text(text) => Some(handle_ws_message(&state, &text).await),
-            Message::Ping(data) => {
-                if sender.send(Message::Pong(data)).await.is_err() {
+    // Curation events are pushed to every client unconditionally
+    // (single-tenant — see `actions::events`).
+    let mut events = state.curation_events.subscribe();
+    let mut events_open = true;
+
+    loop {
+        tokio::select! {
+            msg = receiver.next() => {
+                let Some(Ok(msg)) = msg else { break };
+                tracing::debug!("Received WebSocket message: {:?}", msg);
+                let response = match msg {
+                    Message::Text(text) => Some(handle_ws_message(&state, &text).await),
+                    Message::Ping(data) => {
+                        if sender.send(Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                        None
+                    },
+                    Message::Close(_) => break,
+                    _ => None,
+                };
+
+                if let Some(response) = response {
+                    let json = match serde_json::to_string(&response) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            tracing::error!("Failed to serialize response: {}", e);
+                            let err = WsServerMessage::Error {
+                                code: "SERIALIZATION_ERROR".into(),
+                                message: format!("Failed to serialize response: {e}"),
+                            };
+                            serde_json::to_string(&err).unwrap_or_default()
+                        },
+                    };
+
+                    tracing::debug!("Sending response: {} bytes", json.len());
+                    if sender.send(Message::Text(json.into())).await.is_err() {
+                        tracing::warn!("Failed to send response, client disconnected");
+                        break;
+                    }
+                }
+            }
+            event = events.recv(), if events_open => {
+                let outbound = match event {
+                    Ok(ev) => WsServerMessage::from(ev),
+                    // Fell behind the broadcast buffer: tell the client to
+                    // refetch rather than replaying a gap.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::debug!("WS curation subscriber lagged by {n} events");
+                        WsServerMessage::ActionResync
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        events_open = false;
+                        continue;
+                    }
+                };
+                let Ok(json) = serde_json::to_string(&outbound) else {
+                    continue;
+                };
+                if sender.send(Message::Text(json.into())).await.is_err() {
                     break;
                 }
-                None
-            },
-            Message::Close(_) => break,
-            _ => None,
-        };
-
-        if let Some(response) = response {
-            let json = match serde_json::to_string(&response) {
-                Ok(j) => j,
-                Err(e) => {
-                    tracing::error!("Failed to serialize response: {}", e);
-                    let err = WsServerMessage::Error {
-                        code: "SERIALIZATION_ERROR".into(),
-                        message: format!("Failed to serialize response: {e}"),
-                    };
-                    serde_json::to_string(&err).unwrap_or_default()
-                },
-            };
-
-            tracing::debug!("Sending response: {} bytes", json.len());
-            if sender.send(Message::Text(json.into())).await.is_err() {
-                tracing::warn!("Failed to send response, client disconnected");
-                break;
             }
         }
     }

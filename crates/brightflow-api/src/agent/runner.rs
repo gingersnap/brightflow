@@ -70,6 +70,7 @@ pub async fn execute_run(
         tracing::warn!("failed to finish agent run {run_id}: {e}");
     }
     state.agent_runs.remove(&run_id);
+    crate::actions::events::emit_run(&state, run_id).await;
 }
 
 async fn run_inner(

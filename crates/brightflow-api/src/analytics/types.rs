@@ -153,6 +153,29 @@ pub enum WsServerMessage {
         #[serde(rename = "serverVersion")]
         server_version: String,
     },
+
+    /// One action-log row changed (created/applied/failed/rejected/undone)
+    ActionEvent(crate::actions::events::ActionEventPayload),
+
+    /// Many action-log rows changed at once (approve-all, undo-all)
+    ActionBatch(crate::actions::events::ActionBatchPayload),
+
+    /// An agent run started or changed status
+    AgentRun(crate::actions::events::AgentRunEventPayload),
+
+    /// The client missed events (lagged subscriber) — refetch feed and count
+    ActionResync,
+}
+
+impl From<crate::actions::events::CurationEvent> for WsServerMessage {
+    fn from(event: crate::actions::events::CurationEvent) -> Self {
+        use crate::actions::events::CurationEvent;
+        match event {
+            CurationEvent::Action(p) => Self::ActionEvent(p),
+            CurationEvent::ActionBatch(p) => Self::ActionBatch(p),
+            CurationEvent::AgentRun(p) => Self::AgentRun(p),
+        }
+    }
 }
 
 // ============================================================================

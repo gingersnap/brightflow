@@ -229,6 +229,51 @@ All messages are JSON with a `type` field.
 }
 ```
 
+#### Curation Event Stream (server-push)
+
+Every connected client also receives live curation events — no subscription
+message needed (single-tenant: all clients see all events).
+
+**Action Event** — one action-log row changed (created/applied/failed/rejected/undone)
+```json
+{
+  "type": "actionEvent",
+  "entry": { "id": 42, "actionKind": "rename_cluster", "status": "applied", "undoable": true, ... },
+  "pendingCount": 3
+}
+```
+`entry` is an `ActionLogEntry` (same shape as `GET /api/actions` rows).
+`pendingCount` is the server-computed proposals-awaiting-review count.
+
+**Action Batch** — many rows changed at once (approve-all)
+```json
+{
+  "type": "actionBatch",
+  "entries": [...],
+  "truncated": false,
+  "total": 120,
+  "succeeded": 118,
+  "failed": 2,
+  "pendingCount": 0
+}
+```
+`entries` carries at most the newest 100 rows; when `truncated` is true the
+client should refetch `GET /api/actions` instead of replaying entries.
+
+**Agent Run** — a run started or changed status
+```json
+{
+  "type": "agentRun",
+  "run": { "id": 7, "kind": "auto_label", "status": "running", ... }
+}
+```
+
+**Action Resync** — the client fell behind the event buffer; refetch the feed
+and pending count
+```json
+{ "type": "actionResync" }
+```
+
 ---
 
 ## Operations

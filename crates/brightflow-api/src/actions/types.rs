@@ -327,7 +327,7 @@ pub struct ActionManifestEntry {
 }
 
 /// One row in the audit feed (mirrors `action_log`).
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionLogEntry {
@@ -346,6 +346,36 @@ pub struct ActionLogEntry {
     pub created_at: i64,
     #[ts(optional)]
     pub resolved_at: Option<i64>,
+}
+
+impl ActionLogEntry {
+    /// The one place the row→entry mapping (and the undoability rule) lives.
+    /// The feed endpoint and every WS emit site go through here.
+    pub fn from_row(row: brightflow_store::ActionLogRow) -> Self {
+        Self {
+            undoable: row.undo_json.is_some() && row.status == "applied",
+            id: row.id,
+            request_id: row.request_id,
+            actor_type: row.actor_type,
+            agent_run_id: row.agent_run_id,
+            action_kind: row.action_kind,
+            params: serde_json::from_str(&row.params_json).unwrap_or(serde_json::Value::Null),
+            result: row
+                .result_json
+                .as_deref()
+                .and_then(|j| serde_json::from_str(j).ok()),
+            status: row.status,
+            created_at: row.created_at,
+            resolved_at: row.resolved_at,
+        }
+    }
+}
+
+/// Whether an action kind is undoable per the manifest registry.
+pub fn kind_is_undoable(kind: &str) -> bool {
+    ACTION_KINDS
+        .iter()
+        .any(|(k, _, undoable)| *k == kind && *undoable)
 }
 
 /// Inverse operations stored in `undo_json`. Internal — never exposed as a

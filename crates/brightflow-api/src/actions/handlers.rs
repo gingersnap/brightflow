@@ -13,6 +13,7 @@ use brightflow_engine::enrichment::{
     centroid_fingerprint, ClusteringArtifact, LabelCentroidsArtifact, ARTIFACT_VERSION,
 };
 
+use crate::actions::events;
 use crate::actions::types::{
     Action, ActionLogEntry, ActionManifestEntry, ActionRequest, ActionResponse, ActionStatus,
     BulkApproveFailure, BulkApproveResponse, PendingCount, SuppressKind, UndoOp, ACTION_KINDS,
@@ -112,26 +113,44 @@ pub async fn dispatch_action(
     };
 
     if matches!(actor, Actor::Agent { .. }) {
+        let log_id = row.id;
+        events::emit_action(state, ActionLogEntry::from_row(row)).await;
         return Ok(ActionResponse {
-            log_id: row.id,
+            log_id,
             status: ActionStatus::Proposed,
             result: json!({ "proposed": true }),
         });
     }
 
-    execute_and_record(state, row.id, action).await
+    execute_and_record(state, row, action).await
 }
 
-/// Execute an action and persist result/undo onto its log row.
+/// Execute an action, persist result/undo onto its log row, and emit the
+/// updated entry on the curation bus.
 async fn execute_and_record(
     state: &AppState,
-    log_id: i64,
+    row: brightflow_store::ActionLogRow,
     action: Action,
 ) -> AppResult<ActionResponse> {
+    let (response, entry) = execute_and_record_quiet(state, row, action).await?;
+    events::emit_action(state, entry).await;
+    Ok(response)
+}
+
+/// `execute_and_record` without the per-row WS emit — `approve_all` runs this
+/// in a loop and emits one batch event instead. Returns the updated feed
+/// entry, built from the row in hand (no re-fetch).
+async fn execute_and_record_quiet(
+    state: &AppState,
+    mut row: brightflow_store::ActionLogRow,
+    action: Action,
+) -> AppResult<(ActionResponse, ActionLogEntry)> {
     let store = state
         .store()
         .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
     let store = std::sync::Arc::clone(store);
+    let log_id = row.id;
+    let now = now_epoch();
     match execute_action(state, &action).await {
         Ok((result, undo)) => {
             let undo_json = undo
@@ -145,32 +164,41 @@ async fn execute_and_record(
                     "applied",
                     Some(&result.to_string()),
                     undo_json.as_deref(),
-                    now_epoch(),
+                    now,
                 )
                 .await?;
-            Ok(ActionResponse {
-                log_id,
-                status: ActionStatus::Applied,
-                result,
-            })
+            row.status = "applied".to_string();
+            row.result_json = Some(result.to_string());
+            row.undo_json = undo_json;
+            row.resolved_at = Some(now);
+            Ok((
+                ActionResponse {
+                    log_id,
+                    status: ActionStatus::Applied,
+                    result,
+                },
+                ActionLogEntry::from_row(row),
+            ))
         },
         Err(e) => {
             let msg = e.to_string();
+            let result_json = json!({ "error": msg }).to_string();
             store
                 .db()
-                .update_action_result(
-                    log_id,
-                    "failed",
-                    Some(&json!({ "error": msg }).to_string()),
-                    None,
-                    now_epoch(),
-                )
+                .update_action_result(log_id, "failed", Some(&result_json), None, now)
                 .await?;
-            Ok(ActionResponse {
-                log_id,
-                status: ActionStatus::Failed,
-                result: json!({ "error": msg }),
-            })
+            row.status = "failed".to_string();
+            row.result_json = Some(result_json);
+            row.undo_json = None;
+            row.resolved_at = Some(now);
+            Ok((
+                ActionResponse {
+                    log_id,
+                    status: ActionStatus::Failed,
+                    result: json!({ "error": msg }),
+                },
+                ActionLogEntry::from_row(row),
+            ))
         },
     }
 }
@@ -202,25 +230,7 @@ pub async fn feed(
         .db()
         .list_actions(q.limit.unwrap_or(100).clamp(1, 500))
         .await?;
-    let entries = rows
-        .into_iter()
-        .map(|r| ActionLogEntry {
-            undoable: r.undo_json.is_some() && r.status == "applied",
-            id: r.id,
-            request_id: r.request_id,
-            actor_type: r.actor_type,
-            agent_run_id: r.agent_run_id,
-            action_kind: r.action_kind,
-            params: serde_json::from_str(&r.params_json).unwrap_or(serde_json::Value::Null),
-            result: r
-                .result_json
-                .as_deref()
-                .and_then(|j| serde_json::from_str(j).ok()),
-            status: r.status,
-            created_at: r.created_at,
-            resolved_at: r.resolved_at,
-        })
-        .collect();
+    let entries = rows.into_iter().map(ActionLogEntry::from_row).collect();
     Ok(Json(entries))
 }
 
@@ -280,7 +290,7 @@ pub async fn approve(
     }
     let action: Action = serde_json::from_str(&row.params_json)
         .map_err(|e| AppError::Internal(format!("stored action unreadable: {e}")))?;
-    execute_and_record(&state, id, action).await.map(Json)
+    execute_and_record(&state, row, action).await.map(Json)
 }
 
 /// Cap on how many failure details a bulk approve reports back.
@@ -318,8 +328,9 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
     let total = rows.len();
     let mut approved = 0usize;
     let mut failures: Vec<BulkApproveFailure> = Vec::new();
+    let mut entries: Vec<ActionLogEntry> = Vec::with_capacity(total);
 
-    for row in rows {
+    for mut row in rows {
         // A proposal whose stored params no longer deserialize is a failure for
         // that row alone — record it and keep going.
         let parsed: Result<Action, _> = serde_json::from_str(&row.params_json);
@@ -333,33 +344,46 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
                     format!("stored action unreadable: {e}"),
                 );
                 // Mark it failed so it stops showing as pending forever.
+                let now = now_epoch();
                 if let Err(db_err) = store
                     .db()
-                    .update_action_result(row.id, "failed", None, None, now_epoch())
+                    .update_action_result(row.id, "failed", None, None, now)
                     .await
                 {
                     tracing::warn!("could not mark action {} failed: {db_err}", row.id);
+                } else {
+                    row.status = "failed".to_string();
+                    row.resolved_at = Some(now);
+                    entries.push(ActionLogEntry::from_row(row));
                 }
                 continue;
             },
         };
-        match execute_and_record(&state, row.id, action).await {
-            Ok(response) if response.status == ActionStatus::Applied => approved += 1,
-            Ok(response) => {
-                let detail = response
-                    .result
-                    .get("error")
-                    .and_then(|e| e.as_str())
-                    .unwrap_or("action did not apply")
-                    .to_string();
-                push_failure(&mut failures, row.id, &row.action_kind, detail);
+        let (log_id, kind) = (row.id, row.action_kind.clone());
+        // Quiet per-row execution: one batch event goes out at the end
+        // instead of a WS frame per proposal.
+        match execute_and_record_quiet(&state, row, action).await {
+            Ok((response, entry)) => {
+                if response.status == ActionStatus::Applied {
+                    approved += 1;
+                } else {
+                    let detail = response
+                        .result
+                        .get("error")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("action did not apply")
+                        .to_string();
+                    push_failure(&mut failures, log_id, &kind, detail);
+                }
+                entries.push(entry);
             },
-            Err(e) => push_failure(&mut failures, row.id, &row.action_kind, e.to_string()),
+            Err(e) => push_failure(&mut failures, log_id, &kind, e.to_string()),
         }
     }
 
     let failed = total.saturating_sub(approved);
     tracing::info!("bulk approve: {approved}/{total} applied, {failed} failed");
+    events::emit_batch(&state, entries, total, approved, failed).await;
     Ok(Json(BulkApproveResponse {
         total,
         approved,
@@ -401,6 +425,10 @@ pub async fn reject(
         .db()
         .set_action_status(id, "rejected", now_epoch())
         .await?;
+    // Rare path: a re-fetch keeps the emit simple.
+    if let Ok(Some(updated)) = store.db().get_action(id).await {
+        events::emit_action(&state, ActionLogEntry::from_row(updated)).await;
+    }
     Ok(Json(ActionResponse {
         log_id: id,
         status: ActionStatus::Rejected,
@@ -441,6 +469,10 @@ pub async fn undo(
         .db()
         .set_action_status(id, "undone", now_epoch())
         .await?;
+    // Rare path: a re-fetch keeps the emit simple.
+    if let Ok(Some(updated)) = store.db().get_action(id).await {
+        events::emit_action(&state, ActionLogEntry::from_row(updated)).await;
+    }
     Ok(Json(ActionResponse {
         log_id: id,
         status: ActionStatus::Undone,
