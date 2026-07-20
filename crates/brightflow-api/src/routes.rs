@@ -140,6 +140,10 @@ fn api_routes() -> Router<AppState> {
         )
         .route("/agent/runs/{id}", get(agent_handlers::get_run))
         .route("/agent/runs/{id}/cancel", post(agent_handlers::cancel_run))
+        .route(
+            "/agent/runs/{id}/undo-all",
+            post(agent_handlers::undo_all),
+        )
         // Column semantics & table settings (source-scoped)
         .route(
             "/sources/{source_id}/tables/{name}/semantics",

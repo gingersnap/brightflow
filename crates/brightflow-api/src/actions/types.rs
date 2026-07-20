@@ -301,6 +301,22 @@ pub struct BulkApproveFailure {
     pub error: String,
 }
 
+/// Outcome of a run-level bulk undo (`POST /api/agent/runs/{id}/undo-all`).
+///
+/// Same shape philosophy as `BulkApproveResponse`: continue on per-row
+/// failure and report what happened. A partial failure leaves the run
+/// half-reverted — the failure report is the answer, not a rollback.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkUndoResponse {
+    /// Applied, undoable actions of the run when the sweep started.
+    pub total: usize,
+    pub undone: usize,
+    pub failed: usize,
+    pub failures: Vec<BulkApproveFailure>,
+}
+
 /// Number of proposals awaiting review.
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]

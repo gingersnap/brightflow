@@ -20,6 +20,9 @@ const VALID_KINDS: &[&str] = &[
     "label_documents",
 ];
 
+/// Must stay inside the `agent_runs.mode` CHECK constraint (migration 010).
+const VALID_MODES: &[&str] = &["propose", "auto_apply"];
+
 fn now_epoch() -> i64 {
     i64::try_from(
         std::time::SystemTime::now()
@@ -58,6 +61,13 @@ pub async fn start_run(
             VALID_KINDS.join(", ")
         )));
     }
+    let mode = req.mode.as_deref().unwrap_or("auto_apply");
+    if !VALID_MODES.contains(&mode) {
+        return Err(AppError::BadRequest(format!(
+            "unknown agent mode '{mode}'; valid: {}",
+            VALID_MODES.join(", ")
+        )));
+    }
     // Fail fast when no provider is configured.
     crate::llm::default_client(&state).await?;
 
@@ -73,16 +83,17 @@ pub async fn start_run(
     }
     let row = store
         .db()
-        .insert_agent_run(&req.kind, "propose", &scope, now_epoch())
+        .insert_agent_run(&req.kind, mode, &scope, now_epoch())
         .await?;
     let run_id = row.id;
+    let auto_apply = mode == "auto_apply";
 
     let task_state = state.clone();
     let kind = req.kind.clone();
     let source_id = req.source_id.clone();
     let table = req.table.clone();
     let handle = tokio::spawn(async move {
-        runner::execute_run(task_state, run_id, kind, source_id, table).await;
+        runner::execute_run(task_state, run_id, kind, source_id, table, auto_apply).await;
     });
     state.agent_runs.insert(run_id, handle.abort_handle());
 
@@ -135,6 +146,67 @@ pub async fn get_run(
         .map(|a| a.id)
         .collect();
     Ok(Json(to_response(row, actions)))
+}
+
+/// `POST /api/agent/runs/{id}/undo-all` — run-level bulk undo.
+///
+/// Reverts every applied, undoable action of a run, **newest first**:
+/// dependent inverses unwind in reverse application order (a category rename
+/// must be undone before the define that created it).
+///
+/// Continues on per-row failure and reports what could not be reverted —
+/// inverses are blind to interleaved edits (except the taxonomy-label
+/// guard), so a partial bulk undo leaves the run half-reverted by design.
+pub async fn undo_all(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<crate::actions::types::BulkUndoResponse>> {
+    use crate::actions::handlers::{push_failure, undo_action_row};
+    use crate::actions::types::ActionLogEntry;
+
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    store
+        .db()
+        .get_agent_run(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
+
+    let rows: Vec<brightflow_store::ActionLogRow> = store
+        .db()
+        .list_actions_for_agent_run(id)
+        .await?
+        .into_iter()
+        .filter(|r| r.status == "applied" && r.undo_json.is_some())
+        .collect();
+
+    let total = rows.len();
+    let mut undone = 0usize;
+    let mut failures = Vec::new();
+    let mut entries = Vec::with_capacity(total);
+
+    for mut row in rows.into_iter().rev() {
+        match undo_action_row(&state, &row).await {
+            Ok(()) => {
+                undone += 1;
+                row.status = "undone".to_string();
+                row.resolved_at = Some(now_epoch());
+                entries.push(ActionLogEntry::from_row(row));
+            },
+            Err(e) => push_failure(&mut failures, row.id, &row.action_kind, e.to_string()),
+        }
+    }
+
+    let failed = total.saturating_sub(undone);
+    tracing::info!("bulk undo (run {id}): {undone}/{total} undone, {failed} failed");
+    crate::actions::events::emit_batch(&state, entries, total, undone, failed).await;
+    Ok(Json(crate::actions::types::BulkUndoResponse {
+        total,
+        undone,
+        failed,
+        failures,
+    }))
 }
 
 /// `POST /api/agent/runs/{id}/cancel`

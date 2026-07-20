@@ -1,8 +1,10 @@
 //! Action dispatch: the single execution path for every curation operation.
 //!
 //! `POST /api/actions` is idempotent on `request_id`. Human actions apply
-//! immediately (undo available); agent actions default to propose-then-
-//! approve — the SAME `execute_action` runs on approval.
+//! immediately (undo available). Agent actions are reversibility-tiered:
+//! in auto-apply mode, undoable kinds apply immediately exactly like human
+//! actions; anything else queues as proposed — the SAME `execute_action`
+//! runs on approval.
 
 use axum::extract::{Path, Query, State};
 use axum::Json;
@@ -25,7 +27,7 @@ use crate::state::AppState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Actor {
     Human,
-    Agent { run_id: i64 },
+    Agent { run_id: i64, auto_apply: bool },
 }
 
 impl Actor {
@@ -39,8 +41,23 @@ impl Actor {
     fn agent_run_id(self) -> Option<i64> {
         match self {
             Self::Human => None,
-            Self::Agent { run_id } => Some(run_id),
+            Self::Agent { run_id, .. } => Some(run_id),
         }
+    }
+}
+
+/// Reversibility-tiered initial status.
+///
+/// Humans apply immediately (undo is the safety net). Agents in auto-apply
+/// mode get the same deal — but only for kinds whose undo genuinely exists;
+/// anything irreversible still queues for approval regardless of mode.
+fn initial_status(actor: Actor, kind_undoable: bool) -> &'static str {
+    match actor {
+        Actor::Human => "applied",
+        Actor::Agent {
+            auto_apply: true, ..
+        } if kind_undoable => "applied",
+        Actor::Agent { .. } => "proposed",
     }
 }
 
@@ -63,7 +80,7 @@ pub async fn dispatch(
 }
 
 /// Shared dispatch used by the REST endpoint (human) and the agent runner.
-/// Agent actions are recorded as `proposed` and NOT executed here.
+/// See `initial_status` for which actions execute here vs queue as proposed.
 pub async fn dispatch_action(
     state: &AppState,
     action: Action,
@@ -77,10 +94,10 @@ pub async fn dispatch_action(
     let params_json = serde_json::to_string(&action)
         .map_err(|e| AppError::Internal(format!("action serialize: {e}")))?;
 
-    let initial_status = match actor {
-        Actor::Human => "applied",
-        Actor::Agent { .. } => "proposed",
-    };
+    let status = initial_status(
+        actor,
+        crate::actions::types::kind_is_undoable(action.kind()),
+    );
     let inserted = store
         .db()
         .insert_action(
@@ -89,7 +106,7 @@ pub async fn dispatch_action(
             actor.agent_run_id(),
             action.kind(),
             &params_json,
-            initial_status,
+            status,
             now_epoch(),
         )
         .await?;
@@ -112,7 +129,7 @@ pub async fn dispatch_action(
         });
     };
 
-    if matches!(actor, Actor::Agent { .. }) {
+    if status == "proposed" {
         let log_id = row.id;
         events::emit_action(state, ActionLogEntry::from_row(row)).await;
         return Ok(ActionResponse {
@@ -122,6 +139,8 @@ pub async fn dispatch_action(
         });
     }
 
+    // Human, or auto-apply agent with an undoable kind: execute now. The
+    // undo op is captured at apply time — identical semantics either way.
     execute_and_record(state, row, action).await
 }
 
@@ -293,8 +312,8 @@ pub async fn approve(
     execute_and_record(&state, row, action).await.map(Json)
 }
 
-/// Cap on how many failure details a bulk approve reports back.
-const MAX_REPORTED_FAILURES: usize = 20;
+/// Cap on how many failure details a bulk operation reports back.
+pub(crate) const MAX_REPORTED_FAILURES: usize = 20;
 
 /// `GET /api/actions/pending-count` — proposals awaiting review.
 ///
@@ -392,7 +411,12 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
     }))
 }
 
-fn push_failure(out: &mut Vec<BulkApproveFailure>, log_id: i64, kind: &str, error: String) {
+pub(crate) fn push_failure(
+    out: &mut Vec<BulkApproveFailure>,
+    log_id: i64,
+    kind: &str,
+    error: String,
+) {
     if out.len() < MAX_REPORTED_FAILURES {
         out.push(BulkApproveFailure {
             log_id,
@@ -436,6 +460,39 @@ pub async fn reject(
     }))
 }
 
+/// Undo one applied action row: apply the stored inverse and flip the status
+/// to `undone`. Shared by the single-undo endpoint and run-level bulk undo.
+/// Does NOT emit — callers decide between per-action and batch events.
+pub(crate) async fn undo_action_row(
+    state: &AppState,
+    row: &brightflow_store::ActionLogRow,
+) -> AppResult<()> {
+    let store = state
+        .store()
+        .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
+    let store = std::sync::Arc::clone(store);
+    if row.status != "applied" {
+        return Err(AppError::BadRequest(format!(
+            "action {} is '{}', only applied actions can be undone",
+            row.id, row.status
+        )));
+    }
+    let Some(undo_json) = row.undo_json.as_deref() else {
+        return Err(AppError::BadRequest(format!(
+            "action '{}' is not undoable",
+            row.action_kind
+        )));
+    };
+    let op: UndoOp = serde_json::from_str(undo_json)
+        .map_err(|e| AppError::Internal(format!("stored undo unreadable: {e}")))?;
+    apply_undo(state, &op).await?;
+    store
+        .db()
+        .set_action_status(row.id, "undone", now_epoch())
+        .await?;
+    Ok(())
+}
+
 /// `POST /api/actions/{id}/undo`
 pub async fn undo(
     State(state): State<AppState>,
@@ -450,25 +507,7 @@ pub async fn undo(
         .get_action(id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("action {id} not found")))?;
-    if row.status != "applied" {
-        return Err(AppError::BadRequest(format!(
-            "action {id} is '{}', only applied actions can be undone",
-            row.status
-        )));
-    }
-    let Some(undo_json) = row.undo_json.as_deref() else {
-        return Err(AppError::BadRequest(format!(
-            "action '{}' is not undoable",
-            row.action_kind
-        )));
-    };
-    let op: UndoOp = serde_json::from_str(undo_json)
-        .map_err(|e| AppError::Internal(format!("stored undo unreadable: {e}")))?;
-    apply_undo(&state, &op).await?;
-    store
-        .db()
-        .set_action_status(id, "undone", now_epoch())
-        .await?;
+    undo_action_row(&state, &row).await?;
     // Rare path: a re-fetch keeps the emit simple.
     if let Ok(Some(updated)) = store.db().get_action(id).await {
         events::emit_action(&state, ActionLogEntry::from_row(updated)).await;
@@ -1405,7 +1444,55 @@ async fn refresh_label_artifact_by_table_id(state: &AppState, table_id: &str) ->
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
-    use super::average_label_centroids;
+    use super::{average_label_centroids, initial_status, Actor};
+
+    /// The reversibility tier, pinned over all four combinations.
+    #[test]
+    fn initial_status_tiers_by_actor_and_undoability() {
+        assert_eq!(initial_status(Actor::Human, true), "applied");
+        assert_eq!(initial_status(Actor::Human, false), "applied");
+        assert_eq!(
+            initial_status(
+                Actor::Agent {
+                    run_id: 1,
+                    auto_apply: true
+                },
+                true
+            ),
+            "applied"
+        );
+        // Irreversible kinds queue even in auto-apply mode.
+        assert_eq!(
+            initial_status(
+                Actor::Agent {
+                    run_id: 1,
+                    auto_apply: true
+                },
+                false
+            ),
+            "proposed"
+        );
+        assert_eq!(
+            initial_status(
+                Actor::Agent {
+                    run_id: 1,
+                    auto_apply: false
+                },
+                true
+            ),
+            "proposed"
+        );
+        assert_eq!(
+            initial_status(
+                Actor::Agent {
+                    run_id: 1,
+                    auto_apply: false
+                },
+                false
+            ),
+            "proposed"
+        );
+    }
 
     #[test]
     fn duplicate_labels_average_then_normalize() {

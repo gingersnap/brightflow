@@ -8,4 +8,10 @@ export type StartAgentRunRequest = {
  * "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
  * | "propose_taxonomy" | "label_documents"
  */
-kind: string, sourceId: string, table: string, };
+kind: string, sourceId: string, table: string, 
+/**
+ * "auto_apply" (default) | "propose". Auto-apply is the default because
+ * every action the agent runner hands out is undoable — reversibility,
+ * not pre-approval, is the safety mechanism.
+ */
+mode?: string, };

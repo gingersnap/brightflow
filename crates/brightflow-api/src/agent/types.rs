@@ -11,6 +11,12 @@ pub struct StartAgentRunRequest {
     pub kind: String,
     pub source_id: String,
     pub table: String,
+    /// "auto_apply" (default) | "propose". Auto-apply is the default because
+    /// every action the agent runner hands out is undoable — reversibility,
+    /// not pre-approval, is the safety mechanism.
+    #[serde(default)]
+    #[ts(optional)]
+    pub mode: Option<String>,
 }
 
 /// One agent run, as returned by the API.

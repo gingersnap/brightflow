@@ -105,6 +105,7 @@ export type { ActionResponse } from './ActionResponse';
 export type { ActionStatus } from './ActionStatus';
 export type { BulkApproveFailure } from './BulkApproveFailure';
 export type { BulkApproveResponse } from './BulkApproveResponse';
+export type { BulkUndoResponse } from './BulkUndoResponse';
 export type { PendingCount } from './PendingCount';
 export type { DismissReason } from './DismissReason';
 export type { SuppressKind } from './SuppressKind';

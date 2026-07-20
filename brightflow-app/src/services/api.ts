@@ -14,6 +14,7 @@ import type {
   AvailableConnectorResponse,
   BreakdownRow,
   BulkApproveResponse,
+  BulkUndoResponse,
   ClusterDetail,
   ConnectorConfigResponse,
   CurationQueue,
@@ -560,8 +561,16 @@ export const enrichFnApi = {
 
 // Agent runs: LLM curation through the same action layer
 export const agentApi = {
-  start: (kind: string, sourceId: string, table: string): Promise<AgentRunResponse | null> =>
-    api.post<AgentRunResponse>('/api/agent/runs', { kind, sourceId, table }),
+  start: (req: {
+    kind: string;
+    sourceId: string;
+    table: string;
+    /** "auto_apply" (default) or "propose". */
+    mode?: 'auto_apply' | 'propose';
+  }): Promise<AgentRunResponse | null> => api.post<AgentRunResponse>('/api/agent/runs', req),
+  /** Revert every applied, undoable action of a run, newest first. */
+  undoAll: (id: number): Promise<BulkUndoResponse | null> =>
+    api.post<BulkUndoResponse>(`/api/agent/runs/${id}/undo-all`),
   list: (limit = 50): Promise<AgentRunResponse[] | null> =>
     api.get<AgentRunResponse[]>(`/api/agent/runs?limit=${limit}`),
   get: (id: number): Promise<AgentRunResponse | null> =>

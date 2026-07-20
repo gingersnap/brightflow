@@ -6,7 +6,7 @@ use brightflow_llm::{ChatClient, ChatMessage, ToolDef};
 use serde_json::json;
 
 use crate::actions::handlers::{dispatch_action, Actor};
-use crate::actions::types::Action;
+use crate::actions::types::{Action, ActionStatus};
 use crate::agent::sampling::SampleDoc;
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -55,8 +55,9 @@ pub async fn execute_run(
     kind: String,
     source_id: String,
     table: String,
+    auto_apply: bool,
 ) {
-    let outcome = run_inner(&state, run_id, &kind, &source_id, &table).await;
+    let outcome = run_inner(&state, run_id, &kind, &source_id, &table, auto_apply).await;
     let Some(store) = state.store() else { return };
     let (status, detail) = match outcome {
         Ok(summary) => ("completed", summary),
@@ -79,13 +80,16 @@ async fn run_inner(
     kind: &str,
     source_id: &str,
     table: &str,
+    auto_apply: bool,
 ) -> AppResult<String> {
     let client = crate::llm::default_client(state).await?;
     let (system, context) = build_context(state, kind, source_id, table).await?;
     let tools = tools_for(kind);
 
     let mut messages = vec![ChatMessage::system(system), ChatMessage::user(context)];
+    let mut applied = 0usize;
     let mut proposed = 0usize;
+    let mut failed = 0usize;
     let mut total_tokens = 0u64;
     let mut narration = String::new();
     let (iteration_cap, token_cap) = (max_iterations(kind), max_total_tokens(kind));
@@ -120,16 +124,40 @@ async fn run_inner(
             ) {
                 Ok(action) => {
                     let request_id = format!("agent-{run_id}-{iteration}-{}", call.id);
-                    match dispatch_action(state, action, &request_id, Actor::Agent { run_id }).await
-                    {
-                        Ok(response) => {
-                            proposed += 1;
-                            json!({
-                                "status": "proposal_recorded",
-                                "logId": response.log_id,
-                                "note": "awaiting human approval"
-                            })
-                            .to_string()
+                    let actor = Actor::Agent { run_id, auto_apply };
+                    match dispatch_action(state, action, &request_id, actor).await {
+                        // Real execution feedback matters: a label_documents
+                        // call naming a bad category now fails immediately and
+                        // the model can correct course instead of queueing
+                        // doomed proposals.
+                        Ok(response) => match response.status {
+                            ActionStatus::Applied => {
+                                applied += 1;
+                                json!({ "status": "applied", "logId": response.log_id }).to_string()
+                            },
+                            ActionStatus::Failed => {
+                                failed += 1;
+                                let error = response
+                                    .result
+                                    .get("error")
+                                    .and_then(|e| e.as_str())
+                                    .unwrap_or("action failed");
+                                json!({
+                                    "status": "failed",
+                                    "logId": response.log_id,
+                                    "error": error
+                                })
+                                .to_string()
+                            },
+                            _ => {
+                                proposed += 1;
+                                json!({
+                                    "status": "proposal_recorded",
+                                    "logId": response.log_id,
+                                    "note": "awaiting human approval"
+                                })
+                                .to_string()
+                            },
                         },
                         Err(e) => json!({ "status": "error", "error": e.to_string() }).to_string(),
                     }
@@ -148,7 +176,26 @@ async fn run_inner(
         }
     }
 
-    let mut summary = format!("{proposed} proposals");
+    let mut parts = Vec::new();
+    if applied > 0 {
+        parts.push(format!("{applied} applied"));
+    }
+    if proposed > 0 {
+        parts.push(format!("{proposed} proposals"));
+    }
+    if failed > 0 {
+        parts.push(format!("{failed} failed"));
+    }
+    let mut summary = if parts.is_empty() {
+        // Keep the old zero-case wording for propose-mode runs.
+        if auto_apply {
+            "0 actions".to_string()
+        } else {
+            "0 proposals".to_string()
+        }
+    } else {
+        parts.join(", ")
+    };
     if !narration.is_empty() {
         summary = format!("{summary}\n{narration}");
     }
@@ -524,6 +571,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(action.scope(), ("src-1", "posts"));
+    }
+
+    /// The tier invariant behind auto-apply-by-default: every tool the runner
+    /// hands out (minus `done`) must be an undoable action kind. If a future
+    /// run kind gets an irreversible tool, auto-apply silently degrades that
+    /// tool to propose — which is safe, but should be a deliberate choice,
+    /// not an accident this test lets slip through.
+    #[test]
+    fn every_agent_tool_maps_to_an_undoable_kind() {
+        let run_kinds = [
+            "auto_label",
+            "propose_merges",
+            "narrate_insights",
+            "triage_insights",
+            "propose_taxonomy",
+            "label_documents",
+        ];
+        for run_kind in run_kinds {
+            for tool in tools_for(run_kind) {
+                if tool.name == "done" {
+                    continue;
+                }
+                assert!(
+                    crate::actions::types::kind_is_undoable(&tool.name),
+                    "agent run kind '{run_kind}' hands out irreversible tool '{}'",
+                    tool.name
+                );
+            }
+        }
     }
 
     #[test]

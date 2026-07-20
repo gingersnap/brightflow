@@ -138,6 +138,65 @@ Execute a query and return results. Use this for simple one-off queries.
 
 ---
 
+### Curation Actions
+
+One dispatch path for humans and agents. See `src/actions/types.rs` for the
+full `Action` union and `GET /api/actions/manifest` for the machine-readable
+catalog (kind, description, undoability, JSON Schema per action).
+
+```
+POST /api/actions                  { action, requestId }  — idempotent on requestId
+GET  /api/actions?limit=100        reverse-chronological audit feed
+GET  /api/actions/manifest         action catalog (also the LLM tool registry)
+GET  /api/actions/pending-count    proposals awaiting review
+POST /api/actions/approve-all      apply every pending proposal, oldest first
+POST /api/actions/:id/approve      execute one proposed action
+POST /api/actions/:id/reject
+POST /api/actions/:id/undo         apply the stored inverse (undoable actions only)
+```
+
+Human actions apply immediately. Agent actions are reversibility-tiered by
+the run's `mode` (below): auto-apply mode applies undoable kinds immediately
+(undo captured at apply time, same as human actions); anything irreversible —
+and every action in propose mode — queues as `proposed`.
+
+---
+
+### Agent Runs
+
+```
+POST /api/agent/runs               start a run (409 if one is active for the scope)
+GET  /api/agent/runs?limit=50
+GET  /api/agent/runs/:id           run + the action ids it recorded
+POST /api/agent/runs/:id/cancel
+POST /api/agent/runs/:id/undo-all  revert every applied, undoable action, newest first
+```
+
+**Start request:**
+```json
+{
+  "kind": "auto_label",
+  "sourceId": "github",
+  "table": "issues",
+  "mode": "auto_apply"
+}
+```
+`kind`: `auto_label` | `propose_merges` | `narrate_insights` | `triage_insights`
+| `propose_taxonomy` | `label_documents`.
+`mode` (optional): `auto_apply` (default) or `propose`. Every tool the runner
+hands out is undoable, so auto-apply relies on reversibility instead of
+pre-approval.
+
+**Undo-all response:**
+```json
+{ "total": 12, "undone": 11, "failed": 1, "failures": [ { "logId": 42, "actionKind": "define_taxonomy_category", "error": "..." } ] }
+```
+Undo-all continues past per-row failures (inverses are blind to interleaved
+edits); a partial result leaves the run half-reverted and the failure list is
+the record of what remains.
+
+---
+
 ## WebSocket API
 
 ### Connect
