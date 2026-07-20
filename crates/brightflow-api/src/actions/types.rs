@@ -23,6 +23,7 @@ pub enum Action {
     RenameCluster {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         cluster_id: i64,
         name: String,
     },
@@ -31,13 +32,16 @@ pub enum Action {
     MergeClusters {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         from_cluster_id: i64,
+        #[ts(type = "number")]
         into_cluster_id: i64,
     },
     /// Split an over-broad cluster by refitting with one more cluster slot.
     SplitCluster {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         cluster_id: i64,
     },
     /// Remove a term from cluster naming and top-term lists.
@@ -50,6 +54,7 @@ pub enum Action {
     MarkClusterNoise {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         cluster_id: i64,
         is_noise: bool,
     },
@@ -64,6 +69,7 @@ pub enum Action {
     AssignClusterLabel {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         cluster_id: i64,
         label: String,
     },
@@ -79,6 +85,7 @@ pub enum Action {
     RenameTaxonomyCategory {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         category_id: i64,
         name: String,
     },
@@ -86,6 +93,7 @@ pub enum Action {
     DeleteTaxonomyCategory {
         source_id: String,
         table: String,
+        #[ts(type = "number")]
         category_id: i64,
     },
     /// Set a row's intent labels, replacing whatever it had. Multi-label: a
@@ -335,6 +343,9 @@ pub struct PendingCount {
 #[serde(rename_all = "camelCase")]
 pub struct ActionManifestEntry {
     pub kind: String,
+    /// Short human-facing name (command palette, buttons).
+    pub label: String,
+    /// Long form — fed verbatim to the LLM as the tool description.
     pub description: String,
     pub undoable: bool,
     /// JSON Schema for the action's parameters
@@ -391,7 +402,7 @@ impl ActionLogEntry {
 pub fn kind_is_undoable(kind: &str) -> bool {
     ACTION_KINDS
         .iter()
-        .any(|(k, _, undoable)| *k == kind && *undoable)
+        .any(|(k, _, _, undoable)| *k == kind && *undoable)
 }
 
 /// Inverse operations stored in `undo_json`. Internal — never exposed as a
@@ -476,40 +487,53 @@ pub enum UndoOp {
     },
 }
 
-/// Static list of action kinds with undoability — the manifest registry.
-pub const ACTION_KINDS: &[(&str, &str, bool)] = &[
+/// Static list of `(kind, label, description, undoable)` — the manifest registry.
+///
+/// `label` is the short human-facing name (command palette, UI);
+/// `description` is the long form fed verbatim to the LLM as the tool
+/// description. Keep the order: `manifest_schemas` in the agent runner
+/// destructures positionally and label/description are both `&str`, so a
+/// swap compiles silently.
+pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
     (
         "rename_cluster",
+        "Rename cluster",
         "Give a topic cluster a human-curated display name",
         true,
     ),
     (
         "merge_clusters",
+        "Merge clusters",
         "Fold one cluster into another (read-time overlay)",
         true,
     ),
     (
         "split_cluster",
+        "Split cluster",
         "Split an over-broad cluster by refitting with one more cluster",
         false,
     ),
     (
         "exclude_term",
+        "Exclude term",
         "Remove a term from cluster naming and top-term lists",
         true,
     ),
     (
         "mark_cluster_noise",
+        "Mark cluster as noise",
         "Hide a cluster as noise (rows count as unassigned)",
         true,
     ),
     (
         "assign_cluster_label",
+        "Assign cluster label",
         "Attach a classification label to a cluster (display only)",
         true,
     ),
     (
         "define_taxonomy_category",
+        "Define taxonomy category",
         "Define one problem-intent category: what is WRONG for the user (e.g. \
          'authentication failure', 'data loss on sync'). Never categorize by \
          tooling, file format, or mechanism (e.g. 'backport commits', 'stack \
@@ -519,40 +543,56 @@ pub const ACTION_KINDS: &[(&str, &str, bool)] = &[
     ),
     (
         "rename_taxonomy_category",
+        "Rename taxonomy category",
         "Rename an existing intent category",
         true,
     ),
     (
         "delete_taxonomy_category",
+        "Delete taxonomy category",
         "Delete an intent category and all of its row labels",
         true,
     ),
     (
         "label_document",
+        "Label document",
         "Assign intent categories to ONE ticket, replacing its current labels. \
          Choose from the approved taxonomy only. Judge by what problem the ticket \
          describes, not by how it is formatted. Pass an empty list if no category \
          applies; pass several if several genuinely apply.",
         true,
     ),
-    ("recluster", "Refit topic clusters", false),
+    (
+        "recluster",
+        "Recluster topics",
+        "Refit topic clusters",
+        false,
+    ),
     (
         "dismiss_insight",
+        "Dismiss insight",
         "Hide an insight permanently (boring/known/wrong)",
         true,
     ),
     (
         "pin_insight",
+        "Pin insight",
         "Pin an insight to the top of future runs",
         true,
     ),
-    ("annotate_insight", "Attach a note to an insight", true),
+    (
+        "annotate_insight",
+        "Annotate insight",
+        "Attach a note to an insight",
+        true,
+    ),
     (
         "suppress_target",
+        "Suppress insight target",
         "Never surface insights about this segment or column",
         true,
     ),
-    ("set_kpi", "Flag or unflag a column as KPI", true),
+    ("set_kpi", "Set KPI", "Flag or unflag a column as KPI", true),
 ];
 
 #[cfg(test)]
@@ -592,12 +632,12 @@ mod tests {
 
         for kind in &schema_kinds {
             assert!(
-                ACTION_KINDS.iter().any(|(k, _, _)| k == kind),
+                ACTION_KINDS.iter().any(|(k, _, _, _)| k == kind),
                 "Action variant '{kind}' has no ACTION_KINDS entry — the LLM manifest \
                  and the frontend would silently not know about it"
             );
         }
-        for (kind, _, _) in ACTION_KINDS {
+        for (kind, _, _, _) in ACTION_KINDS {
             assert!(
                 schema_kinds.iter().any(|k| k == kind),
                 "ACTION_KINDS lists '{kind}' but no such Action variant exists"
@@ -609,10 +649,32 @@ mod tests {
     /// ships a nameless tool.
     #[test]
     fn manifest_descriptions_are_non_empty() {
-        for (kind, description, _) in ACTION_KINDS {
+        for (kind, _, description, _) in ACTION_KINDS {
             assert!(
                 !description.trim().is_empty(),
                 "'{kind}' needs a description — it becomes the LLM tool description"
+            );
+        }
+    }
+
+    /// Labels are the short UI names; descriptions are the long LLM prose.
+    /// A label materially shorter than its description is the tell that the
+    /// two positional `&str` fields haven't been swapped.
+    #[test]
+    fn manifest_labels_are_short_ui_names() {
+        for (kind, label, description, _) in ACTION_KINDS {
+            assert!(
+                !label.trim().is_empty(),
+                "'{kind}' needs a label — it names the palette command"
+            );
+            assert!(
+                label.len() < description.len(),
+                "'{kind}' label is not shorter than its description — \
+                 label/description swapped?"
+            );
+            assert!(
+                label.len() <= 40,
+                "'{kind}' label '{label}' is too long for a command name"
             );
         }
     }
@@ -726,7 +788,7 @@ mod tests {
         );
         for action in &samples {
             assert!(
-                ACTION_KINDS.iter().any(|(k, _, _)| *k == action.kind()),
+                ACTION_KINDS.iter().any(|(k, _, _, _)| *k == action.kind()),
                 "missing manifest entry for {}",
                 action.kind()
             );

@@ -4,7 +4,15 @@
  * One manifest entry: everything an LLM (or the UI) needs to know about an
  * available action.
  */
-export type ActionManifestEntry = { kind: string, description: string, undoable: boolean, 
+export type ActionManifestEntry = { kind: string, 
+/**
+ * Short human-facing name (command palette, buttons).
+ */
+label: string, 
+/**
+ * Long form — fed verbatim to the LLM as the tool description.
+ */
+description: string, undoable: boolean, 
 /**
  * JSON Schema for the action's parameters
  */

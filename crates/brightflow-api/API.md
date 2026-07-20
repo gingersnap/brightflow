@@ -142,7 +142,9 @@ Execute a query and return results. Use this for simple one-off queries.
 
 One dispatch path for humans and agents. See `src/actions/types.rs` for the
 full `Action` union and `GET /api/actions/manifest` for the machine-readable
-catalog (kind, description, undoability, JSON Schema per action).
+catalog — per action: `kind`, `label` (short human-facing name, used by the
+command palette), `description` (long form, fed verbatim to the LLM as the
+tool description), `undoable`, and the JSON Schema of its parameters.
 
 ```
 POST /api/actions                  { action, requestId }  — idempotent on requestId

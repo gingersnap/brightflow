@@ -4,6 +4,7 @@
 import type {
   Action,
   ActionLogEntry,
+  ActionManifestEntry,
   ActionResponse,
   AgentRunResponse,
   EnrichmentSettingsResponse,
@@ -476,6 +477,9 @@ export const insightHistoryApi = {
 export const actionsApi = {
   dispatch: (action: Action, requestId: string): Promise<ActionResponse | null> =>
     api.post<ActionResponse>('/api/actions', { action, requestId }),
+  /** Action catalog: kind, label, description, undoability, param schema. */
+  manifest: (): Promise<ActionManifestEntry[] | null> =>
+    api.get<ActionManifestEntry[]>('/api/actions/manifest'),
   feed: (limit = 100): Promise<ActionLogEntry[] | null> =>
     api.get<ActionLogEntry[]>(`/api/actions?limit=${limit}`),
   approve: (id: number): Promise<ActionResponse | null> =>

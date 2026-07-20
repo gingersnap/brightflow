@@ -277,8 +277,9 @@ pub async fn manifest() -> Json<Vec<ActionManifestEntry>> {
     Json(
         ACTION_KINDS
             .iter()
-            .map(|(kind, description, undoable)| ActionManifestEntry {
+            .map(|(kind, label, description, undoable)| ActionManifestEntry {
                 kind: (*kind).to_string(),
+                label: (*label).to_string(),
                 description: (*description).to_string(),
                 undoable: *undoable,
                 schema: schema_for_kind(kind),

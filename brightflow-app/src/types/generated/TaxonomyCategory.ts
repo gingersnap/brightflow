@@ -3,7 +3,13 @@
 /**
  * One intent category in a table's taxonomy.
  */
-export type TaxonomyCategory = { id: bigint, name: string, description?: string, 
+export type TaxonomyCategory = { 
+/**
+ * `number`, not ts-rs's default `bigint` for i64: the wire value is a
+ * plain JSON number, and a real BigInt would break JSON.stringify on
+ * the round trip (same rationale as the id fields in `Action`).
+ */
+id: number, name: string, description?: string, 
 /**
  * Rows currently carrying this category.
  */

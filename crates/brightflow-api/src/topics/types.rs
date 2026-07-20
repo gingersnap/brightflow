@@ -6,6 +6,10 @@ use ts_rs::TS;
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxonomyCategory {
+    /// `number`, not ts-rs's default `bigint` for i64: the wire value is a
+    /// plain JSON number, and a real BigInt would break JSON.stringify on
+    /// the round trip (same rationale as the id fields in `Action`).
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
     #[ts(optional)]

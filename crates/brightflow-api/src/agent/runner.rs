@@ -281,9 +281,11 @@ fn manifest_schemas() -> Vec<(String, String, serde_json::Value)> {
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
+    // Positional destructure of (kind, label, description, undoable): the
+    // LLM gets the long description, never the short UI label.
     crate::actions::types::ACTION_KINDS
         .iter()
-        .filter_map(|(kind, description, _)| {
+        .filter_map(|(kind, _label, description, _)| {
             let mut schema = variants
                 .iter()
                 .find(|v| {

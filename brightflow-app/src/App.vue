@@ -2,6 +2,7 @@
 import { onMounted } from 'vue';
 
 import LoginPage from './components/auth/LoginPage.vue';
+import CommandPalette from './components/command/CommandPalette.vue';
 import AppSidebar from './components/layout/AppSidebar.vue';
 import { resetOnLogout } from './stores';
 import { useAuthStore } from './stores/auth';
@@ -46,6 +47,8 @@ async function handleLogout(): Promise<void> {
     >
       <AppSidebar @logout="handleLogout" />
       <router-view />
+      <!-- Inside the authenticated branch so it is inert pre-auth. -->
+      <CommandPalette />
     </UDashboardGroup>
   </UApp>
 </template>
