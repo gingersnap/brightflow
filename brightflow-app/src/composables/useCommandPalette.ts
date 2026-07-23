@@ -13,8 +13,8 @@ import {
   TOPICS_KINDS,
 } from '@/components/command/paletteActions';
 import TextPromptModal from '@/components/command/TextPromptModal.vue';
+import { patchFromAction, useInsightActions } from '@/composables/useInsightActions';
 import { actionsApi, taxonomyApi, topicsApi } from '@/services/api';
-import { useCurationStore } from '@/stores/curation';
 import { useDatasetStore } from '@/stores/dataset';
 import { useInsightsStore } from '@/stores/insights';
 import { useSourceStore } from '@/stores/source';
@@ -45,9 +45,8 @@ export function useCommandPalette(
   const sourceStore = useSourceStore();
   const insightsStore = useInsightsStore();
   const datasetStore = useDatasetStore();
-  const curation = useCurationStore();
+  const insightActions = useInsightActions();
   const queryCache = useQueryCache();
-  const toast = useToast();
   const overlay = useOverlay();
 
   const promptModal = overlay.create(TextPromptModal);
@@ -124,23 +123,19 @@ export function useCommandPalette(
   }
 
   async function dispatchAction(action: Action): Promise<void> {
-    const response = await curation.dispatch(action);
-    if (response == null || response.status === 'failed') {
-      toast.add({
-        title: 'Action failed',
-        description: curation.lastError ?? 'Unknown error',
-        color: 'error',
-      });
+    const entry = (manifest.value ?? []).find((m) => m.kind === action.kind);
+    // Insight-scoped actions get the optimistic overlay patch + Undo toast;
+    // Everything else goes through the same path with feedback only.
+    const patch = patchFromAction(action);
+    const applied = await insightActions.dispatchWithFeedback(action, {
+      title: entry?.label ?? action.kind.replaceAll('_', ' '),
+      ...(patch == null ? {} : { patch }),
+    });
+    if (!applied) {
       return;
     }
-    const entry = (manifest.value ?? []).find((m) => m.kind === action.kind);
-    toast.add({
-      title: entry?.label ?? action.kind.replaceAll('_', ' '),
-      description: response.status === 'applied' ? 'Applied — undo from Activity' : 'Recorded',
-      color: 'success',
-    });
-    // Topic/taxonomy views read through pinia-colada; insights views refetch
-    // Off curation.version, which the WS event stream already bumps.
+    // Topic/taxonomy views read through pinia-colada; insights views react to
+    // The overlay + the WS event stream.
     const sourceId = action.source_id;
     const table = action.table;
     await Promise.all([

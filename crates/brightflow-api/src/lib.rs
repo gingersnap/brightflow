@@ -271,12 +271,17 @@ pub async fn serve(
         state.scheduler_db = Some(scheduler_db);
 
         // Post-sync hook: promoted llm_prompt functions run incrementally
-        // after each endpoint merge. The scheduler stays LLM-free.
+        // after each endpoint merge, then insights auto-recompute (which
+        // spawns and returns — the scheduler awaits this hook inline).
         let hook_state = state.clone();
         scheduler
             .set_post_sync_hook(Arc::new(move |source_id: String, table: String| {
                 let sync_state = hook_state.clone();
-                Box::pin(enrichment::post_sync(sync_state, source_id, table))
+                Box::pin(async move {
+                    enrichment::post_sync(sync_state.clone(), source_id.clone(), table.clone())
+                        .await;
+                    insights::auto::post_sync(sync_state, source_id, table).await;
+                })
             }))
             .await;
 

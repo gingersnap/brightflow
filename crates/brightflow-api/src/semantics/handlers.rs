@@ -10,10 +10,11 @@ use crate::semantics::types::{
 use crate::shared::{AppError, AppResult};
 use crate::state::{cache_key, AppState};
 
-use brightflow_engine::data::config::{ColumnRole, TimeGranularity};
+use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
 use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
 
 const VALID_ROLES: &[&str] = &["measure", "dimension", "time", "entity", "ignored"];
+const VALID_POLARITIES: &[&str] = &["higher_is_better", "lower_is_better", "neutral"];
 
 /// GET /api/sources/{source_id}/tables/{name}/semantics — list all overrides for a table
 pub async fn list_semantics(
@@ -32,6 +33,7 @@ pub async fn list_semantics(
             column_name: r.column_name,
             role: r.role,
             is_kpi: r.is_kpi,
+            polarity: r.polarity,
             label: r.label,
             description: r.description,
         })
@@ -53,7 +55,7 @@ pub async fn bulk_upsert_semantics(
         .store()
         .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
 
-    // Validate roles
+    // Validate roles + polarity
     for col in &req.columns {
         if !VALID_ROLES.contains(&col.role.as_str()) {
             return Err(AppError::BadRequest(format!(
@@ -61,6 +63,14 @@ pub async fn bulk_upsert_semantics(
                 col.role,
                 col.column_name,
                 VALID_ROLES.join(", ")
+            )));
+        }
+        if !VALID_POLARITIES.contains(&col.polarity.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid polarity '{}' for column '{}'. Must be one of: {}",
+                col.polarity,
+                col.column_name,
+                VALID_POLARITIES.join(", ")
             )));
         }
     }
@@ -81,6 +91,7 @@ pub async fn bulk_upsert_semantics(
             column_name: c.column_name.clone(),
             role: c.role.clone(),
             is_kpi: c.is_kpi,
+            polarity: c.polarity.clone(),
             label: c.label.clone(),
             description: c.description.clone(),
             updated_at: String::new(), // ignored by upsert
@@ -104,6 +115,7 @@ pub async fn bulk_upsert_semantics(
                 column_name: c.column_name.clone(),
                 role,
                 is_kpi: c.is_kpi,
+                polarity: Polarity::parse(&c.polarity).unwrap_or_default(),
                 label: c.label.clone(),
                 description: c.description.clone(),
             })
@@ -134,6 +146,13 @@ pub async fn upsert_column_semantic(
             VALID_ROLES.join(", ")
         )));
     }
+    if !VALID_POLARITIES.contains(&req.polarity.as_str()) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid polarity '{}'. Must be one of: {}",
+            req.polarity,
+            VALID_POLARITIES.join(", ")
+        )));
+    }
 
     let row = store
         .upsert_column_semantic(
@@ -142,6 +161,7 @@ pub async fn upsert_column_semantic(
             &col,
             &req.role,
             req.is_kpi,
+            &req.polarity,
             req.label.as_deref(),
             req.description.as_deref(),
         )
@@ -161,6 +181,7 @@ pub async fn upsert_column_semantic(
             column_name: col,
             role,
             is_kpi: req.is_kpi,
+            polarity: Polarity::parse(&req.polarity).unwrap_or_default(),
             label: req.label.clone(),
             description: req.description.clone(),
         });
@@ -171,6 +192,7 @@ pub async fn upsert_column_semantic(
         column_name: row.column_name,
         role: row.role,
         is_kpi: row.is_kpi,
+        polarity: row.polarity,
         label: row.label,
         description: row.description,
     }))

@@ -5,6 +5,7 @@ import type { NodeData } from "./NodeData";
 import type { NodeId } from "./NodeId";
 import type { ProvenanceStep } from "./ProvenanceStep";
 import type { ScoreBreakdown } from "./ScoreBreakdown";
+import type { Sentiment } from "./Sentiment";
 
 export type AnalysisNode = { id: NodeId, parentId: NodeId | null, analysis: AnalysisType, 
 /**
@@ -49,7 +50,12 @@ fingerprint: string,
 /**
  * 1-based position after diversity selection; None for non-root nodes
  */
-rank?: number, children: Array<NodeId>, 
+rank?: number, 
+/**
+ * Whether this movement is good or bad news, from measure polarity.
+ * Absent = neutral / unknown (see `analysis::polarity`).
+ */
+sentiment?: Sentiment, children: Array<NodeId>, 
 /**
  * Optional payload of underlying data needed by per-type renderers
  */

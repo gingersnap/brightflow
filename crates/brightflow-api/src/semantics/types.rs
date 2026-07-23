@@ -11,10 +11,17 @@ pub struct ColumnSemantic {
     pub role: String,
     #[serde(default)]
     pub is_kpi: bool,
+    /// One of: higher_is_better, lower_is_better, neutral
+    #[serde(default = "default_polarity")]
+    pub polarity: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+fn default_polarity() -> String {
+    "neutral".to_string()
 }
 
 /// Bulk upsert request for column semantics

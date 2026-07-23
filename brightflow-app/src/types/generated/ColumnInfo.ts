@@ -15,4 +15,8 @@ isKpi: boolean | null,
 /**
  * Display label override
  */
-label: string | null, };
+label: string | null, 
+/**
+ * Measure polarity: higher_is_better | lower_is_better | neutral
+ */
+polarity?: string, };

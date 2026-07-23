@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { sourceApi } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
+import { useInsightsActivityStore } from '@/stores/insightsActivity';
 import { useSourceStore } from '@/stores/source';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 
@@ -12,6 +13,9 @@ const router = useRouter();
 const route = useRoute();
 const sourceStore = useSourceStore();
 const authStore = useAuthStore();
+const insightsActivity = useInsightsActivityStore();
+
+insightsActivity.initRealtime();
 
 const open = ref(false);
 
@@ -26,6 +30,10 @@ useQuery({
     const result = await sourceApi.unifiedList();
     const data = result ?? ([] as UnifiedSource[]);
     sourceStore.setSourcesData(data);
+    // Badge hydration: latest insight run per table for every source.
+    for (const source of data) {
+      void insightsActivity.hydrate(source.id);
+    }
     return data;
   },
 });
@@ -50,16 +58,21 @@ const navItems = computed(() => {
       value: source.id,
       type: 'trigger' as const,
       defaultOpen: source.id === currentSourceId,
-      children: tools.map((tool) => ({
-        label: tool.label,
-        icon: tool.icon,
-        value: `${source.id}:${tool.id}`,
-        active: source.id === currentSourceId && tool.id === currentTool,
-        onSelect: () => {
-          handleSourceToolSelect(source.id, tool.id);
-          open.value = false;
-        },
-      })),
+      children: tools.map((tool) => {
+        // New-findings badge on the Insights tool (post-sync auto-runs).
+        const unseen = tool.id === 'insights' ? insightsActivity.unseenCount(source.id) : 0;
+        return {
+          label: tool.label,
+          icon: tool.icon,
+          value: `${source.id}:${tool.id}`,
+          active: source.id === currentSourceId && tool.id === currentTool,
+          badge: unseen > 0 ? unseen : undefined,
+          onSelect: () => {
+            handleSourceToolSelect(source.id, tool.id);
+            open.value = false;
+          },
+        };
+      }),
     };
   });
 

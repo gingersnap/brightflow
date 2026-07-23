@@ -8,9 +8,9 @@ use crate::error::{StoreError, StoreResult};
 use crate::models::{
     ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, ColumnStatRow, DocumentLabelRow,
     DocumentLabelWithName, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow,
-    EnrichmentRunRow, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightStateRow,
-    InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow, TableEnrichmentSettingsRow,
-    TableFileRow, TableRow, TaxonomyCategoryRow,
+    EnrichmentRunRow, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightRunRow,
+    InsightStateRow, InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow,
+    TableEnrichmentSettingsRow, TableFileRow, TableRow, TaxonomyCategoryRow,
 };
 use crate::scan::ScanFilter;
 
@@ -408,21 +408,24 @@ impl StoreDb {
         Ok(rows)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_column_semantic(
         &self,
         table_id: &str,
         column_name: &str,
         role: &str,
         is_kpi: bool,
+        polarity: &str,
         label: Option<&str>,
         description: Option<&str>,
     ) -> StoreResult<ColumnSemanticRow> {
         let row = sqlx::query_as::<_, ColumnSemanticRow>(
-            r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, label, description)
-              VALUES (?, ?, ?, ?, ?, ?)
+            r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, polarity, label, description)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT (table_id, column_name) DO UPDATE SET
                 role = excluded.role,
                 is_kpi = excluded.is_kpi,
+                polarity = excluded.polarity,
                 label = excluded.label,
                 description = excluded.description,
                 updated_at = datetime('now')
@@ -432,6 +435,7 @@ impl StoreDb {
         .bind(column_name)
         .bind(role)
         .bind(is_kpi)
+        .bind(polarity)
         .bind(label)
         .bind(description)
         .fetch_one(&self.pool)
@@ -448,11 +452,12 @@ impl StoreDb {
 
         for row in rows {
             sqlx::query(
-                r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, label, description)
-                  VALUES (?, ?, ?, ?, ?, ?)
+                r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, polarity, label, description)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)
                   ON CONFLICT (table_id, column_name) DO UPDATE SET
                     role = excluded.role,
                     is_kpi = excluded.is_kpi,
+                    polarity = excluded.polarity,
                     label = excluded.label,
                     description = excluded.description,
                     updated_at = datetime('now')",
@@ -461,6 +466,7 @@ impl StoreDb {
             .bind(&row.column_name)
             .bind(&row.role)
             .bind(row.is_kpi)
+            .bind(&row.polarity)
             .bind(&row.label)
             .bind(&row.description)
             .execute(&mut *tx)
@@ -680,6 +686,123 @@ impl StoreDb {
         }
         tx.commit().await?;
         Ok(())
+    }
+
+    // =====================================================
+    // Insight Runs (badge + run history)
+    // =====================================================
+
+    /// Cap on retained runs per table (pruned on insert).
+    const INSIGHT_RUNS_KEEP: i64 = 100;
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_insight_run(
+        &self,
+        table_id: &str,
+        source_id: &str,
+        table_name: &str,
+        report_type: &str,
+        triggered_by: &str,
+        finding_count: i64,
+        new_finding_count: i64,
+        top_summary: Option<&str>,
+        execution_time_ms: f64,
+        computed_at: i64,
+    ) -> StoreResult<InsightRunRow> {
+        let row = sqlx::query_as::<_, InsightRunRow>(
+            r"INSERT INTO insight_runs
+                (table_id, source_id, table_name, report_type, triggered_by,
+                 finding_count, new_finding_count, top_summary, execution_time_ms, computed_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              RETURNING *",
+        )
+        .bind(table_id)
+        .bind(source_id)
+        .bind(table_name)
+        .bind(report_type)
+        .bind(triggered_by)
+        .bind(finding_count)
+        .bind(new_finding_count)
+        .bind(top_summary)
+        .bind(execution_time_ms)
+        .bind(computed_at)
+        .fetch_one(&self.pool)
+        .await?;
+        sqlx::query(
+            r"DELETE FROM insight_runs WHERE table_id = ? AND id NOT IN (
+                SELECT id FROM insight_runs WHERE table_id = ?
+                ORDER BY computed_at DESC, id DESC LIMIT ?)",
+        )
+        .bind(table_id)
+        .bind(table_id)
+        .bind(Self::INSIGHT_RUNS_KEEP)
+        .execute(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
+    pub async fn list_insight_runs(
+        &self,
+        table_id: &str,
+        limit: i64,
+    ) -> StoreResult<Vec<InsightRunRow>> {
+        let rows = sqlx::query_as::<_, InsightRunRow>(
+            r"SELECT * FROM insight_runs WHERE table_id = ?
+              ORDER BY computed_at DESC, id DESC LIMIT ?",
+        )
+        .bind(table_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Latest run for a table, optionally restricted to one trigger kind.
+    pub async fn latest_insight_run(
+        &self,
+        table_id: &str,
+        triggered_by: Option<&str>,
+    ) -> StoreResult<Option<InsightRunRow>> {
+        let row = match triggered_by {
+            Some(t) => {
+                sqlx::query_as::<_, InsightRunRow>(
+                    r"SELECT * FROM insight_runs WHERE table_id = ? AND triggered_by = ?
+                      ORDER BY computed_at DESC, id DESC LIMIT 1",
+                )
+                .bind(table_id)
+                .bind(t)
+                .fetch_optional(&self.pool)
+                .await?
+            },
+            None => {
+                sqlx::query_as::<_, InsightRunRow>(
+                    r"SELECT * FROM insight_runs WHERE table_id = ?
+                      ORDER BY computed_at DESC, id DESC LIMIT 1",
+                )
+                .bind(table_id)
+                .fetch_optional(&self.pool)
+                .await?
+            },
+        };
+        Ok(row)
+    }
+
+    /// Latest run per table of a source (badge hydration).
+    pub async fn latest_insight_runs_for_source(
+        &self,
+        source_id: &str,
+    ) -> StoreResult<Vec<InsightRunRow>> {
+        let rows = sqlx::query_as::<_, InsightRunRow>(
+            r"SELECT r.* FROM insight_runs r
+              JOIN (SELECT table_id, MAX(computed_at) AS latest, MAX(id) AS latest_id
+                    FROM insight_runs WHERE source_id = ? GROUP BY table_id) m
+                ON r.table_id = m.table_id AND r.id = m.latest_id
+              ORDER BY r.computed_at DESC",
+        )
+        .bind(source_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
     }
 
     pub async fn reset_insight_history(&self, table_id: &str) -> StoreResult<u64> {

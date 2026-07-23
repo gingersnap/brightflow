@@ -4,7 +4,9 @@ import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
+import { formatCompact, formatNumber, humanizeColumn, humanizePeriodShort } from '@/utils/format';
 
+import { measureOf } from '../nodeMeta';
 import './echarts-setup';
 
 const props = defineProps<{ node: AnalysisNode }>();
@@ -26,16 +28,26 @@ const chartOption = computed(() => {
     return colors[2] ?? '#94a3b8';
   };
   return {
-    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 8 },
+    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 24 },
     series: [
       {
         data: values.map((v, i) => ({ itemStyle: { color: itemColor(i) }, value: v })),
         type: 'bar',
       },
     ],
-    tooltip: { trigger: 'axis' },
-    xAxis: { axisLabel: { fontSize: 10, rotate: 30 }, data: labels, type: 'category' },
-    yAxis: { axisLabel: { fontSize: 10 }, type: 'value' },
+    tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatNumber(v) },
+    xAxis: {
+      axisLabel: { fontSize: 10, formatter: (l: string) => humanizePeriodShort(l), rotate: 30 },
+      data: labels,
+      type: 'category',
+    },
+    yAxis: {
+      axisLabel: { fontSize: 10, formatter: (v: number) => formatCompact(v) },
+      name: data.y_label ?? humanizeColumn(measureOf(props.node)),
+      nameGap: 12,
+      nameTextStyle: { fontSize: 10 },
+      type: 'value',
+    },
   };
 });
 </script>

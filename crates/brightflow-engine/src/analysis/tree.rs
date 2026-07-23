@@ -153,6 +153,11 @@ pub struct AnalysisNode {
     /// 1-based position after diversity selection; None for non-root nodes
     #[ts(optional)]
     pub rank: Option<u32>,
+    /// Whether this movement is good or bad news, from measure polarity.
+    /// Absent = neutral / unknown (see `analysis::polarity`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub sentiment: Option<Sentiment>,
     pub children: Vec<NodeId>,
     /// Optional payload of underlying data needed by per-type renderers
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -224,24 +229,38 @@ pub enum NodeData {
         band_high: Option<Vec<f64>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         marker_index: Option<usize>,
+        /// Human y-axis label (measure name), when known
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        y_label: Option<String>,
     },
     /// Time-series with a fitted regression line overlay
     SeriesWithFit {
         labels: Vec<String>,
         values: Vec<f64>,
         fit: Vec<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        y_label: Option<String>,
     },
     /// Two periods compared, paired bars per category
     PairedBars {
         labels: Vec<String>,
         previous: Vec<f64>,
         current: Vec<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        y_label: Option<String>,
     },
     /// Ranked horizontal bars (one per segment value)
     SegmentBars {
         labels: Vec<String>,
         values: Vec<f64>,
         contributions_pct: Vec<f64>,
+        /// Human label of the plotted value (measure or "share %")
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        value_label: Option<String>,
     },
     /// Scatter plot points with optional fit line
     Scatter {
@@ -268,6 +287,9 @@ pub enum NodeData {
         labels: Vec<String>,
         series: Vec<NamedSeries>,
         marker_index: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        y_label: Option<String>,
     },
     /// Histogram pair for distribution shift
     HistogramPair {
@@ -471,6 +493,15 @@ pub enum TrendDirection {
     Decreasing,
 }
 
+/// Good/bad framing of a finding, derived from measure polarity.
+#[derive(Debug, Clone, Copy, Serialize, TS, PartialEq, Eq)]
+#[ts(export)]
+#[serde(rename_all = "lowercase")]
+pub enum Sentiment {
+    Good,
+    Bad,
+}
+
 /// Convert column name to human-readable label
 fn humanize_column(name: &str) -> String {
     name.replace('_', " ")
@@ -486,8 +517,51 @@ fn humanize_column(name: &str) -> String {
         .join(" ")
 }
 
+/// Format a measure value for prose: thousands separators and
+/// magnitude-aware precision (1,234,567 / 12.34 / 0.0042). Statistical
+/// quantities (p, r, z, R²) keep their fixed-precision formatting — this is
+/// for values users compare against their own mental numbers.
+pub(crate) fn format_value(value: f64) -> String {
+    if !value.is_finite() {
+        return format!("{value}");
+    }
+    let abs = value.abs();
+    if abs >= 1000.0 {
+        let rounded = value.round();
+        let negative = rounded < 0.0;
+        let digits = format!("{}", rounded.abs() as u64);
+        let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i).is_multiple_of(3) {
+                grouped.push(',');
+            }
+            grouped.push(c);
+        }
+        if negative {
+            format!("-{grouped}")
+        } else {
+            grouped
+        }
+    } else if abs > 0.0 && abs < 0.01 {
+        format!("{value:.4}")
+    } else if (value - value.round()).abs() < 1e-9 {
+        format!("{}", value.round() as i64)
+    } else {
+        format!("{value:.2}")
+    }
+}
+
+/// "value" / "values" — tiny, but "1 values" reads broken.
+pub(crate) fn pluralize(count: usize, singular: &str, plural: &str) -> String {
+    if count == 1 {
+        format!("{count} {singular}")
+    } else {
+        format!("{count} {plural}")
+    }
+}
+
 /// Format a period label for natural language
-fn humanize_period(period: &str) -> String {
+pub(crate) fn humanize_period(period: &str) -> String {
     // Handle formats like "2023-03", "2023-W12", "2023-Q1", "2023"
     if period.contains("-W") {
         let parts: Vec<&str> = period.split("-W").collect();
@@ -758,7 +832,11 @@ impl AnalysisType {
                 } else {
                     "unusually low"
                 };
-                format!("{col} is {direction} at {value:.2} (typically around {mean:.2})")
+                format!(
+                    "{col} is {direction} at {} (typically around {})",
+                    format_value(*value),
+                    format_value(*mean)
+                )
             },
             Self::Segment {
                 target_column,
@@ -839,7 +917,9 @@ impl AnalysisType {
                 };
                 let change_abs = change_percent.abs();
                 format!(
-                    "{col} {direction} by {change_abs:.1}% ({previous_value:.1} → {current_value:.1}) in {current} compared to {previous}"
+                    "{col} {direction} by {change_abs:.1}% ({} → {}) in {current} compared to {previous}",
+                    format_value(*previous_value),
+                    format_value(*current_value)
                 )
             },
             Self::PeriodAnomaly {
@@ -858,7 +938,11 @@ impl AnalysisType {
                     "lower"
                 };
                 let change_abs = change_percent.abs();
-                format!("{col} was {change_abs:.1}% {direction} in {p} ({period_value:.1} vs avg {other_periods_mean:.1})")
+                format!(
+                    "{col} was {change_abs:.1}% {direction} in {p} ({} vs avg {})",
+                    format_value(*period_value),
+                    format_value(*other_periods_mean)
+                )
             },
             Self::Seasonality {
                 column,
@@ -874,7 +958,7 @@ impl AnalysisType {
                 } else {
                     "weak"
                 };
-                format!("{col} shows {strength} {period_name} seasonality (r={autocorrelation:.2})")
+                format!("{col} repeats on a {period_name} cycle ({strength} pattern)")
             },
             Self::OutlierCluster {
                 period,
@@ -903,7 +987,9 @@ impl AnalysisType {
                 let p = humanize_period(period);
                 let direction = if *deviation_percent > 0.0 { "+" } else { "" };
                 format!(
-                    "{col} in {p}: Actual {actual:.1} vs Expected {expected:.1} ({direction}{deviation_percent:.0}% deviation)"
+                    "{col} in {p}: Actual {} vs Expected {} ({direction}{deviation_percent:.0}% deviation)",
+                    format_value(*actual),
+                    format_value(*expected)
                 )
             },
             Self::Concentration {
@@ -915,8 +1001,13 @@ impl AnalysisType {
             } => {
                 let c = humanize_column(column);
                 let s = humanize_column(segment_column);
+                let (values_word, verb) = if *top_n == 1 {
+                    ("value", "accounts")
+                } else {
+                    ("values", "account")
+                };
                 format!(
-                    "{c} is concentrated — top {top_n} {s} values account for {top_share:.0}% of the total"
+                    "{c} is concentrated — the top {top_n} {s} {values_word} {verb} for {top_share:.0}% of the total"
                 )
             },
             Self::DistributionShift {
@@ -940,7 +1031,9 @@ impl AnalysisType {
                 let s = humanize_column(segment_column);
                 let p = humanize_period(current_period);
                 format!(
-                    "{s} membership changed in {p}: {added_count} new, {removed_count} disappeared"
+                    "{s} membership changed in {p}: {} new, {} disappeared",
+                    pluralize(*added_count, "value", "values"),
+                    pluralize(*removed_count, "value", "values")
                 )
             },
             Self::ChangePoint {
@@ -957,7 +1050,11 @@ impl AnalysisType {
                 } else {
                     "stepped down"
                 };
-                format!("{c} {direction} at {p} ({before_mean:.1} → {after_mean:.1})")
+                format!(
+                    "{c} {direction} at {p} ({} → {})",
+                    format_value(*before_mean),
+                    format_value(*after_mean)
+                )
             },
             Self::RankChange {
                 dimension,
@@ -986,7 +1083,7 @@ impl AnalysisType {
             } => {
                 let d = humanize_column(dimension);
                 format!(
-                    "{d} \"{value}\" dominates with {:.0}% of the volume — its rank distribution predicts only {:.0}%",
+                    "{d} \"{value}\" holds {:.0}% of the volume — far above the {:.0}% its peers' drop-off suggests",
                     share * 100.0,
                     expected_share * 100.0
                 )
@@ -1043,6 +1140,7 @@ impl AnalysisTree {
             depth: 1,
             fingerprint: String::new(),
             rank: None,
+            sentiment: None,
             children: Vec::new(),
             data,
             filter_chain: Vec::new(),
@@ -1115,6 +1213,7 @@ impl AnalysisTree {
             depth: parent_depth.saturating_add(1),
             fingerprint: String::new(),
             rank: None,
+            sentiment: None,
             children: Vec::new(),
             data,
             filter_chain: parent_chain,

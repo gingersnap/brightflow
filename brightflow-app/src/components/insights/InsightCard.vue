@@ -1,32 +1,18 @@
 <script setup lang="ts">
-import {
-  AlertTriangle,
-  ArrowLeftRight,
-  BarChart3,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  GitBranch,
-  Info,
-  PieChart,
-  Sigma,
-  Split,
-  Target,
-  TrendingUp,
-  Users,
-  Waves,
-} from '@lucide/vue';
+import { ChevronDown, ChevronRight, ExternalLink, Info } from '@lucide/vue';
 import type { ContextMenuItem } from '@nuxt/ui';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useInsightActions } from '@/composables/useInsightActions';
 import { usePromptAction } from '@/composables/usePromptAction';
 import type { AnalysisNode, AnalysisTree } from '@/services/api';
-import { useCurationStore } from '@/stores/curation';
 import { useInsightsStore } from '@/stores/insights';
 import { useQueryStore } from '@/stores/query';
 import type { DismissReason } from '@/types/generated';
+import { displaySegmentValue, humanizeColumn } from '@/utils/format';
 
+import { ANALYSIS_TYPE_META, dimensionOf, directionOf, qualitativeScore } from './nodeMeta';
 import { rendererFor } from './renderers';
 
 const props = defineProps<{
@@ -39,7 +25,7 @@ const router = useRouter();
 const route = useRoute();
 const queryStore = useQueryStore();
 const insightsStore = useInsightsStore();
-const showScore = ref(false);
+const showDetails = ref(false);
 
 function openInExplore(): void {
   const sourceId = insightsStore.selectedSourceId ?? String(route.params['sourceId'] ?? '');
@@ -79,7 +65,7 @@ const hasChildren = computed(() => childNodes.value.length > 0);
 const renderer = computed(() => rendererFor(props.node.analysis.type));
 
 // ── Curation actions (dismiss / pin / annotate / suppress) ────────────────
-const curation = useCurationStore();
+const actions = useInsightActions();
 const prompt = usePromptAction();
 
 function actionScope(): { sourceId: string; table: string } | null {
@@ -96,13 +82,7 @@ async function dismiss(reason: DismissReason): Promise<void> {
   if (!scope) {
     return;
   }
-  await curation.dispatch({
-    kind: 'dismiss_insight',
-    source_id: scope.sourceId,
-    table: scope.table,
-    fingerprint: props.node.fingerprint,
-    reason,
-  });
+  await actions.dismiss(scope, props.node.fingerprint, reason);
 }
 
 async function pin(): Promise<void> {
@@ -110,13 +90,7 @@ async function pin(): Promise<void> {
   if (!scope) {
     return;
   }
-  await curation.dispatch({
-    kind: 'pin_insight',
-    source_id: scope.sourceId,
-    table: scope.table,
-    fingerprint: props.node.fingerprint,
-    pinned: true,
-  });
+  await actions.pin(scope, props.node.fingerprint);
 }
 
 async function annotate(): Promise<void> {
@@ -128,13 +102,7 @@ async function annotate(): Promise<void> {
   if (note == null) {
     return;
   }
-  await curation.dispatch({
-    kind: 'annotate_insight',
-    source_id: scope.sourceId,
-    table: scope.table,
-    fingerprint: props.node.fingerprint,
-    note,
-  });
+  await actions.annotate(scope, props.node.fingerprint, note);
 }
 
 async function suppressDimension(): Promise<void> {
@@ -142,19 +110,24 @@ async function suppressDimension(): Promise<void> {
   if (!scope) {
     return;
   }
-  const fromChain = props.node.filterChain[0]?.column;
-  const target = fromChain ?? (await prompt('Column to suppress', { placeholder: 'Column name' }));
+  const fromNode = dimensionOf(props.node);
+  const target = fromNode ?? (await prompt('Column to suppress', { placeholder: 'Column name' }));
   if (target == null) {
     return;
   }
-  await curation.dispatch({
-    kind: 'suppress_target',
-    source_id: scope.sourceId,
-    table: scope.table,
-    target_kind: 'segment',
-    target,
-  });
+  await actions.suppressSegment(scope, target);
 }
+
+const isPinned = computed(
+  () => props.node.fingerprint !== '' && insightsStore.overlay.pinned.has(props.node.fingerprint),
+);
+// Session-scoped: notes made in this session show a badge. Backend follow-up:
+// Return stored annotations with the tree so they survive reloads.
+const note = computed(() =>
+  props.node.fingerprint === ''
+    ? undefined
+    : insightsStore.overlay.notes.get(props.node.fingerprint),
+);
 
 const curationItems = computed<ContextMenuItem[][]>(() => [
   [
@@ -197,126 +170,60 @@ defineShortcuts(
   ),
 );
 
-const analysisTypeConfig = computed(() => {
-  const { type } = props.node.analysis;
-  switch (type) {
-    case 'Anomaly': {
-      return { bg: 'bg-red-500/10', color: 'text-red-500', icon: AlertTriangle, label: 'Anomaly' };
-    }
-    case 'Trend': {
-      return {
-        bg: 'bg-blue-500/10',
-        color: 'text-blue-500',
-        icon: TrendingUp,
-        label: 'Trend',
-      };
-    }
-    case 'PeriodComparison': {
-      return {
-        bg: 'bg-purple-500/10',
-        color: 'text-purple-500',
-        icon: ArrowLeftRight,
-        label: 'Period',
-      };
-    }
-    case 'PeriodAnomaly': {
-      return {
-        bg: 'bg-orange-500/10',
-        color: 'text-orange-500',
-        icon: AlertTriangle,
-        label: 'Period Anomaly',
-      };
-    }
-    case 'Seasonality': {
-      return {
-        bg: 'bg-teal-500/10',
-        color: 'text-teal-500',
-        icon: Waves,
-        label: 'Seasonality',
-      };
-    }
-    case 'Segment': {
-      return {
-        bg: 'bg-indigo-500/10',
-        color: 'text-indigo-500',
-        icon: BarChart3,
-        label: 'Segment',
-      };
-    }
-    case 'Correlation': {
-      return {
-        bg: 'bg-pink-500/10',
-        color: 'text-pink-500',
-        icon: GitBranch,
-        label: 'Correlation',
-      };
-    }
-    case 'ForecastDeviation': {
-      return {
-        bg: 'bg-amber-500/10',
-        color: 'text-amber-500',
-        icon: Target,
-        label: 'Forecast',
-      };
-    }
-    case 'OutlierCluster': {
-      return {
-        bg: 'bg-red-400/10',
-        color: 'text-red-400',
-        icon: AlertTriangle,
-        label: 'Outlier Cluster',
-      };
-    }
-    case 'Concentration': {
-      return {
-        bg: 'bg-violet-500/10',
-        color: 'text-violet-500',
-        icon: PieChart,
-        label: 'Concentration',
-      };
-    }
-    case 'DistributionShift': {
-      return {
-        bg: 'bg-cyan-500/10',
-        color: 'text-cyan-500',
-        icon: Split,
-        label: 'Distribution Shift',
-      };
-    }
-    case 'MembershipChange': {
-      return {
-        bg: 'bg-emerald-500/10',
-        color: 'text-emerald-500',
-        icon: Users,
-        label: 'Membership',
-      };
-    }
-    case 'ChangePoint': {
-      return {
-        bg: 'bg-rose-500/10',
-        color: 'text-rose-500',
-        icon: Sigma,
-        label: 'Change Point',
-      };
-    }
-    case 'RankChange': {
-      return {
-        bg: 'bg-sky-500/10',
-        color: 'text-sky-500',
-        icon: ArrowLeftRight,
-        label: 'Rank Change',
-      };
-    }
-    case 'TopDominance': {
-      return {
-        bg: 'bg-fuchsia-500/10',
-        color: 'text-fuchsia-500',
-        icon: PieChart,
-        label: 'Dominance',
-      };
-    }
+const typeMeta = computed(() => ANALYSIS_TYPE_META[props.node.analysis.type]);
+const scoreTier = computed(() => qualitativeScore(props.node.significance));
+
+// Direction arrow, colored by measure polarity when the backend tagged one:
+// Good news green, bad news red, untagged neutral.
+const direction = computed(() => directionOf(props.node));
+const SENTIMENT_META = {
+  bad: { color: 'text-error', title: 'Moving in the wrong direction for this measure' },
+  good: { color: 'text-success', title: 'Moving in the right direction for this measure' },
+} as const;
+
+const directionMeta = computed(() => {
+  const dir = direction.value;
+  if (dir == null) {
+    return null;
   }
+  const sentiment = props.node.sentiment;
+  const meta = sentiment == null ? undefined : SENTIMENT_META[sentiment];
+  return {
+    color: meta?.color ?? 'text-muted',
+    icon: dir === 'up' ? 'i-lucide-arrow-up-right' : 'i-lucide-arrow-down-right',
+    title: meta?.title ?? `Direction: ${dir}`,
+  };
 });
+
+const drillPath = computed(() =>
+  props.node.filterChain
+    .map((s) => `${humanizeColumn(s.column)} = ${displaySegmentValue(s.value)}`)
+    .join(' › '),
+);
+
+/** Human labels + explanations for the score components. */
+const scoreRows = computed(() => [
+  {
+    hint: 'How unlikely this pattern is under the “nothing happened” assumption — closer to 1 means harder to explain away as noise.',
+    label: 'Statistical strength',
+    value: props.node.scoreBreakdown.significance.toFixed(3),
+  },
+  {
+    hint: 'Share of the table’s rows this finding covers.',
+    label: 'Data affected',
+    value: props.node.scoreBreakdown.impact.toFixed(3),
+  },
+  {
+    hint: 'Fresh stories score 1.0; ones you have seen in past runs decay toward 0.',
+    label: 'Freshness',
+    value: props.node.scoreBreakdown.novelty.toFixed(2),
+  },
+  {
+    hint: 'Findings about columns you marked as KPIs get boosted.',
+    label: 'KPI weight',
+    value: `×${props.node.scoreBreakdown.kpiBoost.toFixed(2)}`,
+  },
+]);
 </script>
 
 <template>
@@ -337,12 +244,8 @@ const analysisTypeConfig = computed(() => {
         @click="hasChildren ? (expanded = !expanded) : undefined"
       >
         <!-- Type icon -->
-        <div class="flex-shrink-0 rounded-md p-1.5" :class="analysisTypeConfig.bg">
-          <component
-            :is="analysisTypeConfig.icon"
-            class="h-4 w-4"
-            :class="analysisTypeConfig.color"
-          />
+        <div class="flex-shrink-0 rounded-md p-1.5" :class="typeMeta.bg">
+          <component :is="typeMeta.icon" class="h-4 w-4" :class="typeMeta.color" />
         </div>
 
         <!-- Content -->
@@ -353,14 +256,26 @@ const analysisTypeConfig = computed(() => {
               v-if="node.rank != null && currentDepth === 0"
               class="mr-1.5 font-mono-data text-xs text-muted"
               >#{{ node.rank }}</span
-            >{{ node.summary }}
+            >
+            <UIcon
+              v-if="isPinned"
+              name="i-lucide-pin"
+              class="mr-1 inline-block size-3.5 text-primary"
+            /><UIcon
+              v-if="directionMeta"
+              :name="directionMeta.icon"
+              class="mr-1 inline-block size-3.5"
+              :class="directionMeta.color"
+              :title="directionMeta.title"
+            />{{ node.summary }}
           </p>
-          <!-- Tech summary badge -->
-          <p class="mt-1 font-mono-data text-sm text-muted">
-            {{ node.tech_summary }}
-          </p>
+          <!-- Why this matters, in plain language -->
+          <p v-if="node.why" class="mt-1 text-sm text-muted">{{ node.why }}</p>
           <!-- Provenance chips: how the underlying series was derived -->
-          <div v-if="node.provenance.length > 0" class="mt-1.5 flex flex-wrap items-center gap-1">
+          <div
+            v-if="node.provenance.length > 0 || note != null"
+            class="mt-1.5 flex flex-wrap items-center gap-1"
+          >
             <span
               v-for="(step, i) in node.provenance"
               :key="i"
@@ -369,6 +284,14 @@ const analysisTypeConfig = computed(() => {
             >
               {{ step.label }}
             </span>
+            <UTooltip v-if="note != null" :text="note">
+              <span
+                class="inline-flex items-center gap-1 rounded border border-primary-500/30 bg-primary-500/10 px-1.5 py-0.5 text-xs text-primary"
+              >
+                <UIcon name="i-lucide-message-square-text" class="size-3" />
+                Note
+              </span>
+            </UTooltip>
           </div>
         </div>
 
@@ -387,14 +310,14 @@ const analysisTypeConfig = computed(() => {
         <component :is="renderer" :node="node" />
       </div>
 
-      <!-- Footer: actions + score breakdown -->
+      <!-- Footer: actions + details toggle -->
       <div class="flex items-center gap-2 px-4 pb-3 text-xs text-muted">
         <button
           class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
-          @click.stop="showScore = !showScore"
+          @click.stop="showDetails = !showDetails"
         >
           <Info class="h-3 w-3" />
-          Why this finding?
+          Details
         </button>
         <button
           v-if="node.filterChain.length > 0"
@@ -404,7 +327,11 @@ const analysisTypeConfig = computed(() => {
           <ExternalLink class="h-3 w-3" />
           Open in Explore
         </button>
-        <span class="ml-auto font-mono-data">score {{ node.significance.toFixed(2) }}</span>
+        <UTooltip :text="`Composite score ${node.significance.toFixed(2)}`" class="ml-auto">
+          <span class="rounded-full border border-default px-2 py-0.5">
+            {{ scoreTier.label }}
+          </span>
+        </UTooltip>
         <UDropdownMenu v-if="node.fingerprint" :items="curationItems">
           <UButton
             size="xs"
@@ -418,26 +345,25 @@ const analysisTypeConfig = computed(() => {
       </div>
 
       <div
-        v-if="showScore"
-        class="mx-4 mb-3 rounded-md border border-default bg-elevated/40 p-3 font-mono-data text-xs text-muted"
+        v-if="showDetails"
+        class="mx-4 mb-3 rounded-md border border-default bg-elevated/40 p-3 text-sm text-muted"
       >
-        <p v-if="node.why" class="mb-2 font-sans text-sm text-highlighted">
-          {{ node.why }}
-        </p>
-        <div class="mb-1 grid grid-cols-4 gap-2">
-          <span>significance</span>
-          <span>impact</span>
-          <span>novelty</span>
-          <span>kpi boost</span>
+        <p class="mb-2 font-mono-data">{{ node.techSummary }}</p>
+        <div class="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+          <UTooltip v-for="row in scoreRows" :key="row.label" :text="row.hint">
+            <div>
+              <div class="text-xs tracking-wider uppercase">{{ row.label }}</div>
+              <div class="font-mono-data text-highlighted">{{ row.value }}</div>
+            </div>
+          </UTooltip>
         </div>
-        <div class="grid grid-cols-4 gap-2 text-highlighted">
-          <span>{{ node.scoreBreakdown.significance.toFixed(3) }}</span>
-          <span>{{ node.scoreBreakdown.impact.toFixed(3) }}</span>
-          <span>{{ node.scoreBreakdown.novelty.toFixed(2) }}</span>
-          <span>×{{ node.scoreBreakdown.kpiBoost.toFixed(2) }}</span>
+        <div class="mt-2 border-t border-default pt-2">
+          Composite score:
+          <span class="font-mono-data text-highlighted">{{ node.significance.toFixed(2) }}</span>
+          ({{ scoreTier.label.toLowerCase() }})
         </div>
         <div v-if="node.filterChain.length > 0" class="mt-2 border-t border-default pt-2">
-          Drill path: {{ node.filterChain.map((s) => `${s.column}=${s.value}`).join(' › ') }}
+          Drill path: {{ drillPath }}
         </div>
       </div>
 

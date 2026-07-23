@@ -7,4 +7,8 @@ export type ColumnSemantic = { columnName: string,
 /**
  * One of: measure, dimension, time, entity, ignored
  */
-role: string, isKpi: boolean, label: string | null, description: string | null, };
+role: string, isKpi: boolean, 
+/**
+ * One of: higher_is_better, lower_is_better, neutral
+ */
+polarity: string, label: string | null, description: string | null, };

@@ -74,6 +74,7 @@ impl Dataset {
                     role: None,
                     is_kpi: None,
                     label: None,
+                    polarity: None,
                 })
                 .collect(),
             DatasetData::Parquet { files } => {
@@ -88,6 +89,7 @@ impl Dataset {
                                     role: None,
                                     is_kpi: None,
                                     label: None,
+                                    polarity: None,
                                 })
                                 .collect();
                         }
@@ -115,6 +117,10 @@ pub struct ColumnInfo {
     /// Display label override
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Measure polarity: higher_is_better | lower_is_better | neutral
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub polarity: Option<String>,
 }
 
 /// Summary info for a dataset

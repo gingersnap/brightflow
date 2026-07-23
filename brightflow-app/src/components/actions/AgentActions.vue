@@ -52,9 +52,11 @@ onMounted(async () => {
       activeRun.value = run;
       return;
     }
+    // Completed runs show only the stats head here; the full prose (after
+    // The first newline) renders in the insights NarrationPanel.
     lastResult.value =
       run.status === 'completed'
-        ? (run.detail ?? 'Done — see Activity')
+        ? (run.detail?.split('\n')[0] ?? 'Done — see Activity')
         : `${run.status}: ${run.detail ?? ''}`;
     lastRun.value = run;
     activeRun.value = null;

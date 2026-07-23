@@ -25,6 +25,7 @@ pub enum CurationEvent {
     Action(ActionEventPayload),
     ActionBatch(ActionBatchPayload),
     AgentRun(AgentRunEventPayload),
+    InsightsComputed(InsightsComputedPayload),
 }
 
 /// One action-log row changed (created, applied, failed, rejected, undone).
@@ -59,6 +60,29 @@ pub struct ActionBatchPayload {
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunEventPayload {
     pub run: AgentRunResponse,
+}
+
+/// An insights run (manual or post-sync) finished — powers the sidebar badge.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightsComputedPayload {
+    #[ts(type = "number")]
+    pub run_id: i64,
+    pub source_id: String,
+    pub table: String,
+    pub report_type: String,
+    /// "manual" | "post_sync"
+    pub triggered_by: String,
+    #[ts(type = "number")]
+    pub finding_count: i64,
+    #[ts(type = "number")]
+    pub new_finding_count: i64,
+    #[ts(optional)]
+    pub top_summary: Option<String>,
+    /// Unix epoch seconds
+    #[ts(type = "number")]
+    pub computed_at: i64,
 }
 
 /// Current proposals-awaiting-review count (0 on any failure — best effort).
@@ -109,6 +133,25 @@ pub async fn emit_batch(
     state
         .curation_events
         .send(CurationEvent::ActionBatch(payload))
+        .ok();
+}
+
+/// Emit a finished insights run (badge + activity surfaces).
+pub fn emit_insights_computed(state: &AppState, row: &brightflow_store::InsightRunRow) {
+    let payload = InsightsComputedPayload {
+        run_id: row.id,
+        source_id: row.source_id.clone(),
+        table: row.table_name.clone(),
+        report_type: row.report_type.clone(),
+        triggered_by: row.triggered_by.clone(),
+        finding_count: row.finding_count,
+        new_finding_count: row.new_finding_count,
+        top_summary: row.top_summary.clone(),
+        computed_at: row.computed_at,
+    };
+    state
+        .curation_events
+        .send(CurationEvent::InsightsComputed(payload))
         .ok();
 }
 
@@ -216,6 +259,27 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"agentRun""#), "{json}");
         assert!(json.contains(r#""status":"running""#), "{json}");
+    }
+
+    /// The `insightsComputed` frame is the frontend badge contract — pin it.
+    #[test]
+    fn insights_computed_wire_format() {
+        let msg = WsServerMessage::from(CurationEvent::InsightsComputed(InsightsComputedPayload {
+            run_id: 12,
+            source_id: "s1".to_string(),
+            table: "issues".to_string(),
+            report_type: "trends".to_string(),
+            triggered_by: "post_sync".to_string(),
+            finding_count: 7,
+            new_finding_count: 2,
+            top_summary: Some("Comments spiked".to_string()),
+            computed_at: 99,
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"insightsComputed""#), "{json}");
+        assert!(json.contains(r#""newFindingCount":2"#), "{json}");
+        assert!(json.contains(r#""triggeredBy":"post_sync""#), "{json}");
+        assert!(json.contains(r#""sourceId":"s1""#), "{json}");
     }
 
     /// Oversized batches keep the NEWEST entries and set `truncated`.

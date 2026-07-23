@@ -50,6 +50,58 @@ pub struct TrendsRequest {
     pub config: EngineConfig,
 }
 
+/// Request to run a drivers analysis
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct DriversRequest {
+    pub source_id: String,
+    pub dataset_id: String,
+    #[serde(default)]
+    pub config: EngineConfig,
+}
+
+/// One recorded insights computation (manual or post-sync).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct InsightRunResponse {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub source_id: String,
+    pub table: String,
+    pub report_type: String,
+    /// "manual" | "post_sync"
+    pub triggered_by: String,
+    #[ts(type = "number")]
+    pub finding_count: i64,
+    #[ts(type = "number")]
+    pub new_finding_count: i64,
+    #[ts(optional)]
+    pub top_summary: Option<String>,
+    pub execution_time_ms: f64,
+    /// Unix epoch seconds
+    #[ts(type = "number")]
+    pub computed_at: i64,
+}
+
+impl InsightRunResponse {
+    pub fn from_row(row: brightflow_store::InsightRunRow) -> Self {
+        Self {
+            id: row.id,
+            source_id: row.source_id,
+            table: row.table_name,
+            report_type: row.report_type,
+            triggered_by: row.triggered_by,
+            finding_count: row.finding_count,
+            new_finding_count: row.new_finding_count,
+            top_summary: row.top_summary,
+            execution_time_ms: row.execution_time_ms,
+            computed_at: row.computed_at,
+        }
+    }
+}
+
 /// Response from an insights analysis
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]

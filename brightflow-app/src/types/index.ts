@@ -197,3 +197,16 @@ export interface AggregationOption {
   description: string;
   usesStar?: boolean;
 }
+
+// One shown-insight history record (novelty memory). Serialized by the store
+// Layer with serde snake_case — not a ts-rs generated type.
+export interface InsightHistoryRow {
+  table_id: string;
+  fingerprint: string;
+  identity: string;
+  insight_type: string;
+  last_value_sig: string;
+  shown_count: number;
+  first_shown_at: number;
+  last_shown_at: number;
+}

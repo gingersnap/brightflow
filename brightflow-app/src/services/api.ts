@@ -24,6 +24,7 @@ import type {
   EnrichedSyncRun,
   EventListRow,
   FunnelResult,
+  InsightRunResponse,
   InsightsResponse,
   LoadTableResponse,
   PendingCount,
@@ -257,6 +258,16 @@ export const insightsApi = {
       datasetId: params.datasetId,
       sourceId: params.sourceId,
     }),
+  runDrivers: (params: {
+    sourceId: string;
+    datasetId: string;
+    config?: EngineConfig;
+  }): Promise<InsightsResponse | null> =>
+    api.post<InsightsResponse>('/api/insights/drivers', {
+      config: params.config ?? {},
+      datasetId: params.datasetId,
+      sourceId: params.sourceId,
+    }),
 };
 
 // Auth API
@@ -296,7 +307,7 @@ export const datasetApi = {
 };
 
 // Analytics Source API
-import type { UnifiedSource } from '@/types';
+import type { InsightHistoryRow, UnifiedSource } from '@/types';
 
 export const sourceApi = {
   list: (): Promise<Source[] | null> => api.get<Source[]>('/api/sources'),
@@ -465,12 +476,29 @@ export const taxonomyApi = {
   },
 };
 
-// Insight history (novelty memory) inspection + reset
+// Insight history (novelty memory) inspection + reset.
+// The rows come from the store layer (serde snake_case), not ts-rs — the
+// Interface lives in `@/types` (imported above with UnifiedSource).
 export const insightHistoryApi = {
+  list: (sourceId: string, table: string): Promise<InsightHistoryRow[] | null> =>
+    api.get<InsightHistoryRow[]>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/insights/history`,
+    ),
   reset: (sourceId: string, table: string): Promise<{ deleted: number } | null> =>
     api.delete<{ deleted: number }>(
       `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/insights/history`,
     ),
+};
+
+// Insight runs (auto/manual computation log — badge + history panel)
+export const insightRunsApi = {
+  list: (sourceId: string, table: string, limit = 25): Promise<InsightRunResponse[] | null> =>
+    api.get<InsightRunResponse[]>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/insights/runs?limit=${limit}`,
+    ),
+  /** Latest run per table of a source — badge hydration on load/reconnect. */
+  latest: (sourceId: string): Promise<InsightRunResponse[] | null> =>
+    api.get<InsightRunResponse[]>(`/api/sources/${encodeURIComponent(sourceId)}/insights/latest`),
 };
 
 // First-class curation actions: one dispatch path for humans and agents

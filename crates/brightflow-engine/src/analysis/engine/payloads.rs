@@ -39,6 +39,7 @@ pub(super) fn build_anomaly_series(values: &[f64], mean: f64, std_dev: f64) -> N
         band_low: Some(band_low),
         band_high: Some(band_high),
         marker_index: Some(marker),
+        y_label: None,
     }
 }
 
@@ -50,6 +51,7 @@ pub(super) fn build_trend_data(values: &[f64], slope: f64) -> NodeData {
             labels,
             values: vals,
             fit: Vec::new(),
+            y_label: None,
         };
     }
     // Recompute simple linear fit on the (possibly downsampled) series
@@ -62,6 +64,7 @@ pub(super) fn build_trend_data(values: &[f64], slope: f64) -> NodeData {
         labels,
         values: vals,
         fit,
+        y_label: None,
     }
 }
 
@@ -73,6 +76,7 @@ pub(super) fn build_trend_series_data(labels: &[String], values: &[f64], slope: 
             labels: labels.to_vec(),
             values: values.to_vec(),
             fit: Vec::new(),
+            y_label: None,
         };
     }
     let mean_y: f64 = values.iter().sum::<f64>() / n as f64;
@@ -83,6 +87,7 @@ pub(super) fn build_trend_series_data(labels: &[String], values: &[f64], slope: 
         labels: labels.to_vec(),
         values: values.to_vec(),
         fit,
+        y_label: None,
     }
 }
 
@@ -101,6 +106,7 @@ pub(super) fn build_anomaly_period_series(
         band_low: Some(band_low),
         band_high: Some(band_high),
         marker_index: Some(values.len().saturating_sub(1)),
+        y_label: None,
     }
 }
 
@@ -131,9 +137,13 @@ pub(super) fn build_period_comparison_data(
         return None;
     }
     Some(NodeData::PairedBars {
-        labels: vec![previous_period.to_string(), current_period.to_string()],
+        labels: vec![
+            crate::analysis::tree::humanize_period(previous_period),
+            crate::analysis::tree::humanize_period(current_period),
+        ],
         previous: vec![previous_sum / f64::from(previous_n)],
         current: vec![current_sum / f64::from(current_n)],
+        y_label: None,
     })
 }
 
@@ -165,6 +175,7 @@ pub(super) fn build_seasonality_data(
         band_low: None,
         band_high: None,
         marker_index: None,
+        y_label: None,
     })
 }
 
@@ -239,6 +250,7 @@ pub(super) fn build_outlier_cluster_data(
         labels: common_labels,
         series: series_list,
         marker_index: marker_idx.unwrap_or(0),
+        y_label: None,
     })
 }
 

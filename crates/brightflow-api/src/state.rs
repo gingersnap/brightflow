@@ -2,7 +2,7 @@ use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
-use brightflow_engine::data::config::{ColumnRole, TimeGranularity};
+use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
 use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
 use brightflow_engine::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
@@ -42,6 +42,9 @@ pub struct AppState {
     pub agent_runs: Arc<DashMap<i64, tokio::task::AbortHandle>>,
     /// Abort handles for in-flight enrichment runs, keyed by run id.
     pub enrichment_jobs: Arc<DashMap<String, tokio::task::AbortHandle>>,
+    /// Single-flight markers for post-sync insight auto-runs, keyed by
+    /// `cache_key(source_id, table)` (see `insights::auto`).
+    pub insight_auto_inflight: Arc<DashMap<String, ()>>,
     /// Optional scheduler for background jobs
     pub scheduler: Option<Arc<Scheduler>>,
     /// Authentication database
@@ -85,6 +88,7 @@ impl AppState {
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
+            insight_auto_inflight: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -111,6 +115,7 @@ impl AppState {
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
+            insight_auto_inflight: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -273,6 +278,7 @@ impl AppState {
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
+            insight_auto_inflight: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -319,6 +325,7 @@ impl AppState {
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
+            insight_auto_inflight: Arc::new(DashMap::new()),
             scheduler: None,
 
             auth_db: None,
@@ -532,10 +539,19 @@ fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
             return None;
         },
     };
+    let polarity = Polarity::parse(&row.polarity).unwrap_or_else(|| {
+        tracing::warn!(
+            "Unknown polarity '{}' for '{}' — treating as neutral",
+            row.polarity,
+            row.column_name
+        );
+        Polarity::Neutral
+    });
     Some(ColumnOverride {
         column_name: row.column_name.clone(),
         role,
         is_kpi: row.is_kpi,
+        polarity,
         label: row.label.clone(),
         description: row.description.clone(),
     })
@@ -720,6 +736,7 @@ pub async fn seed_column_semantics(store: &ParquetStore) {
                 column_name: (*col).to_string(),
                 role: (*role).to_string(),
                 is_kpi: *is_kpi,
+                polarity: "neutral".to_string(),
                 label: None,
                 description: None,
                 updated_at: String::new(),

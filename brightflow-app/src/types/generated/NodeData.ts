@@ -5,4 +5,12 @@ import type { NamedSeries } from "./NamedSeries";
  * Renderer payload — small data slices attached so frontend can draw a chart
  * without a second round-trip. Series are downsampled to ≤200 points.
  */
-export type NodeData = { "type": "Series", labels: Array<string>, values: Array<number>, band_low: Array<number> | null, band_high: Array<number> | null, marker_index: number | null, } | { "type": "SeriesWithFit", labels: Array<string>, values: Array<number>, fit: Array<number>, } | { "type": "PairedBars", labels: Array<string>, previous: Array<number>, current: Array<number>, } | { "type": "SegmentBars", labels: Array<string>, values: Array<number>, contributions_pct: Array<number>, } | { "type": "Scatter", x: Array<number>, y: Array<number>, x_label: string, y_label: string, fit_slope: number | null, fit_intercept: number | null, } | { "type": "Forecast", labels: Array<string>, history: Array<number>, expected: number, actual: number, pi_low: number, pi_high: number, } | { "type": "Multi", labels: Array<string>, series: Array<NamedSeries>, marker_index: number, } | { "type": "HistogramPair", bin_edges: Array<number>, previous: Array<number>, current: Array<number>, } | { "type": "Lorenz", cumulative_share: Array<number>, cumulative_population: Array<number>, gini: number, } | { "type": "MembershipDiff", added: Array<string>, removed: Array<string>, };
+export type NodeData = { "type": "Series", labels: Array<string>, values: Array<number>, band_low: Array<number> | null, band_high: Array<number> | null, marker_index: number | null, 
+/**
+ * Human y-axis label (measure name), when known
+ */
+y_label?: string, } | { "type": "SeriesWithFit", labels: Array<string>, values: Array<number>, fit: Array<number>, y_label?: string, } | { "type": "PairedBars", labels: Array<string>, previous: Array<number>, current: Array<number>, y_label?: string, } | { "type": "SegmentBars", labels: Array<string>, values: Array<number>, contributions_pct: Array<number>, 
+/**
+ * Human label of the plotted value (measure or "share %")
+ */
+value_label?: string, } | { "type": "Scatter", x: Array<number>, y: Array<number>, x_label: string, y_label: string, fit_slope: number | null, fit_intercept: number | null, } | { "type": "Forecast", labels: Array<string>, history: Array<number>, expected: number, actual: number, pi_low: number, pi_high: number, } | { "type": "Multi", labels: Array<string>, series: Array<NamedSeries>, marker_index: number, y_label?: string, } | { "type": "HistogramPair", bin_edges: Array<number>, previous: Array<number>, current: Array<number>, } | { "type": "Lorenz", cumulative_share: Array<number>, cumulative_population: Array<number>, gini: number, } | { "type": "MembershipDiff", added: Array<string>, removed: Array<string>, };

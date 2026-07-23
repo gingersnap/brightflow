@@ -4,6 +4,8 @@
 //! lately), `trends` (what changes over time), `payloads` (chart data).
 
 mod cache;
+mod drivers;
+mod meta;
 mod payloads;
 mod pipeline;
 mod review;
@@ -36,6 +38,24 @@ pub struct AnalysisEngine {
     history: HashMap<String, HistoryEntry>,
     /// "Now" for novelty decay, unix epoch seconds.
     now_epoch: i64,
+}
+
+/// Return the latest two distinct period labels (previous, current) sorted by
+/// string order. Shared by the trends and drivers passes.
+fn latest_two_periods(period_labels: &[Option<String>]) -> Option<(String, String)> {
+    let mut periods: Vec<String> = period_labels
+        .iter()
+        .filter_map(Clone::clone)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    periods.sort();
+    if periods.len() < 2 {
+        return None;
+    }
+    let curr = periods.last()?.clone();
+    let prev = periods.get(periods.len() - 2)?.clone();
+    Some((prev, curr))
 }
 
 /// Score an analysis and add as child using calibrated scoring

@@ -63,9 +63,18 @@ fn api_routes() -> Router<AppState> {
         // Insights
         .route("/insights/review", post(insights_handlers::run_review))
         .route("/insights/trends", post(insights_handlers::run_trends))
+        .route("/insights/drivers", post(insights_handlers::run_drivers))
         .route(
             "/sources/{source_id}/tables/{table}/insights/history",
             get(insights_handlers::get_history).delete(insights_handlers::reset_history),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/insights/runs",
+            get(insights_handlers::get_runs),
+        )
+        .route(
+            "/sources/{source_id}/insights/latest",
+            get(insights_handlers::get_latest_runs),
         )
         .route(
             "/sources/{source_id}/tables/{table}/enrichment",

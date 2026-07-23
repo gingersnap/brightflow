@@ -241,6 +241,7 @@ fn extract_column_info(df: &DataFrame) -> Vec<ColumnInfo> {
             role: None,
             is_kpi: None,
             label: None,
+            polarity: None,
         })
         .collect()
 }

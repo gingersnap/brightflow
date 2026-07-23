@@ -21,6 +21,7 @@ use crate::actions::types::{
     BulkApproveFailure, BulkApproveResponse, PendingCount, SuppressKind, UndoOp, ACTION_KINDS,
 };
 use crate::shared::{AppError, AppResult};
+use crate::state::cache_key;
 use crate::state::AppState;
 
 /// Who performed an action. The agent runner (3C) passes `Agent`.
@@ -781,23 +782,38 @@ pub async fn execute_action(
             column,
             is_kpi,
         } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let semantics = store.db().get_column_semantics(&table_id).await?;
-            let previous = semantics.iter().find(|r| r.column_name == *column);
-            let role = previous.map_or("measure", |r| r.role.as_str()).to_string();
-            let prev_is_kpi = previous.is_some_and(|r| r.is_kpi);
-            store
-                .db()
-                .upsert_column_semantic(&table_id, column, &role, *is_kpi, None, None)
-                .await?;
+            let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
+                s.is_kpi = *is_kpi;
+            })
+            .await?;
             Ok((
                 json!({ "column": column, "isKpi": is_kpi }),
                 Some(UndoOp::RestoreKpi {
                     source_id: source_id.clone(),
                     table: table.clone(),
                     column: column.clone(),
-                    role,
-                    is_kpi: prev_is_kpi,
+                    role: previous.role,
+                    is_kpi: previous.is_kpi,
+                }),
+            ))
+        },
+        Action::SetColumnPolarity {
+            source_id,
+            table,
+            column,
+            polarity,
+        } => {
+            let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
+                s.polarity = polarity.as_str().to_string();
+            })
+            .await?;
+            Ok((
+                json!({ "column": column, "polarity": polarity.as_str() }),
+                Some(UndoOp::RestorePolarity {
+                    source_id: source_id.clone(),
+                    table: table.clone(),
+                    column: column.clone(),
+                    polarity: previous.polarity,
                 }),
             ))
         },
@@ -1096,11 +1112,23 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             role,
             is_kpi,
         } => {
-            let (kpi_store, table_id) = table_ctx(state, source_id, table).await?;
-            kpi_store
-                .db()
-                .upsert_column_semantic(&table_id, column, role, *is_kpi, None, None)
-                .await?;
+            upsert_semantic_preserving(state, source_id, table, column, |s| {
+                s.role.clone_from(role);
+                s.is_kpi = *is_kpi;
+            })
+            .await?;
+            Ok(())
+        },
+        UndoOp::RestorePolarity {
+            source_id,
+            table,
+            column,
+            polarity,
+        } => {
+            upsert_semantic_preserving(state, source_id, table, column, |s| {
+                s.polarity.clone_from(polarity);
+            })
+            .await?;
             Ok(())
         },
         UndoOp::RestoreTaxonomyCategory {
@@ -1191,6 +1219,110 @@ async fn table_ctx(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Table '{table}' not found")))?;
     Ok((store, row.id))
+}
+
+/// One column's full semantic tuple — what `upsert_semantic_preserving`
+/// snapshots and mutates.
+#[derive(Debug, Clone)]
+struct SemanticSnapshot {
+    role: String,
+    is_kpi: bool,
+    polarity: String,
+    label: Option<String>,
+    description: Option<String>,
+}
+
+impl Default for SemanticSnapshot {
+    fn default() -> Self {
+        Self {
+            role: "measure".to_string(),
+            is_kpi: false,
+            polarity: "neutral".to_string(),
+            label: None,
+            description: None,
+        }
+    }
+}
+
+/// Mutate one column's semantics while PRESERVING every field the mutation
+/// does not touch, then refresh the in-memory schema overrides + cache so the
+/// next analysis run sees the change without a restart.
+///
+/// This is the fix for the old `SetKpi` path, which wrote `label = NULL,
+/// description = NULL` and never touched `state.schema_overrides` — the KPI
+/// flag looked applied but the running engine kept the stale schema. Both
+/// `set_kpi` and `set_column_polarity` (and their undos) come through here.
+///
+/// Returns the PREVIOUS snapshot for undo capture.
+async fn upsert_semantic_preserving(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    column: &str,
+    mutate: impl FnOnce(&mut SemanticSnapshot),
+) -> AppResult<SemanticSnapshot> {
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    let semantics = store.db().get_column_semantics(&table_id).await?;
+    let previous = semantics
+        .iter()
+        .find(|r| r.column_name == column)
+        .map_or_else(SemanticSnapshot::default, |r| SemanticSnapshot {
+            role: r.role.clone(),
+            is_kpi: r.is_kpi,
+            polarity: r.polarity.clone(),
+            label: r.label.clone(),
+            description: r.description.clone(),
+        });
+    let mut next = previous.clone();
+    mutate(&mut next);
+    store
+        .db()
+        .upsert_column_semantic(
+            &table_id,
+            column,
+            &next.role,
+            next.is_kpi,
+            &next.polarity,
+            next.label.as_deref(),
+            next.description.as_deref(),
+        )
+        .await?;
+
+    // Keep the running engine honest: update the in-memory override for this
+    // column and drop the cached schema.
+    let key = cache_key(source_id, table);
+    state.invalidate_schema_cache(&key);
+    if let Some(role) = parse_role_str(&next.role) {
+        let mut overrides = state
+            .schema_overrides
+            .get(&key)
+            .map(|v| v.value().clone())
+            .unwrap_or_default();
+        overrides.retain(|o| o.column_name != column);
+        overrides.push(brightflow_engine::data::merge::ColumnOverride {
+            column_name: column.to_string(),
+            role,
+            is_kpi: next.is_kpi,
+            polarity: brightflow_engine::data::config::Polarity::parse(&next.polarity)
+                .unwrap_or_default(),
+            label: next.label.clone(),
+            description: next.description.clone(),
+        });
+        state.schema_overrides.insert(key, overrides);
+    }
+    Ok(previous)
+}
+
+fn parse_role_str(s: &str) -> Option<brightflow_engine::data::config::ColumnRole> {
+    use brightflow_engine::data::config::ColumnRole;
+    match s {
+        "measure" => Some(ColumnRole::Measure),
+        "dimension" => Some(ColumnRole::Dimension),
+        "time" => Some(ColumnRole::Time),
+        "entity" => Some(ColumnRole::Entity),
+        "ignored" => Some(ColumnRole::Ignored),
+        _ => None,
+    }
 }
 
 /// Previous insight_state (state, reason, annotation) for undo capture.

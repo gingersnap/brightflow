@@ -154,6 +154,34 @@ pub enum Action {
         column: String,
         is_kpi: bool,
     },
+    /// Declare which direction of movement in a measure is good news
+    /// (delegates to column semantics; display-only in scoring v1).
+    SetColumnPolarity {
+        source_id: String,
+        table: String,
+        column: String,
+        polarity: ColumnPolarity,
+    },
+}
+
+/// Measure polarity values (mirrors `brightflow_engine::data::config::Polarity`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
+#[ts(export)]
+#[serde(rename_all = "snake_case")]
+pub enum ColumnPolarity {
+    HigherIsBetter,
+    LowerIsBetter,
+    Neutral,
+}
+
+impl ColumnPolarity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::HigherIsBetter => "higher_is_better",
+            Self::LowerIsBetter => "lower_is_better",
+            Self::Neutral => "neutral",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
@@ -193,6 +221,7 @@ impl Action {
             Self::AnnotateInsight { .. } => "annotate_insight",
             Self::SuppressTarget { .. } => "suppress_target",
             Self::SetKpi { .. } => "set_kpi",
+            Self::SetColumnPolarity { .. } => "set_column_polarity",
         }
     }
 
@@ -245,6 +274,9 @@ impl Action {
                 source_id, table, ..
             }
             | Self::SetKpi {
+                source_id, table, ..
+            }
+            | Self::SetColumnPolarity {
                 source_id, table, ..
             } => (source_id, table),
         }
@@ -452,6 +484,13 @@ pub enum UndoOp {
         role: String,
         is_kpi: bool,
     },
+    /// Undo of set_column_polarity: restore the previous polarity string.
+    RestorePolarity {
+        source_id: String,
+        table: String,
+        column: String,
+        polarity: String,
+    },
     /// Undo of define/rename: put a category's name and description back, or
     /// delete it outright when it did not exist before the action.
     RestoreTaxonomyCategory {
@@ -593,6 +632,14 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     ("set_kpi", "Set KPI", "Flag or unflag a column as KPI", true),
+    (
+        "set_column_polarity",
+        "Set measure polarity",
+        "Declare whether rising values of a measure are good news \
+         (higher_is_better), bad news (lower_is_better), or neither (neutral). \
+         Findings about the measure are then framed as good or bad.",
+        true,
+    ),
 ];
 
 #[cfg(test)]
@@ -779,6 +826,12 @@ mod tests {
                 table: String::new(),
                 column: String::new(),
                 is_kpi: true,
+            },
+            Action::SetColumnPolarity {
+                source_id: String::new(),
+                table: String::new(),
+                column: String::new(),
+                polarity: ColumnPolarity::HigherIsBetter,
             },
         ];
         assert_eq!(

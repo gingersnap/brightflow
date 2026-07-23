@@ -3,6 +3,7 @@ import { Minus, Plus } from '@lucide/vue';
 import { computed } from 'vue';
 
 import type { AnalysisNode } from '@/services/api';
+import { displaySegmentValue } from '@/utils/format';
 
 const props = defineProps<{ node: AnalysisNode }>();
 
@@ -28,7 +29,7 @@ const MAX_DISPLAY = 8;
       </div>
       <ul class="space-y-0.5">
         <li v-for="v in data.added.slice(0, MAX_DISPLAY)" :key="v" class="font-mono-data text-sm">
-          {{ v }}
+          {{ displaySegmentValue(v) }}
         </li>
         <li v-if="data.added.length > MAX_DISPLAY" class="text-xs text-muted">
           + {{ data.added.length - MAX_DISPLAY }} more
@@ -44,7 +45,7 @@ const MAX_DISPLAY = 8;
       </div>
       <ul class="space-y-0.5">
         <li v-for="v in data.removed.slice(0, MAX_DISPLAY)" :key="v" class="font-mono-data text-sm">
-          {{ v }}
+          {{ displaySegmentValue(v) }}
         </li>
         <li v-if="data.removed.length > MAX_DISPLAY" class="text-xs text-muted">
           + {{ data.removed.length - MAX_DISPLAY }} more

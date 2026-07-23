@@ -249,6 +249,10 @@ pub struct SliceAgg {
     pub row_counts: Vec<usize>,
     /// measure column → per-period sums
     pub sums: HashMap<String, Vec<f64>>,
+    /// measure column → per-period sums of squares — with `sums` and
+    /// `row_counts` this yields mean and variance per period, which is what
+    /// Welch tests (Drivers) need without a second row pass.
+    pub sum_squares: HashMap<String, Vec<f64>>,
 }
 
 impl SliceAgg {
@@ -256,6 +260,10 @@ impl SliceAgg {
         Self {
             row_counts: vec![0; n_periods],
             sums: measures
+                .iter()
+                .map(|m| (m.clone(), vec![0.0; n_periods]))
+                .collect(),
+            sum_squares: measures
                 .iter()
                 .map(|m| (m.clone(), vec![0.0; n_periods]))
                 .collect(),
@@ -332,6 +340,9 @@ impl DimensionIndex {
                         if let Some(sums) = total.sums.get_mut(m) {
                             sums[p] += v;
                         }
+                        if let Some(sq) = total.sum_squares.get_mut(m) {
+                            sq[p] += v * v;
+                        }
                     }
                 }
             }
@@ -384,6 +395,9 @@ impl DimensionIndex {
                         if let Some(val) = vals.get(row) {
                             if let Some(sums) = agg.sums.get_mut(m) {
                                 sums[p] += val;
+                            }
+                            if let Some(sq) = agg.sum_squares.get_mut(m) {
+                                sq[p] += val * val;
                             }
                         }
                     }

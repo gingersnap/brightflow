@@ -4,7 +4,9 @@ import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
+import { formatCompact, formatNumber, humanizeColumn, humanizePeriodShort } from '@/utils/format';
 
+import { measureOf } from '../nodeMeta';
 import './echarts-setup';
 
 const props = defineProps<{ node: AnalysisNode }>();
@@ -15,8 +17,10 @@ const chartOption = computed(() => {
   if (!data || data.type !== 'Forecast') {
     return null;
   }
+  const a = props.node.analysis;
+  const forecastTick = a.type === 'ForecastDeviation' ? humanizePeriodShort(a.period) : 'forecast';
   // Append predicted point
-  const labels = [...data.labels, 'forecast'];
+  const labels = [...data.labels.map((l) => humanizePeriodShort(l)), forecastTick];
   const histPadded: (number | null)[] = [...data.history, null];
   const expectedSeries: (number | null)[] = data.history.map(() => null);
   expectedSeries.push(data.expected);
@@ -29,7 +33,7 @@ const chartOption = computed(() => {
   const piHigh: (number | null)[] = data.history.map(() => null);
   piHigh.push(data.pi_high);
   return {
-    grid: { bottom: 24, containLabel: true, left: 8, right: 8, top: 8 },
+    grid: { bottom: 24, containLabel: true, left: 8, right: 8, top: 24 },
     series: [
       {
         data: histPadded,
@@ -89,14 +93,24 @@ const chartOption = computed(() => {
         type: 'line',
       },
     ],
-    tooltip: { trigger: 'axis' },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (v: number | null) => (v == null ? '' : formatNumber(v)),
+    },
     xAxis: {
       axisLabel: { fontSize: 10 },
       boundaryGap: false,
       data: labels,
       type: 'category',
     },
-    yAxis: { axisLabel: { fontSize: 10 }, scale: true, type: 'value' },
+    yAxis: {
+      axisLabel: { fontSize: 10, formatter: (v: number) => formatCompact(v) },
+      name: humanizeColumn(measureOf(props.node)),
+      nameGap: 12,
+      nameTextStyle: { fontSize: 10 },
+      scale: true,
+      type: 'value',
+    },
   };
 });
 </script>

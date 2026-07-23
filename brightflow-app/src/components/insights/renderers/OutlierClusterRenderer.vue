@@ -4,7 +4,9 @@ import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
+import { formatCompact, formatNumber, humanizeColumn, humanizePeriodShort } from '@/utils/format';
 
+import { measureOf } from '../nodeMeta';
 import './echarts-setup';
 
 const props = defineProps<{ node: AnalysisNode }>();
@@ -24,7 +26,7 @@ const chartOption = computed(() => {
     type: 'line',
   }));
   return {
-    grid: { bottom: 36, containLabel: true, left: 8, right: 8, top: 16 },
+    grid: { bottom: 36, containLabel: true, left: 8, right: 8, top: 24 },
     legend: {
       bottom: 0,
       itemGap: 8,
@@ -33,14 +35,20 @@ const chartOption = computed(() => {
       textStyle: { fontSize: 10 },
     },
     series,
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatNumber(v) },
     xAxis: {
-      axisLabel: { fontSize: 9 },
+      axisLabel: { fontSize: 9, formatter: (l: string) => humanizePeriodShort(l) },
       boundaryGap: false,
       data: data.labels,
       type: 'category',
     },
-    yAxis: { axisLabel: { fontSize: 9 }, type: 'value' },
+    yAxis: {
+      axisLabel: { fontSize: 9, formatter: (v: number) => formatCompact(v) },
+      name: data.y_label ?? humanizeColumn(measureOf(props.node)),
+      nameGap: 12,
+      nameTextStyle: { fontSize: 10 },
+      type: 'value',
+    },
   };
 });
 </script>

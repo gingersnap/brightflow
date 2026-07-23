@@ -105,6 +105,7 @@ export const INSIGHT_KINDS: readonly string[] = [
   'annotate_insight',
   'suppress_target',
   'set_kpi',
+  'set_column_polarity',
 ];
 
 // ── Shared pickers ──────────────────────────────────────────────────────────
@@ -157,6 +158,12 @@ function insightChildren(
 function run(flow: () => Promise<void>): void {
   void flow();
 }
+
+const POLARITY_ICONS = {
+  higher_is_better: 'i-lucide-trending-up',
+  lower_is_better: 'i-lucide-trending-down',
+  neutral: 'i-lucide-minus',
+} as const;
 
 // ── The registry ────────────────────────────────────────────────────────────
 
@@ -572,6 +579,45 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
                 }),
               );
             },
+          };
+        }),
+    }),
+  },
+
+  set_column_polarity: {
+    icon: 'i-lucide-arrow-up-down',
+
+    build: (ctx) => ({
+      placeholder: 'Set polarity on which measure…',
+      children: ctx.data.columns
+        .filter((column) => column.role == null || column.role === 'measure')
+        .map((column) => {
+          const current = column.polarity ?? 'neutral';
+          const options = [
+            { label: 'Higher is better', value: 'higher_is_better' as const },
+            { label: 'Lower is better', value: 'lower_is_better' as const },
+            { label: 'Neutral', value: 'neutral' as const },
+          ];
+          return {
+            label: column.label ?? column.name,
+            suffix: current === 'neutral' ? column.dtype : current.replaceAll('_', ' '),
+            icon: 'i-lucide-arrow-up-down',
+            children: options.map((option) => ({
+              label: option.value === current ? `${option.label} (current)` : option.label,
+              icon: POLARITY_ICONS[option.value],
+              onSelect: () => {
+                ctx.helpers.close();
+                run(() =>
+                  ctx.helpers.dispatch({
+                    kind: 'set_column_polarity',
+                    source_id: ctx.sourceId,
+                    table: ctx.table,
+                    column: column.name,
+                    polarity: option.value,
+                  }),
+                );
+              },
+            })),
           };
         }),
     }),

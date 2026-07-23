@@ -3,8 +3,10 @@ import { FileSearch, Filter as FilterIcon } from '@lucide/vue';
 import { computed, ref } from 'vue';
 
 import { useInsightsStore } from '@/stores/insights';
+import { friendlyEngineError } from '@/utils/format';
 
 import InsightCard from './InsightCard.vue';
+import { ANALYSIS_TYPE_META, SCORE_TIERS } from './nodeMeta';
 
 const insightsStore = useInsightsStore();
 
@@ -30,11 +32,28 @@ function toggleType(t: string): void {
   insightsStore.filters.types = next;
 }
 
+function typeLabel(t: string): string {
+  return (ANALYSIS_TYPE_META as Record<string, { label: string }>)[t]?.label ?? t;
+}
+
 const directionOptions: { label: string; value: 'up' | 'down' | 'both' }[] = [
   { label: 'All', value: 'both' },
   { label: 'Up', value: 'up' },
   { label: 'Down', value: 'down' },
 ];
+
+// Qualitative min-score stops replace the raw slider: the store keeps the
+// Numeric threshold, the UI speaks in tiers.
+const scoreOptions: { label: string; value: number }[] = [
+  { label: 'All', value: 0 },
+  ...SCORE_TIERS.filter((t) => t.threshold > 0)
+    .toReversed()
+    .map((t) => ({ label: `${t.label}+`, value: t.threshold })),
+];
+
+const friendlyError = computed(() =>
+  insightsStore.error == null ? null : friendlyEngineError(insightsStore.error),
+);
 </script>
 
 <template>
@@ -46,14 +65,19 @@ const directionOptions: { label: string; value: 'up' | 'down' | 'both' }[] = [
           name="i-lucide-loader-circle"
           class="mb-3 inline-block size-6 animate-spin text-primary"
         />
-        <p class="text-sm text-muted">Running analysis...</p>
+        <p class="text-sm text-muted">Reading the data and looking for stories…</p>
+        <p class="mt-1 text-sm text-muted">Large tables can take a few seconds</p>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="insightsStore.error" class="p-6">
+    <div v-else-if="friendlyError" class="p-6">
       <div class="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-        <p class="text-sm text-red-500">{{ insightsStore.error }}</p>
+        <p class="text-sm text-red-500">{{ friendlyError.message }}</p>
+        <details v-if="friendlyError.detail" class="mt-2">
+          <summary class="cursor-pointer text-sm text-muted">Technical detail</summary>
+          <p class="mt-1 font-mono-data text-sm text-muted">{{ friendlyError.detail }}</p>
+        </details>
       </div>
     </div>
 
@@ -65,7 +89,21 @@ const directionOptions: { label: string; value: 'up' | 'down' | 'both' }[] = [
       </div>
     </div>
 
-    <!-- No findings -->
+    <!-- Not enough data to analyze at all -->
+    <div
+      v-else-if="allRoots.length === 0 && insightsStore.totalCandidates === 0"
+      class="flex h-64 items-center justify-center"
+    >
+      <div class="text-center">
+        <FileSearch class="mx-auto mb-3 h-10 w-10 text-muted" />
+        <p class="text-sm text-muted">Not enough data to analyze this table yet</p>
+        <p class="mt-1 text-sm text-muted">
+          Analyses need a few periods of history — sync more data and try again
+        </p>
+      </div>
+    </div>
+
+    <!-- No findings pass the filters -->
     <div
       v-else-if="allRoots.length === 0 && insightsStore.totalCandidates > 0"
       class="flex h-64 items-center justify-center"
@@ -134,7 +172,7 @@ const directionOptions: { label: string; value: 'up' | 'down' | 'both' }[] = [
             "
             @click="toggleType(t)"
           >
-            {{ t }}
+            {{ typeLabel(t) }}
           </button>
         </div>
 
@@ -172,20 +210,24 @@ const directionOptions: { label: string; value: 'up' | 'down' | 'both' }[] = [
           </select>
         </div>
 
-        <!-- Min score -->
+        <!-- Min strength (qualitative stops over the numeric threshold) -->
         <div class="flex items-center gap-2">
-          <span class="mr-2 text-xs tracking-wider text-muted uppercase">Min score</span>
-          <input
-            v-model.number="insightsStore.filters.minScore"
-            type="range"
-            min="0"
-            max="2"
-            step="0.05"
-            class="flex-1"
-          />
-          <span class="w-10 font-mono-data text-sm text-muted">
-            {{ insightsStore.filters.minScore.toFixed(2) }}
-          </span>
+          <span class="mr-2 text-xs tracking-wider text-muted uppercase">Strength</span>
+          <div class="flex items-center gap-1 rounded-md bg-default p-0.5">
+            <button
+              v-for="s in scoreOptions"
+              :key="s.value"
+              class="cursor-pointer rounded px-2.5 py-0.5 text-sm transition-colors"
+              :class="
+                insightsStore.filters.minScore === s.value
+                  ? 'bg-elevated text-highlighted'
+                  : 'text-muted hover:text-highlighted'
+              "
+              @click="insightsStore.filters.minScore = s.value"
+            >
+              {{ s.label }}
+            </button>
+          </div>
         </div>
       </div>
 

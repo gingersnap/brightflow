@@ -588,3 +588,128 @@ fn parse_date_string(s: &str) -> Option<NaiveDate> {
             None
         })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    // ── parse_date_string ─────────────────────────────────────────────────
+
+    #[test]
+    fn parses_iso_dates_and_datetimes() {
+        assert_eq!(
+            parse_date_string("2024-03-15"),
+            NaiveDate::from_ymd_opt(2024, 3, 15)
+        );
+        assert_eq!(
+            parse_date_string("2024-03-15 14:30:00"),
+            NaiveDate::from_ymd_opt(2024, 3, 15)
+        );
+        assert_eq!(
+            parse_date_string("2024-03-15T14:30:00"),
+            NaiveDate::from_ymd_opt(2024, 3, 15)
+        );
+    }
+
+    #[test]
+    fn parses_timezone_suffixes() {
+        assert_eq!(
+            parse_date_string("2024-03-15T14:30:00Z"),
+            NaiveDate::from_ymd_opt(2024, 3, 15)
+        );
+        assert_eq!(
+            parse_date_string("2024-03-15T14:30:00+05:30"),
+            NaiveDate::from_ymd_opt(2024, 3, 15)
+        );
+        assert_eq!(
+            parse_date_string("2024-03-15 14:30:00+02:00"),
+            NaiveDate::from_ymd_opt(2024, 3, 15)
+        );
+    }
+
+    /// Ambiguous slash dates parse DAY-FIRST: "%d/%m/%Y" is tried before
+    /// "%m/%d/%Y", so 03/04/2023 is April 3rd, not March 4th. Documented
+    /// behavior — US-format data with day ≤ 12 will be misread; unambiguous
+    /// values (13/04/2023, 4/13/2023) land correctly either way.
+    #[test]
+    fn slash_dates_prefer_day_first() {
+        assert_eq!(
+            parse_date_string("03/04/2023"),
+            NaiveDate::from_ymd_opt(2023, 4, 3)
+        );
+        // Day > 12 forces day-first unambiguously.
+        assert_eq!(
+            parse_date_string("13/04/2023"),
+            NaiveDate::from_ymd_opt(2023, 4, 13)
+        );
+        // Month > 12 in slot one falls through to the US fallback (M/D/YYYY).
+        assert_eq!(
+            parse_date_string("4/13/2023"),
+            NaiveDate::from_ymd_opt(2023, 4, 13)
+        );
+    }
+
+    #[test]
+    fn garbage_dates_parse_to_none() {
+        assert_eq!(parse_date_string("not a date"), None);
+        assert_eq!(parse_date_string(""), None);
+        assert_eq!(parse_date_string("99/99/9999"), None);
+    }
+
+    // ── format_period ─────────────────────────────────────────────────────
+
+    #[test]
+    fn format_period_per_granularity() {
+        let date = NaiveDate::from_ymd_opt(2023, 4, 3).unwrap();
+        assert_eq!(format_period(date, TimeGranularity::Day), "2023-04-03");
+        assert_eq!(format_period(date, TimeGranularity::Week), "2023-W14");
+        assert_eq!(format_period(date, TimeGranularity::Month), "2023-04");
+        assert_eq!(format_period(date, TimeGranularity::Quarter), "2023-Q2");
+        assert_eq!(format_period(date, TimeGranularity::Year), "2023");
+    }
+
+    /// ISO-week edge: Jan 1st 2021 belongs to ISO week 53 of 2020.
+    #[test]
+    fn format_period_iso_week_year_boundary() {
+        let date = NaiveDate::from_ymd_opt(2021, 1, 1).unwrap();
+        assert_eq!(format_period(date, TimeGranularity::Week), "2020-W53");
+    }
+
+    // ── extract_period_labels over polars Columns ─────────────────────────
+
+    #[test]
+    fn extracts_labels_from_string_column() {
+        let col = Column::new("d".into(), &["2024-01-05", "2024-02-10", "garbage"]);
+        let labels = extract_period_labels(&col, TimeGranularity::Month).unwrap();
+        assert_eq!(
+            labels,
+            vec![
+                Some("2024-01".to_string()),
+                Some("2024-02".to_string()),
+                None
+            ]
+        );
+    }
+
+    /// The seconds/milliseconds threshold sits at 4_102_444_800 (year 2100):
+    /// larger values are treated as milliseconds.
+    #[test]
+    fn extracts_labels_from_unix_timestamps_seconds_and_millis() {
+        // 2024-03-15 00:00:00 UTC in seconds and milliseconds.
+        let secs: i64 = 1_710_460_800;
+        let col_secs = Column::new("t".into(), &[secs, secs]);
+        let col_millis = Column::new("t".into(), &[secs * 1000, secs * 1000]);
+        let from_secs = extract_period_labels(&col_secs, TimeGranularity::Day).unwrap();
+        let from_millis = extract_period_labels(&col_millis, TimeGranularity::Day).unwrap();
+        assert_eq!(from_secs, from_millis);
+        assert_eq!(from_secs[0], Some("2024-03-15".to_string()));
+    }
+
+    #[test]
+    fn unsupported_dtype_yields_all_none() {
+        let col = Column::new("b".into(), &[true, false]);
+        let labels = extract_period_labels(&col, TimeGranularity::Day).unwrap();
+        assert_eq!(labels, vec![None, None]);
+    }
+}

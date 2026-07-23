@@ -4,6 +4,7 @@ import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
+import { formatCompact, formatNumber, humanizeColumn } from '@/utils/format';
 
 import './echarts-setup';
 
@@ -45,12 +46,31 @@ const chartOption = computed(() => {
       type: 'line',
     });
   }
+  const xName = humanizeColumn(data.x_label);
+  const yName = humanizeColumn(data.y_label);
   return {
-    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 8 },
+    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 24 },
     series,
-    tooltip: { trigger: 'item' },
-    xAxis: { axisLabel: { fontSize: 10 }, name: data.x_label, scale: true, type: 'value' },
-    yAxis: { axisLabel: { fontSize: 10 }, name: data.y_label, scale: true, type: 'value' },
+    tooltip: {
+      formatter: (p: { value: [number, number] }) =>
+        `${xName}: ${formatNumber(p.value[0])}<br/>${yName}: ${formatNumber(p.value[1])}`,
+      trigger: 'item',
+    },
+    xAxis: {
+      axisLabel: { fontSize: 10, formatter: (v: number) => formatCompact(v) },
+      name: xName,
+      nameTextStyle: { fontSize: 10 },
+      scale: true,
+      type: 'value',
+    },
+    yAxis: {
+      axisLabel: { fontSize: 10, formatter: (v: number) => formatCompact(v) },
+      name: yName,
+      nameGap: 12,
+      nameTextStyle: { fontSize: 10 },
+      scale: true,
+      type: 'value',
+    },
   };
 });
 </script>

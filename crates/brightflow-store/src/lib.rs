@@ -35,9 +35,9 @@ pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use models::{
     ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, DocumentLabelRow,
     DocumentLabelWithName, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow,
-    EnrichmentRunRow, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightStateRow,
-    InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow, TableEnrichmentSettingsRow,
-    TableRow, TaxonomyCategoryRow,
+    EnrichmentRunRow, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightRunRow,
+    InsightStateRow, InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow,
+    TableEnrichmentSettingsRow, TableRow, TaxonomyCategoryRow,
 };
 pub use scan::ScanFilter;
 pub use stats::extract_file_column_stats;
@@ -462,6 +462,7 @@ impl ParquetStore {
     }
 
     /// Upsert a single column semantic override by (source_id, table name).
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_column_semantic(
         &self,
         source_id: &str,
@@ -469,6 +470,7 @@ impl ParquetStore {
         column_name: &str,
         role: &str,
         is_kpi: bool,
+        polarity: &str,
         label: Option<&str>,
         description: Option<&str>,
     ) -> StoreResult<ColumnSemanticRow> {
@@ -478,7 +480,15 @@ impl ParquetStore {
             .await?
             .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
         self.db
-            .upsert_column_semantic(&table.id, column_name, role, is_kpi, label, description)
+            .upsert_column_semantic(
+                &table.id,
+                column_name,
+                role,
+                is_kpi,
+                polarity,
+                label,
+                description,
+            )
             .await
     }
 

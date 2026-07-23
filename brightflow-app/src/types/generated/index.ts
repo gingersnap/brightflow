@@ -43,6 +43,10 @@ export type { SyncRun } from './SyncRun';
 export type { SyncState } from './SyncState';
 export type { TableInfo } from './TableInfo';
 export type { TrendsRequest } from './TrendsRequest';
+export type { DriversRequest } from './DriversRequest';
+export type { InsightRunResponse } from './InsightRunResponse';
+export type { Sentiment } from './Sentiment';
+export type { ColumnPolarity } from './ColumnPolarity';
 export type { TriggerRunResponse } from './TriggerRunResponse';
 export type { UnifiedConnector } from './UnifiedConnector';
 export type { UnifiedJob } from './UnifiedJob';
@@ -122,4 +126,5 @@ export type { StartAgentRunRequest } from './StartAgentRunRequest';
 // Curation event stream (WS push)
 export type { ActionBatchPayload } from './ActionBatchPayload';
 export type { ActionEventPayload } from './ActionEventPayload';
+export type { InsightsComputedPayload } from './InsightsComputedPayload';
 export type { AgentRunEventPayload } from './AgentRunEventPayload';

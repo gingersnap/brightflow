@@ -214,6 +214,7 @@ impl AnalysisEngine {
             labels: labels.to_vec(),
             values: values.to_vec(),
             fit,
+            y_label: None,
         });
         self.add_frame_root(
             tree,
@@ -343,6 +344,7 @@ impl AnalysisEngine {
             band_low: None,
             band_high: None,
             marker_index: Some(n - 1),
+            y_label: Some("Rank among peers".to_string()),
         });
         self.add_frame_root(
             tree,
@@ -356,7 +358,7 @@ impl AnalysisEngine {
         );
     }
 
-    fn detect_dominance(
+    pub(super) fn detect_dominance(
         &self,
         index: &DimensionIndex,
         dimension: &str,
@@ -422,6 +424,7 @@ impl AnalysisEngine {
             labels: shares.iter().map(|(v, _)| v.clone()).collect(),
             values: shares.iter().map(|(_, s)| s * 100.0).collect(),
             contributions_pct: shares.iter().map(|(_, s)| s * 100.0).collect(),
+            value_label: Some(format!("Share of {} (%)", measure.name())),
         });
         self.add_frame_root(
             tree,

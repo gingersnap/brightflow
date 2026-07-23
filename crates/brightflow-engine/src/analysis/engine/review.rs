@@ -17,11 +17,14 @@ use crate::data::schema::DataSchema;
 use crate::debug::DebugLog;
 
 use super::cache::ColumnCache;
+use super::meta::{measure_ref, set_legacy_meta};
 use super::payloads::{
     build_anomaly_period_series, build_anomaly_series, build_period_comparison_data,
     build_scatter_data,
 };
+use super::pipeline::granularity_name;
 use super::{add_child_scored, AnalysisEngine, AnalysisTask};
+use crate::analysis::candidates::Aggregation;
 
 impl AnalysisEngine {
     /// Review report with cadence awareness
@@ -169,6 +172,19 @@ impl AnalysisEngine {
                 }
                 let score = scoring::total(&breakdown);
                 let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
+                set_legacy_meta(
+                    &mut tree,
+                    node_id,
+                    "period_comparison",
+                    measure_ref(col),
+                    Aggregation::Mean,
+                    None,
+                    granularity_name(granularity),
+                    format!(
+                        "covers the whole table; two identical periods would differ this much only {:.1}% of the time",
+                        (p_value * 100.0).min(100.0)
+                    ),
+                );
 
                 // Attribute to segments
                 for seg_col in &schema.dimension_columns {
@@ -258,6 +274,23 @@ impl AnalysisEngine {
             }
             let score = scoring::total(&breakdown);
             let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
+            set_legacy_meta(
+                &mut tree,
+                node_id,
+                "history_anomaly",
+                measure_ref(col),
+                if col == "rows" {
+                    Aggregation::Count
+                } else {
+                    Aggregation::Mean
+                },
+                None,
+                granularity_name(granularity),
+                format!(
+                    "covers the whole table; a typical period sits within 2 standard deviations of history — this one is {:.1} away",
+                    anomaly.z_score.abs()
+                ),
+            );
             if col != "rows" {
                 for seg_col in &schema.dimension_columns {
                     queue.push_back(AnalysisTask::AttributePeriodSegment {
@@ -430,6 +463,19 @@ impl AnalysisEngine {
                                 breakdown,
                                 description,
                                 series_data,
+                            );
+                            set_legacy_meta(
+                                &mut tree,
+                                node_id,
+                                "raw_anomaly",
+                                measure_ref(&column),
+                                Aggregation::Mean,
+                                None,
+                                "row",
+                                format!(
+                                    "covers the whole table; typical values sit within 2 standard deviations of the mean — the latest is {:.1} away",
+                                    anomaly.z_score.abs()
+                                ),
                             );
 
                             // Spawn attribution tasks

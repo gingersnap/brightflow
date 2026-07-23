@@ -54,13 +54,39 @@ pub async fn load_table(
         .get_dataset(&id)
         .ok_or_else(|| AppError::Internal("Failed to retrieve loaded dataset".into()))?;
 
+    // Merge in the semantic overrides so the palette and settings UIs can show
+    // current role/KPI/polarity state without a second fetch.
+    let mut columns = dataset.columns();
+    let key = crate::state::cache_key(&source_id, &name);
+    if let Some(overrides) = state.schema_overrides.get(&key) {
+        for col in &mut columns {
+            if let Some(ovr) = overrides.iter().find(|o| o.column_name == col.name) {
+                col.role = Some(role_str(&ovr.role).to_string());
+                col.is_kpi = Some(ovr.is_kpi);
+                col.label.clone_from(&ovr.label);
+                col.polarity = Some(ovr.polarity.as_str().to_string());
+            }
+        }
+    }
+
     Ok(Json(LoadTableResponse {
         id,
         name: dataset.name.clone(),
         row_count: dataset.row_count(),
         column_count: dataset.column_count(),
-        columns: dataset.columns(),
+        columns,
     }))
+}
+
+fn role_str(role: &brightflow_engine::data::config::ColumnRole) -> &'static str {
+    use brightflow_engine::data::config::ColumnRole;
+    match role {
+        ColumnRole::Measure => "measure",
+        ColumnRole::Dimension => "dimension",
+        ColumnRole::Time => "time",
+        ColumnRole::Entity => "entity",
+        ColumnRole::Ignored => "ignored",
+    }
 }
 
 /// Get metadata for a specific dataset
@@ -341,6 +367,7 @@ fn column_infos(df: &DataFrame) -> Vec<session::ColumnInfo> {
             role: None,
             is_kpi: None,
             label: None,
+            polarity: None,
         })
         .collect()
 }

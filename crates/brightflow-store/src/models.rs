@@ -64,6 +64,8 @@ pub struct ColumnSemanticRow {
     pub column_name: String,
     pub role: String,
     pub is_kpi: bool,
+    /// 'higher_is_better' | 'lower_is_better' | 'neutral'
+    pub polarity: String,
     pub label: Option<String>,
     pub description: Option<String>,
     pub updated_at: String,
@@ -131,6 +133,25 @@ pub struct InsightSuppressionRow {
     pub kind: String,
     pub target: String,
     pub created_at: i64,
+}
+
+/// One insights computation (manual or post-sync) — badge + history input.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct InsightRunRow {
+    pub id: i64,
+    pub table_id: String,
+    pub source_id: String,
+    pub table_name: String,
+    pub report_type: String,
+    /// 'manual' | 'post_sync'
+    pub triggered_by: String,
+    pub finding_count: i64,
+    /// Roots whose fingerprints had never been shown before this run
+    pub new_finding_count: i64,
+    pub top_summary: Option<String>,
+    pub execution_time_ms: f64,
+    /// Unix epoch seconds
+    pub computed_at: i64,
 }
 
 /// One entry in the first-class action log.

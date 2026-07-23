@@ -4,15 +4,21 @@ import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
+import { formatCompact, formatNumber } from '@/utils/format';
 
 import './echarts-setup';
 
 const props = defineProps<{ node: AnalysisNode }>();
 const colors = useChartColors();
 
-const gini = computed(() => {
+const hhi = computed(() => {
   const a = props.node.analysis;
   return a.type === 'Concentration' ? a.hhi : null;
+});
+
+const gini = computed(() => {
+  const data = props.node.data;
+  return data?.type === 'Lorenz' ? data.gini : null;
 });
 
 const chartOption = computed(() => {
@@ -49,21 +55,23 @@ const chartOption = computed(() => {
     ],
     tooltip: {
       formatter: (p: { value: [number, number] }) =>
-        `Bottom ${p.value[0].toFixed(0)}% has ${p.value[1].toFixed(0)}% of total`,
+        `Bottom ${formatNumber(p.value[0])}% has ${formatNumber(p.value[1])}% of total`,
       trigger: 'item',
     },
     xAxis: {
-      axisLabel: { fontSize: 10, formatter: '{value}%' },
+      axisLabel: { fontSize: 10, formatter: (v: number) => `${formatCompact(v)}%` },
       max: 100,
       name: 'Population',
       nameGap: 18,
       nameLocation: 'middle',
+      nameTextStyle: { fontSize: 10 },
       type: 'value',
     },
     yAxis: {
-      axisLabel: { fontSize: 10, formatter: '{value}%' },
+      axisLabel: { fontSize: 10, formatter: (v: number) => `${formatCompact(v)}%` },
       max: 100,
       name: 'Share',
+      nameTextStyle: { fontSize: 10 },
       type: 'value',
     },
   };
@@ -76,11 +84,19 @@ const chartOption = computed(() => {
     <div v-else class="flex h-full items-center justify-center text-sm text-muted">
       No concentration data available
     </div>
-    <div
-      v-if="gini !== null"
-      class="absolute top-2 right-2 rounded bg-elevated/80 px-1.5 py-0.5 font-mono-data text-xs text-muted"
-    >
-      HHI = {{ gini.toFixed(2) }}
+    <div class="absolute top-2 right-2 flex gap-1">
+      <div
+        v-if="hhi !== null"
+        class="rounded bg-elevated/80 px-1.5 py-0.5 font-mono-data text-xs text-muted"
+      >
+        HHI = {{ hhi.toFixed(2) }}
+      </div>
+      <div
+        v-if="gini !== null"
+        class="rounded bg-elevated/80 px-1.5 py-0.5 font-mono-data text-xs text-muted"
+      >
+        Gini = {{ gini.toFixed(2) }}
+      </div>
     </div>
   </div>
 </template>

@@ -4,7 +4,9 @@ import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
+import { formatCompact, formatNumber, humanizeColumn, humanizePeriod } from '@/utils/format';
 
+import { measureOf } from '../nodeMeta';
 import './echarts-setup';
 
 const props = defineProps<{ node: AnalysisNode }>();
@@ -16,7 +18,7 @@ const chartOption = computed(() => {
     return null;
   }
   return {
-    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 8 },
+    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 24 },
     series: [
       {
         data: [data.previous[0] ?? 0, data.current[0] ?? 0],
@@ -24,13 +26,19 @@ const chartOption = computed(() => {
         type: 'bar',
       },
     ],
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatNumber(v) },
     xAxis: {
       axisLabel: { fontSize: 10 },
-      data: data.labels,
+      data: data.labels.map((l) => humanizePeriod(l)),
       type: 'category',
     },
-    yAxis: { axisLabel: { fontSize: 10 }, type: 'value' },
+    yAxis: {
+      axisLabel: { fontSize: 10, formatter: (v: number) => formatCompact(v) },
+      name: data.y_label ?? humanizeColumn(measureOf(props.node)),
+      nameGap: 12,
+      nameTextStyle: { fontSize: 10 },
+      type: 'value',
+    },
   };
 });
 </script>

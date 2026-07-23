@@ -165,6 +165,9 @@ pub enum WsServerMessage {
 
     /// The client missed events (lagged subscriber) — refetch feed and count
     ActionResync,
+
+    /// An insights run (manual or post-sync) finished
+    InsightsComputed(crate::actions::events::InsightsComputedPayload),
 }
 
 impl From<crate::actions::events::CurationEvent> for WsServerMessage {
@@ -174,6 +177,7 @@ impl From<crate::actions::events::CurationEvent> for WsServerMessage {
             CurationEvent::Action(p) => Self::ActionEvent(p),
             CurationEvent::ActionBatch(p) => Self::ActionBatch(p),
             CurationEvent::AgentRun(p) => Self::AgentRun(p),
+            CurationEvent::InsightsComputed(p) => Self::InsightsComputed(p),
         }
     }
 }

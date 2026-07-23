@@ -3,6 +3,16 @@ use polars::prelude::*;
 
 use crate::stats::significance::{mean, p_value_welch_t_test, std_dev};
 
+/// Empty segment values (nulls cast to "") would otherwise render as a bare
+/// `= ""` in summaries; name the bucket instead.
+fn display_segment_value(raw: &str) -> String {
+    if raw.is_empty() {
+        "(blank)".to_string()
+    } else {
+        raw.to_string()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SegmentResult {
     pub target_column: String,
@@ -96,7 +106,7 @@ pub fn attribute_segment(
             best_segment = Some(SegmentResult {
                 target_column: target_col.to_string(),
                 segment_column: segment_col.to_string(),
-                segment_value: seg_value.clone(),
+                segment_value: display_segment_value(seg_value),
                 contribution,
                 change_percent,
                 contribution_pct: 0.0, // Not applicable for non-period attribution
@@ -218,7 +228,7 @@ pub fn attribute_period_segments_cached(
         results.push(SegmentResult {
             target_column: target_col.to_string(),
             segment_column: segment_col.to_string(),
-            segment_value: seg_value.clone(),
+            segment_value: display_segment_value(seg_value),
             contribution,
             change_percent,
             contribution_pct,

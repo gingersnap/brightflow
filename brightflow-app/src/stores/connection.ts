@@ -80,6 +80,7 @@ export const useConnectionStore = defineStore('connection', () => {
       case 'actionEvent':
       case 'actionBatch':
       case 'agentRun':
+      case 'insightsComputed':
       case 'actionResync': {
         // Route to registered handlers
         const handlers = messageHandlers.get(type) ?? [];

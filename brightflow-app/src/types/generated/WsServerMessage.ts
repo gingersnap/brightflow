@@ -2,9 +2,10 @@
 import type { ActionBatchPayload } from "./ActionBatchPayload";
 import type { ActionEventPayload } from "./ActionEventPayload";
 import type { AgentRunEventPayload } from "./AgentRunEventPayload";
+import type { InsightsComputedPayload } from "./InsightsComputedPayload";
 import type { QueryResponse } from "./QueryResponse";
 
 /**
  * WebSocket message to client
  */
-export type WsServerMessage = { "type": "queryResult" } & QueryResponse | { "type": "error", code: string, message: string, } | { "type": "pong" } | { "type": "connected", serverVersion: string, } | { "type": "actionEvent" } & ActionEventPayload | { "type": "actionBatch" } & ActionBatchPayload | { "type": "agentRun" } & AgentRunEventPayload | { "type": "actionResync" };
+export type WsServerMessage = { "type": "queryResult" } & QueryResponse | { "type": "error", code: string, message: string, } | { "type": "pong" } | { "type": "connected", serverVersion: string, } | { "type": "actionEvent" } & ActionEventPayload | { "type": "actionBatch" } & ActionBatchPayload | { "type": "agentRun" } & AgentRunEventPayload | { "type": "actionResync" } | { "type": "insightsComputed" } & InsightsComputedPayload;
