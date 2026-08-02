@@ -1,3 +1,14 @@
+/**
+ * Query-builder state for the Explore tool.
+ *
+ * Holds one section of state per builder panel (filter, select, groupBy,
+ * pivot, sort, limit) and derives two views of it: `operations`, the wire
+ * format the backend executes, and `previewTexts`, the collapsed-panel
+ * summaries. The two differ deliberately — `operations` honours each section's
+ * `enabled` flag, while `previewTexts` reflects raw state so a collapsed or
+ * disabled panel still shows what it holds.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

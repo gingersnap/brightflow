@@ -16,6 +16,7 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 - `crates/brightflow-connect` - Data connectors
 - `crates/brightflow-store` - SQLite-backed Parquet storage (Litehouse)
 - `crates/brightflow-engine` - Analysis engine, NLP primitives, enrichment orchestration
+- `crates/brightflow-llm` - Provider-agnostic LLM client (OpenAI chat-completions dialect)
 - `crates/brightflow-scheduler` - Background job runner for connector syncs
 - `crates/brightflow-api` - HTTP API server (Axum + Polars) with integrated event ingestion
 - `brightflow-app/` - Vue 3 frontend (see its CLAUDE.md for detailed style rules and conventions)
@@ -68,6 +69,11 @@ repo-wide expectations:
   globals are not injected.
 - Use `environment: 'node'` for pure utilities; switch to a DOM env
   (`happy-dom`/`jsdom`) only when a component test lands.
+- Tests are **unit only** — no Playwright or other E2E/browser runner, and no
+  new test-runner dependency. A Pinia store is tested in isolation by calling
+  `setActivePinia(createPinia())` in a `beforeEach` and reading its computeds
+  (`brightflow-app/src/stores/query.test.ts` is the canonical example), never
+  by mounting the app.
 
 ### Carve-outs (no unit test required)
 

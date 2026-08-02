@@ -46,6 +46,9 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run check:fi
   (`import { describe, test, expect } from 'vitest'`); globals are not injected.
 - **Environment:** `node` for pure utilities; switch to a DOM env only when a
   component test lands.
+- **Unit only:** no Playwright or other E2E/browser runner. Pinia stores are
+  tested in isolation via `setActivePinia(createPinia())` (see
+  `src/stores/query.test.ts`), not by mounting the app.
 
 ## Architecture
 

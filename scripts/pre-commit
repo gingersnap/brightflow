@@ -112,6 +112,15 @@ if [ -d "$ROOT_DIR/brightflow-app" ]; then
             # Stage any auto-fixed formatting (auto-imports.d.ts, components.d.ts, etc.)
             git add "$ROOT_DIR/brightflow-app"/*.d.ts 2>/dev/null || true
         fi
+
+        # --run forces non-watch mode: the hook must never block on a watcher.
+        echo -e "${BLUE}[Frontend]${NC} Running unit tests..."
+        if ! npx vp test --run 2>/dev/null; then
+            echo -e "${RED}✗ Frontend tests failed${NC}"
+            FAILED=1
+        else
+            echo -e "${GREEN}✓ Frontend tests${NC}"
+        fi
     fi
 fi
 

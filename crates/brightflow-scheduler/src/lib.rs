@@ -426,21 +426,113 @@ fn substitute_env_vars_in_json(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
-fn substitute_env_vars_str(s: &str) -> String {
-    let mut result = s.to_string();
-    while let Some(start) = result.find("${") {
-        if let Some(end) = result[start..].find('}') {
-            let var_name = &result[start + 2..start + end];
-            let replacement = std::env::var(var_name).unwrap_or_default();
-            result = format!(
-                "{}{}{}",
-                &result[..start],
-                replacement,
-                &result[start + end + 1..]
-            );
-        } else {
+/// Expand `${VAR}` occurrences in `s` using `lookup`, scanning left to right.
+///
+/// The cursor only moves forward, so substituted values are never re-scanned.
+/// That is deliberate on two counts: env content is data, not template source,
+/// and a self-referential variable (`FOO=${FOO}`) terminates instead of
+/// growing the string forever — a rescan-from-zero loop hangs the scheduler
+/// mid-sync with nobody watching.
+///
+/// Unresolved variables expand to the empty string; a `${` with no closing
+/// brace is passed through untouched.
+fn substitute_with(s: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut cursor = 0;
+
+    while let Some(rel_start) = s[cursor..].find("${") {
+        let start = cursor + rel_start;
+        let Some(rel_end) = s[start..].find('}') else {
             break;
-        }
+        };
+        let end = start + rel_end;
+
+        out.push_str(&s[cursor..start]);
+        out.push_str(&lookup(&s[start + 2..end]).unwrap_or_default());
+        cursor = end + 1;
     }
-    result
+
+    out.push_str(&s[cursor..]);
+    out
+}
+
+/// Expand `${ENV_VAR}` patterns in a string against the process environment.
+fn substitute_env_vars_str(s: &str) -> String {
+    substitute_with(s, |key| std::env::var(key).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lookup over a fixed table, so tests never touch the process env.
+    fn table(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|&(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |key| owned.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn string_without_placeholder_is_unchanged() {
+        assert_eq!(substitute_with("plain text", table(&[])), "plain text");
+    }
+
+    #[test]
+    fn single_placeholder_is_replaced() {
+        let out = substitute_with("Bearer ${TOKEN}", table(&[("TOKEN", "abc")]));
+        assert_eq!(out, "Bearer abc");
+    }
+
+    #[test]
+    fn adjacent_placeholders_both_resolve() {
+        // Pins the offset arithmetic: the second `${` must be found relative to
+        // the input, not the partially built output.
+        let out = substitute_with("${A}${B}", table(&[("A", "1"), ("B", "2")]));
+        assert_eq!(out, "12");
+    }
+
+    #[test]
+    fn missing_variable_expands_to_empty_string() {
+        assert_eq!(substitute_with("x=${NOPE};", table(&[])), "x=;");
+    }
+
+    #[test]
+    fn unterminated_placeholder_passes_through() {
+        assert_eq!(substitute_with("${nope", table(&[])), "${nope");
+    }
+
+    #[test]
+    fn self_referential_value_terminates_and_stays_literal() {
+        // Regression: rescanning from position 0 re-expanded substituted values,
+        // so this input looped forever.
+        let out = substitute_with("${FOO}", table(&[("FOO", "${FOO}")]));
+        assert_eq!(out, "${FOO}");
+    }
+
+    #[test]
+    fn json_substitution_only_touches_string_leaves() {
+        // Uses a name no environment plausibly sets, so the walk is asserted
+        // against the deterministic "unresolved" branch without mutating the
+        // process env (which would race with the parallel test harness).
+        let input = serde_json::json!({
+            "token": "${BRIGHTFLOW_TEST_UNSET_VAR}",
+            "port": 8080,
+            "enabled": true,
+            "missing": null,
+            "nested": {
+                "headers": ["${BRIGHTFLOW_TEST_UNSET_VAR}", "static"],
+            },
+        });
+
+        let out = substitute_env_vars_in_json(input);
+
+        assert_eq!(out["token"], serde_json::json!(""));
+        assert_eq!(out["port"], serde_json::json!(8080));
+        assert_eq!(out["enabled"], serde_json::json!(true));
+        assert_eq!(out["missing"], serde_json::Value::Null);
+        assert_eq!(out["nested"]["headers"][0], serde_json::json!(""));
+        assert_eq!(out["nested"]["headers"][1], serde_json::json!("static"));
+    }
 }

@@ -46,9 +46,15 @@ pub fn build_pruning_query(table_id: &str, filters: &[ScanFilter]) -> (String, V
         "SELECT DISTINCT tf.id, tf.table_id, tf.path, tf.num_rows, tf.size_bytes, tf.added_at\nFROM table_files tf\n",
     );
 
-    // Join file_partitions for each partition filter (use a single join, filter in WHERE)
-    if !partition_filters.is_empty() {
-        sql.push_str("INNER JOIN file_partitions fp ON fp.file_id = tf.id\n");
+    // Each partition filter needs its own join alias: `file_partitions` holds one
+    // row per key, so two filters sharing a single alias would demand one row
+    // match both keys at once — unsatisfiable, and the scan silently returns no
+    // files. Mirrors the `fcs{i}` aliasing used for column stats below.
+    for (i, _) in partition_filters.iter().enumerate() {
+        let _ = writeln!(
+            sql,
+            "INNER JOIN file_partitions fp{i} ON fp{i}.file_id = tf.id"
+        );
     }
 
     // Join file_column_stats for each column filter with a separate alias
@@ -63,22 +69,25 @@ pub fn build_pruning_query(table_id: &str, filters: &[ScanFilter]) -> (String, V
     bind_values.push(table_id.to_string());
 
     // Partition filters
-    for f in &partition_filters {
+    for (i, f) in partition_filters.iter().enumerate() {
         match f {
             ScanFilter::PartitionEq { key, value } => {
-                sql.push_str("  AND fp.partition_key = ? AND fp.partition_value = ?\n");
+                let _ = writeln!(
+                    sql,
+                    "  AND fp{i}.partition_key = ? AND fp{i}.partition_value = ?"
+                );
                 bind_values.push(key.clone());
                 bind_values.push(value.clone());
             },
             ScanFilter::PartitionRange { key, min, max } => {
-                sql.push_str("  AND fp.partition_key = ?\n");
+                let _ = writeln!(sql, "  AND fp{i}.partition_key = ?");
                 bind_values.push(key.clone());
                 if let Some(min_val) = min {
-                    sql.push_str("  AND fp.partition_value >= ?\n");
+                    let _ = writeln!(sql, "  AND fp{i}.partition_value >= ?");
                     bind_values.push(min_val.clone());
                 }
                 if let Some(max_val) = max {
-                    sql.push_str("  AND fp.partition_value <= ?\n");
+                    let _ = writeln!(sql, "  AND fp{i}.partition_value <= ?");
                     bind_values.push(max_val.clone());
                 }
             },
@@ -115,4 +124,142 @@ pub fn build_pruning_query(table_id: &str, filters: &[ScanFilter]) -> (String, V
     // The LEFT JOIN + no WHERE on fcs handles this.
 
     (sql, bind_values)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Assertions target structure — bind order, alias presence, placeholder
+    // count — rather than exact SQL text, so whitespace refactors don't break
+    // them.
+
+    fn partition_eq(key: &str, value: &str) -> ScanFilter {
+        ScanFilter::PartitionEq {
+            key: key.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    #[test]
+    fn no_filters_binds_only_the_table_id() {
+        let (sql, binds) = build_pruning_query("t1", &[]);
+
+        assert_eq!(binds, vec!["t1".to_string()]);
+        assert_eq!(sql.matches('?').count(), 1);
+        assert!(!sql.contains("INNER JOIN"));
+        assert!(!sql.contains("LEFT JOIN"));
+    }
+
+    #[test]
+    fn partition_eq_binds_table_then_key_then_value() {
+        let (sql, binds) = build_pruning_query("t1", &[partition_eq("day", "2026-01-01")]);
+
+        assert_eq!(binds, vec!["t1", "day", "2026-01-01"]);
+        assert_eq!(sql.matches('?').count(), 3);
+        assert!(sql.contains("INNER JOIN file_partitions fp0 ON fp0.file_id = tf.id"));
+        assert!(!sql.contains("fp1."));
+    }
+
+    #[test]
+    fn two_partition_filters_get_independent_join_aliases() {
+        // Regression: both filters once shared a single `fp` alias, demanding one
+        // row match two partition keys at once — the query always matched zero
+        // files instead of pruning to the intersection.
+        let (sql, binds) = build_pruning_query(
+            "t1",
+            &[
+                partition_eq("day", "2026-01-01"),
+                partition_eq("region", "eu"),
+            ],
+        );
+
+        assert_eq!(binds, vec!["t1", "day", "2026-01-01", "region", "eu"]);
+        assert!(sql.contains("INNER JOIN file_partitions fp0 ON fp0.file_id = tf.id"));
+        assert!(sql.contains("INNER JOIN file_partitions fp1 ON fp1.file_id = tf.id"));
+        assert!(sql.contains("AND fp0.partition_key = ? AND fp0.partition_value = ?"));
+        assert!(sql.contains("AND fp1.partition_key = ? AND fp1.partition_value = ?"));
+    }
+
+    #[test]
+    fn partition_range_without_bounds_binds_only_the_key() {
+        let (sql, binds) = build_pruning_query(
+            "t1",
+            &[ScanFilter::PartitionRange {
+                key: "day".to_string(),
+                min: None,
+                max: None,
+            }],
+        );
+
+        assert_eq!(binds, vec!["t1", "day"]);
+        assert_eq!(sql.matches('?').count(), 2);
+        assert!(!sql.contains("partition_value"));
+    }
+
+    #[test]
+    fn partition_range_binds_min_before_max() {
+        let (_sql, binds) = build_pruning_query(
+            "t1",
+            &[ScanFilter::PartitionRange {
+                key: "day".to_string(),
+                min: Some("2026-01-01".to_string()),
+                max: Some("2026-02-01".to_string()),
+            }],
+        );
+
+        assert_eq!(binds, vec!["t1", "day", "2026-01-01", "2026-02-01"]);
+    }
+
+    #[test]
+    fn column_range_without_bounds_binds_only_the_column() {
+        let (sql, binds) = build_pruning_query(
+            "t1",
+            &[ScanFilter::ColumnRange {
+                column: "amount".to_string(),
+                min: None,
+                max: None,
+            }],
+        );
+
+        assert_eq!(binds, vec!["t1", "amount"]);
+        assert_eq!(sql.matches('?').count(), 2);
+        assert!(sql.contains("LEFT JOIN file_column_stats fcs0 ON fcs0.file_id = tf.id"));
+    }
+
+    #[test]
+    fn column_range_binds_min_before_max() {
+        let (sql, binds) = build_pruning_query(
+            "t1",
+            &[ScanFilter::ColumnRange {
+                column: "amount".to_string(),
+                min: Some("10".to_string()),
+                max: Some("99".to_string()),
+            }],
+        );
+
+        assert_eq!(binds, vec!["t1", "amount", "10", "99"]);
+        assert!(sql.contains("fcs0.max_value IS NULL OR fcs0.max_value >= ?"));
+        assert!(sql.contains("fcs0.min_value IS NULL OR fcs0.min_value <= ?"));
+    }
+
+    #[test]
+    fn mixed_filters_bind_table_then_partitions_then_columns() {
+        // Bind order must follow the emitted predicate order regardless of how
+        // the caller interleaves filter kinds.
+        let (sql, binds) = build_pruning_query(
+            "t1",
+            &[
+                ScanFilter::ColumnRange {
+                    column: "amount".to_string(),
+                    min: Some("10".to_string()),
+                    max: None,
+                },
+                partition_eq("day", "2026-01-01"),
+            ],
+        );
+
+        assert_eq!(binds, vec!["t1", "day", "2026-01-01", "amount", "10"]);
+        assert_eq!(sql.matches('?').count(), 5);
+    }
 }
