@@ -480,10 +480,30 @@ pub async fn run_drivers(
     ))
 }
 
+/// Split a dataset id into its `(source_id, table_name)` halves.
+///
+/// Accepts the composite `"store:{source_id}|{table_name}"` form minted by
+/// `DatasetManager::add_dataset`, and bare table names (which the insights UI and
+/// `insights::auto` send directly). Returns `None` for the source half when the id
+/// carries no source — callers fall back to their own `source_id` argument.
+fn parse_dataset_ref(dataset_id: &str) -> (Option<&str>, &str) {
+    let Some(rest) = dataset_id.strip_prefix("store:") else {
+        return (None, dataset_id);
+    };
+    match rest.split_once('|') {
+        Some((source, table)) => (Some(source), table),
+        // Legacy `store:{table_name}` id with no source half.
+        None => (None, rest),
+    }
+}
+
 /// Resolve a dataset ID to Parquet file paths, table name, and schema overrides.
 ///
 /// Loads directly from the Parquet store — no in-memory DatasetManager needed.
-/// Accepts dataset IDs in `"store:{table_name}"` format or plain table names.
+/// Accepts dataset IDs in `"store:{source_id}|{table_name}"` format or plain table
+/// names. The explicitly-passed `source_id` wins over any source parsed out of the id:
+/// the caller's argument is the request's own scope, whereas the id may be stale or
+/// legacy.
 async fn resolve_dataset(
     state: &AppState,
     source_id: &str,
@@ -494,10 +514,13 @@ async fn resolve_dataset(
     Vec<ColumnOverride>,
     Option<TableSettingsOverride>,
 )> {
-    let table_name = dataset_id
-        .strip_prefix("store:")
-        .unwrap_or(dataset_id)
-        .to_string();
+    let (parsed_source, parsed_table) = parse_dataset_ref(dataset_id);
+    let table_name = parsed_table.to_string();
+    let source_id = if source_id.is_empty() {
+        parsed_source.unwrap_or(source_id)
+    } else {
+        source_id
+    };
 
     let store = state
         .store()
@@ -741,5 +764,34 @@ mod tests {
         assert!(parse_cadence("weekly").is_ok());
         assert!(parse_cadence("monthly").is_ok());
         assert!(parse_cadence("hourly").is_err());
+    }
+
+    #[test]
+    fn parses_composite_dataset_id() {
+        assert_eq!(
+            parse_dataset_ref("store:src-a|issues"),
+            (Some("src-a"), "issues")
+        );
+    }
+
+    #[test]
+    fn parses_bare_table_name() {
+        // The insights UI and `insights::auto` send bare table names.
+        assert_eq!(parse_dataset_ref("issues"), (None, "issues"));
+    }
+
+    #[test]
+    fn parses_legacy_prefixed_id_without_a_source_half() {
+        assert_eq!(parse_dataset_ref("store:issues"), (None, "issues"));
+    }
+
+    #[test]
+    fn splits_on_the_first_separator_only() {
+        // Table names may not contain `|`, but source ids are opaque — splitting once
+        // keeps the table half intact if one ever does.
+        assert_eq!(
+            parse_dataset_ref("store:src-a|odd|name"),
+            (Some("src-a"), "odd|name")
+        );
     }
 }

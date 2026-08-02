@@ -16,6 +16,10 @@ pub enum DatasetSource {
     Upload { filename: String },
     /// Loaded from Parquet store table
     StoreTable {
+        /// Source the table belongs to. Part of the dataset identity: table names are
+        /// only unique *within* a source, so dropping this silently aliases two
+        /// sources' same-named tables onto one another.
+        source_id: String,
         /// Name of the table
         table_name: String,
         /// Version of the table (-1 for latest)
@@ -159,7 +163,15 @@ impl DatasetManager {
         let id = match &source {
             DatasetSource::Default => "default".to_string(),
             DatasetSource::Upload { .. } => uuid::Uuid::new_v4().to_string(),
-            DatasetSource::StoreTable { table_name, .. } => format!("store:{table_name}"),
+            // Source-scoped: a bare table name is ambiguous across sources, and the
+            // collision is silent — the second load evicts the first and every client
+            // still holding the old id starts reading the other source's rows. The `|`
+            // separator matches `state::cache_key` so composite keys read alike.
+            DatasetSource::StoreTable {
+                source_id,
+                table_name,
+                ..
+            } => format!("store:{source_id}|{table_name}"),
         };
 
         self.datasets
@@ -223,4 +235,158 @@ fn dtype_to_string(dtype: &DataType) -> String {
         _ => "unknown",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parquet(path: &str) -> DatasetData {
+        DatasetData::Parquet {
+            files: vec![PathBuf::from(path)],
+        }
+    }
+
+    fn store_source(source_id: &str, table_name: &str) -> DatasetSource {
+        DatasetSource::StoreTable {
+            source_id: source_id.to_string(),
+            table_name: table_name.to_string(),
+            version: -1,
+        }
+    }
+
+    fn files_of(data: &DatasetData) -> Vec<PathBuf> {
+        match data {
+            DatasetData::Parquet { files } => files.clone(),
+            DatasetData::Uploaded(_) => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn default_source_keys_to_default() {
+        let mgr = DatasetManager::new();
+        let id = mgr.add_dataset(
+            "sales.csv".to_string(),
+            parquet("/tmp/x.parquet"),
+            DatasetSource::Default,
+        );
+        assert_eq!(id, "default");
+    }
+
+    #[test]
+    fn upload_source_keys_to_a_fresh_uuid() {
+        let mgr = DatasetManager::new();
+        let source = || DatasetSource::Upload {
+            filename: "sales.csv".to_string(),
+        };
+        let a = mgr.add_dataset("sales.csv".to_string(), parquet("/tmp/a.parquet"), source());
+        let b = mgr.add_dataset("sales.csv".to_string(), parquet("/tmp/b.parquet"), source());
+        // Uploads are distinct artifacts even under the same filename.
+        assert_ne!(a, b);
+        assert_eq!(uuid::Uuid::parse_str(&a).map(|_| ()), Ok(()));
+    }
+
+    #[test]
+    fn store_source_keys_on_source_and_table() {
+        let mgr = DatasetManager::new();
+        let id = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-a/issues/000.parquet"),
+            store_source("src-a", "issues"),
+        );
+        assert_eq!(id, "store:src-a|issues");
+    }
+
+    /// Regression: before source scoping, both of these keyed to `store:issues`, so the
+    /// second load evicted the first and any client still holding the old id silently
+    /// received the other source's rows.
+    #[test]
+    fn same_table_name_under_two_sources_stays_separate() {
+        let mgr = DatasetManager::new();
+        let a = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-a/issues/000.parquet"),
+            store_source("src-a", "issues"),
+        );
+        let b = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-b/issues/000.parquet"),
+            store_source("src-b", "issues"),
+        );
+
+        assert_ne!(a, b);
+        assert!(mgr.has_dataset(&a) && mgr.has_dataset(&b));
+
+        // The point of the fix: each id resolves to *its own* files, not the other's.
+        let files_a = files_of(&mgr.get_data(&a).expect("src-a dataset missing"));
+        let files_b = files_of(&mgr.get_data(&b).expect("src-b dataset missing"));
+        assert_eq!(
+            files_a,
+            vec![PathBuf::from("/store/src-a/issues/000.parquet")]
+        );
+        assert_eq!(
+            files_b,
+            vec![PathBuf::from("/store/src-b/issues/000.parquet")]
+        );
+        assert_ne!(files_a, files_b);
+    }
+
+    #[test]
+    fn store_ids_keep_the_store_prefix_for_bulk_unload() {
+        // `AppState::unload_store_tables` filters on this prefix; source scoping must
+        // not break that.
+        let mgr = DatasetManager::new();
+        let id = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-a/issues/000.parquet"),
+            store_source("src-a", "issues"),
+        );
+        assert!(id.starts_with("store:"));
+    }
+
+    #[test]
+    fn reloading_the_same_source_table_replaces_in_place() {
+        let mgr = DatasetManager::new();
+        let first = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-a/issues/000.parquet"),
+            store_source("src-a", "issues"),
+        );
+        let second = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-a/issues/001.parquet"),
+            store_source("src-a", "issues"),
+        );
+        // A re-sync of the same table should refresh, not accumulate.
+        assert_eq!(first, second);
+        assert_eq!(mgr.list_datasets().len(), 1);
+        assert_eq!(
+            files_of(&mgr.get_data(&second).expect("dataset missing")),
+            vec![PathBuf::from("/store/src-a/issues/001.parquet")]
+        );
+    }
+
+    #[test]
+    fn default_dataset_cannot_be_deleted() {
+        let mgr = DatasetManager::new();
+        let id = mgr.add_dataset(
+            "sales.csv".to_string(),
+            parquet("/tmp/x.parquet"),
+            DatasetSource::Default,
+        );
+        assert!(!mgr.delete_dataset(&id));
+        assert!(mgr.has_dataset("default"));
+    }
+
+    #[test]
+    fn store_datasets_can_be_deleted() {
+        let mgr = DatasetManager::new();
+        let id = mgr.add_dataset(
+            "issues".to_string(),
+            parquet("/store/src-a/issues/000.parquet"),
+            store_source("src-a", "issues"),
+        );
+        assert!(mgr.delete_dataset(&id));
+        assert!(!mgr.has_dataset(&id));
+    }
 }

@@ -412,16 +412,17 @@ impl AppState {
 
     /// Load a specific table on-demand (lazy parquet scan).
     ///
-    /// This unloads any previously loaded store tables first.
+    /// Previously loaded store tables are left alone. A store dataset holds only
+    /// `Vec<PathBuf>` — parquet paths scanned lazily per query, not materialized frames
+    /// — so keeping several resident costs a path vector each, and evicting them broke
+    /// any other tab still holding the evicted id.
     pub async fn load_table(&self, source_id: &str, table_name: &str) -> AppResult<String> {
         let store = self.store.as_ref().ok_or_else(|| {
             crate::shared::AppError::BadRequest("No store configured".to_string())
         })?;
 
-        // Unload any existing store tables
-        self.unload_store_tables();
-
         let source = DatasetSource::StoreTable {
+            source_id: source_id.to_string(),
             table_name: table_name.to_string(),
             version: -1,
         };
@@ -447,7 +448,12 @@ impl AppState {
         Ok(id)
     }
 
-    /// Unload all store tables from memory (keeps "default" and uploaded datasets)
+    /// Unload all store tables from memory (keeps "default" and uploaded datasets).
+    ///
+    /// No in-tree caller: `load_table` used to call this on every load, which is what
+    /// made concurrent tabs evict each other. Kept as public API for an explicit
+    /// "release everything" operation; the `store:` prefix it filters on is still
+    /// produced by `DatasetSource::StoreTable`.
     pub fn unload_store_tables(&self) {
         let to_remove: Vec<_> = self
             .datasets
@@ -484,6 +490,7 @@ impl AppState {
         let files = store.get_table_parquet_paths(source_id, table_name).await?;
 
         let source = DatasetSource::StoreTable {
+            source_id: source_id.to_string(),
             table_name: table_name.to_string(),
             version: -1,
         };
