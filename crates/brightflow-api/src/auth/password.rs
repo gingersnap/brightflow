@@ -20,3 +20,26 @@ pub fn verify_password(plain: &str, hash: &str) -> AuthResult<bool> {
         .verify_password(plain.as_bytes(), &parsed)
         .is_ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_and_verify_roundtrip() {
+        let hash = hash_password("correct horse").unwrap();
+        assert!(verify_password("correct horse", &hash).unwrap());
+    }
+
+    #[test]
+    fn wrong_password_rejected() {
+        let hash = hash_password("correct horse").unwrap();
+        assert!(!verify_password("battery staple", &hash).unwrap());
+    }
+
+    #[test]
+    fn invalid_hash_string_rejected() {
+        // verify_password surfaces a parse error, not a panic
+        assert!(verify_password("x", "not-a-valid-hash").is_err());
+    }
+}

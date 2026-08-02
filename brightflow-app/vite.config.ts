@@ -69,6 +69,10 @@ export default defineConfig({
       style: 'error',
     },
   },
+  test: {
+    include: ['src/**/*.test.ts'],
+    environment: 'node',
+  },
   plugins: [
     vue(),
     ui({

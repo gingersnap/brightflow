@@ -10,7 +10,8 @@
     "preview": "vp preview",
     "check": "vp check",
     "check:fix": "vp check --fix",
-    "fmt": "vp fmt"
+    "fmt": "vp fmt",
+    "test": "vp test"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

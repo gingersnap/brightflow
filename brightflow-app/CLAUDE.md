@@ -33,6 +33,20 @@ Shared types in `src/types/index.ts`. Generated types from Rust (via ts-rs) in `
 
 Run `npm run check` to verify all (types + lint + format). Run `npm run check:fix` to auto-fix. Run `npm run fmt` to format only.
 
+## Testing
+
+- **Runner:** `npm run test` — the built-in `vp test` command (Vitest 4.x
+  under the hood). No separate Vitest install; it rides on the existing
+  `vite-plus` toolchain.
+- **Config:** the `test:` block inside `vite.config.ts`. Do **not** add a
+  `vitest.config.ts` (Vite+ explicitly recommends against a separate file).
+- **Location:** tests are co-located with the module they cover as `*.test.ts`
+  (e.g. `src/utils/format.test.ts` next to `src/utils/format.ts`).
+- **Imports:** import Vitest primitives explicitly
+  (`import { describe, test, expect } from 'vitest'`); globals are not injected.
+- **Environment:** `node` for pure utilities; switch to a DOM env only when a
+  component test lands.
+
 ## Architecture
 
 **Multi-source, per-table routing** - the app is organized around sources, each

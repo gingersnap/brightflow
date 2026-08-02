@@ -45,3 +45,14 @@ doc-valid-idents = [
 # Naming
 single-char-binding-names-threshold = 4
 allowed-prefixes = ["de", "re", "pre", "post"]
+
+# Test code is exempt: tests are expected to panic on failure and use
+# unwrap/expect freely. Production code stays fully denied. These keys only
+# affect #[cfg(test)] code (not integration tests under crates/*/tests/).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = true
+allow-useless-vec-in-tests = true
