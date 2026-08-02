@@ -35,7 +35,11 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run check:fi
 
 ## Architecture
 
-**Single dataset focus** - no workspace switching, one data source at a time.
+**Multi-source, per-table routing** - the app is organized around sources, each
+exposing one or more tables. Routes are `/:sourceId/<tool>/:table`
+(`sources.ts` profiles map each connector type to its available tools). The
+connection and query state are scoped to the active source/table pair, not a
+single global dataset.
 
 **WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.ts`, query execution in `composables/useWsQuery.ts`.
 

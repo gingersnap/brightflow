@@ -1,3 +1,74 @@
+//! Topic enrichment: fit a topics model over a table's text, then apply it
+//! to every synced row.
+//!
+//! # Why this is the way it is
+//!
+//! Topic clusters used to group issues by **surface format** ("backport
+//! scripts", "stack traces") rather than by what a ticket is *about* ("auth
+//! failure", "data loss"). That is structural to static token-averaged
+//! embeddings, not a tuning bug: Model2Vec `potion-base-32M`'s dominant axis
+//! of variance tracks format/vocabulary, so any *unsupervised* consumer of
+//! that geometry — k-means, HDBSCAN, nearest-centroid — follows it. No choice
+//! of `k`, cleaning profile, or distance metric fixes it, and better LLM
+//! cluster naming cannot fix it either: the `auto_label` agent faithfully
+//! names format clusters ("Automated Backport Commits" is an *accurate* label
+//! for a cluster of backport commits). The clustering is upstream of the
+//! problem.
+//!
+//! Supervision is the one mode that defeats the format axis: labels let a
+//! trained head *downweight* format-correlated dimensions and *upweight*
+//! content ones (nearest-centroid cannot — it weights every dimension equally
+//! by construction). It is also the one task family where static embeddings
+//! reach near-LLM quality (MTEB Classification), so a transformer is not
+//! needed on the hot path. See [`crate::nlp::linear`] for the head.
+//!
+//! This is also why labels attach to **rows, not clusters**. The old
+//! `refresh_label_artifact` built each label's centroid from
+//! `clustering.centroids[i]` — the *cluster* centroid, not row embeddings —
+//! so `predicted_label` was the cluster assignment wearing a nicer name, and
+//! since clusters are format-shaped, cluster labels re-taught the format bias
+//! by construction.
+//!
+//! # Cost invariant
+//!
+//! LLM cost is O(taxonomy + seed sample), never O(rows). The LLM proposes a
+//! vocabulary a human ratifies (cold path, sampled); the hot path is
+//! deterministic matrix-multiply classification that reaches every synced row
+//! for free. [`enrich_with_topics`] never fits — it only applies artifacts.
+//!
+//! # Clusters are discovery, not the answer
+//!
+//! Clusters still earn their place, but not as labels. They surface themes the
+//! taxonomy has not named (discovery), stratify the LLM seed sample across the
+//! corpus (we want *diversity* from format clusters, not correctness), and
+//! carry the low-confidence tail that feeds back into `propose_taxonomy`.
+//! `predicted_labels` is the answer.
+//!
+//! # Sharp edges
+//!
+//! - `confidence` changed meaning: it was a raw cosine, now an uncalibrated
+//!   sigmoid score. Neither is a probability — do not read 0.7 as "70% likely".
+//! - Under the centroid fallback `predicted_labels` is null. A centroid model
+//!   has no multi-label decision rule; faking one would make the column lie.
+//!
+//! # Graceful degradation
+//!
+//! Too little labelled signal → no trained head → the centroid fallback keeps
+//! pre-classifier artifact directories working. `Labeler::Classifier` wins
+//! when present; `Labeler::Centroids` is a compatibility path. A refit that
+//! finds too little signal removes any stale head rather than scoring rows
+//! against labels that no longer exist.
+//!
+//! # Verification
+//!
+//! The thesis is a test: `tests/classifier_quality.rs` plants intent labels
+//! crossed orthogonally with format strata and asserts a **fair**
+//! nearest-centroid baseline still loses (same split, same retained labels,
+//! same threshold protocol). Its vacuity guard aborts if the baseline scores
+//! too well — the corpus failed to reproduce the confound. On real data run
+//! `topics fit` then `topics eval-classifier`; if the head does not win, the
+//! thesis is wrong for that corpus and you stop.
+
 use std::collections::HashMap;
 use std::path::Path;
 

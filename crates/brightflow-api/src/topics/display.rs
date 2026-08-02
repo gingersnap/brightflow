@@ -31,6 +31,15 @@ pub(crate) struct DocDisplay {
 impl DocDisplay {
     /// Display schema for a table type; total — unknown tables get a
     /// minimal fallback that degrades to bodiless, linkless refs.
+    //
+    // KNOWN DUAL SOURCE OF TRUTH: `issues` hardcodes `label_names` as the tag
+    // column here, while the engine writes `predicted_labels` from the trained
+    // head. These are two different columns with two different producers.
+    // `label_names` is the raw comma-encoded source column the connector ships
+    // (GitHub labels); `predicted_labels` is the supervised classifier's
+    // output. They are not unified — the topics UI reads `predicted_labels`,
+    // the cluster-sample renderer reads `label_names` via this mapping. Keep
+    // both in mind when changing which column a surface keys off.
     pub fn for_table(table_name: &str) -> Self {
         match table_name {
             "issues" => Self {

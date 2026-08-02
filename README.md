@@ -9,11 +9,13 @@ crates/
 ├── brightflow-core/      # Shared types and errors
 ├── brightflow-connect/   # Data connectors (Longbow integration)
 ├── brightflow-store/     # SQLite-backed Parquet storage (Litehouse)
-├── brightflow-insights/  # Statistical analysis engine
-├── brightflow-api/       # HTTP API server
-└── brightflow-cli/       # Main binary
+├── brightflow-engine/    # Analysis engine, NLP primitives, enrichment orchestration
+├── brightflow-llm/       # Provider-agnostic OpenAI-compatible chat client
+├── brightflow-scheduler/ # Background job runner for connector syncs + post-sync insights
+├── brightflow-api/       # HTTP API server (Axum + Polars) with integrated event ingestion
+└── brightflow-cli/       # Main binary (run-all, serve, schedule, insights, topics)
 
-brightflow-app/       # Vue frontend
+brightflow-app/       # Vue 3 frontend
 ```
 
 ## Run
@@ -22,10 +24,10 @@ brightflow-app/       # Vue frontend
 # API + Scheduler together
 cargo run -- run-all
 
-# API server only
+# API server only (scheduler is integrated)
 cargo run -- serve
 
-# Scheduler only (not yet implemented)
+# Standalone scheduler daemon (stub — use run-all or serve instead)
 cargo run -- schedule
 
 # Insights analysis
@@ -38,3 +40,6 @@ cd brightflow-app && npm run dev
 ## Config
 
 Copy `.env.example` to `.env` for local settings.
+
+> **Note:** `brightflow-connect` depends on the sibling `longbow` crate at
+> `../longbow` (path dependency). Clone it alongside this repo to build.
