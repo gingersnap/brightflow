@@ -1,3 +1,11 @@
+//! Period bucketing and period-over-period comparison.
+//!
+//! Turns a time column into named period labels ("2024-03", "2024-W11", …) at a
+//! chosen granularity, then Welch-tests the latest period against the one before
+//! it. Labels are strings on purpose: they are what the report shows, and
+//! carrying them alongside the numbers avoids re-deriving a display form from a
+//! timestamp later.
+
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use polars::prelude::*;
@@ -531,6 +539,15 @@ pub fn extract_timestamps(series: &Column) -> Result<Vec<Option<i64>>> {
     }
 }
 
+/// Parse a date out of a string column, trying formats in a fixed order.
+///
+/// **Limitation — ambiguous slash dates are read day-first.** `%d/%m/%Y` is
+/// tried before `%m/%d/%Y`, so `03/04/2023` is 3 April, not 4 March. Values
+/// where the day exceeds 12 are unambiguous and land correctly either way; it's
+/// only the day ≤ 12 US-format files that get bucketed into the wrong period,
+/// silently. The order has to be *some* fixed guess because nothing here sees
+/// more than one value at a time. A table-level date-format setting — or
+/// sniffing the whole column for a value with day > 12 — would resolve it.
 fn parse_date_string(s: &str) -> Option<NaiveDate> {
     // Try common date formats
     NaiveDate::parse_from_str(s, "%Y-%m-%d")

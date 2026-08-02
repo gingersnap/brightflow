@@ -24,6 +24,15 @@ echo ""
 FAILED=0
 
 # ============================================
+# Conventions (diff-scoped, cheap — runs first)
+# ============================================
+
+echo -e "${BLUE}[Conventions]${NC} Checking staged files..."
+if ! bash "$ROOT_DIR/scripts/check-conventions.sh"; then
+    FAILED=1
+fi
+
+# ============================================
 # Rust Checks
 # ============================================
 

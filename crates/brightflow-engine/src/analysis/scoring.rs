@@ -298,6 +298,16 @@ fn effect_size_component(a: &AnalysisType) -> f64 {
     }
 }
 
+/// Multiply a finding's score when it lands on a column the user marked as a KPI.
+///
+/// **Limitation — measure polarity is display-only (v1).** `SetColumnPolarity`
+/// tags a finding good or bad for the UI, and scoring deliberately ignores it: a
+/// 20% drop and a 20% rise in the same measure rank identically. Ranking by
+/// "badness" would make the engine's notion of interesting depend on a
+/// user-supplied label that is often unset or wrong, and a surprising *good*
+/// move is as worth surfacing as a bad one. This function is the hook point if
+/// that call is ever revisited — a polarity-aware boost belongs here, alongside
+/// the KPI multiplier, not in the detectors.
 fn kpi_boost_for(a: &AnalysisType, ctx: &ScoringContext) -> f64 {
     if ctx.kpi_columns.is_empty() {
         return 1.0;

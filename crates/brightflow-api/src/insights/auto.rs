@@ -1,6 +1,12 @@
 //! Post-sync auto-run: compute a Trends report after a connector sync so the
 //! new-findings badge lights up without anyone pressing Run.
 //!
+//! **Limitation — auto-runs compute Trends only.** Review and Drivers stay
+//! manual. Trends is the broadest coverage per unit of compute, and this path
+//! runs unattended after every sync, so the cost of running all three on every
+//! table is not worth paying for reports nobody may open. Making the report set
+//! configurable per table would lift it.
+//!
 //! Design constraints (load-bearing):
 //! - **Spawn-and-return.** The scheduler awaits the post-sync hook inline
 //!   between endpoint merges — blocking here delays the sync. Everything

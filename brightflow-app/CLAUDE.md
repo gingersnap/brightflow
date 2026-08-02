@@ -54,7 +54,7 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run check:fi
 
 **Multi-source, per-table routing** - the app is organized around sources, each
 exposing one or more tables. Routes are `/:sourceId/<tool>/:table`
-(`sources.ts` profiles map each connector type to its available tools). The
+(`toolsForSource()` in `src/types/index.ts` maps a source to its tools). The
 connection and query state are scoped to the active source/table pair, not a
 single global dataset.
 
@@ -64,7 +64,8 @@ single global dataset.
 
 ## Key Files
 
-- `../crates/brightflow-api/API.md` - Backend API documentation
+- `../crates/brightflow-api/src/routes.rs` - The API surface. Every route in one readable
+  index; there is no hand-written API doc, deliberately (it drifted).
 - `src/types/index.ts` - Shared TypeScript types (frontend-only + re-exports from generated)
 - `src/types/generated/` - TypeScript types auto-generated from Rust via ts-rs
 - `stores/query.ts` - Query state and operations builder

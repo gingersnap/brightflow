@@ -6,6 +6,14 @@
 //! series, a dominant leader against the power-law share expected from its
 //! rank distribution. This makes significance comparable across detector
 //! types — the property the old per-detector ad-hoc formulas never had.
+//!
+//! **Limitation — calibration is synthetic-only.** The false-positive and power
+//! tests in this module's test block run against deterministic pseudo-noise, not
+//! against a corpus of real business tables. That keeps the harness reproducible
+//! and dependency-free, but real data has autocorrelation and heavy tails the
+//! generators don't model. Treat the ~5% false-positive targets as design intent,
+//! not a measured guarantee. Lifting this needs a labelled corpus of real tables
+//! to calibrate against.
 
 use statrs::distribution::{ContinuousCDF, Normal, StudentsT};
 

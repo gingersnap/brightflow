@@ -285,6 +285,16 @@ pub struct SliceEntry {
 
 /// One pass over the rows → per-period aggregates for the whole table and for
 /// every (dimension, top value) slice. Makes depth-1 slice series O(1).
+///
+/// **Limitation — null segment values are excluded from slices.** Empty-string
+/// dimension values are dropped when picking top values, so rows with a null
+/// segment never form a slice of their own in the derived-series pass or in
+/// Drivers. They still count toward whole-table totals, which produces a visible
+/// asymmetry: a delta driven mostly by null-segment rows shows a total change
+/// that no listed driver explains. They are dropped because "" is not a value a
+/// reader recognizes as a segment. (Segment attribution in Review does label them
+/// "(blank)" — doing the same here, as an explicit bucket rather than a silent
+/// omission, would lift it.)
 pub struct DimensionIndex {
     pub periods: Vec<String>,
     pub total: SliceAgg,
@@ -430,6 +440,14 @@ impl DimensionIndex {
 
     /// Depth-2 aggregates for a dimension pair, restricted to top values.
     /// Returns (value1, value2, agg) triples. One row pass per pair.
+    ///
+    /// **Limitation — this is why Drivers depth is one dimension.** Only counts
+    /// are accumulated here; measure sums (and sums of squares) are deliberately
+    /// skipped at depth 2 to keep the row pass cheap. So the moments a Welch test
+    /// needs don't exist for a pair, and the delta decomposition can only rank
+    /// single-dimension slices — "region=EU AND channel=web drove it" is not
+    /// expressible yet. Accumulating the same moments here as at depth 1 would
+    /// lift it, at the cost of a wider pass over every top-value pair.
     fn pair_aggregates(&self, dim_a: &str, dim_b: &str) -> Vec<(String, String, SliceAgg)> {
         let (Some(rows_a), Some(rows_b)) = (self.row_values.get(dim_a), self.row_values.get(dim_b))
         else {

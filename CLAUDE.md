@@ -28,7 +28,7 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 
 ## Conventions
 
-Two rules every change should follow, lifted from the engine-crate habits to
+Three rules every change should follow, lifted from the engine-crate habits to
 repo-wide expectations:
 
 1. **Inline comments are the primary documentation.** Modules, non-trivial
@@ -40,6 +40,26 @@ repo-wide expectations:
    logic, add or update a co-located unit test covering the new behavior. Don't
    leave a touched function without coverage; don't add tests for code you
    didn't touch unless that's the explicit task.
+3. **A prose file must be unable to go stale.** Three kinds qualify, and a file
+   has to be one of them:
+   - **normative** — philosophy and intent, what we mean to do
+     (`docs/human_ai_interaction.md`, `docs/ux-principles.md`);
+   - **dated** — a plan or report, true as of a date, never updated after
+     (`plans/`, `reports/`);
+   - **generated** — derived from source, regenerated not edited
+     (`brightflow-app/src/types/generated/`).
+
+   Prose that describes *current state by hand* is none of these. It belongs
+   inline, next to the code that makes it true — where it is visible to whoever
+   changes that code, and where fixing the code deletes the note. Hand-written
+   state docs drift silently, and a wrong doc is worse than no doc because it is
+   still believed.
+
+   This is a **staleness test**, not a file-count rule: it decides every case
+   mechanically. If you want a browsable version of something that lives in
+   source (an API surface, a schema, a config reference), generate it — never
+   hand-write it. `scripts/check-conventions.sh` enforces the mechanical part on
+   staged files, diff-scoped so it can never fail on code you didn't touch.
 
 ### Rust shape
 
@@ -122,6 +142,8 @@ cargo run -- run-all              # API + WebSocket server (or just `cargo run`)
 
 # Git hooks
 ./scripts/install-hooks.sh        # install pre-commit hooks
+./scripts/check-conventions.sh    # module-doc + prose-file conventions on staged files
+                                  # (diff-scoped; also runs from the pre-commit hook)
 ```
 
 ## Logs

@@ -1,5 +1,9 @@
 # v0.1 Spec: Cheap Text Signals for Rust
 
+> **Research snapshot, 2026-04-15.** A record of what was designed and believed on that
+> date, moved here from `docs/` unchanged. Not maintained — where this describes shipped
+> behavior, the source is authoritative and this may have drifted.
+
 A focused Rust library providing the cheap-text-signal primitives needed for
 "always on, signals float up" data platforms. Designed to fit naturally with
 the Polars/DataFusion/Arrow/Tokio stack.

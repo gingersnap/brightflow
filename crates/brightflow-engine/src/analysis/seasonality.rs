@@ -1,3 +1,18 @@
+//! Seasonality detection by autocorrelation at fixed calendar lags.
+//!
+//! Rather than fitting a periodogram, this tests a short list of lags people
+//! actually name (weekly, biweekly, monthly, quarterly, yearly) and reports the
+//! strongest significant one. A named period is what a reader can act on; a
+//! spectral peak at 8.3 days is not.
+//!
+//! **Limitation — regularly spaced samples are assumed.** The ACF is computed
+//! over the row sequence ordered by timestamp, treating position as time. Lags
+//! are converted to row counts via the *average* spacing, so bursty event data
+//! and gaps distort the lag structure — this can both mask real cycles and
+//! invent false ones. It works this way because the input is a raw value/
+//! timestamp pair sequence, not a regularized series. Aggregating to a fixed
+//! period grid before the ACF would lift it.
+
 use crate::stats::significance::{autocorrelation, p_value_for_autocorrelation};
 
 #[derive(Debug, Clone)]

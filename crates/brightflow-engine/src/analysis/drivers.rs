@@ -6,8 +6,18 @@
 //!
 //! Statistical honesty:
 //! - Per-slice Welch test of current vs previous period values, Bonferroni-
-//!   corrected across the slices tested for the same measure. (Per-measure
-//!   correction only — see `docs/insights_limitations.md`.)
+//!   corrected across the slices tested for the same measure.
+//!
+//!   **Limitation — the correction is per-measure only.** The family is the
+//!   slices tested for one measure, not the measures, dimensions, or reports
+//!   around it. On tables with many measures the family-wise error rate is
+//!   therefore higher than the per-measure p-values suggest. On very
+//!   high-cardinality dimensions the opposite bites: Bonferroni over-suppresses
+//!   slices that genuinely moved. It is scoped this way because a slice's
+//!   family is the only grouping this function can see — widening it needs the
+//!   report-level context the caller holds. If the over-suppression shows up in
+//!   practice, per-dimension correction (divide the family by dimension before
+//!   correcting) is the fallback.
 //! - Offsetting-drivers rule: when the total barely moved but segments moved
 //!   hard in opposite directions (`|Δtotal| < 0.25 × Σ|Δslice|`), the story is
 //!   the cancellation itself; contributions are then reported against gross
