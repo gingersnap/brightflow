@@ -44,9 +44,16 @@ else
     echo -e "${GREEN}✓ Clippy${NC}"
 fi
 
-# cargo audit is optional (requires cargo-audit to be installed)
+# cargo audit is optional (requires cargo-audit to be installed).
+#
+# Deliberately notify-only and --no-fetch: a commit hook must not block on the network,
+# and it must not block a commit on an advisory the committer didn't introduce. The
+# consequence is that this check reads against whatever advisory DB happens to be on
+# disk, so a "0 vulnerabilities" line here means "nothing known locally", NOT "audited
+# clean" — the messages below say so. ./scripts/audit.sh is the real gate: it fetches a
+# fresh DB and exits non-zero.
 if command -v cargo-audit &> /dev/null; then
-    echo -e "${BLUE}[Rust]${NC} Running security audit..."
+    echo -e "${BLUE}[Rust]${NC} Running security audit (local DB, advisory only)..."
     AUDIT_JSON=$(cargo audit --format json --no-fetch 2>/dev/null || true)
     VULN_COUNT=$(echo "$AUDIT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['vulnerabilities']['count'])" 2>/dev/null || echo "?")
     if [ "$VULN_COUNT" != "0" ]; then
@@ -64,12 +71,18 @@ for wt in ['unmaintained', 'yanked']:
     if items:
         print(f'  Warnings ({wt}): ' + ', '.join(f\"{w['package']['name']}@{w['package']['version']}\" for w in items))
 " 2>/dev/null
-        # Don't fail on audit - just warn
+        echo -e "  ${YELLOW}Not blocking this commit. Run ./scripts/audit.sh to gate properly.${NC}"
+    elif [ "$VULN_COUNT" = "?" ]; then
+        echo -e "${YELLOW}⚠ Security audit could not be parsed — treat as unknown, not clean${NC}"
+        echo -e "  Run ${BLUE}./scripts/audit.sh${NC}"
     else
-        echo -e "${GREEN}✓ Security audit${NC}"
+        # Not "✓ Security audit" — this ran against a possibly-stale local DB and says
+        # nothing about advisories published since it was last fetched.
+        echo -e "${GREEN}✓ No advisories in local DB${NC} ${YELLOW}(not fetched — run ./scripts/audit.sh for a real audit)${NC}"
     fi
 else
     echo -e "${YELLOW}[Rust] Skipping audit (cargo-audit not installed)${NC}"
+    echo -e "  Install with 'cargo install cargo-audit', then run ./scripts/audit.sh"
 fi
 
 # ============================================

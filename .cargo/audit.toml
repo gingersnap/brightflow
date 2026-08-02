@@ -1,0 +1,42 @@
+# cargo-audit configuration.
+#
+# Read by `cargo audit` (and by `scripts/audit.sh`, which is the real gate — the
+# pre-commit hook only notifies). Lives beside config.toml because that is where
+# cargo-audit looks.
+#
+# Every ignore below carries a reason and a recheck trigger. Same principle as the
+# module-doc convention: the justification lives next to the thing it justifies, so it
+# goes stale loudly rather than quietly. An entry whose recheck trigger has fired must be
+# re-evaluated, not renewed.
+#
+# Note: no severity threshold is used, deliberately. `cargo audit --format json` reports
+# `cvss: None` on a large share of advisories — including all four rustls-webpki
+# certificate-validation bugs cleared on 2026-08-02. A Critical-only gate would have
+# passed precisely the ones that mattered. cargo-audit 0.22 has no severity flag either
+# (`--deny` accepts only warnings|unmaintained|unsound|yanked).
+
+[advisories]
+ignore = [
+  # RUSTSEC-2023-0071 — rsa: Marvin Attack, key recovery via timing sidechannel.
+  # No fixed version exists upstream.
+  # Not reachable: rsa enters only through sqlx-mysql, and `cargo tree -i sqlx-mysql`
+  # (and `-i rsa`, both with --target all) print "nothing to print" — neither crate is in
+  # the resolved build graph. This is a Cargo.lock ghost from sqlx's feature union.
+  # RECHECK IF: a MySQL feature is ever enabled on sqlx, or `cargo tree -i rsa` starts
+  # returning a path.
+  "RUSTSEC-2023-0071",
+
+  # RUSTSEC-2026-0194 — quick-xml: quadratic run time checking a start tag for duplicate
+  # attribute names.
+  # RUSTSEC-2026-0195 — quick-xml: unbounded namespace-declaration allocation in NsReader
+  # enables memory-exhaustion DoS.
+  # Both fixed in quick-xml >=0.41; we are pinned transitively at 0.38 by
+  # polars -> polars-error -> object_store. Not reachable: object_store's XML parsing is
+  # the S3/GCS/Azure list-bucket response path, and Brightflow only ever scans local
+  # parquet paths (ParquetStore hands LazyFrame::scan_parquet filesystem PathBufs). No
+  # remote object store is configured or exposed.
+  # RECHECK IF: polars is bumped (it may carry a newer object_store), or a remote object
+  # store backend is added to brightflow-store.
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
+]

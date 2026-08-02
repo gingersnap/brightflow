@@ -38,35 +38,27 @@ pub fn lookup_geo(reader: Option<&maxminddb::Reader<Vec<u8>>>, ip: &str) -> GeoI
         return GeoInfo::default();
     };
 
-    let Ok(city) = reader.lookup::<maxminddb::geoip2::City<'_>>(ip_addr) else {
+    // maxminddb 0.27 defers decoding: `lookup` returns a handle, `decode` yields
+    // `Ok(None)` for an IP the database simply doesn't cover. Both the lookup error and
+    // the miss degrade to empty geo rather than dropping the event.
+    let Ok(lookup) = reader.lookup(ip_addr) else {
+        return GeoInfo::default();
+    };
+    let Ok(Some(city)) = lookup.decode::<maxminddb::geoip2::City<'_>>() else {
         return GeoInfo::default();
     };
 
-    let country = city
-        .country
-        .as_ref()
-        .and_then(|c| c.iso_code)
-        .unwrap_or("")
-        .to_string();
+    let country = city.country.iso_code.unwrap_or("").to_string();
 
+    // Subdivisions run largest-to-smallest, so the first entry is the state/province.
     let region = city
         .subdivisions
-        .as_ref()
-        .and_then(|s| s.first())
-        .and_then(|s| s.names.as_ref())
-        .and_then(|n| n.get("en"))
-        .copied()
+        .first()
+        .and_then(|s| s.names.english)
         .unwrap_or("")
         .to_string();
 
-    let city_name = city
-        .city
-        .as_ref()
-        .and_then(|c| c.names.as_ref())
-        .and_then(|n| n.get("en"))
-        .copied()
-        .unwrap_or("")
-        .to_string();
+    let city_name = city.city.names.english.unwrap_or("").to_string();
 
     GeoInfo {
         country,

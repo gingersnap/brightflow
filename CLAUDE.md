@@ -98,7 +98,11 @@ cargo check                       # verify compilation
 cargo build --release             # release build (always run after debug succeeds)
 cargo fmt --check                 # check formatting
 cargo clippy                      # lint
-cargo audit                       # check dependencies for vulnerabilities
+./scripts/audit.sh                # supply-chain gate: fresh advisory DB, non-zero on any
+                                  # un-ignored advisory. Ignores (with reasons + recheck
+                                  # triggers) live in .cargo/audit.toml. The pre-commit
+                                  # hook's audit line is notify-only and --no-fetch, so
+                                  # it never blocks and never proves clean — use this.
 cargo test -p <crate>             # run a single crate's unit tests
 
 # Topics / intent classification
