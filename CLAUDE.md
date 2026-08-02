@@ -53,8 +53,14 @@ npm run check:fix                 # auto-fix lint + format issues
 npm run fmt                       # auto-fix formatting
 
 # Backend dev server
-cargo run -- run-all              # API + WebSocket server
+cargo run -- run-all              # API + WebSocket server (or just `cargo run`)
 
 # Git hooks
 ./scripts/install-hooks.sh        # install pre-commit hooks
 ```
+
+## Logs
+
+- `logs/backend.log.<date>` — backend (Rust/Axum) logs, daily rotation (keeps last 7)
+- `logs/frontend.log` — frontend (Vite dev server + forwarded browser console) logs, size-rotated at 5 MB (keeps last 4)
+

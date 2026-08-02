@@ -14,6 +14,7 @@ polars = { version = "0.48", features = ["lazy", "csv", "json", "parquet", "pivo
 axum = { version = "0.8", features = ["ws", "multipart"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 ts-rs = { version = "10", features = ["serde-compat", "chrono-impl", "serde-json-impl"] }
 dotenvy = "0.15"
 tikv-jemallocator = "0.6"
