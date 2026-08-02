@@ -12,7 +12,6 @@ pub fn sparse_vec_from_bytes(bytes: &[u8]) -> Result<SparseVec> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

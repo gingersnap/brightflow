@@ -260,7 +260,7 @@ pub fn decompose_latest_delta(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::float_cmp, clippy::suboptimal_flops)]
+#[allow(clippy::float_cmp, clippy::suboptimal_flops)]
 mod tests {
     use super::*;
 

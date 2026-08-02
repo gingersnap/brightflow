@@ -54,7 +54,6 @@ pub fn detect_forecast_deviation(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -1083,7 +1083,6 @@ fn enrichment_response(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

@@ -359,7 +359,6 @@ fn fit_new_model(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

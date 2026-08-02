@@ -154,7 +154,6 @@ pub fn nearest_label<S: std::hash::BuildHasher>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

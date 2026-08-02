@@ -226,11 +226,7 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::cast_precision_loss,
-    clippy::redundant_clone
-)]
+#[allow(clippy::cast_precision_loss, clippy::redundant_clone)]
 mod tests {
     use super::*;
 

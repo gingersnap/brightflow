@@ -147,11 +147,7 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::cast_precision_loss,
-    clippy::suboptimal_flops
-)]
+#[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
 mod tests {
     use super::*;
 

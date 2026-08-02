@@ -490,7 +490,6 @@ pub(crate) fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::ParquetStore;

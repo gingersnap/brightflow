@@ -326,7 +326,6 @@ fn compute_idf(vocabulary: &Vocabulary) -> Vec<f32> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

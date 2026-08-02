@@ -145,7 +145,7 @@ pub fn binary_f1(scores: &[f32], positives: &[bool], threshold: f32) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::float_cmp, clippy::indexing_slicing)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::{binary_f1, macro_f1, micro_f1, per_label_counts, Counts};
 

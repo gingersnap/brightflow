@@ -217,7 +217,6 @@ fn t_cdf(t: f64, df: f64) -> f64 {
 
 #[cfg(test)]
 #[allow(
-    clippy::unwrap_used,
     clippy::cast_precision_loss,
     clippy::cast_lossless,
     clippy::suboptimal_flops

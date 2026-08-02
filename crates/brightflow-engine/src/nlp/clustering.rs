@@ -214,7 +214,6 @@ fn dense_to_sparse(dense: &[f32], generation: u64) -> SparseVec {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stderr)]
 mod tests {
     use super::*;
 

@@ -78,7 +78,6 @@ pub fn build_label_centroids(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::nlp::{TfIdf, TokenizerPreset};

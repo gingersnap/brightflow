@@ -233,7 +233,7 @@ fn derive_title(body: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::shadow_unrelated)]
+#[allow(clippy::shadow_unrelated)]
 mod tests {
     use super::*;
     use crate::textexplore::index::build_index;

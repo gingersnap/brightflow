@@ -60,7 +60,6 @@ pub fn detect_anomaly(df: &DataFrame, column: &str) -> Result<Option<AnomalyResu
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

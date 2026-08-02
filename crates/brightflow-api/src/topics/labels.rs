@@ -72,7 +72,6 @@ pub async fn load_label_targets(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::read_row_ids;
     use polars::prelude::*;

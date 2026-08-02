@@ -590,7 +590,6 @@ fn parse_date_string(s: &str) -> Option<NaiveDate> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

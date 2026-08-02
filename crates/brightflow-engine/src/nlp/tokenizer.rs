@@ -325,7 +325,7 @@ impl TokenizerPreset {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::shadow_unrelated)]
+#[allow(clippy::shadow_unrelated)]
 mod tests {
     use super::*;
 

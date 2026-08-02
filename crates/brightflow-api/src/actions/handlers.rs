@@ -1575,7 +1575,6 @@ async fn refresh_label_artifact_by_table_id(state: &AppState, table_id: &str) ->
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::{average_label_centroids, initial_status, Actor};
 

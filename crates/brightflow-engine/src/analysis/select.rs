@@ -122,7 +122,7 @@ pub fn dimension_of(node: &AnalysisNode) -> Option<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::suboptimal_flops)]
+#[allow(clippy::suboptimal_flops)]
 mod tests {
     use super::*;
     use crate::analysis::tree::{AnalysisTree, TrendDirection};

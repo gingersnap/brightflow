@@ -213,7 +213,6 @@ fn enrich_with_common_segments(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

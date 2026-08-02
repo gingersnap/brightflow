@@ -392,7 +392,6 @@ fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

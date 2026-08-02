@@ -300,7 +300,7 @@ fn coerce_value(dtype: &OutputType, raw: &serde_json::Value) -> Result<serde_jso
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::shadow_unrelated, clippy::panic)]
+#[allow(clippy::shadow_unrelated)]
 mod tests {
     use super::*;
 

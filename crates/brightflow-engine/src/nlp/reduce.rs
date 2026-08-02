@@ -194,7 +194,7 @@ fn normalize(v: &mut [f32]) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 

@@ -112,7 +112,6 @@ fn calculate_avg_spacing_days(timestamps: &[i64]) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::f64::consts::PI;

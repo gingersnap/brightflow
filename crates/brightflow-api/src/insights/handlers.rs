@@ -629,7 +629,6 @@ pub async fn get_latest_runs(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use brightflow_engine::analysis::tree::AnalysisType;

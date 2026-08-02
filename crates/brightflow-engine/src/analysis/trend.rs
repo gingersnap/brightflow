@@ -61,7 +61,7 @@ pub fn detect_trend(df: &DataFrame, column: &str) -> Result<Option<TrendResult>>
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::suboptimal_flops)]
+#[allow(clippy::suboptimal_flops)]
 mod tests {
     use super::*;
 

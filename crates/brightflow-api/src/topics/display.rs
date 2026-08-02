@@ -95,7 +95,6 @@ pub(crate) fn bluesky_post_url(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

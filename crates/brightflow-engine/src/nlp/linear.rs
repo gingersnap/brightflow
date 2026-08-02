@@ -553,13 +553,7 @@ fn fit_binary(x: &Array2<f32>, y: &[usize]) -> Option<(Vec<f32>, f32)> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::float_cmp,
-    clippy::indexing_slicing,
-    clippy::cast_precision_loss
-)]
+#[allow(clippy::float_cmp, clippy::cast_precision_loss)]
 mod tests {
     use super::super::classification_metrics::binary_f1;
     use super::{

@@ -200,7 +200,6 @@ pub fn apply_to_summaries(summaries: &mut Vec<ClusterSummary>, overlay: &Curatio
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

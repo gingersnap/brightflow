@@ -800,7 +800,7 @@ pub fn dominance_shares(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss)]
 mod tests {
     use super::*;
 

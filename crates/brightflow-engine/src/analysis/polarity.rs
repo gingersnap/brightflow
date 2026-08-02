@@ -74,7 +74,6 @@ pub fn apply_sentiment(tree: &mut AnalysisTree, polarity: &HashMap<String, Polar
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::analysis::tree::AnalysisTree;

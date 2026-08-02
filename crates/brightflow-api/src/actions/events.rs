@@ -182,7 +182,6 @@ pub fn emit_run_row(state: &AppState, row: brightflow_store::AgentRunRow, action
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::analytics::types::WsServerMessage;

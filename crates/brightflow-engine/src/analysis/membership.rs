@@ -66,7 +66,6 @@ pub fn detect_membership_change(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

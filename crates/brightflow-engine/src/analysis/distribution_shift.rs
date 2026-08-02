@@ -121,7 +121,6 @@ pub fn detect_distribution_shift(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

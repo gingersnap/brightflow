@@ -1470,12 +1470,7 @@ fn write_label_columns(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::cast_possible_wrap
-)]
+#[allow(clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
     use crate::nlp::MultiLabelLinear;
