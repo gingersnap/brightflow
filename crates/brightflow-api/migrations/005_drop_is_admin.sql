@@ -1,0 +1,13 @@
+-- Drop the is_admin flag.
+--
+-- It gated nothing. Both creation sites (the bootstrap seeder in lib.rs and the
+-- CLI's user-create command) hardcoded TRUE, there is no signup endpoint that
+-- could produce a non-admin, and no handler or frontend component ever read it —
+-- it survived only in the ts-rs-generated User.ts.
+--
+-- A privilege flag that grants no privilege is worse than no flag, because it
+-- reads as protection. Enforcing it would mean inventing a role system that does
+-- not exist; the honest move is to remove it until one does.
+--
+-- DROP COLUMN requires SQLite >= 3.35 (local is 3.45).
+ALTER TABLE users DROP COLUMN is_admin;

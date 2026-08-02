@@ -1,3 +1,10 @@
+//! `AppState`: the shared handle every handler receives.
+//!
+//! Cheap to clone by design — every field is an `Arc`, a `DashMap`, or a
+//! broadcast sender, because axum clones the state per request. Caches keyed by
+//! source *and* table use `cache_key()` so a table name alone can never alias two
+//! sources (the same mistake `DatasetSource::StoreTable` once made).
+
 use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
@@ -49,6 +56,10 @@ pub struct AppState {
     pub scheduler: Option<Arc<Scheduler>>,
     /// Authentication database
     pub auth_db: Option<Arc<crate::auth::AuthDb>>,
+    /// Per-IP login token buckets (see `auth::rate_limit`). Always present —
+    /// an empty limiter simply never throttles, so the login handler doesn't
+    /// need an `Option` branch on a security control.
+    pub login_limiter: Arc<crate::auth::LoginLimiter>,
     /// Scheduler database
     pub scheduler_db: Option<Arc<brightflow_scheduler::SchedulerDb>>,
     /// Live system metrics snapshot (updated by background sampler)
@@ -92,6 +103,7 @@ impl AppState {
             scheduler: None,
 
             auth_db: None,
+            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
@@ -119,6 +131,7 @@ impl AppState {
             scheduler: None,
 
             auth_db: None,
+            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
@@ -282,6 +295,7 @@ impl AppState {
             scheduler: None,
 
             auth_db: None,
+            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,
@@ -329,6 +343,7 @@ impl AppState {
             scheduler: None,
 
             auth_db: None,
+            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
             scheduler_db: None,
             system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
             log_sender,

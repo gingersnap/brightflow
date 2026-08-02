@@ -1,3 +1,10 @@
+//! The `User` row and its `axum-login` identity implementation.
+//!
+//! `password_hash` is `#[serde(skip_serializing)]` and `#[ts(skip)]`: it must
+//! never reach a client or the generated TypeScript. It doubles as the session
+//! auth hash, which is what makes a password change invalidate existing sessions
+//! for free.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -11,7 +18,6 @@ pub struct User {
     #[serde(skip_serializing)]
     #[ts(skip)]
     pub password_hash: String,
-    pub is_admin: bool,
     pub created_at: String,
     pub updated_at: String,
 }

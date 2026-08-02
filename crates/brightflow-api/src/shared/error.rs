@@ -1,3 +1,10 @@
+//! The API's error type and its HTTP representation.
+//!
+//! One enum for every failure mode so handlers can `?` freely, with a single
+//! `IntoResponse` deciding status codes and a stable machine-readable `code` in
+//! the body. Messages for internal failures are passed through, so variants that
+//! wrap third-party errors should not carry anything secret.
+
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -22,6 +29,9 @@ pub enum AppError {
 
     #[error("Conflict: {0}")]
     Conflict(String),
+
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
 
     #[error("Internal error: {0}")]
     Internal(String),
@@ -56,6 +66,11 @@ impl IntoResponse for AppError {
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
             Self::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
+            Self::TooManyRequests(msg) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "TOO_MANY_REQUESTS",
+                msg.clone(),
+            ),
             Self::InvalidQuery(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "INVALID_QUERY",
@@ -117,6 +132,7 @@ impl AppError {
             Self::NotFound(_) => "NOT_FOUND",
             Self::InvalidQuery(_) => "INVALID_QUERY",
             Self::Conflict(_) => "CONFLICT",
+            Self::TooManyRequests(_) => "TOO_MANY_REQUESTS",
             Self::Internal(_) => "INTERNAL_ERROR",
             Self::Polars(_) => "POLARS_ERROR",
             Self::Io(_) => "IO_ERROR",

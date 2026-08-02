@@ -1,3 +1,15 @@
+//! The Brightflow HTTP API: axum router, shared state, and server bootstrap.
+//!
+//! `serve()` is the whole composition root — it resolves workspace paths, opens
+//! the Parquet store and auth database, seeds and hydrates the caches, starts the
+//! scheduler and ingestion loops, and assembles the router. Startup deliberately
+//! fails loudly on a misconfiguration it cannot make safe (see the
+//! `APP_ENV=production` CORS branch) rather than degrading into a permissive
+//! default that nothing announces.
+//!
+//! Route definitions live in `routes.rs`, which is the index of the API surface;
+//! per-area handlers live in their own modules.
+
 // Allow certain pedantic lints that are too strict for API code:
 // - cognitive_complexity: handler functions are naturally complex
 // - too_many_lines: handler functions may be verbose
@@ -246,7 +258,7 @@ pub async fn serve(
             let hash = auth::hash_password(&password)
                 .map_err(|e| anyhow::anyhow!("Failed to hash admin password: {e}"))?;
             auth_db_arc
-                .create_user(&email, "Admin", &hash, true)
+                .create_user(&email, "Admin", &hash)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to seed admin user: {e}"))?;
             tracing::info!("Seeded admin user: {}", email);
@@ -355,8 +367,22 @@ pub async fn serve(
             ])
             .allow_credentials(true)
     } else if std::env::var("APP_ENV").as_deref() == Ok("production") {
-        // Behind reverse proxy on same origin — CORS not needed
-        CorsLayer::permissive()
+        // Previously this fell through to CorsLayer::permissive() on the reasoning
+        // that production sits behind a reverse proxy on the same origin, where CORS
+        // is moot. But that assumption is invisible at runtime: if the proxy is ever
+        // absent or misconfigured, the server comes up happily with a wildcard CORS
+        // policy and nothing says so. Refusing to start makes the assumption explicit
+        // at the moment it stops holding.
+        //
+        // (A permissive layer cannot carry credentials, so cookie auth would break
+        // rather than leak — the failure mode was confusing, not catastrophic. Failing
+        // at startup still beats failing mysteriously on the first cross-origin
+        // request.)
+        anyhow::bail!(
+            "APP_ENV=production requires an explicit CORS origin. Set `cors_origin` in \
+             the config (or BRIGHTFLOW_CORS_ORIGIN). If the API is served same-origin \
+             behind a reverse proxy, set it to that origin."
+        );
     } else {
         // Dev default
         CorsLayer::new()

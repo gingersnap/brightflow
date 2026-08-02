@@ -1,3 +1,11 @@
+//! SQLite-backed user store for authentication.
+//!
+//! Owns its own pool and runs the `migrations/` directory at construction, so a
+//! fresh deployment gets a usable users table without a separate migrate step.
+//! Deliberately thin: it does lookups and inserts and holds no password policy —
+//! hashing lives in `auth::password`, the timing-equalized verification in
+//! `auth::backend`.
+
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
@@ -41,19 +49,17 @@ impl AuthDb {
         email: &str,
         display_name: &str,
         password_hash: &str,
-        is_admin: bool,
     ) -> AuthResult<User> {
         let id = uuid::Uuid::new_v4().to_string();
         let user = sqlx::query_as::<_, User>(
-            r"INSERT INTO users (id, email, display_name, password_hash, is_admin)
-              VALUES (?, ?, ?, ?, ?)
+            r"INSERT INTO users (id, email, display_name, password_hash)
+              VALUES (?, ?, ?, ?)
               RETURNING *",
         )
         .bind(&id)
         .bind(email)
         .bind(display_name)
         .bind(password_hash)
-        .bind(is_admin)
         .fetch_one(&self.pool)
         .await?;
 

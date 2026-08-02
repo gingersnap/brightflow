@@ -1,3 +1,10 @@
+//! Brightflow command-line entry point.
+//!
+//! Thin dispatch over the library crates: every subcommand resolves a workspace,
+//! constructs the store/scheduler/API pieces it needs, and delegates. Logic that
+//! could be reused belongs in a crate rather than here — this file is the place
+//! where argument shapes and human-readable output are decided, nothing else.
+
 // Allow certain pedantic lints that are too strict for CLI code:
 // - cognitive_complexity: CLI functions often have many branches
 // - ref_option: &Option<T> is idiomatic in argument parsing
@@ -1007,7 +1014,7 @@ async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Res
     }
 
     let hash = brightflow_api::auth::hash_password(&password)?;
-    let user = db.create_user(email, name, &hash, true).await?;
+    let user = db.create_user(email, name, &hash).await?;
 
     println!("Admin user created:");
     println!("  ID:    {}", user.id);
