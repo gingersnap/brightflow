@@ -1,3 +1,10 @@
+//! Opt-in trace log of what the engine considered and why it was dropped.
+//!
+//! A report shows what survived selection; when the question is "why did it not
+//! find X", the discarded candidates are the only thing that answers it. Writes
+//! are best-effort and ignore errors — debug logging must never fail an analysis
+//! run.
+
 // Allow ignoring write results in debug logging - this is intentional
 #![allow(let_underscore_drop)]
 

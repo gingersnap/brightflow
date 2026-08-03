@@ -1,3 +1,10 @@
+//! Loads and runs the static embedding model.
+//!
+//! The model is loaded once into a process-wide `OnceCell` — it is tens of
+//! megabytes, so per-call loading would dominate every enrichment run. A missing
+//! model file is a normal, recoverable state (embeddings are optional), so it
+//! surfaces as an error the caller can report rather than a panic.
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

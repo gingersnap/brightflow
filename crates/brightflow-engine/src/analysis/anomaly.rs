@@ -1,3 +1,10 @@
+//! Point-anomaly detection: values far from a column's own mean.
+//!
+//! Deliberately the simplest detector in the crate — a z-score against the
+//! column's distribution. It exists to catch the obvious outlier cheaply; the
+//! subtler questions (is the whole series shifting? is one segment responsible?)
+//! belong to `trend`, `change_point`, and `segment`.
+
 use anyhow::Result;
 use polars::prelude::*;
 

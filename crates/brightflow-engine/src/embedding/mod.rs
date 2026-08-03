@@ -1,3 +1,5 @@
+//! Dense sentence embeddings via a bundled Model2Vec encoder.
+
 pub mod backend;
 pub mod encoder;
 pub mod paths;

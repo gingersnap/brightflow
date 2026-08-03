@@ -1,3 +1,13 @@
+//! Groups co-occurring outliers into a single finding.
+//!
+//! A real incident shows up as many columns moving in the same period, which
+//! would otherwise be reported as many separate anomalies. Clustering them says
+//! "this period is odd" once instead of twenty times.
+//!
+//! Carries its own multiple-comparison denominators (`columns_tested`,
+//! periods scanned) because the interesting question is whether *this many*
+//! outliers coinciding is surprising given how many chances there were.
+
 use std::collections::HashMap;
 
 use crate::analysis::engine::ColumnCache;

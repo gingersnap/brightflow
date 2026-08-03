@@ -1,3 +1,10 @@
+//! Finding generators and the tree that ranks them.
+//!
+//! Each submodule answers one question (is this a trend? an anomaly? a driver?)
+//! and emits candidate findings; `scoring`, `select`, and `dedup` decide which
+//! survive into a report. The split matters: generators are free to be generous,
+//! because selection is what protects the user from a wall of noise.
+
 pub mod anomaly;
 pub mod candidates;
 pub mod change_point;

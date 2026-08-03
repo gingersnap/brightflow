@@ -1,3 +1,9 @@
+//! Forecast deviation: actual versus a linear extrapolation of the recent trend.
+//!
+//! Uses a prediction interval rather than a bare threshold so "unexpected" scales
+//! with how noisy the series already is — a 10% miss on a steady metric is a
+//! finding, the same miss on a volatile one is not.
+
 use crate::stats::significance::prediction_interval;
 
 #[derive(Debug, Clone)]

@@ -1,3 +1,10 @@
+//! The analysis tree: the structure a report is built and rendered from.
+//!
+//! Findings are nodes with parents rather than a flat list, because the useful
+//! output is "revenue fell, and here is the segment responsible" — a hierarchy of
+//! explanation. The three `ReportType`s (Review, Drivers, Trends) are three
+//! traversals of the same generators, not three separate engines.
+
 use serde::Serialize;
 use ts_rs::TS;
 

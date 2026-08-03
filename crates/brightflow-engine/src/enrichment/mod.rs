@@ -1,3 +1,6 @@
+//! Enrichment orchestration: fitted artifacts, their config, and the topic
+//! enricher that applies them.
+
 pub mod artifacts;
 pub mod config;
 pub mod curation;

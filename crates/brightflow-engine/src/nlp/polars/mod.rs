@@ -1,3 +1,9 @@
+//! Bridge between the pure NLP primitives and Polars DataFrames.
+//!
+//! Kept separate from `nlp` proper so the algorithms stay testable without
+//! constructing a DataFrame, and so a Polars upgrade cannot reach into the
+//! numeric core.
+
 pub mod centroids;
 pub mod enrichment;
 pub mod serde_utils;

@@ -1,3 +1,9 @@
+//! Word n-gram generation over token slices.
+//!
+//! Unigrams are yielded borrowed and only multi-word grams allocate, which
+//! matters because this runs over every document in a corpus and unigrams are
+//! the overwhelming majority of what it produces.
+
 use std::borrow::Cow;
 use std::ops::RangeInclusive;
 

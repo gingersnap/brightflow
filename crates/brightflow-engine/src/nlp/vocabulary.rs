@@ -1,3 +1,10 @@
+//! Token to stable-id mapping, plus document frequencies for IDF.
+//!
+//! Carries a `generation` counter that increments on every re-fit. Vectors record
+//! the generation they were built under so a stale vector can be detected instead
+//! of being silently reinterpreted against different ids — the failure mode that
+//! produces confidently wrong similarity scores.
+
 use std::collections::{HashMap, HashSet};
 
 use super::error::Result;

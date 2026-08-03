@@ -1,3 +1,11 @@
+//! The analysis engine: statistics, NLP primitives, and enrichment orchestration.
+//!
+//! Layered bottom-up — `stats` and `nlp` are pure algorithms with no I/O, `data`
+//! and `analysis` build findings on top of them, `enrichment` and `embedding`
+//! persist and reuse fitted models, and `output` renders results. Nothing lower
+//! depends on anything higher, which is what keeps the numeric core testable
+//! without a workspace on disk.
+
 // Allow certain pedantic lints that are too strict for statistical/NLP code:
 // - cast_precision_loss: usize->f64 is common and acceptable for our data sizes
 // - cast_possible_truncation: f64->i64/usize truncation is handled by algorithm design

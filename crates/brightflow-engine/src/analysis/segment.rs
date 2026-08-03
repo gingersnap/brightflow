@@ -1,3 +1,10 @@
+//! Segment comparison: which slices of a dimension differ significantly on a
+//! measure.
+//!
+//! Uses Welch's t-test rather than Student's because segments routinely have
+//! wildly unequal sizes and variances (one huge default bucket, a long tail of
+//! small ones), which is exactly where the equal-variance assumption fails.
+
 use anyhow::Result;
 use polars::prelude::*;
 

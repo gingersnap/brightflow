@@ -1,3 +1,9 @@
+//! Sparse vectors with sorted indices — the substrate for TF-IDF and cosine.
+//!
+//! Sorted, duplicate-free indices are the invariant that makes dot products a
+//! linear merge instead of a hash lookup per element. Text vectors are thousands
+//! of dimensions and almost entirely zero, so dense storage is not an option.
+
 use super::error::{Result, SubtextError};
 
 /// A sparse vector with sorted `u32` indices and `f32` values.

@@ -1,3 +1,8 @@
+//! Serialization of `SparseVec` into and out of Polars Binary columns.
+//!
+//! Bincode rather than JSON because these are numeric arrays stored per row —
+//! the size and parse cost of a text encoding would dominate the file.
+
 use crate::nlp::error::{Result, SubtextError};
 use crate::nlp::SparseVec;
 

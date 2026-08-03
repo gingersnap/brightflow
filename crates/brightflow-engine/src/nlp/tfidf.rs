@@ -1,3 +1,10 @@
+//! TF-IDF vectorization.
+//!
+//! Defaults match scikit-learn (sublinear TF, smoothed IDF, L2 normalization) so
+//! results are comparable against the reference implementation rather than being
+//! subtly our own dialect. Fitting and transforming are separate types
+//! (`TfIdf` / `FittedTfIdf`) so an unfitted model cannot be used by mistake.
+
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 

@@ -1,3 +1,9 @@
+//! Builds per-label centroids from a labelled DataFrame.
+//!
+//! Multi-label rows contribute to every label they carry rather than being
+//! assigned to one — a document about both billing and auth is evidence for both
+//! centroids, and forcing a single choice would blur them together.
+
 use std::collections::HashMap;
 
 use polars::prelude::*;

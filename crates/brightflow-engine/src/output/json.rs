@@ -1,3 +1,6 @@
+//! JSON serialization of an analysis tree — the machine-readable output and the
+//! one the API and frontend consume.
+
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::BufWriter;

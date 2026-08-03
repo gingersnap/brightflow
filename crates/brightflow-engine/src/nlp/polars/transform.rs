@@ -1,3 +1,5 @@
+//! DataFrame-level TF-IDF fit/transform and nearest-label assignment.
+
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 

@@ -1,3 +1,9 @@
+//! Cosine similarity over sparse vectors.
+//!
+//! Two entry points on purpose: `cosine` assumes L2-normalized input and is a
+//! bare dot product, which is the common case after a TF-IDF transform;
+//! `cosine_unnormalized` pays for the norms when that assumption does not hold.
+
 use super::sparse::SparseVec;
 
 /// Cosine similarity for pre-normalized vectors (fast path).

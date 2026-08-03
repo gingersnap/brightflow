@@ -1,3 +1,8 @@
+//! Self-contained HTML rendering of an analysis tree.
+//!
+//! Everything is inlined so a report is one file that can be mailed or opened
+//! offline, with no asset directory to keep alongside it.
+
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufWriter, Write};

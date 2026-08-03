@@ -1,3 +1,9 @@
+//! Direction and strength of change over time, by linear regression.
+//!
+//! Reports slope, r-squared, and p-value together because a steep slope through
+//! scattered points is not a trend — all three are needed before calling a
+//! direction.
+
 use anyhow::Result;
 use polars::prelude::*;
 

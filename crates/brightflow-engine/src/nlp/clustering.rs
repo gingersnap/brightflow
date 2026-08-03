@@ -1,3 +1,9 @@
+//! K-means over sparse vectors, using cosine similarity.
+//!
+//! Cosine rather than Euclidean because document length should not determine
+//! cluster membership — a short and a long document about the same subject point
+//! the same direction, but are far apart by distance.
+
 use super::similarity::cosine;
 use super::sparse::SparseVec;
 

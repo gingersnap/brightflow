@@ -1,3 +1,9 @@
+//! Pairwise correlation between numeric columns, with significance.
+//!
+//! Reports the p-value alongside r because with enough columns some pair always
+//! correlates: without the significance test this becomes a machine for
+//! generating spurious findings.
+
 use anyhow::Result;
 use polars::prelude::*;
 

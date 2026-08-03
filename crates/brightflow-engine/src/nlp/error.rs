@@ -1,3 +1,10 @@
+//! NLP error type.
+//!
+//! `GenerationMismatch` is the notable one: vectors carry the vocabulary
+//! generation they were built with, so a vector compared against a re-fitted
+//! vocabulary fails loudly instead of silently comparing mismatched dimensions
+//! and returning a plausible, meaningless number.
+
 /// Errors that can occur in NLP operations
 #[derive(Debug, thiserror::Error)]
 pub enum SubtextError {

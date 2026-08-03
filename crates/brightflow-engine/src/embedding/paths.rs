@@ -1,3 +1,11 @@
+//! Filesystem layout for embedder models and topic artifacts.
+//!
+//! Source ids are sanitized before use as path components — they originate from
+//! user input, and an unsanitized id is a path-traversal waiting to happen. The
+//! model directory name doubles as the `embedding_model_id` written to Parquet,
+//! so a row always records which encoder produced it and vectors from different
+//! models are never silently compared.
+
 use std::path::{Path, PathBuf};
 
 /// Directory name for the bundled Model2Vec encoder.

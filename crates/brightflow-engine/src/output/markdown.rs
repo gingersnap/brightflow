@@ -1,3 +1,6 @@
+//! Markdown rendering of an analysis tree, for terminals and pasting into
+//! issues or docs.
+
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufWriter, Write};

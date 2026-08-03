@@ -1,3 +1,12 @@
+//! Significance tests, correlations, and interval estimates.
+//!
+//! Every function here degrades to the *non-significant* answer on degenerate
+//! input — too few points, zero variance, an unconstructable distribution all
+//! return p = 1.0 rather than an error. That is deliberate: these run across
+//! hundreds of column combinations where empty and near-empty slices are normal,
+//! and the safe failure is to report nothing rather than to abort the report or,
+//! worse, to claim significance from a division that never happened.
+
 use statrs::distribution::{ContinuousCDF, Normal, StudentsT};
 
 /// Calculate two-tailed p-value for a z-score using normal distribution

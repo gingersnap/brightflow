@@ -1,3 +1,10 @@
+//! Fits and applies text-enrichment models over DataFrames.
+//!
+//! The orchestration layer: tokenize, vectorize, cluster, label, and write the
+//! results back as columns. Vectors are stored as serialized bytes in a Binary
+//! column so an enriched Parquet file carries its own embeddings and can be
+//! re-labelled later without re-vectorizing the corpus.
+
 use std::collections::HashMap;
 use std::path::Path;
 

@@ -1,3 +1,10 @@
+//! Text to tokens, with byte-offset spans preserved.
+//!
+//! Spans are carried rather than discarded because the same tokenizer serves both
+//! the model and the UI: Text Explorer highlights matches in the original string,
+//! which is impossible once you have only the token text. Unicode segmentation
+//! rather than whitespace splitting, so non-Latin scripts tokenize sanely.
+
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::LazyLock;
