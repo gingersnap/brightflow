@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Collapsible shell around the results area: switches between the five view
+ * modes (table / pivot / number / chart / split), each with its own empty
+ * state, and carries the shared chrome — row count, execution time, CSV
+ * export — reading whichever result set (table or pivot) the active mode
+ * uses.
+ */
+
 import { BarChart3, Download, Hash, Split, Table, TableProperties } from '@lucide/vue';
 import { type Component, computed } from 'vue';
 

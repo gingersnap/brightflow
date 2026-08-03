@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Detail pane of the Enrich tool: owns the draft config for one function
+ * (LLM prompt or topic model) and its lifecycle — save (with a rerun-choice
+ * dialog when editing a promoted prompt), the test-on-sample loop, full-table
+ * runs, promote/demote, version restore, and delete. Dirtiness is a JSON
+ * snapshot comparison, gating both Save and the run / re-test hints.
+ */
+
 import { computed, onMounted, ref, watch } from 'vue';
 
 import TopicModelForm, { type TopicModelFormValue } from '@/components/topics/TopicModelForm.vue';

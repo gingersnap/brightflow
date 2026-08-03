@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Settings section for LLM providers: list, add, remove, and a per-provider
+ * connectivity test. Any OpenAI-compatible chat endpoint qualifies, so the
+ * API key is optional (local servers like ollama don't need one) and only
+ * name, base URL, and model are required.
+ */
+
 import { onMounted, reactive, ref } from 'vue';
 
 import { llmApi } from '@/services/api';

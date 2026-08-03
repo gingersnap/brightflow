@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * One drag-target bucket (rows / columns / values) of the pivot builder.
+ * Works on a local copy of the fields so vuedraggable never mutates props:
+ * a dropped column is stripped back out of the local list and re-emitted as
+ * an `add` event for the store to apply, and reorders are emitted whole.
+ */
+
 import { GripVertical, Hash, HelpCircle, Type, X } from '@lucide/vue';
 import { type Component, ref, watch } from 'vue';
 import draggable from 'vuedraggable';

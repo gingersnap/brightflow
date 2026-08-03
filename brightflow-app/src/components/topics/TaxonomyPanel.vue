@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Manages the intent taxonomy — what tickets are ABOUT, as opposed to the
+ * format clusters. Category add/rename/delete all dispatch through the
+ * action bus, and the panel foregrounds the coverage numbers that decide
+ * whether a classifier fit will produce anything: labelled rows vs the
+ * training minimum, and which categories are too small to survive fit time.
+ */
+
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 

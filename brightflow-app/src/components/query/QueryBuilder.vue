@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * The "Summarize" section: drag columns from the sidebar into row / column /
+ * value buckets to build a pivot. A watcher enforces Polars' pivot shape
+ * (columns require rows; a lone value field auto-adds a row) so the store
+ * never holds an un-runnable config, and changes auto-execute through a
+ * 300ms debounce — there is no run button.
+ */
+
 import {
   ArrowDown,
   ArrowLeftRight,

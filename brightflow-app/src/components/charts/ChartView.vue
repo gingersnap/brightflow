@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * ECharts view over the current results, using pivot output when a pivot is
+ * configured. Axis choice is automatic but overridable: a watcher picks
+ * sensible X/Y defaults (and turns on stacking for multi-value pivots) so a
+ * chart appears without setup, while the toolbar lets the user re-pick type,
+ * axes, stacking, and orientation.
+ */
+
 import '@/services/echarts';
 import { computed, ref, watch } from 'vue';
 import VChart from 'vue-echarts';

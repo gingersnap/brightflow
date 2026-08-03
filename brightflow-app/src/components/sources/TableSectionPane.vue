@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Collapsible table picker for table-scoped tools. Expands itself whenever
+ * no table is selected and collapses on pick. Single-table sources emit
+ * `auto-select-table` instead of `select-table`, so the parent can give
+ * automatic selection different navigation semantics than a user click.
+ */
+
 import { Table2 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 

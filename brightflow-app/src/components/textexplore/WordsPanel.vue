@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Word-frequency side panel: Distinctive leads, Common follows, and each
+ * section disappears when empty. A word click emits include, alt-click
+ * or the hover minus button emits exclude — the panel never mutates the
+ * filter itself, it only emits terms.
+ */
+
 import { computed } from 'vue';
 
 import type { WordScore } from '@/types/generated';

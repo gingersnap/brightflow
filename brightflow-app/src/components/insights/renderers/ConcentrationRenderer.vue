@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Lorenz curve for concentration findings: cumulative population share vs
+ * cumulative value share, plotted against the dashed perfect-equality
+ * diagonal so the bowed gap between the two lines is the finding itself.
+ * HHI and Gini overlay as compact chips, and the tooltip phrases each point
+ * as "Bottom X% has Y% of total".
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

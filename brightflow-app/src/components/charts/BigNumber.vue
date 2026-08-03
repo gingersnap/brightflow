@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Headline-number view of the current results (pivot results preferred over
+ * table). The display shape is inferred from the data itself: a single
+ * numeric cell renders as one big value, a one-row pivot fans out per column,
+ * and a multi-row table falls back to computed sum/avg/min/max/count over the
+ * first numeric column.
+ */
+
 import { computed } from 'vue';
 
 import { usePivotStore } from '@/stores/pivot';

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Funnel builder for Product Analytics: ordered event steps plus a conversion
+ * window, rendered as per-step bars with drop-off rates. Steps are edited
+ * locally and nothing is fetched until the user clicks Analyze (the
+ * `submitted` gate) with at least two steps filled in.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 

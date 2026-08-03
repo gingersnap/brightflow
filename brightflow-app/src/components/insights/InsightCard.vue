@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * One finding in the insights feed, recursing into itself for drill-down
+ * children (sorted by significance). Owns the whole curation surface —
+ * context menu, kebab dropdown, and a ⌘P shortcut gated to the hovered
+ * top-level card so the global listener stays inert elsewhere. "Open in
+ * Explore" replays the node's filter chain into the query store, landing
+ * the user on the raw rows behind the finding.
+ */
+
 import { ChevronDown, ChevronRight, ExternalLink, Info } from '@lucide/vue';
 import type { ContextMenuItem } from '@nuxt/ui';
 import { computed, ref } from 'vue';

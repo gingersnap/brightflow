@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Create/edit form for a connector preset: name, credential, the connector's
+ * typed hint fields, and free-form extra key/value config. Emits the
+ * assembled config on submit — the parent owns the API call. In edit mode the
+ * token field is hidden, since credentials are updated through a separate
+ * flow.
+ */
+
 import type { FormError } from '@nuxt/ui';
 import { computed, reactive, ref, watch } from 'vue';
 

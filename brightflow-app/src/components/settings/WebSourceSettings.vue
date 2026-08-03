@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Settings page for a web-analytics source: inline rename, the tracking
+ * snippet, and deletion. The snippet is fetched only when the user asks to
+ * see it, then shown with a copy button for pasting into the site's head.
+ */
+
 import { Check, Copy, Pencil, Trash2, X } from '@lucide/vue';
 import { useMutation, useQueryCache } from '@pinia/colada';
 import { useClipboard } from '@vueuse/core';

@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Per-source route target: switches the :tool param across all tool
+ * panels inside one shared navbar + period toolbar. Event names for the
+ * funnel/retention/events tools are fetched here via Pinia Colada, keyed
+ * on source and period, so those panels share one cached list; the
+ * "web:" prefix is stripped off the source id for analytics API calls.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { computed } from 'vue';
 

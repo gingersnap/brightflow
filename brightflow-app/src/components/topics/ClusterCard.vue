@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Collapsible card for one topic cluster. Uncurated clusters headline with
+ * their c-TF-IDF terms (they read better than the auto-generated name);
+ * curated ones with their name. Every curation action here dispatches
+ * through the action bus — the same path an LLM agent uses — and the ⌘R/⌘E
+ * shortcuts are hover-scoped so a card never hijacks the browser's reload.
+ */
+
 import type { ContextMenuItem } from '@nuxt/ui';
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';

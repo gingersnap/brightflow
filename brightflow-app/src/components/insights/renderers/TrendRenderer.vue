@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Actual series as a solid line with the linear fit dashed over it, and R²
+ * pinned as a corner chip — how closely the two lines track each other shows
+ * how much of the movement the fitted trend explains.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Read-only slideover showing a single document (title, number, monospace
+ * body) with a link out to the original. Purely presentational — the parent
+ * picks the doc and controls visibility via v-model.
+ */
+
 import type { DocRef } from '@/types/generated';
 
 defineProps<{

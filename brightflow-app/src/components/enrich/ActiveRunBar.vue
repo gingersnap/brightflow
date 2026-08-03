@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Status bar for a full-table enrichment run: live progress while running,
+ * then done/failed/cached counts and a re-run-failed shortcut once finished.
+ * Purely presentational — the parent owns the run state and handles the
+ * cancel / rerunFailed / dismiss emits.
+ */
+
 import { computed } from 'vue';
 
 import type { EnrichRun } from '@/types/enrichment';

@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * User preferences panel: dark/light theme via VueUse's color mode,
+ * app-wide text size (three presets that scale layout density) held in
+ * the UI store, and the LLM provider settings section.
+ */
+
 import { Moon, Sun } from '@lucide/vue';
 import { useColorMode } from '@vueuse/core';
 import { computed } from 'vue';

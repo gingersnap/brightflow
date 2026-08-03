@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * One bar per period, with the flagged period singled out purely by color —
+ * red at the marker index, muted grey everywhere else — so the whole visual
+ * is the flagged period's height against its ordinary neighbors.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

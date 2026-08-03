@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * Route-level shell for the Insights tool: table picker, report-type and
+ * cadence toolbar, and the Run trigger, with agent curation, narration,
+ * history, and activity panels arranged around the results. Mounts the
+ * store's realtime curation sync so dismiss/pin/suppress events from other
+ * tabs or agent runs move cards without a re-run, and marks a table's
+ * findings seen both on open and after each run.
+ */
+
 import { Play } from '@lucide/vue';
 import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';

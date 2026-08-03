@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Text Explorer tool root: the table choice lives in the route (pushed
+ * on user selection, replaced on auto-selection so it adds no history
+ * entry), while search state and fetching live in useTextExplore. This
+ * component only arranges the term input, result list, and words side
+ * panel, plus the empty and first-index loading states.
+ */
+
 import { computed, toRef } from 'vue';
 import { useRouter } from 'vue-router';
 

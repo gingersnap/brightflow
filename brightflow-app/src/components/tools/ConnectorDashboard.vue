@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Landing view for a connector-backed source: its synced tables, each with a
+ * jump into Explore, and a coarse ready / waiting-for-first-sync status.
+ * Read-only — the only action here is navigation.
+ */
+
 import { Cable, Search, Table2 } from '@lucide/vue';
 import { useRouter } from 'vue-router';
 

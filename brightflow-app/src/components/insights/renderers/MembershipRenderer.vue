@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Membership diffs are lists of categorical values, so this renders no chart:
+ * added and removed values appear as two color-coded panels (green plus, red
+ * minus), each capped at eight entries with a "+N more" tail.
+ */
+
 import { Minus, Plus } from '@lucide/vue';
 import { computed } from 'vue';
 

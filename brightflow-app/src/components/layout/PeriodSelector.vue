@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Time-period picker rendered as tabs. Ships a default preset list
+ * (today through 12 months) so most call sites only bind v-model, and
+ * coerces the tab value to a string to keep the v-model contract.
+ */
+
 interface PeriodOption {
   label: string;
   value: string;

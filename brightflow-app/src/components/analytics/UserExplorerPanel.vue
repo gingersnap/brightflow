@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Users tab of Product Analytics: searchable user list on the left, and for
+ * the selected user a traits card plus event timeline on the right. Profile
+ * and timeline are separate queries enabled only once a user is picked.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 

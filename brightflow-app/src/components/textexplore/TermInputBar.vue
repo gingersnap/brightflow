@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Term entry for text search: Enter commits the trimmed input as a chip,
+ * Backspace on an empty input pops the last term (editor-style), and an
+ * exclude term is marked by a minus prefix and error color. The
+ * component owns only the draft input — the committed term list comes in
+ * as a prop and edits are emitted.
+ */
+
 import { ref } from 'vue';
 
 import type { SearchTerm } from '@/types/generated';

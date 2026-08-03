@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Donut chart of cluster sizes, colored per-index via the shared
+ * clusterColor palette. Slices are named by each cluster's first top term
+ * (truncated, falling back to the cluster name); renders nothing when there
+ * are no clusters.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

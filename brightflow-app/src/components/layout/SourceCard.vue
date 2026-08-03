@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Clickable summary card for one source: kind icon, a kind-specific
+ * subtitle (domain, CSV upload, or connector name), table count, and a
+ * Ready/Pending badge. The whole card is the click target; it emits
+ * `select` with the source id rather than navigating itself.
+ */
+
 import type { UnifiedSource } from '@/types';
 
 defineProps<{

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Overlaid line chart for outlier-cluster findings: every series in the
+ * Multi payload gets its own thin line on shared axes with a bottom legend,
+ * all styled identically — the deviating member is meant to show against
+ * the rest of the pack, not be pre-highlighted.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Curation audit trail: every action — human or agent — in one feed, with
+ * per-entry approve/reject and an undo control only where the entry says the
+ * action is genuinely undoable. The bulk "Accept all" is the one guarded path;
+ * see approveAll for what it confirms and deliberately does not promise.
+ */
+
 import { Bot, Check, RotateCcw, User, X } from '@lucide/vue';
 import { computed } from 'vue';
 

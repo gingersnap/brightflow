@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Root shell: branches on session state between the loading screen, the
+ * login page, and the authenticated dashboard group. Logout tears down
+ * both WebSocket-backed stores and resets client state before ending the
+ * session, so nothing per-user survives into the next login.
+ */
+
 import LoginPage from './components/auth/LoginPage.vue';
 import CommandPalette from './components/command/CommandPalette.vue';
 import AppSidebar from './components/layout/AppSidebar.vue';

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Review queue for intent labelling. Defaults to agent-proposed, unconfirmed
+ * rows because seed-label quality caps classifier accuracy — that filter is
+ * where curation time buys the most. label_document actions are whole-set
+ * replaces, so Confirm just re-dispatches the agent's set as a human label.
+ */
+
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 

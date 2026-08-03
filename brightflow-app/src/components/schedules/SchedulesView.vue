@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Schedules page shell around the schedules panel. Its Refresh action
+ * invalidates the connectors and sync-runs Pinia Colada caches instead
+ * of refetching anything itself, so all consumers of those keys update.
+ */
+
 import { RefreshCw } from '@lucide/vue';
 import { useQueryCache } from '@pinia/colada';
 

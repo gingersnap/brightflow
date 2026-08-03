@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Email/password sign-in form. The component owns only the submitting
+ * flag and field values; the failure message is read from useAuth's
+ * loginError, so a thrown login is swallowed here and surfaced there.
+ */
+
 import { ref } from 'vue';
 
 import { useAuth } from '@/composables/useAuth';

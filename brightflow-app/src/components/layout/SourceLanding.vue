@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Sources overview: a card grid of every source plus a dashed
+ * "Add Source" tile. Selecting a card routes to that source's settings
+ * tool rather than a data view.
+ */
+
 import { Plus } from '@lucide/vue';
 import { useRouter } from 'vue-router';
 

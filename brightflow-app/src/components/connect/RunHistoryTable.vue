@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Table of sync runs (status, timing, rows, error) with a shared row context
+ * menu offering re-run and copy-error. The ⌘↵ re-run shortcut is deliberately
+ * hover-scoped: it acts on the row under the cursor and stays inert
+ * otherwise, so several of these tables can coexist on one page.
+ */
+
 import type { TableColumn, TableRow, ContextMenuItem } from '@nuxt/ui';
 import { useClipboard } from '@vueuse/core';
 import { computed, h, ref } from 'vue';

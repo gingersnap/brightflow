@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Live server health view: metric cards (memory, CPU, uptime) and a
+ * tailing log feed, fed by the system store's connection which this view
+ * opens on mount and closes on unmount. Auto-scroll follows new log
+ * entries but yields as soon as the user scrolls up, with a
+ * "scroll to bottom" button to re-pin.
+ */
+
 import { Trash2 } from '@lucide/vue';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 

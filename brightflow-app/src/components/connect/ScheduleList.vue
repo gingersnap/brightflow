@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Compact row list of connectors that have an enabled schedule, with run-now
+ * and delete actions emitted to the parent. The "next run" label is derived
+ * client-side from the last run's start time plus the interval, and last-run
+ * details are shown only for completed runs.
+ */
+
 import { Trash2 } from '@lucide/vue';
 import { computed } from 'vue';
 

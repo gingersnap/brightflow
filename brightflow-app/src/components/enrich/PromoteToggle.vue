@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Draft/promoted switch for an enrichment function, with copy spelling out
+ * what promotion means (runs automatically after each sync vs manual only).
+ * Emits the intent; the parent performs the actual promote/demote call.
+ */
+
 import { computed } from 'vue';
 
 const props = defineProps<{

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Header bar for the Topics view: a dense one-line summary of the current
+ * fit (rows, k, fit time, language mix, unassigned/hidden counts, embedding
+ * model) next to the recluster controls — k override, recluster button, and
+ * the enrichment-settings popover. Emits only; the parent runs the recluster.
+ */
+
 import { computed } from 'vue';
 
 import type { TopicsOverview } from '@/types/generated';

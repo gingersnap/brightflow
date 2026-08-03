@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Stateful hub for connector syncing: owns the connector and run queries plus
+ * the run/schedule/delete mutations, and polls every 3s only while a run is
+ * active so idle pages stay quiet. With `presetName` set it scopes everything
+ * to that preset and adds the run-now / schedule quick actions.
+ */
+
 import { Play } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { useIntervalFn } from '@vueuse/core';

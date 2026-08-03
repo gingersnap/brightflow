@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Settings page for a connector-backed source. Name and token are editable
+ * in place (the token write-only — only a has-token flag is shown), while the
+ * connector type and its config are displayed read-only: connector settings
+ * are fixed for the lifetime of a source, and syncing a different target
+ * means creating a new one. Deletion keeps stored data.
+ */
+
 import { Check, Eye, EyeOff, Key, Pencil, Trash2, X } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref, watch } from 'vue';

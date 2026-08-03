@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Cohort retention for Product Analytics: pick a cohort event and a return
+ * event, get a cohort-by-period matrix with cells shaded by retention rate.
+ * The query is gated on an explicit Analyze click (`submitted`) rather than
+ * firing on every config change.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 

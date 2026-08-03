@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Scatter plot of the two correlated measures, with the fitted
+ * slope/intercept from the node data drawn as a dashed line between the
+ * x-extremes and the r value pinned as a corner chip. Both axes use
+ * scale: true so the point cloud fills the frame instead of anchoring
+ * at zero.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * The "Filters & Options" section of the query builder: filter chips
+ * (column / operator / value, with operators chosen per column dtype) plus
+ * the row limit. Changes re-run the table query through a 300ms debounce,
+ * and only while connected with data loaded.
+ */
+
 import { Plus, X } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed, watch } from 'vue';

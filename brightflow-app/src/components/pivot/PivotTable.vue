@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Renders backend-pivoted results as a hand-rolled table — the domain grid
+ * (collapsible group-header rows, subtotals, column totals, per-cell heatmap
+ * shading) is the justified raw-markup exception to Nuxt-UI-first. With
+ * multiple row fields, rows are grouped client-side by the first index
+ * column, with subtotals accumulated per group.
+ */
+
 import { ChevronDown, ChevronRight } from '@lucide/vue';
 import { computed } from 'vue';
 

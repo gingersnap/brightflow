@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * CSV-upload path for creating a source. The preview is parsed client-side
+ * from only the file's first 64KB, so even large files preview instantly
+ * before anything is sent. The table name is pre-slugged from the filename
+ * but editable; a successful upload routes straight into Explore on the new
+ * table.
+ */
+
 import { useQueryCache } from '@pinia/colada';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';

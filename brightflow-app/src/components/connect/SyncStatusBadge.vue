@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Status chip for sync runs: a fixed mapping from the four run states to
+ * badge colors, with a pulsing dot while running. Purely presentational —
+ * the status arrives as a prop.
+ */
+
 defineProps<{
   status: 'pending' | 'running' | 'completed' | 'failed';
 }>();

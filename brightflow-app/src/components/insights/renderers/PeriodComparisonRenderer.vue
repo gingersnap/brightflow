@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Exactly two bars — previous period and current — in a single neutral
+ * color, with humanized period names on the axis. The size gap between the
+ * bars is the entire visualization; nothing else is drawn.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

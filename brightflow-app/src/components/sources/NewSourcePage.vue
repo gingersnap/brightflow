@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * The single entry point for adding a source, with the three creation paths
+ * behind tabs: a web-analytics domain form, a connector picker that opens a
+ * preset form, and CSV upload. The web and connector paths invalidate the
+ * source caches on success and route straight into the new source's
+ * settings.
+ */
+
 import { Database, Globe, Upload } from '@lucide/vue';
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';

@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Horizontal bar chart of segment contributions, colored by sign (green
+ * positive, red negative) with each bar's share of the total movement in
+ * the tooltip. When the node carries no SegmentBars payload it falls back
+ * to a single contribution bar synthesized from the Segment analysis
+ * fields, labeled "±N% of total change".
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

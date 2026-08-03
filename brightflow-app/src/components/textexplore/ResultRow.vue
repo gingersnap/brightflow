@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * One text-search result: linked title, #number/date metadata line, and
+ * snippet, all rendered through highlight runs. A right-click context
+ * menu offers copy/open actions, built from whichever optional fields
+ * (snippet, htmlUrl) the row actually carries — runs are flattened back
+ * to plain text for the clipboard.
+ */
+
 import type { ContextMenuItem } from '@nuxt/ui';
 import { useClipboard } from '@vueuse/core';
 import { computed } from 'vue';

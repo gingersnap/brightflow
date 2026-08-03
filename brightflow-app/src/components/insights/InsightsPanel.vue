@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * Results body of the Insights tool: loading/error/empty states plus the
+ * filtered findings list from the insights store. Shows only the top 5 roots
+ * until the user asks for more, and splits "not enough data to analyze" from
+ * "no findings match the filters" using totalCandidates, so an empty feed is
+ * never ambiguous. The strength filter speaks in qualitative tiers while the
+ * store keeps the numeric threshold.
+ */
+
 import { FileSearch, Filter as FilterIcon } from '@lucide/vue';
 import { computed, ref } from 'vue';
 

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Confirmation modal for a full enrichment run. The point is informed
+ * consent: picking a scope (missing / all / failed) refetches a row and
+ * token estimate so the cost is visible before Run is clicked, along with
+ * whether the estimate comes from token history or just prompt length.
+ */
+
 import { ref, watch } from 'vue';
 
 import { enrichFnApi } from '@/services/api';

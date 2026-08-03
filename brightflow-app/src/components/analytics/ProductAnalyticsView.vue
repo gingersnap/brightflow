@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Container for the Product Analytics tool: sub-tab switcher plus the shared
+ * period selection (hidden on Users, which is not period-scoped). Fetches the
+ * event-name list here once and passes it down, so the Funnels and Retention
+ * dropdowns share a single query.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 

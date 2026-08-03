@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Overview dashboard for a web-analytics source: stat tiles, a visitors and
+ * pageviews time-series, and four breakdown tables. Each block gets its own
+ * query keyed on source + period, so the sections load and cache
+ * independently when the period changes.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { LineChart, BarChart } from 'echarts/charts';
 

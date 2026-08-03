@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Renders server-segmented text runs, wrapping highlighted spans in
+ * <mark>. Everything goes through plain interpolation — the runs arrive
+ * pre-split, so no HTML is ever parsed on the client.
+ */
+
 import type { TextRun } from '@/types/generated';
 
 defineProps<{

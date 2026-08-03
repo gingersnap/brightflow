@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Line chart of the full series with the expected band_low/band_high range
+ * shaded via two invisible stacked lines, and the anomalous point flagged as
+ * a red markPoint — the band gives the reader the "normal" envelope the
+ * marked point escaped.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

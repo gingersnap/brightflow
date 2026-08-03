@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Smoothed line over the period series: easing the curve (smooth: true)
+ * emphasizes the repeating rise-and-fall shape of a seasonal cycle over the
+ * individual point values.
+ */
+
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 

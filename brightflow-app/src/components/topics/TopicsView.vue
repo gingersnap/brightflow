@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Route-level Topics view: table picker, then two tabs — Intent (taxonomy +
+ * review queue, the default) and Discovery (format clusters + pie). Intent
+ * leads because clusters group by writing format, not meaning; see the tab
+ * comment below. Reclustering dispatches through the action bus so refits
+ * land in the action log like any other mutation.
+ */
+
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';

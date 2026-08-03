@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Events tab of Product Analytics: a read-only table of per-event totals and
+ * unique-user counts for the selected source and period. No local state —
+ * one colada query keyed on the props, straight into UTable.
+ */
+
 import type { TableColumn } from '@nuxt/ui';
 import { useQuery } from '@pinia/colada';
 import { computed } from 'vue';

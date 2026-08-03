@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Master list for the Enrich tool's master–detail layout: derived columns
+ * (one entry per enrichment function) above the plain source columns, which
+ * are computed by subtracting each function's outputs and __status column
+ * from the table schema. The Add menu allows only one topic model per table.
+ */
+
 import { computed } from 'vue';
 
 import type { EnrichFunction, FunctionKind } from '@/types/enrichment';

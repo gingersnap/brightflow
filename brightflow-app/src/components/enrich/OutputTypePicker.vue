@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * V-model select for an output column's dtype. Enum is the one structured
+ * case: choosing it reveals a second input where the allowed labels are
+ * typed as comma-separated text and parsed into the values array on every
+ * edit.
+ */
+
 import { computed } from 'vue';
 
 import type { OutputType } from '@/types/enrichment';

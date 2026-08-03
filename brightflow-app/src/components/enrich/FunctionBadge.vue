@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Inline lifecycle strip for an enrichment function: kind icon, version,
+ * draft/promoted chip, a stale-row warning for LLM prompts, and a spinner
+ * while a run is active. Read-only — everything derives from the fn prop.
+ */
+
 import { computed } from 'vue';
 
 import type { EnrichFunction } from '@/types/enrichment';

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Plain table view of query results. Adapts the store's columnar rows to
+ * UTable's object shape, formatting at transform time (locale numbers,
+ * strings truncated at 100 chars). The context menu offers clipboard copy of
+ * a column name or cell value; richer actions are deferred (see below).
+ */
+
 import type { ContextMenuItem } from '@nuxt/ui';
 import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';

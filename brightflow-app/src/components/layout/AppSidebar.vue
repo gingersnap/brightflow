@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Dashboard sidebar: builds the per-source tool tree from the source
+ * list, with active/expanded state derived from the current route params.
+ * Also starts insights-activity realtime and badge hydration on setup,
+ * keeping the unseen-findings counters it renders live.
+ */
+
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Route-level Enrich view: table picker on top, then a master–detail split
+ * of ColumnListPanel and FunctionEditor. Owns the function-list and schema
+ * queries plus the selection state (selected function vs pending create
+ * kind), auto-selecting the first function when a table's list loads.
+ */
+
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';

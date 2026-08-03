@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * V-model form for an LLM prompt config: prompt template, typed output
+ * columns (name + type + a description that guides the model), and the
+ * provider / model override. Its only fetch is the provider list — no save
+ * here, the parent owns persistence.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { computed } from 'vue';
 

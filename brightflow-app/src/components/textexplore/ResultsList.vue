@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Search-result list with match counts and manual paging: "Load more"
+ * shows only while fewer rows are loaded than matched, and the loading
+ * spinner rides the count line so existing results stay visible during
+ * refetches.
+ */
+
 import type { TextExploreRow } from '@/types/generated';
 
 import ResultRow from './ResultRow.vue';

@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Slideover listing an enrichment function's saved versions. Expanding an
+ * old version shows its prompt as a line diff against the current one, and
+ * Restore emits the old config to be saved as a NEW version — history is
+ * append-only, never rewound.
+ */
+
 import { useQuery } from '@pinia/colada';
 import { computed, ref } from 'vue';
 
