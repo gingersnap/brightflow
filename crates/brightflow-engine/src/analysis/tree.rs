@@ -2,8 +2,9 @@
 //!
 //! Findings are nodes with parents rather than a flat list, because the useful
 //! output is "revenue fell, and here is the segment responsible" — a hierarchy of
-//! explanation. The three `ReportType`s (Review, Drivers, Trends) are three
-//! traversals of the same generators, not three separate engines.
+//! explanation. `ReportType` selects which question a run answers (Review,
+//! Drivers, Trends), but is not recorded in the tree: all three build the same
+//! structure, so a consumer needs no knowledge of which report produced it.
 
 use serde::Serialize;
 use ts_rs::TS;

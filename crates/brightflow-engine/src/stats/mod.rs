@@ -1,3 +1,4 @@
-//! Statistical primitives shared by every finding generator.
+//! Statistical primitives — significance tests, correlation, regression,
+//! prediction intervals — shared by the finding generators in `analysis`.
 
 pub mod significance;

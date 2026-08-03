@@ -1,8 +1,9 @@
 //! Forecast deviation: actual versus a linear extrapolation of the recent trend.
 //!
-//! Uses a prediction interval rather than a bare threshold so "unexpected" scales
-//! with how noisy the series already is — a 10% miss on a steady metric is a
-//! finding, the same miss on a volatile one is not.
+//! Reports the deviation and a prediction-interval p-value; it does not decide
+//! what counts as a finding. Every deviation with a non-zero expectation is
+//! returned, and callers apply their own thresholds — so the p-value here is an
+//! input to that decision, not a filter already applied.
 
 use crate::stats::significance::prediction_interval;
 
@@ -19,7 +20,8 @@ pub struct ForecastDeviation {
 /// Detect forecast deviation by comparing actual values to linear trend extrapolation.
 ///
 /// Requires at least 4 historical periods.
-/// Returns a deviation if |deviation| > 20% and p < 0.05 (outside prediction interval).
+/// Returns the deviation whenever the extrapolated expectation is non-zero —
+/// including small and insignificant ones. Filtering is the caller's.
 pub fn detect_forecast_deviation(
     column: &str,
     period_values: &[(String, f64)], // (period_label, mean_value)

@@ -1,9 +1,12 @@
 //! Text to tokens, with byte-offset spans preserved.
 //!
-//! Spans are carried rather than discarded because the same tokenizer serves both
-//! the model and the UI: Text Explorer highlights matches in the original string,
-//! which is impossible once you have only the token text. Unicode segmentation
-//! rather than whitespace splitting, so non-Latin scripts tokenize sanely.
+//! `tokenize` yields byte-offset `TokenSpan`s rather than owned strings, so a
+//! caller can map any token back to its position in the source text — needed by
+//! anything that highlights or excerpts the original rather than the tokens.
+//! `token_text` does the lookup when only the text is wanted.
+//!
+//! Unicode segmentation rather than whitespace splitting, so non-Latin scripts
+//! tokenize sanely.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
