@@ -130,9 +130,7 @@ export const api = {
     request<T>(endpoint, { method: 'PUT', body, ...options }),
 };
 
-// Re-export generated TableInfo from Rust backend
 import type { TableInfo } from '@/types/generated/TableInfo';
-export type { TableInfo } from '@/types/generated/TableInfo';
 
 // Table API - for lazy loading Parquet tables
 export const tableApi = {
@@ -186,17 +184,6 @@ export const connectApi = {
     api.put(`/api/connectors/${encodeURIComponent(name)}/token`, { token }),
   deleteSchedule: (id: string): Promise<unknown> => api.delete(`/api/schedules/${id}`),
 };
-
-// Re-export generated insights types
-export type { AnalysisTree } from '@/types/generated/AnalysisTree';
-export type { AnalysisNode } from '@/types/generated/AnalysisNode';
-export type { AnalysisType } from '@/types/generated/AnalysisType';
-export type { NodeData } from '@/types/generated/NodeData';
-export type { NodeId } from '@/types/generated/NodeId';
-export type { ScoreBreakdown } from '@/types/generated/ScoreBreakdown';
-export type { FilterStep } from '@/types/generated/FilterStep';
-export type { TrendDirection } from '@/types/generated/TrendDirection';
-export type { EngineConfig } from '@/types/generated/EngineConfig';
 
 import type { EngineConfig } from '@/types/generated/EngineConfig';
 

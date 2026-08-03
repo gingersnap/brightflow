@@ -2,7 +2,7 @@
 import { Minus, Plus } from '@lucide/vue';
 import { computed } from 'vue';
 
-import type { AnalysisNode } from '@/services/api';
+import type { AnalysisNode } from '@/types/generated';
 import { displaySegmentValue } from '@/utils/format';
 
 const props = defineProps<{ node: AnalysisNode }>();

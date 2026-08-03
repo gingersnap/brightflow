@@ -328,18 +328,10 @@ function isNumeric(dtype: string | undefined): boolean {
       class="flex items-center gap-2 border-b border-default bg-muted/30 px-3 py-1.5 text-sm"
     >
       <span class="text-muted">Groups:</span>
-      <button
-        class="rounded px-2 py-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
-        @click="expandAll"
-      >
-        Expand all
-      </button>
-      <button
-        class="rounded px-2 py-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
-        @click="collapseAll"
-      >
+      <UButton variant="ghost" color="neutral" size="md" @click="expandAll">Expand all</UButton>
+      <UButton variant="ghost" color="neutral" size="md" @click="collapseAll">
         Collapse all
-      </button>
+      </UButton>
     </div>
 
     <!-- Pivot Table -->

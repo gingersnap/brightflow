@@ -116,11 +116,10 @@ const presetIsRunning = computed(() => {
   return last != null && (last.status === 'running' || last.status === 'pending');
 });
 
-function handleIntervalChange(event: Event): void {
+function handleIntervalChange(intervalSecs: number): void {
   if (!props.presetName) {
     return;
   }
-  const intervalSecs = Number((event.target as HTMLSelectElement).value);
   setSchedule({ name: props.presetName, intervalSecs });
 }
 
@@ -152,16 +151,13 @@ function triggerRunNow(): void {
 
         <div class="flex items-center gap-2">
           <label class="text-sm text-muted">Schedule</label>
-          <select
-            class="cursor-pointer rounded border border-default bg-default px-2 py-1 text-sm text-highlighted"
-            :value="currentInterval"
+          <USelect
+            :model-value="currentInterval"
+            :items="SCHEDULE_PRESETS"
+            value-key="value"
             :disabled="savingSchedule"
-            @change="handleIntervalChange"
-          >
-            <option v-for="preset in SCHEDULE_PRESETS" :key="preset.value" :value="preset.value">
-              {{ preset.label }}
-            </option>
-          </select>
+            @update:model-value="handleIntervalChange"
+          />
         </div>
       </div>
     </section>

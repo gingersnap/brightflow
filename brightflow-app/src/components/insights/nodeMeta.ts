@@ -21,7 +21,7 @@ import {
 } from '@lucide/vue';
 import type { Component } from 'vue';
 
-import type { AnalysisNode } from '@/services/api';
+import type { AnalysisNode } from '@/types/generated';
 
 /**
  * Per-node metadata shared by the insights store, cards, and the optimistic

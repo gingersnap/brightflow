@@ -6,10 +6,9 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useInsightActions } from '@/composables/useInsightActions';
 import { usePromptAction } from '@/composables/usePromptAction';
-import type { AnalysisNode, AnalysisTree } from '@/services/api';
 import { useInsightsStore } from '@/stores/insights';
 import { useQueryStore } from '@/stores/query';
-import type { DismissReason } from '@/types/generated';
+import type { AnalysisNode, AnalysisTree, DismissReason } from '@/types/generated';
 import { displaySegmentValue, humanizeColumn } from '@/utils/format';
 
 import { ANALYSIS_TYPE_META, dimensionOf, directionOf, qualitativeScore } from './nodeMeta';

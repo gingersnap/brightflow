@@ -104,6 +104,9 @@ if ! TS_RS_EXPORT_DIR="$ROOT_DIR/brightflow-app/src/types/generated" cargo test 
     FAILED=1
 else
     echo -e "${GREEN}✓ Rust tests & type generation${NC}"
+    # Regenerate the barrel from the directory listing, so index.ts is
+    # derived output like every other file in generated/ (never hand-edited)
+    "$ROOT_DIR/scripts/generate-ts-barrel.sh"
     # Format generated types to match project conventions
     if [ -d "$ROOT_DIR/brightflow-app/node_modules" ]; then
         (cd "$ROOT_DIR/brightflow-app" && npx vp fmt src/types/generated/ 2>/dev/null) || true

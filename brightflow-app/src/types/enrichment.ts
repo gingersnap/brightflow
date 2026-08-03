@@ -1,6 +1,11 @@
 /**
- * Enrichment-function types, mirroring the Rust ts-rs shapes
- * (crates/brightflow-api/src/enrichment/types.rs + engine FunctionSpec).
+ * Enrichment-function types: deliberate narrowings of the generated ts-rs
+ * shapes (EnrichFunctionResponse, EnrichRunResponse, SampleRunResponse, …).
+ *
+ * The wire types carry `kind: string` / `status: string`; these refine them to
+ * the closed unions the UI switches on. Purely identical shapes re-export the
+ * generated type instead of restating it. When a wire shape changes, the
+ * pre-commit regen breaks the narrowed type here — fix it to match.
  */
 
 export type FunctionKind = 'llm_prompt' | 'topic_model' | 'classifier';
@@ -53,11 +58,7 @@ export interface EnrichFunction {
   updatedAt: string;
 }
 
-export interface FunctionVersion {
-  version: number;
-  config: unknown;
-  createdAt: string;
-}
+export type { FunctionVersionResponse as FunctionVersion } from './generated';
 
 export interface SampleCell {
   rowKey: string;
@@ -105,9 +106,4 @@ export interface EnrichRun {
   finishedAt?: string | null;
 }
 
-export interface UploadSourceResult {
-  sourceId: string;
-  table: string;
-  rowCount: number;
-  columns: string[];
-}
+export type { UploadSourceResponse as UploadSourceResult } from './generated';

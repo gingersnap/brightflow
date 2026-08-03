@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
-import type { AnalysisNode } from '@/services/api';
+import type { AnalysisNode } from '@/types/generated';
 import { formatCompact, formatNumber, humanizeColumn, humanizePeriod } from '@/utils/format';
 
 import { measureOf } from '../nodeMeta';

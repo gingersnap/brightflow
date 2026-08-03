@@ -367,6 +367,8 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
           class="w-40"
           size="xs"
         />
+        <!-- Raw text link: a UButton here would out-weigh the xs USelect it
+             annotates; this is a chrome-adjacent micro affordance -->
         <button
           v-if="numericColumns.length > 1 && !allYAxesSelected"
           class="text-sm text-primary transition-colors hover:text-primary/80"

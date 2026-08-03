@@ -93,31 +93,14 @@ const { mutate: deleteSource } = useMutation({
               Edit
             </UButton>
           </div>
-          <div v-else class="space-y-2">
-            <input
-              v-model="nameDraft"
-              type="text"
-              class="placeholder-muted w-full rounded border border-default bg-default px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-              @keyup.enter="submitName"
-              @keyup.escape="cancelEditName"
-            />
-            <div v-if="nameError" class="text-sm text-red-500">{{ nameError }}</div>
-            <div class="flex justify-end gap-2">
-              <UButton variant="ghost" size="md" @click="cancelEditName">
-                <X class="mr-1 h-3.5 w-3.5" />
-                Cancel
-              </UButton>
-              <UButton
-                size="md"
-                :loading="savingName"
-                :disabled="!nameDraft.trim()"
-                @click="submitName"
-              >
-                <Check class="mr-1 h-3.5 w-3.5" />
-                Save
-              </UButton>
-            </div>
-          </div>
+          <InlineRename
+            v-else
+            v-model="nameDraft"
+            :saving="savingName"
+            :error="nameError"
+            @save="submitName"
+            @cancel="cancelEditName"
+          />
         </div>
       </section>
 

@@ -171,31 +171,14 @@ watch(presetId, () => void refreshConfig());
               Edit
             </UButton>
           </div>
-          <div v-else class="space-y-2">
-            <input
-              v-model="nameDraft"
-              type="text"
-              class="placeholder-muted w-full rounded border border-default bg-default px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-              @keyup.enter="submitName"
-              @keyup.escape="cancelEditName"
-            />
-            <div v-if="nameError" class="text-sm text-red-500">{{ nameError }}</div>
-            <div class="flex justify-end gap-2">
-              <UButton variant="ghost" size="md" @click="cancelEditName">
-                <X class="mr-1 h-3.5 w-3.5" />
-                Cancel
-              </UButton>
-              <UButton
-                size="md"
-                :loading="savingName"
-                :disabled="!nameDraft.trim()"
-                @click="submitName"
-              >
-                <Check class="mr-1 h-3.5 w-3.5" />
-                Save
-              </UButton>
-            </div>
-          </div>
+          <InlineRename
+            v-else
+            v-model="nameDraft"
+            :saving="savingName"
+            :error="nameError"
+            @save="submitName"
+            @cancel="cancelEditName"
+          />
         </div>
       </section>
 
@@ -216,28 +199,29 @@ watch(presetId, () => void refreshConfig());
             </UButton>
           </div>
           <div v-if="editingToken" class="mt-3 space-y-2">
-            <div class="relative">
-              <input
-                v-model="tokenDraft"
-                :type="showToken ? 'text' : 'password'"
-                name="brightflow-source-token"
-                autocomplete="new-password"
-                data-1p-ignore
-                data-lpignore="true"
-                placeholder="Paste API token..."
-                class="placeholder-muted w-full rounded border border-default bg-default px-2.5 py-1.5 pr-8 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
-                @keyup.enter="submitToken"
-              />
-              <button
-                type="button"
-                class="absolute inset-y-0 right-0 flex cursor-pointer items-center px-2 text-muted hover:text-highlighted"
-                :aria-label="showToken ? 'Hide token' : 'Show token'"
-                @click="showToken = !showToken"
-              >
-                <EyeOff v-if="showToken" class="h-4 w-4" />
-                <Eye v-else class="h-4 w-4" />
-              </button>
-            </div>
+            <UInput
+              v-model="tokenDraft"
+              :type="showToken ? 'text' : 'password'"
+              name="brightflow-source-token"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              placeholder="Paste API token..."
+              class="w-full"
+              :ui="{ trailing: 'pe-1' }"
+              @keyup.enter="submitToken"
+            >
+              <template #trailing>
+                <UButton
+                  color="neutral"
+                  variant="link"
+                  size="xs"
+                  :icon="showToken ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                  :aria-label="showToken ? 'Hide token' : 'Show token'"
+                  @click="showToken = !showToken"
+                />
+              </template>
+            </UInput>
             <div v-if="tokenError" class="text-sm text-red-500">{{ tokenError }}</div>
             <div class="flex justify-end">
               <UButton

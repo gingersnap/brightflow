@@ -10,6 +10,12 @@ import { ANALYSIS_TYPE_META, SCORE_TIERS } from './nodeMeta';
 
 const insightsStore = useInsightsStore();
 
+// USelect items: null = no measure filter.
+const measureItems = computed(() => [
+  { label: 'All measures', value: null },
+  ...insightsStore.availableMeasures.map((measure) => ({ label: measure, value: measure })),
+]);
+
 const TOP_N = 5;
 
 const allRoots = computed(() => insightsStore.visibleRoots);
@@ -179,55 +185,37 @@ const friendlyError = computed(() =>
         <!-- Direction toggle -->
         <div class="flex items-center gap-2">
           <span class="mr-2 text-xs tracking-wider text-muted uppercase">Direction</span>
-          <div class="flex items-center gap-1 rounded-md bg-default p-0.5">
-            <button
-              v-for="d in directionOptions"
-              :key="d.value"
-              class="cursor-pointer rounded px-2.5 py-0.5 text-sm transition-colors"
-              :class="
-                insightsStore.filters.direction === d.value
-                  ? 'bg-elevated text-highlighted'
-                  : 'text-muted hover:text-highlighted'
-              "
-              @click="insightsStore.filters.direction = d.value"
-            >
-              {{ d.label }}
-            </button>
-          </div>
+          <UTabs
+            :model-value="insightsStore.filters.direction"
+            :items="directionOptions"
+            :content="false"
+            size="md"
+            @update:model-value="
+              (v) => (insightsStore.filters.direction = v as 'up' | 'down' | 'both')
+            "
+          />
         </div>
 
         <!-- Measure dropdown -->
         <div v-if="insightsStore.availableMeasures.length > 0" class="flex items-center gap-2">
           <span class="mr-2 text-xs tracking-wider text-muted uppercase">Measure</span>
-          <select
+          <USelect
             v-model="insightsStore.filters.measure"
-            class="rounded-md border border-default bg-default px-2 py-1 text-sm text-highlighted"
-          >
-            <option :value="null">All measures</option>
-            <option v-for="m in insightsStore.availableMeasures" :key="m" :value="m">
-              {{ m }}
-            </option>
-          </select>
+            :items="measureItems"
+            value-key="value"
+          />
         </div>
 
         <!-- Min strength (qualitative stops over the numeric threshold) -->
         <div class="flex items-center gap-2">
           <span class="mr-2 text-xs tracking-wider text-muted uppercase">Strength</span>
-          <div class="flex items-center gap-1 rounded-md bg-default p-0.5">
-            <button
-              v-for="s in scoreOptions"
-              :key="s.value"
-              class="cursor-pointer rounded px-2.5 py-0.5 text-sm transition-colors"
-              :class="
-                insightsStore.filters.minScore === s.value
-                  ? 'bg-elevated text-highlighted'
-                  : 'text-muted hover:text-highlighted'
-              "
-              @click="insightsStore.filters.minScore = s.value"
-            >
-              {{ s.label }}
-            </button>
-          </div>
+          <UTabs
+            :model-value="String(insightsStore.filters.minScore)"
+            :items="scoreOptions.map((o) => ({ label: o.label, value: String(o.value) }))"
+            :content="false"
+            size="md"
+            @update:model-value="(v) => (insightsStore.filters.minScore = Number(v))"
+          />
         </div>
       </div>
 

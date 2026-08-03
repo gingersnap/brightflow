@@ -3,7 +3,7 @@
  */
 
 // Import generated types used in interfaces below
-import type { Aggregation as AggFn, FilterOp } from './generated';
+import type { Aggregation as AggFn, FilterOp, SourceTool, UnifiedSource } from './generated';
 
 // Re-export generated types from Rust backend
 export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './generated';
@@ -42,38 +42,11 @@ export type {
   UserTimelineEvent,
 } from './generated';
 
-// Unified source types (frontend-only, matching backend SourceKind/SourceTool)
-export type SourceKind = 'web-analytics' | 'connector' | 'upload';
+// Unified source types come from the backend via ts-rs.
+export type { SourceKind, SourceTable, SourceTool, UnifiedSource } from './generated';
 
-export type ToolId =
-  | 'dashboard'
-  | 'funnels'
-  | 'retention'
-  | 'users'
-  | 'explore'
-  | 'insights'
-  | 'topics'
-  | 'textexplore'
-  | 'enrich'
-  | 'settings';
-
-export interface SourceTable {
-  name: string;
-  numRows: number | null;
-  enrichable: boolean;
-}
-
-export interface UnifiedSource {
-  id: string;
-  name: string;
-  kind: SourceKind;
-  connectorName: string | null;
-  domain: string | null;
-  tables: SourceTable[];
-  tools: ToolId[];
-  createdAt: string;
-  ready: boolean;
-}
+/** Tool ids the UI routes on: the backend's tools plus the client-side settings tab. */
+export type ToolId = SourceTool | 'settings';
 
 export interface ToolDef {
   id: ToolId;
@@ -95,7 +68,9 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
 };
 
 export function toolsForSource(source: UnifiedSource): ToolDef[] {
-  const ids: ToolId[] = [...source.tools.filter((id) => id !== 'settings'), 'settings'];
+  // Collision-free by type: the backend's SourceTool can't contain
+  // 'settings', which is the client-side tab.
+  const ids: ToolId[] = [...source.tools, 'settings'];
   return ids.map((id) => {
     const def = TOOL_DEFS[id];
     return { icon: def.icon, id, label: def.label };

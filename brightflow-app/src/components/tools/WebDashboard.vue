@@ -122,101 +122,10 @@ const chartOption = computed(() => {
 
     <!-- Breakdowns grid -->
     <div class="grid grid-cols-2 gap-3">
-      <!-- Top Pages -->
-      <div class="rounded-lg border border-default bg-elevated p-4">
-        <h3 class="mb-3 text-sm font-medium text-highlighted">Top Pages</h3>
-        <table v-if="topPages && topPages.length > 0" class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-default text-sm text-muted">
-              <th class="pb-2 text-left font-medium">Page</th>
-              <th class="pb-2 text-right font-medium">Visitors</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in topPages"
-              :key="row.name"
-              class="border-b border-default last:border-0"
-            >
-              <td class="py-1.5 text-highlighted">{{ row.name || '/' }}</td>
-              <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
-      </div>
-
-      <!-- Referrers -->
-      <div class="rounded-lg border border-default bg-elevated p-4">
-        <h3 class="mb-3 text-sm font-medium text-highlighted">Sources</h3>
-        <table v-if="referrers && referrers.length > 0" class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-default text-sm text-muted">
-              <th class="pb-2 text-left font-medium">Source</th>
-              <th class="pb-2 text-right font-medium">Visitors</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in referrers"
-              :key="row.name"
-              class="border-b border-default last:border-0"
-            >
-              <td class="py-1.5 text-highlighted">{{ row.name }}</td>
-              <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
-      </div>
-
-      <!-- Browsers -->
-      <div class="rounded-lg border border-default bg-elevated p-4">
-        <h3 class="mb-3 text-sm font-medium text-highlighted">Browsers</h3>
-        <table v-if="devices && devices.length > 0" class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-default text-sm text-muted">
-              <th class="pb-2 text-left font-medium">Browser</th>
-              <th class="pb-2 text-right font-medium">Visitors</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in devices"
-              :key="row.name"
-              class="border-b border-default last:border-0"
-            >
-              <td class="py-1.5 text-highlighted">{{ row.name }}</td>
-              <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
-      </div>
-
-      <!-- Countries -->
-      <div class="rounded-lg border border-default bg-elevated p-4">
-        <h3 class="mb-3 text-sm font-medium text-highlighted">Countries</h3>
-        <table v-if="geoData && geoData.length > 0" class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-default text-sm text-muted">
-              <th class="pb-2 text-left font-medium">Country</th>
-              <th class="pb-2 text-right font-medium">Visitors</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="row in geoData"
-              :key="row.name"
-              class="border-b border-default last:border-0"
-            >
-              <td class="py-1.5 text-highlighted">{{ row.name || 'Unknown' }}</td>
-              <td class="py-1.5 text-right text-muted">{{ row.visitors.toLocaleString() }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="py-4 text-center text-sm text-muted">No data</p>
-      </div>
+      <BreakdownTable title="Top Pages" name-label="Page" :rows="topPages" empty-name="/" />
+      <BreakdownTable title="Sources" name-label="Source" :rows="referrers" />
+      <BreakdownTable title="Browsers" name-label="Browser" :rows="devices" />
+      <BreakdownTable title="Countries" name-label="Country" :rows="geoData" empty-name="Unknown" />
     </div>
   </div>
 </template>

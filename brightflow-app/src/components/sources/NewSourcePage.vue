@@ -167,23 +167,23 @@ async function handlePresetCreate(data: {
             <form class="space-y-3" @submit.prevent="submitWeb">
               <div>
                 <label class="mb-1 block text-sm font-medium text-muted">Domain</label>
-                <input
+                <UInput
                   v-model="domain"
                   type="text"
                   placeholder="example.com"
                   required
-                  class="placeholder-muted w-full rounded border border-default bg-default px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
+                  class="w-full"
                 />
               </div>
               <div>
                 <label class="mb-1 block text-sm font-medium text-muted">
                   Name <span class="text-muted">(optional)</span>
                 </label>
-                <input
+                <UInput
                   v-model="webName"
                   type="text"
                   :placeholder="domain || 'My site'"
-                  class="placeholder-muted w-full rounded border border-default bg-default px-2.5 py-1.5 text-sm text-highlighted focus:border-blue-500 focus:outline-none"
+                  class="w-full"
                 />
               </div>
               <div class="flex justify-end pt-1">
