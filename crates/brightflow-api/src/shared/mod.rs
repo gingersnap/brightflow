@@ -4,9 +4,11 @@
 //! that would otherwise be duplicated. Anything that belongs to one area should
 //! live in that area, not here.
 
+mod df_cells;
 mod error;
 mod path_guard;
 
+pub use df_cells::{derive_title, read_i64_at, read_id_at, read_string_at};
 pub use error::{AppError, AppResult};
 pub use path_guard::reject_unsafe_path_params;
 

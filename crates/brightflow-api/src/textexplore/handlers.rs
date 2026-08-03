@@ -8,9 +8,8 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use polars::prelude::*;
 
-use crate::shared::AppResult;
+use crate::shared::{derive_title, read_i64_at, read_id_at, read_string_at, AppResult};
 use crate::state::AppState;
 use crate::textexplore::highlight::{contains_term, highlight_runs, snippet_runs};
 use crate::textexplore::index::{get_or_build, TextIndex};
@@ -21,7 +20,6 @@ use crate::textexplore::types::{
 use crate::topics::display::{bluesky_post_url, DocDisplay, UrlSpec};
 
 const MAX_LIMIT: usize = 500;
-const DERIVED_TITLE_CHARS: usize = 120;
 
 /// `POST /api/sources/{source_id}/tables/{table}/textexplore/search`
 ///
@@ -197,52 +195,12 @@ fn render_row(
     }
 }
 
-// Cell readers, shaped after the topics handlers' equivalents.
-
-fn read_string_at(df: &DataFrame, col: &str, row: usize) -> Option<String> {
-    df.column(col)
-        .ok()?
-        .as_materialized_series()
-        .str()
-        .ok()?
-        .get(row)
-        .map(str::to_string)
-}
-
-fn read_i64_at(df: &DataFrame, col: &str, row: usize) -> Option<i64> {
-    let series = df.column(col).ok()?.as_materialized_series();
-    if let Ok(ca) = series.i64() {
-        return ca.get(row);
-    }
-    if let Ok(ca) = series.i32() {
-        return ca.get(row).map(i64::from);
-    }
-    None
-}
-
-/// Read an identifier cell as a string, whatever its physical type
-/// (issue ids are i64, post ids are at:// uri strings).
-fn read_id_at(df: &DataFrame, col: &str, row: usize) -> Option<String> {
-    read_string_at(df, col, row).or_else(|| read_i64_at(df, col, row).map(|v| v.to_string()))
-}
-
-/// Headline for tables without a title column: first line of the body,
-/// truncated at a char boundary.
-fn derive_title(body: &str) -> String {
-    let first_line = body.lines().next().unwrap_or("").trim();
-    if first_line.chars().count() > DERIVED_TITLE_CHARS {
-        let head: String = first_line.chars().take(DERIVED_TITLE_CHARS).collect();
-        format!("{head}…")
-    } else {
-        first_line.to_string()
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::shadow_unrelated)]
 mod tests {
     use super::*;
     use crate::textexplore::index::build_index;
+    use polars::prelude::*;
 
     fn issues_index() -> TextIndex {
         let df = df!(

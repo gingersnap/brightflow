@@ -21,7 +21,7 @@ use brightflow_engine::enrichment::{
 };
 use tracing::info;
 
-use crate::shared::{AppError, AppResult};
+use crate::shared::{derive_title, read_i64_at, read_id_at, read_string_at, AppError, AppResult};
 use crate::state::{cache_key, AppState};
 use crate::topics::display::{bluesky_post_url, DocDisplay, UrlSpec};
 use crate::topics::overlay::{apply_to_summaries, CurationOverlay};
@@ -680,48 +680,7 @@ fn build_cluster_detail(
     })
 }
 
-fn read_string_at(df: &DataFrame, col: &str, row: usize) -> Option<String> {
-    df.column(col)
-        .ok()?
-        .as_materialized_series()
-        .str()
-        .ok()?
-        .get(row)
-        .map(str::to_string)
-}
-
-fn read_i64_at(df: &DataFrame, col: &str, row: usize) -> Option<i64> {
-    let series = df.column(col).ok()?.as_materialized_series();
-    if let Ok(ca) = series.i64() {
-        return ca.get(row);
-    }
-    if let Ok(ca) = series.i32() {
-        return ca.get(row).map(i64::from);
-    }
-    None
-}
-
-/// Read an identifier cell as a string, whatever its physical type
-/// (issue ids are i64, post ids are at:// uri strings).
-fn read_id_at(df: &DataFrame, col: &str, row: usize) -> Option<String> {
-    read_string_at(df, col, row).or_else(|| read_i64_at(df, col, row).map(|v| v.to_string()))
-}
-
 const BODY_TRUNCATE_CHARS: usize = 8000;
-const DERIVED_TITLE_CHARS: usize = 120;
-
-/// Headline for tables without a title column: first line of the body,
-/// truncated at a char boundary.
-fn derive_title(body: &str) -> String {
-    let first_line = body.lines().next().unwrap_or("").trim();
-    if first_line.chars().count() > DERIVED_TITLE_CHARS {
-        let head: String = first_line.chars().take(DERIVED_TITLE_CHARS).collect();
-        format!("{head}…")
-    } else {
-        first_line.to_string()
-    }
-}
-
 /// Re-rank a similarity-sorted candidate list to favor docs that contain the
 /// cluster's distinctive terms. Score = sim + α × (terms_present / total_terms).
 fn pick_illustrative_samples(
@@ -1165,17 +1124,6 @@ mod tests {
             refs[1].html_url.as_deref(),
             Some("https://bsky.app/profile/did:plc:bbb/post/3k222")
         );
-    }
-
-    #[test]
-    fn derive_title_truncates_long_first_line() {
-        let long_line: String = "ab".repeat(200);
-        let title = derive_title(&long_line);
-        assert_eq!(title.chars().count(), DERIVED_TITLE_CHARS + 1);
-        assert!(title.ends_with('…'));
-
-        assert_eq!(derive_title("short\nrest"), "short");
-        assert_eq!(derive_title(""), "");
     }
 
     #[test]
