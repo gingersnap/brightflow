@@ -1,3 +1,9 @@
+//! Wire types for the connector management endpoints.
+//!
+//! The `Unified*` shapes exist because the UI shows connectors, their schedules,
+//! and their run history as one thing; assembling that server-side keeps the
+//! frontend from making three calls and joining them itself.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

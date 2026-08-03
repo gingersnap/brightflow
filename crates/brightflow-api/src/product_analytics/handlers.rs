@@ -1,3 +1,7 @@
+//! HTTP handlers for funnels, retention, and user timelines.
+//!
+//! Auth posture: session-authenticated, read-only.
+
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};

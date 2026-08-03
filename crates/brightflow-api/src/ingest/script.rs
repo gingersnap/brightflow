@@ -1,3 +1,11 @@
+//! The tracking script served to browsers.
+//!
+//! Kept as a string constant rather than a static file so it can never be missing
+//! at runtime and is versioned with the server that serves it. Size is a real
+//! constraint — it loads on every page of every tracked site — which is why it
+//! uses `sendBeacon` and hand-rolled SPA navigation hooks instead of anything
+//! larger.
+
 /// The tracking script served to browsers.
 ///
 /// This script is ~1200 bytes minified. It:

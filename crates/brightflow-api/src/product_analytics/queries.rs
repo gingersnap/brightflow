@@ -1,3 +1,9 @@
+//! Polars implementations of the product-analytics questions.
+//!
+//! All of these coalesce `user_id` and `visitor_id` into one identity column
+//! first: an anonymous visitor who later identifies must count as the same person
+//! on both sides of that boundary, or every funnel silently drops its converters.
+
 use std::collections::HashMap;
 
 use polars::prelude::*;

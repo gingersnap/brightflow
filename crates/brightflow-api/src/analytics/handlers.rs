@@ -1,3 +1,10 @@
+//! HTTP and WebSocket handlers for the query surface: list and load tables,
+//! upload CSVs, run queries.
+//!
+//! Queries have a WebSocket path as well as a REST one because interactive
+//! exploration re-queries on every builder tweak, and per-query connection setup
+//! was the dominant latency. Both paths run the same executor.
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},

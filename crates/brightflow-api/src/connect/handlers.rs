@@ -1,3 +1,8 @@
+//! HTTP handlers for connector configuration, scheduling, and run history.
+//!
+//! Auth posture: session-authenticated. These endpoints write scheduler config
+//! and can trigger syncs, so they are administrative rather than read-only.
+
 use axum::extract::{Path, State};
 use axum::Json;
 

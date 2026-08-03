@@ -1,3 +1,8 @@
+//! HTTP and WebSocket handlers for the system observability panel.
+//!
+//! Auth posture: session-authenticated. The log stream can carry operational
+//! detail, so it is not public.
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},

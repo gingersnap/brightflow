@@ -1,3 +1,5 @@
+//! Wire types for the agent-run endpoints.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

@@ -1,3 +1,10 @@
+//! Background task that drains the event buffers into the Parquet store.
+//!
+//! Runs on an interval rather than per-event so writes amortize into
+//! reasonably-sized row groups. Failures are logged and retried on the next tick
+//! instead of propagating: the events are still durable in the buffer, so the
+//! right response to a transient store error is to try again, not to drop them.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

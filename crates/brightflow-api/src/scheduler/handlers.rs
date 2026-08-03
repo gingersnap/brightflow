@@ -1,3 +1,8 @@
+//! HTTP handlers for scheduler jobs and connector configs.
+//!
+//! Auth posture: session-authenticated and administrative — these create,
+//! reschedule, and trigger background work.
+
 use axum::extract::{Path, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};

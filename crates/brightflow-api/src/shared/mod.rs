@@ -1,3 +1,9 @@
+//! Cross-cutting helpers shared by every handler module.
+//!
+//! Deliberately small — this is the error type plus the handful of predicates
+//! that would otherwise be duplicated. Anything that belongs to one area should
+//! live in that area, not here.
+
 mod error;
 
 pub use error::{AppError, AppResult};

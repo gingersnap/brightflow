@@ -1,3 +1,9 @@
+//! Polars implementations of the web-analytics aggregations.
+//!
+//! Carries a backward-compatibility shim: Parquet files written before `user_id`
+//! existed lack the column entirely, so scans add or fill it rather than failing.
+//! Dropping that shim means those files stop being readable.
+
 use polars::prelude::*;
 
 use crate::ingest::error::IngestResult;

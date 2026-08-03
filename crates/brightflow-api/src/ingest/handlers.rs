@@ -1,3 +1,11 @@
+//! HTTP surface for event ingestion and source registration.
+//!
+//! Auth posture: the event-collection routes are **public and unauthenticated by
+//! necessity** — they are called by a script tag on someone else's page. They are
+//! therefore validated by source domain rather than by credential, and everything
+//! they accept is treated as hostile input. The source-management routes on the
+//! same module are session-authenticated like the rest of the API.
+
 use std::sync::Arc;
 
 use axum::extract::{Path, State};

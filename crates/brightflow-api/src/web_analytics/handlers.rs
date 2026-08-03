@@ -1,3 +1,7 @@
+//! HTTP handlers for the web-analytics dashboard.
+//!
+//! Auth posture: session-authenticated, read-only.
+
 use axum::extract::{Path, Query, State};
 use axum::Json;
 

@@ -1,3 +1,12 @@
+//! Optional GeoIP enrichment via a local MaxMind database.
+//!
+//! Entirely optional and fails soft: a missing database, an unparseable address,
+//! or an IP the database doesn't cover all yield empty geo rather than dropping
+//! the event. Location is nice to have; the pageview is the thing that matters.
+//!
+//! Uses `open_readfile` rather than `open_mmap` deliberately — the mmap path is
+//! the one carrying RUSTSEC-2025-0132's unsoundness.
+
 use std::net::IpAddr;
 use std::path::Path;
 

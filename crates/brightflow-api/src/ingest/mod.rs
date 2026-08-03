@@ -1,3 +1,14 @@
+//! Event ingestion: the public collection endpoint through to Parquet.
+//!
+//! The path is deliberately staged — a browser POST is validated against a
+//! registered source, enriched (geo, user-agent, visitor id), appended to a
+//! per-source SQLite buffer, and only later flushed to Parquet in batches.
+//! Buffering is what lets collection stay fast and durable under bursts without
+//! writing one tiny Parquet file per hit.
+//!
+//! `IngestState` holds the caches that keep the per-event path off the database:
+//! domain lookups and the daily salt are both read on every single event.
+
 pub mod buffer;
 pub mod db;
 pub mod error;

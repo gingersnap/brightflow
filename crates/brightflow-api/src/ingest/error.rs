@@ -1,3 +1,8 @@
+//! Ingest error type.
+//!
+//! Kept distinct from `AppError` because ingest runs in background flush tasks as
+//! well as HTTP handlers, and those have no response to turn an error into.
+
 use thiserror::Error;
 
 /// Ingest-specific error type.

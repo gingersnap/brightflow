@@ -1,3 +1,10 @@
+//! Event, source, and profile shapes for ingestion — both the raw payloads
+//! accepted from the tracking script and the enriched rows written to Parquet.
+//!
+//! The `Raw*` types mirror what a browser sends and are deliberately permissive;
+//! `Event` is what has survived validation and enrichment. Keeping them separate
+//! is what stops unvalidated client fields from reaching storage.
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

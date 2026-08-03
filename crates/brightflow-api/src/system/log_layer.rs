@@ -1,3 +1,10 @@
+//! A `tracing` layer that mirrors log events onto a broadcast channel.
+//!
+//! Lets the system panel tail server logs live without reading the log files.
+//! Sends are best-effort: if no one is subscribed or a subscriber has lagged, the
+//! event is dropped rather than blocking the thread that emitted it — logging
+//! must never apply backpressure to the work being logged.
+
 use serde::Serialize;
 use tokio::sync::broadcast;
 use tracing::field::{Field, Visit};

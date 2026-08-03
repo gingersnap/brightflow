@@ -1,3 +1,9 @@
+//! HTTP handlers for Text Explorer: search, facets, and highlighted snippets.
+//!
+//! Auth posture: session-authenticated, read-only. Indexes are built on demand and
+//! version-checked against the table, so a re-synced table is never served from a
+//! stale index.
+
 use axum::{
     extract::{Path, State},
     Json,

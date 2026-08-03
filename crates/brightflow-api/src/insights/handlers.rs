@@ -1,3 +1,13 @@
+//! HTTP handlers for the insights reports (Trends, Review, Drivers).
+//!
+//! Auth posture: session-authenticated, read-mostly — a run computes findings and
+//! records history, but never mutates source data.
+//!
+//! These handlers resolve datasets straight from the Parquet store rather than
+//! through the in-memory `DatasetManager`, re-deriving paths per request from an
+//! explicit `source_id`. That is deliberately the stricter of the two paths in
+//! this codebase: it cannot serve one source's rows under another's id.
+
 use axum::{
     extract::{Path, Query, State},
     Json,

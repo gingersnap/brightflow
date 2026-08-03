@@ -1,3 +1,9 @@
+//! Background sampler that refreshes the system metrics snapshot on an interval.
+//!
+//! Sampling on a timer rather than per request means the metrics endpoint is a
+//! cheap read of an `RwLock`, and a burst of panel refreshes cannot turn into a
+//! burst of `/proc` reads.
+
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Instant;

@@ -1,3 +1,14 @@
+//! The API surface: every route, in one place.
+//!
+//! This file is deliberately the index of the HTTP contract — there is no
+//! hand-written API document, because one drifted from 95 routes down to 10
+//! accurate ones. Reading this router is how you find out what the API does; the
+//! typed request/response shapes are in `brightflow-app/src/types/generated/`.
+//!
+//! Routes are grouped by area and wrapped in an auth middleware layer, with the
+//! public exceptions (event collection, the tracking script, health) mounted
+//! outside it.
+
 use axum::{
     extract::State,
     middleware,

@@ -1,3 +1,9 @@
+//! Wire types for the query API: the `Query` operation chain and its response.
+//!
+//! A query is a *sequence* of operations rather than a fixed struct of optional
+//! clauses, because the query builder lets users compose filter/group/sort/limit
+//! in any order and the result depends on that order.
+
 use crate::analytics::session::ColumnInfo;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

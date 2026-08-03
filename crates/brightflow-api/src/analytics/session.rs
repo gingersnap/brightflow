@@ -1,3 +1,11 @@
+//! In-memory dataset registry: what is loaded, where its data lives, and under
+//! what id.
+//!
+//! Store-backed datasets hold parquet *paths*, not frames — they are scanned
+//! lazily per query, so keeping several resident is cheap. Only uploads are
+//! materialized. Dataset ids are source-scoped for store tables; see
+//! `add_dataset` for why a bare table name is not a safe identity.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

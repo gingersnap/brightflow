@@ -1,3 +1,9 @@
+//! Wire types for the insights endpoints.
+//!
+//! `EngineConfig` carries every knob as an `Option` so a request can override
+//! one threshold without restating the defaults — and so adding a knob never
+//! breaks an existing client.
+
 use brightflow_engine::analysis::tree::AnalysisTree;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

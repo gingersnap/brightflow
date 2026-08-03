@@ -1,3 +1,8 @@
+//! Wire types for LLM provider configuration.
+//!
+//! Responses expose `has_api_key` rather than the key: the stored secret must
+//! never leave the server, but the UI still needs to show whether one is set.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

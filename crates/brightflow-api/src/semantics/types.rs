@@ -1,3 +1,9 @@
+//! Wire types for the column-semantics endpoints.
+//!
+//! Role and polarity cross the wire as strings rather than enums so an unknown
+//! value from an older or newer client degrades to a warning at parse time
+//! instead of rejecting the whole request.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

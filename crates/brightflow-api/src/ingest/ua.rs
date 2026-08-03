@@ -1,3 +1,9 @@
+//! User-Agent parsing into browser / OS / device.
+//!
+//! The parser holds a sizable regex set, so it is built once at startup and
+//! shared, not constructed per event. Unknown agents yield empty strings rather
+//! than an error — an unrecognized browser is normal, not exceptional.
+
 use uaparser::{Parser, UserAgentParser};
 
 /// Parsed User-Agent information.

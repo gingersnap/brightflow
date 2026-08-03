@@ -1,3 +1,9 @@
+//! Central ingest metadata: registered sources and the rotating daily salts.
+//!
+//! Separate from the per-source event buffers because this is small, shared, and
+//! read on every single event — while the buffers are large, per-source, and
+//! write-heavy.
+
 use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};

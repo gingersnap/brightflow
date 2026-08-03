@@ -1,3 +1,10 @@
+//! HTTP handlers for per-table column semantics and analysis settings.
+//!
+//! Auth posture: session-authenticated. Writes here change how every subsequent
+//! analysis interprets a table, so they update both SQLite and the in-memory
+//! override caches on `AppState` — a write that only hit the database would take
+//! effect at the next restart and look like it had been ignored.
+
 use axum::{
     extract::{Path, State},
     Json,

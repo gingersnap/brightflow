@@ -1,3 +1,9 @@
+//! Which tools each kind of source exposes.
+//!
+//! A source's kind determines its navigation: event sources get funnels and
+//! retention, connector and upload sources get the query and insights tools. This
+//! lives server-side so the frontend never has to encode the mapping twice.
+
 use super::types::SourceTool;
 
 /// Tools available for web analytics sources

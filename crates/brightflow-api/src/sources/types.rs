@@ -1,3 +1,6 @@
+//! Wire types for the unified source list, including which tools each source
+//! kind exposes.
+
 use serde::Serialize;
 use ts_rs::TS;
 

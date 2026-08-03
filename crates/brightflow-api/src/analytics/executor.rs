@@ -1,3 +1,10 @@
+//! Executes a `Query` operation chain against a dataset.
+//!
+//! Everything is built as a Polars `LazyFrame` and collected once at the end, so
+//! filters and projections push down into the Parquet scan instead of
+//! materializing the whole table first. That is what makes store-backed datasets
+//! (which are only file paths) queryable without loading them.
+
 use crate::analytics::session::{ColumnInfo, DatasetData};
 use crate::analytics::types::{AggSpec, Aggregation, FilterOp, Operation, Query, QueryResponse};
 use crate::shared::{AppError, AppResult};

@@ -1,3 +1,7 @@
+//! HTTP handlers for the unified source list.
+//!
+//! Auth posture: session-authenticated, read-only.
+
 use crate::shared::AppResult;
 use crate::state::AppState;
 use axum::extract::State;

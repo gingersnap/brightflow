@@ -1,3 +1,10 @@
+//! Argon2 password hashing and verification.
+//!
+//! `Argon2::default()` is used rather than hand-tuned parameters so the cost
+//! tracks the crate's current recommendation instead of a number that was right
+//! once. Both functions are synchronous and CPU-bound by design — callers must
+//! run them under `spawn_blocking` (see `auth::backend`).
+
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2, PasswordHash, PasswordVerifier,

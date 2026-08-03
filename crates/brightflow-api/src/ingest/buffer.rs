@@ -1,3 +1,13 @@
+//! Per-source SQLite write buffer for incoming events.
+//!
+//! Events land here first and are flushed to Parquet in batches. Writing each
+//! event straight to Parquet would be pathological (one tiny file per hit), and
+//! buffering in memory would lose events on restart — SQLite gives durability at
+//! write-time with batching at read-time.
+//!
+//! One pool per source, created lazily: sources are independent, so a busy site
+//! never blocks a quiet one behind the same write lock.
+
 use std::path::PathBuf;
 use std::time::Duration;
 

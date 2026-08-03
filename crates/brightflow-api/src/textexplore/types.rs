@@ -1,3 +1,5 @@
+//! Wire types for Text Explorer search, facets, and snippets.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

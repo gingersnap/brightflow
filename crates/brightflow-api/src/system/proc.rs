@@ -1,3 +1,10 @@
+//! Process memory readings from `/proc/self/status` (Linux).
+//!
+//! Reports `RssAnon` alongside total RSS because total RSS includes file-backed
+//! pages — mostly mmap'd Parquet — which look like a leak while actually being
+//! reclaimable page cache. The anonymous figure is the number that reflects real
+//! cost.
+
 use std::fs;
 
 /// Process memory breakdown from /proc/self/status.

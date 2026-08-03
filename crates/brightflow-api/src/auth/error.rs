@@ -1,3 +1,10 @@
+//! The authentication error type.
+//!
+//! `InvalidCredentials` is deliberately one variant covering both "no such user"
+//! and "wrong password" — distinguishing them in the type invites a handler that
+//! distinguishes them in the response, which is the enumeration oracle
+//! `auth::backend` goes out of its way to close.
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]

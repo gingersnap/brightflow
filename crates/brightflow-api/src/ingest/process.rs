@@ -1,3 +1,10 @@
+//! Turn a raw browser payload into a storable event: parse the URL and referrer,
+//! classify traffic source, attach geo and user-agent info, derive the visitor id.
+//!
+//! This is where untrusted input becomes trusted data, so it is total: every
+//! field has a defined value for malformed input, and nothing here can fail the
+//! request. A pageview with a garbage referrer is still a pageview.
+
 use url::Url;
 
 use super::geo::{self, GeoInfo};

@@ -1,3 +1,9 @@
+//! Wire types for the topics / intent-classification endpoints.
+//!
+//! i64 ids are exported as TypeScript `number`, not ts-rs's default `bigint`:
+//! the wire value is a plain JSON number and a real BigInt breaks
+//! `JSON.stringify` on the round trip.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

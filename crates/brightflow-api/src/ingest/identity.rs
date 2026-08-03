@@ -1,3 +1,11 @@
+//! Privacy-preserving visitor identity.
+//!
+//! A visitor id is a hash of (daily salt, source, IP, user-agent), so raw IP and
+//! user-agent are never stored, and the id changes every day when the salt
+//! rotates. That daily rotation is the point: it makes same-day sessionization
+//! possible while making cross-day tracking of an individual impossible by
+//! construction rather than by policy.
+
 /// Compute a privacy-preserving visitor ID.
 ///
 /// Hash rotates daily with the salt, so the same physical visitor gets a
