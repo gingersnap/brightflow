@@ -1,8 +1,11 @@
 target/
 .env
 
-# Data (Parquet files)
-data/
+# Data (Parquet files) — anchored: `data/` unanchored would also ignore
+# source directories like crates/brightflow-engine/src/data/
+/data/
+crates/brightflow-api/data/
+brightflow-app/data/
 
 # Frontend
 node_modules/
