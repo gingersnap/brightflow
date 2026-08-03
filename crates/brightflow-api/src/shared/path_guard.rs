@@ -1,21 +1,17 @@
 //! Rejects path traversal in dynamic route segments before they reach a handler.
 //!
-//! Several handlers build filesystem paths by joining route parameters —
-//! `source_id`, `table`, `name` — straight onto the workspace root (directly, via
-//! `topics_artifact_dir`, and inside `brightflow-store`, which does
-//! `root.join(source_id).join(name)` in a dozen places). axum percent-decodes a
+//! Route parameters — `source_id`, `table`, `name` — end up joined onto the
+//! workspace root as filesystem path components. axum percent-decodes a
 //! segment before handing it over, so `%2F` becomes a real `/` and `..%2F..` a
-//! real `../..`; nothing downstream re-checks it. A logged-in client could thus
-//! read or write outside the workspace (confirmed against a running server: a
-//! crafted `source_id` made the topics endpoint stat a planted file under
-//! `/tmp`).
+//! real `../..`. Without this guard a logged-in client could read or write
+//! outside the workspace (confirmed against a running server: a crafted
+//! `source_id` made the topics endpoint stat a planted file under `/tmp`).
 //!
-//! This is the one choke point that closes it. As a middleware over the whole
-//! router it validates *every* dynamic segment of *every* route — so a new
-//! handler cannot reintroduce the hole by forgetting to sanitize, which per-site
-//! checks invite. Validation happens before the value can propagate to either the
-//! API path builders or the store, which is why it belongs here rather than at
-//! each sink.
+//! The contract this middleware offers: every dynamic segment of every route
+//! it wraps is validated before any handler runs, so path-building code
+//! behind it may treat route segments as single, separator-free path
+//! components. Sitting on the whole router — rather than per call site — is
+//! what keeps a newly added handler covered by default.
 //!
 //! The rule is deliberately blunt: a single decoded segment that is exactly `.`
 //! or `..`, or that contains a path separator or NUL, cannot be a legitimate

@@ -2,9 +2,9 @@
 //!
 //! Owns its own pool and runs the `migrations/` directory at construction, so a
 //! fresh deployment gets a usable users table without a separate migrate step.
-//! Deliberately thin: it does lookups and inserts and holds no password policy —
-//! hashing lives in `auth::password`, the timing-equalized verification in
-//! `auth::backend`.
+//! Deliberately thin: it does lookups and inserts and holds no password
+//! policy — rows carry whatever hash the caller supplies, and nothing here
+//! verifies one.
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;

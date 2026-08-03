@@ -1,4 +1,9 @@
-//! Data ingestion into SQLite-backed Parquet tables
+//! Writes Parquet data into a table: append, overwrite, ignore, or key-merge.
+//!
+//! Writes are file-granular — data always lands as a new UUIDv7-named Parquet
+//! file that is registered in the catalog after the bytes are on disk; no
+//! file is ever edited in place. Empty inputs are dropped before they can
+//! register a zero-row file.
 
 use std::path::Path;
 

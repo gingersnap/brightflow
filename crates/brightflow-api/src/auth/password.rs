@@ -3,7 +3,8 @@
 //! `Argon2::default()` is used rather than hand-tuned parameters so the cost
 //! tracks the crate's current recommendation instead of a number that was right
 //! once. Both functions are synchronous and CPU-bound by design — callers must
-//! run them under `spawn_blocking` (see `auth::backend`).
+//! not run them directly on an async executor thread; wrap them in
+//! `spawn_blocking`.
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, SaltString},

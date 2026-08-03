@@ -14,8 +14,10 @@
 #
 # Checks:
 #   1. Staged .rs under crates/*/src/  -> must have `//!` within the first 3 lines
-#   2. Staged .ts under brightflow-app/src/ (excluding types/generated/)
+#   2. Staged .ts/.vue under brightflow-app/src/ (excluding types/generated/)
 #                                      -> must have `/**` within the first 3 lines
+#                                         (.vue: first 10 — the header sits inside
+#                                         `<script setup>`, sometimes after imports)
 #   3. New .md anywhere outside docs/, plans/, reports/ -> rejected
 #
 # Usage: ./scripts/check-conventions.sh   (also run from scripts/pre-commit)
@@ -69,13 +71,18 @@ while IFS= read -r f; do
     [ -z "$f" ] && continue
     # Header-scoped, like the Rust check: a JSDoc block anywhere in the file is not a
     # module header, and accepting one lets a file with a documented function but no
-    # module doc pass.
-    head3=$(git show ":$f" 2>/dev/null | sed -n '1,3p')
-    if ! grep -q '/\*\*' <<< "$head3"; then
+    # module doc pass. .vue gets a 10-line window because the header lives inside
+    # `<script setup lang="ts">`, in some files below the import block.
+    case "$f" in
+        *.vue) window='1,10p' ;;
+        *)     window='1,3p'  ;;
+    esac
+    header=$(git show ":$f" 2>/dev/null | sed -n "$window")
+    if ! grep -q '/\*\*' <<< "$header"; then
         MISSING_TS+=("$f")
     fi
 done <<< "$(echo "$STAGED" \
-    | grep -E '^brightflow-app/src/.*\.ts$' \
+    | grep -E '^brightflow-app/src/.*\.(ts|vue)$' \
     | grep -v '^brightflow-app/src/types/generated/' || true)"
 
 if [ ${#MISSING_TS[@]} -gt 0 ]; then

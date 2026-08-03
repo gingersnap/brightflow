@@ -2,8 +2,8 @@
 //!
 //! Everything here is synchronous and DB-free — pure helpers over the spec
 //! (`config_json` in `enrichment_function_versions` is the serde form of
-//! [`FunctionSpec`]). The async LLM batch runner lives in brightflow-api;
-//! topic_model/classifier fit + apply stay in `topic_enricher`.
+//! [`FunctionSpec`]). Running a function — LLM batches, fits, applies — is
+//! out of scope for this module by design; it only defines and resolves specs.
 
 use std::collections::BTreeMap;
 

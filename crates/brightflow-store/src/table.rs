@@ -1,4 +1,8 @@
-//! Table operations for SQLite-backed Parquet store
+//! Read-side table operations: listing, metadata, and whole-table reads.
+//!
+//! A table read concatenates every registered Parquet file rather than
+//! trusting cached metadata — the files are the data of record and the
+//! catalog rows are an index over them.
 
 use std::path::{Path, PathBuf};
 

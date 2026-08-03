@@ -1,4 +1,10 @@
-//! SQLite-backed metadata store (Litehouse)
+//! The single SQLite connection pool and every metadata query in the store.
+//!
+//! One flat query module rather than per-domain repositories: each method is
+//! a self-contained named query over one pool, so there is exactly one place
+//! to look for "what does the store persist", and the migrations directory
+//! stays the only schema authority. WAL journaling with NORMAL sync is the
+//! deliberate latency/durability trade for a local, single-writer catalog.
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;

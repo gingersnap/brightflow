@@ -1,4 +1,9 @@
-//! SQLite row types for Litehouse metadata
+//! One Rust struct per SQLite table, deliberately mirroring column names 1:1.
+//!
+//! These are sqlx row mappings, not domain types: they stay stringly-typed
+//! (status/role/polarity as TEXT) so the schema in migrations is the single
+//! source of truth and a migration cannot silently disagree with an enum here.
+//! Parsing into richer types happens at the call sites that need it.
 
 use serde::{Deserialize, Serialize};
 

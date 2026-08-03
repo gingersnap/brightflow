@@ -104,11 +104,10 @@ pub fn check_login(limiter: &LoginLimiter, key: &str, now: Instant) -> bool {
 
 /// Derive the rate-limit key for a request.
 ///
-/// **Trust assumption:** `X-Forwarded-For` is attacker-controlled unless a
-/// reverse proxy overwrites it, so this is only sound behind a proxy that does
-/// — which is how this deploys (see the `APP_ENV=production` branch in `lib.rs`).
-/// Exposed directly to the internet, a client could rotate the header to get a
-/// fresh bucket per attempt and evade the limit entirely. It still keys on the
+/// **Contract:** `X-Forwarded-For` is attacker-controlled unless a reverse
+/// proxy overwrites it, so this keying is only sound behind a proxy that does.
+/// Deploying it exposed directly to the internet re-opens the limit: a client
+/// could rotate the header to get a fresh bucket per attempt. It still keys on the
 /// header rather than the socket address because behind a proxy every request
 /// shares one socket address, and keying on that would throttle all users
 /// together — a worse failure, and one that hurts legitimate traffic.

@@ -1,9 +1,9 @@
-//! Brightflow Connect - Longbow configuration and custom connectors
+//! Brightflow's face on Longbow: connector discovery and pipeline runs.
 //!
-//! This crate provides Brightflow's deployment of Longbow, including:
-//! - Configuration for data source connectors
-//! - Custom Lua connectors specific to Brightflow
-//! - Connector runner utilities
+//! Connectors are Lua sources — some embedded in the binary as builtins, some
+//! loaded from a custom directory — so adding or patching one never requires
+//! a Rust rebuild of the connector itself. On a name collision, discovery
+//! keeps the builtin and skips the custom file.
 
 pub use longbow;
 

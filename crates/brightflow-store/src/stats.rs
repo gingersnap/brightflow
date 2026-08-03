@@ -1,4 +1,8 @@
-//! Column-level statistics extraction from DataFrames
+//! Min/max/null-count extraction that feeds file-level query pruning.
+//!
+//! Stats are stored as strings so one pair of TEXT columns holds bounds for
+//! any dtype; dtypes without a usable ordering (lists, structs, …) skip
+//! min/max (see `supports_min_max`) and record only null counts.
 
 use polars::prelude::*;
 
