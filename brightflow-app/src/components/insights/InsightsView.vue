@@ -14,6 +14,7 @@ import { useRouter } from 'vue-router';
 import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
+import { useInsightsRuns } from '@/composables/useInsightsRuns';
 import { insightHistoryApi } from '@/services/api';
 import { type Cadence, type ReportType, useInsightsStore } from '@/stores/insights';
 import { useInsightsActivityStore } from '@/stores/insightsActivity';
