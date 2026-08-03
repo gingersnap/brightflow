@@ -1,10 +1,14 @@
 //! Filesystem layout for embedder models and topic artifacts.
 //!
-//! Source ids are sanitized before use as path components — they originate from
-//! user input, and an unsanitized id is a path-traversal waiting to happen. The
-//! model directory name doubles as the `embedding_model_id` written to Parquet,
-//! so a row always records which encoder produced it and vectors from different
-//! models are never silently compared.
+//! `sanitize_source_id` maps `:` to `__` so ids like `connector:abc` form a
+//! single directory component. **That is all it does.** It is a formatting
+//! helper, not a security boundary: it strips neither `/` nor `..`, so passing
+//! an id through it does not make that id safe to join onto a path. Validate
+//! upstream if the value could be attacker-controlled.
+//!
+//! The model directory name doubles as the `embedding_model_id` written to
+//! Parquet, so a row always records which encoder produced it and vectors from
+//! different models are not silently compared.
 
 use std::path::{Path, PathBuf};
 

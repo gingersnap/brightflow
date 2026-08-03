@@ -1,9 +1,13 @@
 //! Token to stable-id mapping, plus document frequencies for IDF.
 //!
-//! Carries a `generation` counter that increments on every re-fit. Vectors record
-//! the generation they were built under so a stale vector can be detected instead
-//! of being silently reinterpreted against different ids — the failure mode that
-//! produces confidently wrong similarity scores.
+//! Carries a `generation` counter, incremented by `fit`, `add_document` and
+//! `filter_extremes` — anything that can renumber ids. Vectors record the
+//! generation they were built under, which is what makes a stale one
+//! *detectable*: reinterpreting a vector against renumbered ids yields
+//! confidently wrong similarity scores rather than an obvious failure.
+//!
+//! Detectability is all this provides. Code holding vectors across a re-fit is
+//! responsible for comparing generations before using them.
 
 use std::collections::{HashMap, HashSet};
 

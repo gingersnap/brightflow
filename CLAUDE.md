@@ -50,6 +50,17 @@ repo-wide expectations:
    next to the code it misdescribes. `scripts/check-conventions.sh` can only
    check that a comment exists; nothing mechanical can check that it is true, so
    this rule is the only thing standing between a header and a confident lie.
+
+   **Comment on your own file only.** State the *contract* your code offers, not
+   an *observation* about someone else's. "Callers must not propagate this
+   error" is yours and stays true; "`lib.rs` logs it and continues" is a fact
+   about `lib.rs` that rots the moment that line changes — and rots invisibly,
+   because the person changing `lib.rs` has no reason to open your file. That is
+   the one drift this rule cannot catch, since re-verification is scoped to what
+   you touched. If a fact belongs to another module, put it there or leave it
+   out. Worst of all is asserting an *absence* ("nothing checks this today") —
+   it is wrong the instant someone adds the check. Absences are findings, not
+   documentation: raise them, don't compile them in.
 2. **Unit tests per piece the agent touches.** When you add or change pure
    logic, add or update a co-located unit test covering the new behavior. Don't
    leave a touched function without coverage; don't add tests for code you

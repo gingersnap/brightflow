@@ -5,11 +5,10 @@
 //! the pragmas favour read latency (WAL, generous cache, mmap) over write
 //! durability — `synchronous = NORMAL` can lose the last commits on power loss.
 //!
-//! That trade is acceptable because neither table is a source of truth. Lost
+//! That trade is acceptable because nothing here is a source of truth. Lost
 //! sync-run history is only reporting. A lost cursor is not repaired but is
-//! self-correcting: `list_sync_states` simply yields no entry for that endpoint,
-//! the connector re-fetches from the beginning, and `merge_parquet` dedupes on
-//! the primary key — slower, not wrong.
+//! self-correcting: with no cursor for an endpoint the next sync re-fetches it
+//! from the beginning — slower, not wrong.
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;

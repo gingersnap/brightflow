@@ -5,9 +5,8 @@
 //! missing column) returns `Ok(false)`; a real failure (absent model file,
 //! unconfigured embedder) returns `Err`.
 //!
-//! Note the invariant is held by the *caller*, not here: `lib.rs` logs the `Err`
-//! and carries on to `merge_parquet`. A future caller that used `?` would break
-//! it silently, so that call site is the thing to preserve.
+//! That `Err` is advisory, and this function cannot enforce what happens to it:
+//! callers must log it and continue, never `?` it into the sync's own result.
 //!
 //! It also never *fits* topic artifacts. Fitting is expensive and changes how
 //! every existing row is labelled, so it stays an explicit manual step (`topics

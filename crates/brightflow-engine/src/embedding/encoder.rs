@@ -1,9 +1,13 @@
 //! Loads and runs the static embedding model.
 //!
-//! The model is loaded once into a process-wide `OnceCell` — it is tens of
-//! megabytes, so per-call loading would dominate every enrichment run. A missing
-//! model file is a normal, recoverable state (embeddings are optional), so it
-//! surfaces as an error the caller can report rather than a panic.
+//! The ~120 MB model is held in a process-wide `OnceCell` and shared as an `Arc`
+//! across the scheduler, API, and CLI; per-call loading would dominate every
+//! enrichment run. Note it is *stored* once, not necessarily *loaded* once —
+//! threads racing the first call each load a copy and all but the winner are
+//! dropped, which costs time but never yields two live models.
+//!
+//! A missing model file is a normal, recoverable state (embeddings are
+//! optional), so it surfaces as an error the caller can report, not a panic.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

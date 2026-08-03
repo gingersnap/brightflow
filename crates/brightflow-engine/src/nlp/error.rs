@@ -1,9 +1,9 @@
 //! NLP error type.
 //!
-//! `GenerationMismatch` is the notable one: vectors carry the vocabulary
-//! generation they were built with, so a vector compared against a re-fitted
-//! vocabulary fails loudly instead of silently comparing mismatched dimensions
-//! and returning a plausible, meaningless number.
+//! `GenerationMismatch` reports a `SparseVec` used against a vocabulary that has
+//! been re-fitted since — ids renumbered underneath it. It exists because the
+//! alternative failure is silent: such a comparison returns a plausible,
+//! meaningless number rather than going wrong visibly.
 
 /// Errors that can occur in NLP operations
 #[derive(Debug, thiserror::Error)]
