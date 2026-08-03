@@ -93,15 +93,6 @@ fn resolve_config(req: EngineConfig) -> EngineConfig {
     }
 }
 
-fn now_epoch() -> i64 {
-    i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs()),
-    )
-    .unwrap_or(0)
-}
-
 /// Persisted curation context around one insights run: prior exposure for
 /// novelty decay, plus dismissals/pins/suppressions to apply to the output.
 #[derive(Default)]
@@ -248,7 +239,7 @@ fn record_shown_insights(state: &AppState, table_id: Option<String>, tree: &Anal
     if shown.is_empty() {
         return;
     }
-    let now = now_epoch();
+    let now = chrono::Utc::now().timestamp();
     tokio::spawn(async move {
         if let Err(e) = store
             .db()
@@ -295,7 +286,7 @@ fn record_insight_run(
                 i64::try_from(new_finding_count).unwrap_or(i64::MAX),
                 top_summary.as_deref(),
                 execution_time_ms,
-                now_epoch(),
+                chrono::Utc::now().timestamp(),
             )
             .await;
         match inserted {
@@ -337,7 +328,7 @@ pub(crate) async fn run_report_core(
         )
         .with_scoring_ctx(scoring_context(&schema, &config_for_engine))
         .with_select_top(config_for_engine.select_top.unwrap_or(DEFAULT_MAX_RESULTS))
-        .with_history(history, now_epoch());
+        .with_history(history, chrono::Utc::now().timestamp());
         let mut result = match kind_for_engine {
             ReportKind::Review { cadence } => {
                 engine.run_review_with_cadence(&df, &schema, cadence)?

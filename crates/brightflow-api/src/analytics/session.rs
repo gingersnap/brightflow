@@ -82,7 +82,7 @@ impl Dataset {
                 .iter()
                 .map(|col| ColumnInfo {
                     name: col.name().to_string(),
-                    dtype: dtype_to_string(col.dtype()),
+                    dtype: crate::analytics::executor::dtype_to_string(col.dtype()),
                     role: None,
                     is_kpi: None,
                     label: None,
@@ -97,7 +97,7 @@ impl Dataset {
                                 .iter()
                                 .map(|(name, dtype)| ColumnInfo {
                                     name: name.to_string(),
-                                    dtype: dtype_to_string(dtype),
+                                    dtype: crate::analytics::executor::dtype_to_string(dtype),
                                     role: None,
                                     is_kpi: None,
                                     label: None,
@@ -223,26 +223,6 @@ impl DatasetManager {
     pub fn has_dataset(&self, id: &str) -> bool {
         self.datasets.contains_key(id)
     }
-}
-
-/// Convert Polars DataType to a display string
-fn dtype_to_string(dtype: &DataType) -> String {
-    match dtype {
-        DataType::Boolean => "bool",
-        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => "int",
-        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => "uint",
-        DataType::Float32 | DataType::Float64 => "float",
-        DataType::String => "string",
-        DataType::Datetime(_, _) => "datetime",
-        DataType::Date => "date",
-        DataType::Time => "time",
-        DataType::Duration(_) => "duration",
-        DataType::Null => "null",
-        DataType::List(_) => "list",
-        DataType::Struct(_) => "struct",
-        _ => "unknown",
-    }
-    .to_string()
 }
 
 #[cfg(test)]

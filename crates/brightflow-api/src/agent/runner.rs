@@ -38,15 +38,6 @@ fn max_total_tokens(kind: &str) -> u64 {
     }
 }
 
-fn now_epoch() -> i64 {
-    i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs()),
-    )
-    .unwrap_or(0)
-}
-
 /// Execute one agent run to completion. Called from a spawned task; the
 /// caller owns run-row lifecycle on abort.
 pub async fn execute_run(
@@ -65,7 +56,12 @@ pub async fn execute_run(
     };
     if let Err(e) = store
         .db()
-        .finish_agent_run(run_id, status, Some(&detail), now_epoch())
+        .finish_agent_run(
+            run_id,
+            status,
+            Some(&detail),
+            chrono::Utc::now().timestamp(),
+        )
         .await
     {
         tracing::warn!("failed to finish agent run {run_id}: {e}");

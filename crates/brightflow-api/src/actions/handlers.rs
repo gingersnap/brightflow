@@ -62,15 +62,6 @@ fn initial_status(actor: Actor, kind_undoable: bool) -> &'static str {
     }
 }
 
-fn now_epoch() -> i64 {
-    i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs()),
-    )
-    .unwrap_or(0)
-}
-
 /// `POST /api/actions` — dispatch an action as a human actor.
 pub async fn dispatch(
     State(state): State<AppState>,
@@ -108,7 +99,7 @@ pub async fn dispatch_action(
             action.kind(),
             &params_json,
             status,
-            now_epoch(),
+            chrono::Utc::now().timestamp(),
         )
         .await?;
 
@@ -170,7 +161,7 @@ async fn execute_and_record_quiet(
         .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
     let store = std::sync::Arc::clone(store);
     let log_id = row.id;
-    let now = now_epoch();
+    let now = chrono::Utc::now().timestamp();
     match execute_action(state, &action).await {
         Ok((result, undo)) => {
             let undo_json = undo
@@ -365,7 +356,7 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
                     format!("stored action unreadable: {e}"),
                 );
                 // Mark it failed so it stops showing as pending forever.
-                let now = now_epoch();
+                let now = chrono::Utc::now().timestamp();
                 if let Err(db_err) = store
                     .db()
                     .update_action_result(row.id, "failed", None, None, now)
@@ -449,7 +440,7 @@ pub async fn reject(
     }
     store
         .db()
-        .set_action_status(id, "rejected", now_epoch())
+        .set_action_status(id, "rejected", chrono::Utc::now().timestamp())
         .await?;
     // Rare path: a re-fetch keeps the emit simple.
     if let Ok(Some(updated)) = store.db().get_action(id).await {
@@ -490,7 +481,7 @@ pub(crate) async fn undo_action_row(
     apply_undo(state, &op).await?;
     store
         .db()
-        .set_action_status(row.id, "undone", now_epoch())
+        .set_action_status(row.id, "undone", chrono::Utc::now().timestamp())
         .await?;
     Ok(())
 }
@@ -624,7 +615,7 @@ pub async fn execute_action(
             }
             store
                 .db()
-                .add_excluded_term(&table_id, &term, now_epoch())
+                .add_excluded_term(&table_id, &term, chrono::Utc::now().timestamp())
                 .await?;
             Ok((
                 json!({ "excluded": term }),
@@ -692,7 +683,7 @@ pub async fn execute_action(
                     "dismissed",
                     Some(reason_str),
                     None,
-                    now_epoch(),
+                    chrono::Utc::now().timestamp(),
                 )
                 .await?;
             Ok((
@@ -711,7 +702,14 @@ pub async fn execute_action(
             if *pinned {
                 store
                     .db()
-                    .upsert_insight_state(&table_id, fingerprint, "pinned", None, None, now_epoch())
+                    .upsert_insight_state(
+                        &table_id,
+                        fingerprint,
+                        "pinned",
+                        None,
+                        None,
+                        chrono::Utc::now().timestamp(),
+                    )
                     .await?;
             } else {
                 store
@@ -744,7 +742,7 @@ pub async fn execute_action(
                     kept_state,
                     kept_reason,
                     Some(note),
-                    now_epoch(),
+                    chrono::Utc::now().timestamp(),
                 )
                 .await?;
             Ok((
@@ -765,7 +763,7 @@ pub async fn execute_action(
             };
             store
                 .db()
-                .add_insight_suppression(&table_id, kind, target, now_epoch())
+                .add_insight_suppression(&table_id, kind, target, chrono::Utc::now().timestamp())
                 .await?;
             Ok((
                 json!({ "suppressed": target, "kind": kind }),
@@ -836,7 +834,12 @@ pub async fn execute_action(
                 .await?;
             let row = store
                 .db()
-                .upsert_taxonomy_category(&table_id, name, description.as_deref(), now_epoch())
+                .upsert_taxonomy_category(
+                    &table_id,
+                    name,
+                    description.as_deref(),
+                    chrono::Utc::now().timestamp(),
+                )
                 .await?;
             Ok((
                 json!({
@@ -971,7 +974,13 @@ pub async fn execute_action(
 
             let written = store
                 .db()
-                .set_document_labels(&table_id, row_id, &category_ids, "human", now_epoch())
+                .set_document_labels(
+                    &table_id,
+                    row_id,
+                    &category_ids,
+                    "human",
+                    chrono::Utc::now().timestamp(),
+                )
                 .await?;
             Ok((
                 json!({ "rowId": row_id, "categories": categories, "count": written.len() }),
@@ -1047,7 +1056,7 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
                         Some(label.as_deref()),
                         Some(*is_noise),
                         Some(*merged_into),
-                        now_epoch(),
+                        chrono::Utc::now().timestamp(),
                     )
                     .await?;
             }
@@ -1089,7 +1098,7 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
                     st,
                     reason.as_deref(),
                     annotation.as_deref(),
-                    now_epoch(),
+                    chrono::Utc::now().timestamp(),
                 )
                 .await?;
             Ok(())
@@ -1431,7 +1440,7 @@ async fn edit_cluster(
             label,
             is_noise,
             merged_into,
-            now_epoch(),
+            chrono::Utc::now().timestamp(),
         )
         .await?;
 

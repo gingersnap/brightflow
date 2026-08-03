@@ -23,15 +23,6 @@ const VALID_KINDS: &[&str] = &[
 /// Must stay inside the `agent_runs.mode` CHECK constraint (migration 010).
 const VALID_MODES: &[&str] = &["propose", "auto_apply"];
 
-fn now_epoch() -> i64 {
-    i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs()),
-    )
-    .unwrap_or(0)
-}
-
 pub(crate) fn to_response(
     row: brightflow_store::AgentRunRow,
     actions: Vec<i64>,
@@ -83,7 +74,7 @@ pub async fn start_run(
     }
     let row = store
         .db()
-        .insert_agent_run(&req.kind, mode, &scope, now_epoch())
+        .insert_agent_run(&req.kind, mode, &scope, chrono::Utc::now().timestamp())
         .await?;
     let run_id = row.id;
     let auto_apply = mode == "auto_apply";
@@ -191,7 +182,7 @@ pub async fn undo_all(
             Ok(()) => {
                 undone += 1;
                 row.status = "undone".to_string();
-                row.resolved_at = Some(now_epoch());
+                row.resolved_at = Some(chrono::Utc::now().timestamp());
                 entries.push(ActionLogEntry::from_row(row));
             },
             Err(e) => push_failure(&mut failures, row.id, &row.action_kind, e.to_string()),
@@ -228,7 +219,12 @@ pub async fn cancel_run(
         }
         store
             .db()
-            .finish_agent_run(id, "cancelled", Some("cancelled by user"), now_epoch())
+            .finish_agent_run(
+                id,
+                "cancelled",
+                Some("cancelled by user"),
+                chrono::Utc::now().timestamp(),
+            )
             .await?;
     }
     let updated = store

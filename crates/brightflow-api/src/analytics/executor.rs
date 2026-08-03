@@ -290,8 +290,12 @@ fn anyvalue_to_json(val: &AnyValue<'_>) -> serde_json::Value {
     }
 }
 
-/// Convert Polars DataType to a display string
-fn dtype_to_string(dtype: &DataType) -> String {
+/// Convert Polars DataType to the display string the frontend keys off.
+///
+/// Unsigned ints deliberately map to "int": consumers (column pickers, the
+/// query builder) only distinguish int/float/string/time-ish, and a separate
+/// "uint" would silently fall out of every numeric check.
+pub(crate) fn dtype_to_string(dtype: &DataType) -> String {
     match dtype {
         DataType::Boolean => "bool",
         DataType::Int8
@@ -314,4 +318,20 @@ fn dtype_to_string(dtype: &DataType) -> String {
         _ => "unknown",
     }
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsigned_ints_read_as_int_for_the_frontend() {
+        assert_eq!(dtype_to_string(&DataType::UInt64), "int");
+        assert_eq!(dtype_to_string(&DataType::Int32), "int");
+        assert_eq!(dtype_to_string(&DataType::Float32), "float");
+        assert_eq!(
+            dtype_to_string(&DataType::Categorical(None, CategoricalOrdering::default())),
+            "unknown"
+        );
+    }
 }
