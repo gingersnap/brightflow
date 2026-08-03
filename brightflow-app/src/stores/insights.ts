@@ -14,10 +14,14 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import { dimensionOf, directionOf, measureOf } from '@/components/insights/nodeMeta';
-import type { AnalysisNode, AnalysisTree } from '@/services/api';
 import { isActionEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
-import type { ActionLogEntry, InsightsResponse } from '@/types/generated';
+import type {
+  AnalysisNode,
+  AnalysisTree,
+  ActionLogEntry,
+  InsightsResponse,
+} from '@/types/generated';
 
 export type ReportType = 'review' | 'trends' | 'drivers';
 export type Cadence = 'daily' | 'weekly' | 'monthly';
