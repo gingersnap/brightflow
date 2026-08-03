@@ -346,15 +346,11 @@ impl ParquetStore {
         partition_key: &str,
         partition_value: &str,
     ) -> StoreResult<usize> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        let table_id = self.table_id(source_id, table_name).await?;
 
         let files = self
             .db
-            .get_partition_file_ids(&table.id, partition_key, partition_value)
+            .get_partition_file_ids(&table_id, partition_key, partition_value)
             .await?;
 
         if files.len() <= 1 {
@@ -406,7 +402,7 @@ impl ParquetStore {
 
         let new_file = self
             .db
-            .add_table_file(&table.id, &merged_path_str, num_rows, size_bytes)
+            .add_table_file(&table_id, &merged_path_str, num_rows, size_bytes)
             .await?;
 
         self.db
@@ -417,10 +413,10 @@ impl ParquetStore {
         self.db.add_file_column_stats(&file_stats).await?;
 
         // Recompute total rows for the table
-        let all_files = self.db.list_table_files(&table.id).await?;
+        let all_files = self.db.list_table_files(&table_id).await?;
         let total: i64 = all_files.iter().map(|f| f.num_rows).sum();
         self.db
-            .update_table_meta(&table.id, None, None, total)
+            .update_table_meta(&table_id, None, None, total)
             .await?;
 
         // Delete old physical files
@@ -438,6 +434,16 @@ impl ParquetStore {
         Ok(file_count)
     }
 
+    /// Resolve (source_id, table_name) to the table's id, or TableNotFound.
+    async fn table_id(&self, source_id: &str, table_name: &str) -> StoreResult<String> {
+        Ok(self
+            .db
+            .get_table(source_id, table_name)
+            .await?
+            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?
+            .id)
+    }
+
     // =====================================================
     // Column Semantics (high-level, resolves table name → id)
     // =====================================================
@@ -448,12 +454,8 @@ impl ParquetStore {
         source_id: &str,
         table_name: &str,
     ) -> StoreResult<Vec<ColumnSemanticRow>> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
-        self.db.get_column_semantics(&table.id).await
+        let table_id = self.table_id(source_id, table_name).await?;
+        self.db.get_column_semantics(&table_id).await
     }
 
     /// Upsert a single column semantic override by (source_id, table name).
@@ -469,14 +471,10 @@ impl ParquetStore {
         label: Option<&str>,
         description: Option<&str>,
     ) -> StoreResult<ColumnSemanticRow> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        let table_id = self.table_id(source_id, table_name).await?;
         self.db
             .upsert_column_semantic(
-                &table.id,
+                &table_id,
                 column_name,
                 role,
                 is_kpi,
@@ -494,12 +492,8 @@ impl ParquetStore {
         table_name: &str,
         rows: &[ColumnSemanticRow],
     ) -> StoreResult<()> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
-        self.db.upsert_column_semantics_batch(&table.id, rows).await
+        let table_id = self.table_id(source_id, table_name).await?;
+        self.db.upsert_column_semantics_batch(&table_id, rows).await
     }
 
     /// Delete a single column semantic override by (source_id, table name).
@@ -509,12 +503,8 @@ impl ParquetStore {
         table_name: &str,
         column_name: &str,
     ) -> StoreResult<bool> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
-        self.db.delete_column_semantic(&table.id, column_name).await
+        let table_id = self.table_id(source_id, table_name).await?;
+        self.db.delete_column_semantic(&table_id, column_name).await
     }
 
     /// Delete all column semantic overrides for a table by (source_id, name).
@@ -523,12 +513,8 @@ impl ParquetStore {
         source_id: &str,
         table_name: &str,
     ) -> StoreResult<u64> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
-        self.db.delete_all_column_semantics(&table.id).await
+        let table_id = self.table_id(source_id, table_name).await?;
+        self.db.delete_all_column_semantics(&table_id).await
     }
 
     /// Get table analysis settings by (source_id, table name).
@@ -537,12 +523,8 @@ impl ParquetStore {
         source_id: &str,
         table_name: &str,
     ) -> StoreResult<Option<TableAnalysisSettingsRow>> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
-        self.db.get_table_settings(&table.id).await
+        let table_id = self.table_id(source_id, table_name).await?;
+        self.db.get_table_settings(&table_id).await
     }
 
     /// Upsert table analysis settings by (source_id, table name).
@@ -555,25 +537,16 @@ impl ParquetStore {
         time_granularity: Option<&str>,
         comparison_periods: Option<i32>,
     ) -> StoreResult<TableAnalysisSettingsRow> {
-        let table = self
-            .db
-            .get_table(source_id, table_name)
-            .await?
-            .ok_or_else(|| StoreError::TableNotFound(table_name.to_string()))?;
+        let table_id = self.table_id(source_id, table_name).await?;
         self.db
             .upsert_table_settings(
-                &table.id,
+                &table_id,
                 display_name,
                 description,
                 time_granularity,
                 comparison_periods,
             )
             .await
-    }
-
-    /// Check if any column_semantics rows exist.
-    pub async fn has_any_column_semantics(&self) -> StoreResult<bool> {
-        self.db.has_any_column_semantics().await
     }
 
     /// Get the internal StoreDb (for seeding operations that need direct access).

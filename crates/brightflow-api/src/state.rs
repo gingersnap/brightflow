@@ -430,7 +430,7 @@ pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore
 /// Seed known TOML schema data into SQLite if `column_semantics` is empty.
 pub async fn seed_column_semantics(store: &ParquetStore) {
     // Only seed if we have tables but no semantics yet
-    let has_semantics = store.has_any_column_semantics().await.unwrap_or(true);
+    let has_semantics = store.db().has_any_column_semantics().await.unwrap_or(true);
     if has_semantics {
         return;
     }
