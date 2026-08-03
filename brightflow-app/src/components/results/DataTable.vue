@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ContextMenuItem } from '@nuxt/ui';
+import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';
 
 import { useResultsStore } from '@/stores/results';
@@ -61,9 +62,7 @@ const isHeader = ref(false);
 const colName = ref<string | null>(null);
 const cellValue = ref<string | null>(null);
 
-function copy(text: string): void {
-  void navigator.clipboard.writeText(text);
-}
+const { copy } = useClipboard();
 
 function onContextMenu(e: MouseEvent): void {
   const target = e.target as HTMLElement | null;

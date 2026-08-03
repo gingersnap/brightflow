@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Plus, X } from '@lucide/vue';
+import { watchDebounced } from '@vueuse/core';
 import { computed, watch } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
@@ -32,21 +33,15 @@ const limitOptions = [
   { label: 'All', value: 0 },
 ];
 
-// Re-query table data when filters or limit change
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-watch(
+// Re-query table data when filters or limit change (debounced; cleans up on unmount)
+watchDebounced(
   () => [queryStore.filters.map((f) => `${f.column}:${f.op}:${f.value}`), queryStore.limit],
   () => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
+    if (connectionStore.isConnected && datasetStore.hasData) {
+      loadTableData();
     }
-    debounceTimer = setTimeout(() => {
-      if (connectionStore.isConnected && datasetStore.hasData) {
-        loadTableData();
-      }
-    }, 300);
   },
-  { deep: true },
+  { debounce: 300, deep: true },
 );
 
 // Column options for dropdown

@@ -5,7 +5,8 @@
  * run reattaches to it instead of appearing to have lost it.
  */
 
-import { onBeforeUnmount, ref } from 'vue';
+import { useIntervalFn } from '@vueuse/core';
+import { ref } from 'vue';
 
 import { enrichFnApi } from '@/services/api';
 import type { EnrichRun, RunScope } from '@/types/enrichment';
@@ -18,16 +19,6 @@ import type { EnrichRun, RunScope } from '@/types/enrichment';
 export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
   const run = ref<EnrichRun | null>(null);
   const error = ref<string | null>(null);
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-  onBeforeUnmount(stopPolling);
-
-  function stopPolling(): void {
-    if (pollTimer != null) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
 
   async function poll(): Promise<void> {
     if (run.value == null) {
@@ -44,10 +35,10 @@ export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
     }
   }
 
-  function beginPolling(): void {
-    stopPolling();
-    pollTimer = setInterval(() => void poll(), 2000);
-  }
+  // Auto-cleans on unmount; started explicitly when a run begins.
+  const { pause: stopPolling, resume: beginPolling } = useIntervalFn(() => void poll(), 2000, {
+    immediate: false,
+  });
 
   async function start(functionId: string, scope: RunScope): Promise<void> {
     error.value = null;

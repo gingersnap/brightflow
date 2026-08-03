@@ -6,6 +6,7 @@
  * an account-level fact, and clearing site data resets it.
  */
 
+import { useLocalStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 
@@ -27,12 +28,9 @@ function isInsightsComputed(
   );
 }
 
-function loadSeenAt(): Record<string, number> {
+/** Parse + validate the stored seen-map; anything malformed becomes {}. */
+function readSeenAt(raw: string): Record<string, number> {
   try {
-    const raw = localStorage.getItem(SEEN_STORAGE_KEY);
-    if (raw == null) {
-      return {};
-    }
     const parsed: unknown = JSON.parse(raw);
     if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {};
@@ -62,18 +60,16 @@ function tableKey(sourceId: string, table: string): string {
 export const useInsightsActivityStore = defineStore('insightsActivity', () => {
   /** Latest run per `sourceId|table`. */
   const latestByTable = ref<Map<string, InsightRunResponse>>(new Map());
-  const seenAt = ref<Record<string, number>>(loadSeenAt());
+  const seenAt = useLocalStorage<Record<string, number>>(
+    SEEN_STORAGE_KEY,
+    {},
+    {
+      serializer: { read: readSeenAt, write: JSON.stringify },
+    },
+  );
 
   let realtimeInitialized = false;
   const hydratedSources = new Set<string>();
-
-  function persistSeen(): void {
-    try {
-      localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify(seenAt.value));
-    } catch {
-      // Storage full/blocked — the badge just resets next reload.
-    }
-  }
 
   function upsertRun(run: InsightRunResponse): void {
     const key = tableKey(run.sourceId, run.table);
@@ -146,7 +142,6 @@ export const useInsightsActivityStore = defineStore('insightsActivity', () => {
 
   function markSeen(sourceId: string, table: string): void {
     seenAt.value[tableKey(sourceId, table)] = Math.floor(Date.now() / 1000);
-    persistSeen();
   }
 
   return {

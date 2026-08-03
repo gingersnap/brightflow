@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Play } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
-import { computed, onUnmounted, watch } from 'vue';
+import { useIntervalFn } from '@vueuse/core';
+import { computed, watch } from 'vue';
 
 import { connectApi } from '@/services/api';
 import type { EnrichedSyncRun, UnifiedConnector } from '@/types';
@@ -65,26 +66,15 @@ const historyRuns = computed(() =>
 
 const activeRunsExist = computed(() => activeRuns.value.length > 0);
 
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
-
-function startPolling(): void {
-  if (pollTimer) {
-    return;
-  }
-  const poll = (): void => {
+// Refresh run state every 3s while a run is active (pauses itself otherwise).
+const { pause: stopPolling, resume: startPolling } = useIntervalFn(
+  () => {
     queryCache.invalidateQueries({ key: ['connectors'] });
     queryCache.invalidateQueries({ key: ['sync-runs'] });
-    pollTimer = setTimeout(poll, 3000);
-  };
-  pollTimer = setTimeout(poll, 3000);
-}
-
-function stopPolling(): void {
-  if (pollTimer) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
+  },
+  3000,
+  { immediate: false },
+);
 
 watch(activeRunsExist, (hasActive) => {
   if (hasActive) {
@@ -93,8 +83,6 @@ watch(activeRunsExist, (hasActive) => {
     stopPolling();
   }
 });
-
-onUnmounted(() => stopPolling());
 
 const { mutate: syncNow, isLoading: triggering } = useMutation({
   mutation: (name: string) => connectApi.runConnector(name),

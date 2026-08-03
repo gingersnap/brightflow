@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Check, Copy, Pencil, Trash2, X } from '@lucide/vue';
 import { useMutation, useQueryCache } from '@pinia/colada';
+import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -26,8 +27,10 @@ async function loadSnippet(): Promise<void> {
   snippetText.value = result?.snippet ?? '';
 }
 
+const { copy: copyToClipboard } = useClipboard();
+
 function copySnippet(): void {
-  navigator.clipboard.writeText(snippetText.value);
+  void copyToClipboard(snippetText.value);
 }
 
 // --- Name editing ---

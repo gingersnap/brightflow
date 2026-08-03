@@ -6,22 +6,17 @@
  * rather than fetched here.
  */
 
+import { useLocalStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 
 import type { UnifiedSource } from '@/types';
 
 export const useSourceStore = defineStore('source', () => {
-  const storedPeriod = localStorage.getItem('brightflow-period');
-  const period = ref(storedPeriod ?? '30d');
+  const period = useLocalStorage('brightflow-period', '30d');
 
   // The actual source objects — set externally by component layer via setSourcesData
   const sourcesData = ref<UnifiedSource[]>([]);
-
-  // Persist
-  watch(period, (val) => {
-    localStorage.setItem('brightflow-period', val);
-  });
 
   // Actions
   function setSourcesData(sources: UnifiedSource[]): void {
@@ -35,7 +30,6 @@ export const useSourceStore = defineStore('source', () => {
   function reset(): void {
     period.value = '30d';
     sourcesData.value = [];
-    localStorage.removeItem('brightflow-period');
   }
 
   return {

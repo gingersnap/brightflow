@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Type,
 } from '@lucide/vue';
+import { watchDebounced } from '@vueuse/core';
 import { type Component, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 
@@ -115,9 +116,8 @@ watch(
   { deep: true },
 );
 
-// Auto-execute when configuration changes
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-watch(
+// Auto-execute when configuration changes (debounced; cleans up on unmount)
+watchDebounced(
   () => [
     pivotStore.rowFields.map((f) => f.column),
     pivotStore.columnFields.map((f) => f.column),
@@ -129,16 +129,11 @@ watch(
     queryStore.sections.sort.enabled,
   ],
   () => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
+    if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
+      executePivot();
     }
-    debounceTimer = setTimeout(() => {
-      if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
-        executePivot();
-      }
-    }, 300);
   },
-  { deep: true },
+  { debounce: 300, deep: true },
 );
 
 interface FieldParam {

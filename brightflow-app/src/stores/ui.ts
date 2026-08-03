@@ -2,11 +2,12 @@
  * View-level UI preferences: view mode, chart type, text size, section
  * collapse.
  *
- * Persisted to localStorage and validated on read — a stored value from an older
- * build that no longer names a valid mode falls back to the default instead of
- * putting the UI into an unrenderable state.
+ * Persisted via useLocalStorage with validating serializers — a stored value
+ * from an older build that no longer names a valid mode falls back to the
+ * default instead of putting the UI into an unrenderable state.
  */
 
+import { useLocalStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 
@@ -26,21 +27,23 @@ function isTextSize(s: string): s is TextSize {
   return ['small', 'default', 'large'].includes(s);
 }
 
-function readStoredTextSize(): TextSize {
-  const stored = localStorage.getItem('brightflow-text-size');
-  if (stored == null) {
-    return 'default';
-  }
+/** Serializer that validates on read and falls back to the default. */
+function validated<T extends string>(guard: (s: string) => s is T, fallback: T) {
+  return {
+    read: (raw: string): T => (guard(raw) ? raw : fallback),
+    write: (value: T): string => value,
+  };
+}
+
+function readTextSize(raw: string): TextSize {
   // Migrate legacy values from the old 2-size system.
-  if (stored === 'compact') {
-    localStorage.setItem('brightflow-text-size', 'small');
+  if (raw === 'compact') {
     return 'small';
   }
-  if (stored === 'comfortable') {
-    localStorage.setItem('brightflow-text-size', 'default');
+  if (raw === 'comfortable') {
     return 'default';
   }
-  return isTextSize(stored) ? stored : 'default';
+  return isTextSize(raw) ? raw : 'default';
 }
 
 function applyTextSize(size: TextSize): void {
@@ -50,20 +53,15 @@ function applyTextSize(size: TextSize): void {
 }
 
 export const useUiStore = defineStore('ui', () => {
-  // View mode: 'table' | 'pivot' | 'chart' | 'split'
-  const storedViewMode = localStorage.getItem('brightflow-view-mode');
-  const viewMode = ref<ViewMode>(
-    storedViewMode != null && isViewMode(storedViewMode) ? storedViewMode : 'table',
-  );
-
-  // Chart type: 'bar' | 'line' | 'pie' | 'scatter'
-  const storedChartType = localStorage.getItem('brightflow-chart-type');
-  const chartType = ref<ChartType>(
-    storedChartType != null && isChartType(storedChartType) ? storedChartType : 'bar',
-  );
-
-  // Text size preference
-  const textSize = ref<TextSize>(readStoredTextSize());
+  const viewMode = useLocalStorage<ViewMode>('brightflow-view-mode', 'table', {
+    serializer: validated(isViewMode, 'table'),
+  });
+  const chartType = useLocalStorage<ChartType>('brightflow-chart-type', 'bar', {
+    serializer: validated(isChartType, 'bar'),
+  });
+  const textSize = useLocalStorage<TextSize>('brightflow-text-size', 'default', {
+    serializer: { read: readTextSize, write: (v: TextSize) => v },
+  });
 
   // Section collapsed states (Filter collapsed by default, others open)
   const filterCollapsed = ref(true);
@@ -73,20 +71,9 @@ export const useUiStore = defineStore('ui', () => {
   // Track if we've shown pivot results yet (for auto-switch)
   const hasShownPivotResults = ref(false);
 
-  // Persist preferences
-  watch(textSize, (val) => {
-    localStorage.setItem('brightflow-text-size', val);
-    applyTextSize(val);
-  });
+  watch(textSize, applyTextSize);
   // Apply on init
   applyTextSize(textSize.value);
-
-  watch(viewMode, (val) => {
-    localStorage.setItem('brightflow-view-mode', val);
-  });
-  watch(chartType, (val) => {
-    localStorage.setItem('brightflow-chart-type', val);
-  });
 
   // Actions
   function setViewMode(mode: ViewMode): void {

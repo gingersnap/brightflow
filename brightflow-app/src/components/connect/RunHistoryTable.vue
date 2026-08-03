@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { TableColumn, TableRow, ContextMenuItem } from '@nuxt/ui';
+import { useClipboard } from '@vueuse/core';
 import { computed, h, ref } from 'vue';
+
+const { copy } = useClipboard();
 
 import type { EnrichedSyncRun } from '@/types';
 
@@ -109,7 +112,7 @@ const items = computed<ContextMenuItem[][]>(() => {
         disabled: !row.error,
         onSelect: () => {
           if (row.error) {
-            void navigator.clipboard.writeText(row.error);
+            void copy(row.error);
           }
         },
       },

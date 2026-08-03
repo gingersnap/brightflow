@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ContextMenuItem } from '@nuxt/ui';
+import { useClipboard } from '@vueuse/core';
 import { computed } from 'vue';
 
 import type { TextExploreRow, TextRun } from '@/types/generated';
@@ -20,9 +21,7 @@ function runsToText(runs: TextRun[]): string {
   return runs.map((r) => r.t).join('');
 }
 
-function copy(text: string): void {
-  void navigator.clipboard.writeText(text);
-}
+const { copy } = useClipboard();
 
 const items = computed<ContextMenuItem[][]>(() => {
   const title = runsToText(props.row.title);
