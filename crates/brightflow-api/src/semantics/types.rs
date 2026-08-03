@@ -30,14 +30,6 @@ fn default_polarity() -> String {
     "neutral".to_string()
 }
 
-/// Bulk upsert request for column semantics
-#[derive(Debug, Deserialize, TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct BulkColumnSemanticsRequest {
-    pub columns: Vec<ColumnSemantic>,
-}
-
 /// Response listing all column semantics for a table
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]

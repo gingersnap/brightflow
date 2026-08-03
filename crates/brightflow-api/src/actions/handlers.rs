@@ -627,8 +627,7 @@ pub async fn execute_action(
         } => {
             // v1 semantics: refit with one more cluster slot. Not undoable.
             let overview =
-                crate::topics::handlers::run_recluster_for_action(state, source_id, table, None)
-                    .await?;
+                crate::topics::handlers::run_recluster(state, source_id, table, None).await?;
             Ok((
                 json!({ "refit": true, "k": overview.k, "note": "split refits with k+1" }),
                 None,
@@ -649,13 +648,8 @@ pub async fn execute_action(
                 min_cluster_size: min_cluster_size.map(|v| v as usize),
                 algorithm: algorithm.clone(),
             };
-            let overview = crate::topics::handlers::run_recluster_for_action(
-                state,
-                source_id,
-                table,
-                Some(req),
-            )
-            .await?;
+            let overview =
+                crate::topics::handlers::run_recluster(state, source_id, table, Some(req)).await?;
             Ok((json!({ "refit": true, "k": overview.k }), None))
         },
         Action::DismissInsight {

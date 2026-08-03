@@ -29,7 +29,6 @@ import type {
   LoadTableResponse,
   PendingCount,
   QueryResponse,
-  ReclusterRequest,
   RetentionResult,
   RunTriggerResponse,
   ScheduleResponse,
@@ -343,15 +342,6 @@ export const topicsApi = {
   ): Promise<ClusterDetail | null> =>
     api.get<ClusterDetail>(
       `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/topics/clusters/${clusterId}`,
-    ),
-  recluster: (
-    sourceId: string,
-    table: string,
-    body: ReclusterRequest = {},
-  ): Promise<TopicsOverview | null> =>
-    api.post<TopicsOverview>(
-      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/topics/recluster`,
-      body,
     ),
   getEnrichment: (sourceId: string, table: string): Promise<EnrichmentSettingsResponse | null> =>
     api.get<EnrichmentSettingsResponse>(

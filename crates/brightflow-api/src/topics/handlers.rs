@@ -72,38 +72,47 @@ pub async fn get_overview(
     State(state): State<AppState>,
     Path((source_id, table)): Path<(String, String)>,
 ) -> AppResult<Json<TopicsOverview>> {
-    let root = workspace_root(&state)?;
-    let dir = topics_artifact_dir(&root, &source_id, &table);
+    Ok(Json(build_overview(&state, &source_id, &table).await?))
+}
+
+/// Assemble the topics overview for a table (service form, no extractors).
+pub(crate) async fn build_overview(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+) -> AppResult<TopicsOverview> {
+    let root = workspace_root(state)?;
+    let dir = topics_artifact_dir(&root, source_id, table);
 
     if !ArtifactMeta::exists(&dir) {
-        return Ok(Json(not_ready("No clusters yet — run topics fit")));
+        return Ok(not_ready("No clusters yet — run topics fit"));
     }
 
     // Old or corrupt artifacts must degrade to "refit needed", never a 500.
     let Ok(meta) = ArtifactMeta::load(&dir) else {
-        return Ok(Json(not_ready("Artifacts unreadable — refit needed")));
+        return Ok(not_ready("Artifacts unreadable — refit needed"));
     };
     let clustering = ClusteringArtifact::load(&dir)
         .ok()
         .filter(|c| c.artifact_version == ARTIFACT_VERSION);
     let Some(clustering) = clustering else {
-        return Ok(Json(not_ready(
+        return Ok(not_ready(
             "Clusters were fitted with an older engine version — refit needed",
-        )));
+        ));
     };
 
-    let df = load_table(&state, &source_id, &table).await?;
+    let df = load_table(state, source_id, table).await?;
 
-    let display = DocDisplay::for_table(&table);
+    let display = DocDisplay::for_table(table);
     let (mut summaries, hidden_clusters, assigned_rows) =
         build_cluster_summaries(&df, &clustering, display.label_column)?;
     let total_rows = df.height();
 
     // Curation overlay: renames, noise, merges, excluded terms
-    let curation = load_overlay(&state, &source_id, &table).await;
+    let curation = load_overlay(state, source_id, table).await;
     let noise_rows = apply_to_summaries(&mut summaries, &curation);
 
-    Ok(Json(TopicsOverview {
+    Ok(TopicsOverview {
         ready: true,
         reason: None,
         embedding_model_id: Some(meta.embedding_model_id),
@@ -123,7 +132,7 @@ pub async fn get_overview(
             .collect(),
         fitted_at: Some(meta.fitted_at),
         clusters: summaries,
-    }))
+    })
 }
 
 fn not_ready(reason: &str) -> TopicsOverview {
@@ -288,23 +297,6 @@ async fn reconcile_cluster_edits(state: &AppState, source_id: &str, table: &str)
     info!("Reconciled cluster edits after refit: {reattached} reattached, {orphaned} orphaned");
 }
 
-/// Recluster entry point for the actions layer: resolves config and runs the
-/// same flow as the REST endpoint (fit → ingest → reconcile).
-pub(crate) async fn run_recluster_for_action(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-    req: Option<ReclusterRequest>,
-) -> AppResult<TopicsOverview> {
-    let overview = post_recluster(
-        State(state.clone()),
-        Path((source_id.to_string(), table.to_string())),
-        Json(req.unwrap_or_default()),
-    )
-    .await?;
-    Ok(overview.0)
-}
-
 /// Effective enrichment config for a table.
 ///
 /// Stored overrides (hydrated from the table's topic_model function) make ANY
@@ -329,14 +321,21 @@ pub(crate) fn resolve_enrichment(
     config.filter(|c| !c.text_columns.is_empty())
 }
 
-/// `POST /api/sources/{source_id}/tables/{table}/topics/recluster`
-pub async fn post_recluster(
-    State(state): State<AppState>,
-    Path((source_id, table)): Path<(String, String)>,
-    Json(body): Json<ReclusterRequest>,
-) -> AppResult<Json<TopicsOverview>> {
-    let root = workspace_root(&state)?;
-    let mut config = resolve_enrichment(&state, &source_id, &table)
+/// Refit topic clusters for a table: fit → ingest → reconcile → overview.
+///
+/// This is the ONLY recluster entry point, reached via the action bus
+/// (`Action::Recluster` and `Action::SplitCluster`) so every refit lands in
+/// the action log and the activity feed. There is deliberately no direct
+/// HTTP route.
+pub(crate) async fn run_recluster(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    req: Option<ReclusterRequest>,
+) -> AppResult<TopicsOverview> {
+    let body = req.unwrap_or_default();
+    let root = workspace_root(state)?;
+    let mut config = resolve_enrichment(state, source_id, table)
         .ok_or_else(|| AppError::BadRequest(format!("Table '{table}' is not enrichable")))?;
     // Per-request overrides win over stored settings
     if let Some(embedder) = body.embedder.as_deref().and_then(EmbedderId::parse) {
@@ -345,13 +344,13 @@ pub async fn post_recluster(
     if let Some(mcs) = body.min_cluster_size {
         config.min_cluster_size = Some(mcs);
     }
-    let df = load_table(&state, &source_id, &table).await?;
+    let df = load_table(state, source_id, table).await?;
 
     // Curated row labels train the classifier head. None => the fit falls back
     // to the table's own `label_names` column, as it did before taxonomies.
     let labels = match state.store() {
         Some(store) => {
-            crate::topics::labels::load_label_targets(store, &source_id, &table, &df).await
+            crate::topics::labels::load_label_targets(store, source_id, table, &df).await
         },
         None => None,
     };
@@ -371,8 +370,8 @@ pub async fn post_recluster(
     };
 
     let root_for_task = root.clone();
-    let source_owned = source_id.clone();
-    let table_owned = table.clone();
+    let source_owned = source_id.to_string();
+    let table_owned = table.to_string();
     let t = std::time::Instant::now();
     let (enriched, _outcome) = tokio::task::spawn_blocking(move || {
         fit_topics(
@@ -395,7 +394,7 @@ pub async fn post_recluster(
             .as_ref()
             .map(brightflow_core::WorkspacePaths::store)
             .ok_or_else(|| AppError::Internal("paths missing".to_string()))?;
-        let table_dir = store_path.join(&source_id).join(&table);
+        let table_dir = store_path.join(source_id).join(table);
         std::fs::create_dir_all(&table_dir).map_err(AppError::Io)?;
         let output_path = table_dir.join("enriched.parquet");
         let t = std::time::Instant::now();
@@ -409,8 +408,8 @@ pub async fn post_recluster(
         let t = std::time::Instant::now();
         store
             .ingest_parquet(
-                &source_id,
-                &table,
+                source_id,
+                table,
                 &output_path,
                 Some(brightflow_store::IngestOptions {
                     mode: brightflow_store::IngestMode::Overwrite,
@@ -425,10 +424,9 @@ pub async fn post_recluster(
     }
 
     // Re-point curation edits at the new centroids (or orphan them)
-    reconcile_cluster_edits(&state, &source_id, &table).await;
+    reconcile_cluster_edits(state, source_id, table).await;
 
-    // Reuse get_overview to return the same shape
-    get_overview(State(state), Path((source_id, table))).await
+    build_overview(state, source_id, table).await
 }
 
 // ---------------------------------------------------------------------------

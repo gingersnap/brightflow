@@ -7,6 +7,7 @@ import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { topicsApi } from '@/services/api';
+import { useCurationStore } from '@/stores/curation';
 import { useSourceStore } from '@/stores/source';
 import type { SourceTable } from '@/types';
 import type { DocRef } from '@/types/generated';
@@ -25,6 +26,7 @@ const props = defineProps<{
 
 const router = useRouter();
 const sourceStore = useSourceStore();
+const curationStore = useCurationStore();
 
 const enrichableTables = computed(
   () => sourceStore.getSourceById(props.sourceId)?.tables.filter((t) => t.enrichable) ?? [],
@@ -58,9 +60,20 @@ const {
   enabled: () => activeTable.value != null,
 });
 
+// Recluster goes through the action bus (Action::Recluster) so every refit
+// It lands in the action log and the activity feed like any other mutation.
 const reclusterMutation = useMutation({
   mutation: (k?: number) =>
-    topicsApi.recluster(props.sourceId, activeTable.value ?? '', k == null ? {} : { k }),
+    curationStore.dispatch({
+      kind: 'recluster',
+      source_id: props.sourceId,
+      table: activeTable.value ?? '',
+      k: k ?? null,
+      language: null,
+      embedder: null,
+      min_cluster_size: null,
+      algorithm: null,
+    }),
   onSuccess: () => {
     queryCache.invalidateQueries({ key: queryKey.value });
   },

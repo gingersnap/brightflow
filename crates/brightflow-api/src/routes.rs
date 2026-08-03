@@ -170,15 +170,11 @@ fn api_routes() -> Router<AppState> {
             post(agent_handlers::undo_all),
         )
         // Column semantics & table settings (source-scoped)
+        // Read-only: column_semantics writes go through the action bus
+        // (Action::SetKpi / SetColumnPolarity) so they land in the action log.
         .route(
             "/sources/{source_id}/tables/{name}/semantics",
-            get(semantics_handlers::list_semantics)
-                .put(semantics_handlers::bulk_upsert_semantics),
-        )
-        .route(
-            "/sources/{source_id}/tables/{name}/semantics/{col}",
-            put(semantics_handlers::upsert_column_semantic)
-                .delete(semantics_handlers::delete_column_semantic),
+            get(semantics_handlers::list_semantics),
         )
         .route(
             "/sources/{source_id}/tables/{name}/settings",
@@ -193,10 +189,6 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/sources/{source_id}/tables/{table}/topics/clusters/{cluster_id}",
             get(topics_handlers::get_cluster_detail),
-        )
-        .route(
-            "/sources/{source_id}/tables/{table}/topics/recluster",
-            post(topics_handlers::post_recluster),
         )
         // Text Explorer (no-LLM text filtering + words widget)
         .route(
