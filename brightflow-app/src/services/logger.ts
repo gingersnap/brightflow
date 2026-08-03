@@ -1,9 +1,10 @@
 /**
- * Tagged console logger that compiles out in production.
+ * Tagged console logger, split by level on whether the build is DEV.
  *
- * Non-DEV builds bind every level to a no-op, so debug logging can be left in
- * place without shipping it — and without each call site guarding on an env
- * check.
+ * `debug` and `info` become no-ops outside DEV, so tracing can be left in place
+ * without shipping it and without each call site guarding on an env check.
+ * `warn` and `error` always log — a production problem the user is hitting is
+ * exactly the thing you need in the console, so don't gate those.
  */
 
 interface Logger {

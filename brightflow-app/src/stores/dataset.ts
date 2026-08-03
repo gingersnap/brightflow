@@ -1,9 +1,11 @@
 /**
- * The loaded dataset: its columns, its identity, and the reset cascade.
+ * The loaded dataset: its columns and its identity.
  *
- * Loading a table clears the query, results, and pivot stores, because every one
- * of them holds state keyed to the previous table's columns — leaving them would
- * surface stale rows under a new dataset's name.
+ * Switching datasets clears the query and results stores from here, because both
+ * are keyed to the previous table's columns and would otherwise surface stale
+ * state under a new dataset's name. This is not the whole reset — `resetAllStores`
+ * covers the rest — so treat it as the minimum this store owes its own
+ * consumers, not as a guarantee that nothing stale survives anywhere.
  */
 
 import { defineStore } from 'pinia';

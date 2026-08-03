@@ -1,9 +1,10 @@
 /**
  * Pending and applied curation actions, kept in sync with server-pushed events.
  *
- * Actions are applied optimistically and reverted if the dispatch fails: the
- * user is reviewing a list and the round trip is long enough that waiting makes
- * the UI feel broken.
+ * Dispatch here is not optimistic: a failure sets `lastError` and returns null
+ * rather than undoing anything, because this store does not own the overlay an
+ * optimistic update would have to roll back. Callers that show instant feedback
+ * apply and revert their own patch around this — see `useInsightActions`.
  */
 
 import { defineStore } from 'pinia';
