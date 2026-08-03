@@ -61,7 +61,7 @@ use crate::state::AppState;
 /// Configuration for the API server
 #[derive(Debug, Clone)]
 pub struct ServeConfig {
-    pub host: [u8; 4],
+    pub host: std::net::Ipv4Addr,
     pub port: u16,
     pub default_dataset: Option<String>,
     /// Specific tables to load (if None, loads all)
@@ -75,7 +75,7 @@ pub struct ServeConfig {
 impl Default for ServeConfig {
     fn default() -> Self {
         Self {
-            host: [127, 0, 0, 1],
+            host: std::net::Ipv4Addr::LOCALHOST,
             port: 8080,
             default_dataset: None,
             tables: None,
@@ -92,11 +92,8 @@ impl ServeConfig {
     pub fn from_env() -> Self {
         let host = std::env::var("BRIGHTFLOW_API_HOST")
             .ok()
-            .and_then(|h| {
-                let parts: Vec<u8> = h.split('.').filter_map(|p| p.parse().ok()).collect();
-                parts.try_into().ok()
-            })
-            .unwrap_or([127, 0, 0, 1]);
+            .and_then(|h| h.parse().ok())
+            .unwrap_or(std::net::Ipv4Addr::LOCALHOST);
 
         let port = std::env::var("BRIGHTFLOW_API_PORT")
             .ok()

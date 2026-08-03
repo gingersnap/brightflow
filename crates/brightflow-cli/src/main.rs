@@ -741,8 +741,7 @@ fn build_serve_config(
     let mut config = ServeConfig::from_env();
 
     if let Some(host) = host {
-        let host_parts: Vec<u8> = host.split('.').filter_map(|p| p.parse().ok()).collect();
-        config.host = host_parts.try_into().unwrap_or([127, 0, 0, 1]);
+        config.host = host.parse().unwrap_or(std::net::Ipv4Addr::LOCALHOST);
     }
     if let Some(port) = port {
         config.port = port;

@@ -247,52 +247,26 @@ pub fn extract_timestamps(series: &Column) -> Result<Vec<Option<i64>>> {
 /// more than one value at a time. A table-level date-format setting — or
 /// sniffing the whole column for a value with day > 12 — would resolve it.
 fn parse_date_string(s: &str) -> Option<NaiveDate> {
-    // Try common date formats
+    // Plain dates first, then naive datetimes, then offset datetimes.
+    // Offset-carrying input goes through chrono's RFC3339 parser (plus the
+    // space-separated variant) instead of hand-stripping the suffix; the
+    // resulting date is taken in the original offset, matching what the old
+    // strip-the-suffix approach produced.
     NaiveDate::parse_from_str(s, "%Y-%m-%d")
         .or_else(|_| NaiveDate::parse_from_str(s, "%Y/%m/%d"))
         .or_else(|_| NaiveDate::parse_from_str(s, "%d-%m-%Y"))
         .or_else(|_| NaiveDate::parse_from_str(s, "%d/%m/%Y"))
         .or_else(|_| NaiveDate::parse_from_str(s, "%m/%d/%Y"))
         .or_else(|_| NaiveDate::parse_from_str(s, "%m-%d-%Y"))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").map(|dt| dt.date()))
+        .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").map(|dt| dt.date()))
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(s).map(|dt| dt.date_naive()))
         .or_else(|_| {
-            // Try datetime formats and extract date
-            NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-                .map(|dt: NaiveDateTime| dt.date())
-                .or_else(|_| {
-                    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-                        .map(|dt: NaiveDateTime| dt.date())
-                })
-                .or_else(|_| {
-                    // Handle ISO8601 with Z/timezone suffix
-                    // e.g., "2024-03-15T14:30:00Z", "2024-03-15T14:30:00+05:30"
-                    // Strip Z, then strip +/- timezone offset after T
-                    let s_stripped = s.trim_end_matches('Z');
-                    let s_clean = if let Some(t_pos) = s_stripped.find('T') {
-                        let time_part = &s_stripped[t_pos + 1..];
-                        // Strip timezone offset (+HH:MM or -HH:MM) from time portion
-                        if let Some(plus_pos) = time_part.rfind('+') {
-                            &s_stripped[..t_pos + 1 + plus_pos]
-                        } else if let Some(minus_pos) = time_part.rfind('-') {
-                            &s_stripped[..t_pos + 1 + minus_pos]
-                        } else {
-                            s_stripped
-                        }
-                    } else {
-                        s_stripped
-                    };
-                    NaiveDateTime::parse_from_str(s_clean, "%Y-%m-%dT%H:%M:%S")
-                        .map(|dt: NaiveDateTime| dt.date())
-                })
-                .or_else(|_| {
-                    // Handle space-separated datetime with timezone suffix
-                    let s_clean = s.split('+').next().unwrap_or(s);
-                    NaiveDateTime::parse_from_str(s_clean, "%Y-%m-%d %H:%M:%S")
-                        .map(|dt: NaiveDateTime| dt.date())
-                })
+            chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%:z").map(|dt| dt.date_naive())
         })
         .ok()
         .or_else(|| {
-            // Handle US format with variable-width month/day: M/D/YYYY or MM/DD/YYYY
+            // US format with variable-width month/day: M/D/YYYY or MM/DD/YYYY
             let parts: Vec<&str> = s.split('/').collect();
             if parts.len() == 3 {
                 let month: u32 = parts[0].parse().ok()?;
@@ -369,6 +343,10 @@ mod tests {
         assert_eq!(parse_date_string("not a date"), None);
         assert_eq!(parse_date_string(""), None);
         assert_eq!(parse_date_string("99/99/9999"), None);
+        // Multi-byte input must parse to None, not panic — the previous
+        // hand-rolled suffix stripping indexed by byte position.
+        assert_eq!(parse_date_string("2024-03-15Тест"), None);
+        assert_eq!(parse_date_string("日付/その/もの"), None);
     }
 
     // ── format_period ─────────────────────────────────────────────────────
