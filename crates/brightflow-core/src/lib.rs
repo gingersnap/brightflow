@@ -1,13 +1,18 @@
 //! Types shared by every Brightflow crate: the base error and workspace paths.
 //!
-//! Kept deliberately tiny and dependency-light, because everything depends on it
-//! — anything added here is added to every crate's compile.
+//! Kept tiny and dependency-light (`serde_json` and `thiserror`, nothing else)
+//! because every crate but `brightflow-llm` depends on it — anything added here
+//! lands in nearly every compile.
 //!
-//! `WorkspacePaths` is the single source of truth for where data lives. It exists
-//! so that no crate ever joins its own path from an env var: every location is
-//! derived from one base and one workspace name, which is what makes a second
-//! workspace (or a throwaway test workspace) a matter of changing two variables
-//! rather than auditing every call site.
+//! `WorkspacePaths` is the single source of truth for where *data* lives: every
+//! location derives from one base and one workspace name, which is what makes a
+//! second workspace — or a throwaway test one — a matter of setting
+//! `BRIGHTFLOW_DATA_DIR` and `BRIGHTFLOW_WORKSPACE` rather than auditing call
+//! sites. Resolve paths through here rather than joining your own.
+//!
+//! One thing deliberately sits outside: `embedding::paths` honours
+//! `BRIGHTFLOW_EMBEDDER_PATH` to point at a model directory, which is a
+//! test/deployment hook for an *asset*, not a data location.
 
 use std::path::{Path, PathBuf};
 

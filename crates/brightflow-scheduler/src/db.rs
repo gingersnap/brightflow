@@ -3,8 +3,13 @@
 //! Owns its own pool and migrations so the scheduler can be constructed from a
 //! URL alone. All four tables are small and read far more often than written, so
 //! the pragmas favour read latency (WAL, generous cache, mmap) over write
-//! durability guarantees — losing a few seconds of sync-run history to a crash is
-//! acceptable; the cursors are re-derivable from the data itself.
+//! durability — `synchronous = NORMAL` can lose the last commits on power loss.
+//!
+//! That trade is acceptable because neither table is a source of truth. Lost
+//! sync-run history is only reporting. A lost cursor is not repaired but is
+//! self-correcting: `list_sync_states` simply yields no entry for that endpoint,
+//! the connector re-fetches from the beginning, and `merge_parquet` dedupes on
+//! the primary key — slower, not wrong.
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;

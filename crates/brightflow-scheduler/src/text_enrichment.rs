@@ -1,9 +1,13 @@
 //! Post-sync text enrichment hook: embed freshly-synced rows in place.
 //!
-//! Runs inside the sync path, so its guiding constraint is that it must never
-//! fail a sync. A missing column, an unconfigured embedder, or an absent model
-//! file returns `Ok(false)` or a non-fatal error rather than aborting — the rows
-//! landed successfully and the Topics tab surfaces the enrichment gap instead.
+//! Runs inside the sync path, and enrichment failing must never fail the sync —
+//! the rows already landed. A skippable condition (no config, no text columns, a
+//! missing column) returns `Ok(false)`; a real failure (absent model file,
+//! unconfigured embedder) returns `Err`.
+//!
+//! Note the invariant is held by the *caller*, not here: `lib.rs` logs the `Err`
+//! and carries on to `merge_parquet`. A future caller that used `?` would break
+//! it silently, so that call site is the thing to preserve.
 //!
 //! It also never *fits* topic artifacts. Fitting is expensive and changes how
 //! every existing row is labelled, so it stays an explicit manual step (`topics
