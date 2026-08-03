@@ -14,6 +14,7 @@ const {
   getDefaultOperator,
   getOperator,
   getOperatorsForType,
+  isFilterOp,
   operatorIsArray,
   operatorNeedsValue,
 } = useOperators();
@@ -130,5 +131,17 @@ describe('getDefaultOperator', () => {
     expect(getDefaultOperator('int')).toBe('eq');
     expect(getDefaultOperator('float')).toBe('eq');
     expect(getDefaultOperator('boolean')).toBe('eq');
+  });
+});
+
+describe('isFilterOp', () => {
+  test('accepts known operators', () => {
+    expect(isFilterOp('eq')).toBe(true);
+    expect(isFilterOp('isNotNull')).toBe(true);
+  });
+
+  test('rejects unknown keys and the empty placeholder', () => {
+    expect(isFilterOp('nope')).toBe(false);
+    expect(isFilterOp('')).toBe(false);
   });
 });

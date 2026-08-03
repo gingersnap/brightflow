@@ -300,6 +300,7 @@ pub enum ActionStatus {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionResponse {
+    #[ts(type = "number")]
     pub log_id: i64,
     pub status: ActionStatus,
     #[ts(type = "unknown")]
@@ -328,6 +329,7 @@ pub struct BulkApproveResponse {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct BulkApproveFailure {
+    #[ts(type = "number")]
     pub log_id: i64,
     pub action_kind: String,
     pub error: String,
@@ -382,10 +384,13 @@ pub struct ActionManifestEntry {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionLogEntry {
+    // `number`, not the default `bigint`: these arrive via JSON.parse as plain
+    // numbers at runtime, and sqlite rowids / epoch-ms stay well inside 2^53.
+    #[ts(type = "number")]
     pub id: i64,
     pub request_id: String,
     pub actor_type: String,
-    #[ts(optional)]
+    #[ts(optional, type = "number")]
     pub agent_run_id: Option<i64>,
     pub action_kind: String,
     #[ts(type = "unknown")]
@@ -394,8 +399,9 @@ pub struct ActionLogEntry {
     pub result: Option<serde_json::Value>,
     pub status: String,
     pub undoable: bool,
+    #[ts(type = "number")]
     pub created_at: i64,
-    #[ts(optional)]
+    #[ts(optional, type = "number")]
     pub resolved_at: Option<i64>,
 }
 

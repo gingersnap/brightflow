@@ -23,7 +23,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   recluster: [];
-  'update:kInput': [value: number | undefined];
+  // Optional (not just `| undefined`) so clearing the input can emit no argument.
+  'update:kInput': [value?: number | undefined];
 }>();
 
 const fittedAt = computed(() => {
@@ -100,10 +101,12 @@ function handleKInput(event: Event): void {
             <EnrichmentSettingsPanel :source-id="sourceId" :table="table" />
           </template>
         </UPopover>
+        <!-- `?? ''` because UInput's modelValue rejects an explicit
+             undefined; empty string shows the placeholder. -->
         <UInput
           type="number"
           placeholder="k = 10"
-          :model-value="kInput"
+          :model-value="kInput ?? ''"
           size="md"
           class="w-24"
           @input="handleKInput"

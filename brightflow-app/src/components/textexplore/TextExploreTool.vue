@@ -21,7 +21,7 @@ import WordsPanel from './WordsPanel.vue';
 
 const props = defineProps<{
   sourceId: string;
-  table?: string;
+  table?: string | undefined;
 }>();
 
 const router = useRouter();

@@ -25,9 +25,11 @@ function confirm(): void {
 </script>
 
 <template>
+  <!-- `?? ''` because UModal's optional props reject an explicit undefined
+       under exactOptionalPropertyTypes; empty string renders nothing. -->
   <UModal
     :title="title"
-    :description="description"
+    :description="description ?? ''"
     @update:open="
       (isOpen: boolean) => {
         if (!isOpen) emit('close', null);
@@ -37,7 +39,7 @@ function confirm(): void {
     <template #body>
       <!-- Enter confirms (form submit); Esc dismisses via the modal itself. -->
       <form @submit.prevent="confirm">
-        <UInput v-model="value" autofocus class="w-full" :placeholder="placeholder" />
+        <UInput v-model="value" autofocus class="w-full" :placeholder="placeholder ?? ''" />
       </form>
     </template>
     <template #footer>

@@ -20,7 +20,7 @@ import FunctionEditor from './FunctionEditor.vue';
 
 const props = defineProps<{
   sourceId: string;
-  table?: string;
+  table?: string | undefined;
 }>();
 
 const router = useRouter();
@@ -37,7 +37,7 @@ function handleAutoSelectTable(table: SourceTable): void {
 }
 
 // Functions on this table
-const functionsKey = computed(() => ['enrich-fns', props.sourceId, activeTable.value]);
+const functionsKey = computed(() => ['enrich-fns', props.sourceId, activeTable.value ?? '']);
 const { data: functions } = useQuery({
   key: () => functionsKey.value,
   query: async () => (await enrichFnApi.list(props.sourceId, activeTable.value ?? '')) ?? [],
@@ -53,7 +53,7 @@ const { data: tableIndex } = useQuery({
 
 const sourceColumns = computed(() => {
   const info = (tableIndex.value ?? []).find(
-    (t) => t.sourceId === props.sourceId && t.name === activeTable.value,
+    (t) => t.source_id === props.sourceId && t.name === activeTable.value,
   );
   const schema = info?.schema as { fields?: { name?: string; type?: string }[] } | null;
   return (schema?.fields ?? [])

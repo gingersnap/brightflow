@@ -26,7 +26,7 @@ import type { SourceTable } from '@/types';
 
 const props = defineProps<{
   sourceId: string;
-  table?: string;
+  table?: string | undefined;
 }>();
 
 const router = useRouter();

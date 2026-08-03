@@ -27,7 +27,7 @@ const open = defineModel<boolean>('open', { default: true });
         </slot>
       </button>
 
-      <div v-if="$slots.actions" class="flex items-center gap-3 pr-4" @click.stop>
+      <div v-if="$slots['actions']" class="flex items-center gap-3 pr-4" @click.stop>
         <slot name="actions" :open="open" />
       </div>
     </div>

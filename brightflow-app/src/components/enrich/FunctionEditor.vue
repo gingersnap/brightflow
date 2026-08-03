@@ -303,13 +303,13 @@ const deleteItems = computed(() => [
     {
       icon: 'i-lucide-trash-2',
       label: 'Delete function (keep columns)',
-      onSelect: () => void deleteFn(false),
+      onSelect: (): void => void deleteFn(false),
     },
     {
       color: 'error' as const,
       icon: 'i-lucide-trash-2',
       label: 'Delete function + drop columns',
-      onSelect: () => void deleteFn(true),
+      onSelect: (): void => void deleteFn(true),
     },
   ],
 ]);

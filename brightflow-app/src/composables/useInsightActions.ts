@@ -85,7 +85,7 @@ export function useInsightActions(): {
       });
       return true;
     }
-    const logId = Number(response.logId);
+    const logId = response.logId;
     toast.add({
       actions: [
         {

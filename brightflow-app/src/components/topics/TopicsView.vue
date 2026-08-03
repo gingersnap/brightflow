@@ -29,7 +29,7 @@ import TopicsPie from './TopicsPie.vue';
 
 const props = defineProps<{
   sourceId: string;
-  table?: string;
+  table?: string | undefined;
 }>();
 
 const router = useRouter();
@@ -56,7 +56,7 @@ function handleAutoSelectTable(table: SourceTable): void {
 }
 
 const queryCache = useQueryCache();
-const queryKey = computed(() => ['topics', props.sourceId, activeTable.value]);
+const queryKey = computed(() => ['topics', props.sourceId, activeTable.value ?? '']);
 
 const {
   data: overview,

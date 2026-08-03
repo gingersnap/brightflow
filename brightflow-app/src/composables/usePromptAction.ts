@@ -17,7 +17,11 @@ import TextPromptModal from '@/components/command/TextPromptModal.vue';
  * fine because overlays mount lazily on `.open()`. Call this at the top of
  * `setup` — `useOverlay` must run during component setup.
  */
-export function usePromptAction(): (title: string, opts?: PromptOptions) => Promise<string | null> {
+// `opts` omits `title` because the title always comes in as the first argument.
+export function usePromptAction(): (
+  title: string,
+  opts?: Omit<PromptOptions, 'title'>,
+) => Promise<string | null> {
   const overlay = useOverlay();
   const modal = overlay.create(TextPromptModal);
 

@@ -3,8 +3,8 @@
 /**
  * One agent run, as returned by the API.
  */
-export type AgentRunResponse = { id: bigint, kind: string, mode: string, scope: string, status: string, detail?: string, createdAt: bigint, finishedAt?: bigint, 
+export type AgentRunResponse = { id: number, kind: string, mode: string, scope: string, status: string, detail?: string, createdAt: number, finishedAt?: number, 
 /**
  * Actions this run proposed (populated on the detail endpoint).
  */
-proposedActions: Array<bigint>, };
+proposedActions: number[], };

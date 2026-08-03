@@ -62,6 +62,9 @@ pub struct UnifiedConnector {
 #[serde(rename_all = "camelCase")]
 pub struct UnifiedJob {
     pub id: String,
+    // `number`, not the default `bigint`: arrives via JSON.parse as a plain
+    // number at runtime, and an interval in seconds stays well inside 2^53.
+    #[ts(type = "number")]
     pub interval_secs: i64,
     pub enabled: bool,
 }

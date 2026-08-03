@@ -1,11 +1,13 @@
 /**
  * Filter operators by column type
  */
-import type { Operator, OperatorDef } from '@/types';
+import type { FilterOp, Operator, OperatorDef } from '@/types';
 
 type NormalizedType = 'string' | 'int' | 'float' | 'boolean';
 
-const OPERATORS: Record<string, OperatorDef> = {
+// Keyed by FilterOp so the record provably covers every backend operator.
+// Adding a FilterOp variant without an entry here is a type error.
+const OPERATORS: Record<FilterOp, OperatorDef> = {
   // Universal operators
   eq: { label: 'equals', types: ['string', 'int', 'float', 'boolean'] },
   ne: { label: 'not equals', types: ['string', 'int', 'float', 'boolean'] },
@@ -51,6 +53,11 @@ function normalizeType(dtype: string | null | undefined): NormalizedType {
   return 'string';
 }
 
+/** Narrow an arbitrary key (e.g. from a select) to a known operator. */
+function isFilterOp(key: string): key is FilterOp {
+  return key in OPERATORS;
+}
+
 export function useOperators() {
   /**
    * Get available operators for a column type
@@ -72,14 +79,14 @@ export function useOperators() {
    * Get operator details
    */
   function getOperator(operatorKey: string): OperatorDef | null {
-    return OPERATORS[operatorKey] ?? null;
+    return isFilterOp(operatorKey) ? OPERATORS[operatorKey] : null;
   }
 
   /**
    * Check if operator requires a value input
    */
   function operatorNeedsValue(operatorKey: string): boolean {
-    const op = OPERATORS[operatorKey];
+    const op = getOperator(operatorKey);
     return op == null ? true : op.noValue !== true;
   }
 
@@ -87,14 +94,13 @@ export function useOperators() {
    * Check if operator accepts array values
    */
   function operatorIsArray(operatorKey: string): boolean {
-    const op = OPERATORS[operatorKey];
-    return op?.isArray ?? false;
+    return getOperator(operatorKey)?.isArray ?? false;
   }
 
   /**
    * Get default operator for a type
    */
-  function getDefaultOperator(dtype: string | null | undefined): string {
+  function getDefaultOperator(dtype: string | null | undefined): FilterOp {
     const normalizedType = normalizeType(dtype);
 
     switch (normalizedType) {
@@ -118,6 +124,7 @@ export function useOperators() {
     getDefaultOperator,
     getOperator,
     getOperatorsForType,
+    isFilterOp,
     operatorIsArray,
     operatorNeedsValue,
   };

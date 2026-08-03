@@ -7,7 +7,7 @@
  * means creating a new one. Deletion keeps stored data.
  */
 
-import { Check, Eye, EyeOff, Key, Pencil, Trash2, X } from '@lucide/vue';
+import { Key, Pencil, Trash2 } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';

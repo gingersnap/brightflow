@@ -157,7 +157,7 @@ cargo run -- topics near-dup --source <s> --table issues   # near-duplicate repo
 
 # Frontend (from brightflow-app/)
 npm run dev                       # vp dev server
-npm run check                     # type-check + lint + format (vp check)
+npm run check                     # type-check + lint + format (vp check + vue-tsc for .vue)
 npm run check:fix                 # auto-fix lint + format issues
 npm run fmt                       # auto-fix formatting
 npm run test                      # vp test (Vitest, built-in)

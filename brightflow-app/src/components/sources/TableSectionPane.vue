@@ -15,7 +15,7 @@ import type { SourceTable } from '@/types';
 
 const props = defineProps<{
   sourceId: string;
-  selectedTable?: string;
+  selectedTable?: string | undefined;
   /** Only offer tables that support text enrichment (Topics). */
   enrichableOnly?: boolean;
 }>();

@@ -10,7 +10,6 @@ import { useRouter } from 'vue-router';
 
 import SourceCard from '@/components/layout/SourceCard.vue';
 import { useSources } from '@/composables/useSources';
-import type { UnifiedSource } from '@/types';
 
 const router = useRouter();
 

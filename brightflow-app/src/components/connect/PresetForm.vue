@@ -188,17 +188,21 @@ const submitLabel = computed(() => (props.mode === 'edit' ? 'Save' : 'Create sou
       :label="hint.label"
       :help="hint.helperText ?? ''"
     >
+      <!-- Split model binding: the indexed read is `string | undefined` under
+           noUncheckedIndexedAccess, which the inputs' modelValue rejects. -->
       <USelect
         v-if="hint.options"
-        v-model="hintValues[hint.key]"
+        :model-value="hintValues[hint.key] ?? ''"
         :items="hint.options"
         class="w-full"
+        @update:model-value="(v: string) => (hintValues[hint.key] = v)"
       />
       <UInput
         v-else
-        v-model="hintValues[hint.key]"
+        :model-value="hintValues[hint.key] ?? ''"
         :placeholder="hint.placeholder ?? ''"
         class="w-full"
+        @update:model-value="(v: string) => (hintValues[hint.key] = v)"
       />
     </UFormField>
 

@@ -34,6 +34,9 @@ pub struct SchedulerJob {
     pub id: String,
     pub name: String,
     pub connector_id: String,
+    // `number`, not the default `bigint`: arrives via JSON.parse as a plain
+    // number at runtime, and an interval in seconds stays well inside 2^53.
+    #[ts(type = "number")]
     pub interval_secs: i64,
     pub enabled: bool,
     pub created_at: String,

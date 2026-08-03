@@ -11,6 +11,9 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    __gate_test: typeof import('./src/components/__gate_test.vue')['default']
+    __scratch_auto_test: typeof import('./src/components/__scratch_auto_test.vue')['default']
+    __scratch_undef_test: typeof import('./src/components/__scratch_undef_test.vue')['default']
     ActiveRunBar: typeof import('./src/components/enrich/ActiveRunBar.vue')['default']
     ActivityFeed: typeof import('./src/components/actions/ActivityFeed.vue')['default']
     AgentActions: typeof import('./src/components/actions/AgentActions.vue')['default']

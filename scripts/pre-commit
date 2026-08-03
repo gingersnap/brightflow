@@ -138,6 +138,19 @@ if [ -d "$ROOT_DIR/brightflow-app" ]; then
             git add "$ROOT_DIR/brightflow-app"/*.d.ts 2>/dev/null || true
         fi
 
+        # Whole-project on purpose, not staged-scoped: deleting a store or
+        # composable member breaks .vue consumers that are NOT in the diff, and
+        # tsgolint does not type-check .vue script blocks at all. Temporary
+        # second checker — remove when Vite+/tsgolint covers .vue (see
+        # brightflow-app/CLAUDE.md, ".vue type-checking").
+        echo -e "${BLUE}[Frontend]${NC} Type-checking .vue components (vue-tsc)..."
+        if ! npx vue-tsc --noEmit; then
+            echo -e "${RED}✗ vue-tsc found type errors${NC}"
+            FAILED=1
+        else
+            echo -e "${GREEN}✓ vue-tsc${NC}"
+        fi
+
         # --run forces non-watch mode: the hook must never block on a watcher.
         echo -e "${BLUE}[Frontend]${NC} Running unit tests..."
         if ! npx vp test --run 2>/dev/null; then

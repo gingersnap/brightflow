@@ -29,6 +29,22 @@ Strict TypeScript is enabled with all strict flags plus additional checks:
 
 Shared types in `src/types/index.ts`. Generated types from Rust (via ts-rs) in `src/types/generated/`. Run `npm run check` to verify.
 
+### .vue type-checking (temporary second checker)
+
+- tsgolint does not type-check `.vue` script blocks (full Vue support is a
+  stated non-goal for oxlint), so `npm run check` appends `vue-tsc --noEmit`
+  as a whole-project pass over the SFCs, and the pre-commit hook runs the same
+  step. Motivated by two refactor breakages that shipped as runtime errors
+  (commits 4cd8bb1, 3646810) because no automated check covered `.vue`.
+- `typescript` is pinned to 5.9 because vue-tsc needs the classic JS compiler
+  API, which TypeScript 7 (the Go port) does not expose — a stable API for
+  framework checkers is expected in TS 7.1. The pin exists for vue-tsc (and the
+  editor's tsserver reads it); tsgolint embeds its own native compiler and does
+  not read the npm `typescript` package.
+- **Removal trigger:** when Vite+/tsgolint can type-check `.vue`, or vue-tsc
+  runs on TypeScript ≥ 7.1, drop the `vue-tsc` step (package.json `check`,
+  `scripts/pre-commit`), unpin `typescript`, and delete this section.
+
 ## Linting & Formatting
 
 - **Vite+** unified toolchain: Oxlint (linter), Oxfmt (formatter), tsgolint (type checker)

@@ -11,6 +11,9 @@ use ts_rs::TS;
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmProviderResponse {
+    // `number`, not the default `bigint`: arrives via JSON.parse as a plain
+    // number at runtime, and a sqlite rowid stays well inside 2^53.
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
     pub base_url: String,

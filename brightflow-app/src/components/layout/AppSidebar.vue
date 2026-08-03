@@ -40,8 +40,8 @@ function sourceIcon(kind: UnifiedSource['kind']): string {
 
 // Build nav items: Sources group + Settings group
 const navItems = computed(() => {
-  const currentSourceId = route.params.sourceId as string | undefined;
-  const currentTool = route.params.tool as string | undefined;
+  const currentSourceId = route.params['sourceId'] as string | undefined;
+  const currentTool = route.params['tool'] as string | undefined;
 
   const sourceItems = sources.value.map((source) => {
     const tools = toolsForSource(source);

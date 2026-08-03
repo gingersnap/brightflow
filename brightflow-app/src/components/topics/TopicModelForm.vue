@@ -44,6 +44,15 @@ const algorithm = field('algorithm');
 const minClusterSize = field('minClusterSize');
 const cleaningProfile = field('cleaningProfile');
 const languageColumn = field('languageColumn');
+
+// UInput's modelValue has no `undefined`: an empty input stands for "auto".
+// Non-numeric input (which `.number` leaves as a string) also means "auto".
+const minClusterSizeInput = computed({
+  get: (): number | string => minClusterSize.value ?? '',
+  set: (v: string | number | null) => {
+    minClusterSize.value = typeof v === 'number' ? v : undefined;
+  },
+});
 </script>
 
 <template>
@@ -55,7 +64,7 @@ const languageColumn = field('languageColumn');
     <div>
       <p class="mb-1 text-sm font-medium text-highlighted">Min cluster size</p>
       <UInput
-        v-model.number="minClusterSize"
+        v-model.number="minClusterSizeInput"
         type="number"
         placeholder="auto"
         size="md"

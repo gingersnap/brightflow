@@ -26,6 +26,9 @@ pub struct StartAgentRunRequest {
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunResponse {
+    // `number`, not the default `bigint`: these arrive via JSON.parse as plain
+    // numbers at runtime, and sqlite rowids / epoch-ms stay well inside 2^53.
+    #[ts(type = "number")]
     pub id: i64,
     pub kind: String,
     pub mode: String,
@@ -33,10 +36,12 @@ pub struct AgentRunResponse {
     pub status: String,
     #[ts(optional)]
     pub detail: Option<String>,
+    #[ts(type = "number")]
     pub created_at: i64,
-    #[ts(optional)]
+    #[ts(optional, type = "number")]
     pub finished_at: Option<i64>,
     /// Actions this run proposed (populated on the detail endpoint).
     #[serde(default)]
+    #[ts(type = "number[]")]
     pub proposed_actions: Vec<i64>,
 }

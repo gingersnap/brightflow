@@ -93,7 +93,9 @@ async function handlePresetCreate(data: {
       name: data.name || `${connector.name}-default`,
       connectorPath: connector.name,
       configJson: data.config,
-      token: data.token || undefined,
+      // The generated type's optional `token` field rejects an explicit undefined
+      // (exactOptionalPropertyTypes), hence the conditional spread.
+      ...(data.token ? { token: data.token } : {}),
     });
     if (!preset?.id) {
       throw new Error('Failed to create preset');

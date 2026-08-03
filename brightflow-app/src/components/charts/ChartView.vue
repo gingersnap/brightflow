@@ -45,7 +45,8 @@ const hasChartData = computed(() => {
   return resultsStore.hasTableResults;
 });
 
-const chartTypes = [
+// Typed so USelectMenu's update:model-value emits ChartType, not string.
+const chartTypes: { label: string; value: ChartType }[] = [
   { label: 'Bar', value: 'bar' },
   { label: 'Line', value: 'line' },
   { label: 'Pie', value: 'pie' },

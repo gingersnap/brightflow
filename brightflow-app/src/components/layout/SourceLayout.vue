@@ -10,7 +10,6 @@
 import { useQuery } from '@pinia/colada';
 import { computed } from 'vue';
 
-import EventListPanel from '@/components/analytics/EventListPanel.vue';
 import FunnelPanel from '@/components/analytics/FunnelPanel.vue';
 import RetentionPanel from '@/components/analytics/RetentionPanel.vue';
 import UserExplorerPanel from '@/components/analytics/UserExplorerPanel.vue';

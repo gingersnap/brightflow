@@ -5,7 +5,7 @@
  * see it, then shown with a copy button for pasting into the site's head.
  */
 
-import { Check, Copy, Pencil, Trash2, X } from '@lucide/vue';
+import { Copy, Pencil, Trash2 } from '@lucide/vue';
 import { useMutation, useQueryCache } from '@pinia/colada';
 import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';

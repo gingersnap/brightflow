@@ -10,10 +10,11 @@ import { GripVertical, Hash, HelpCircle, Type, X } from '@lucide/vue';
 import { type Component, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 
-import type { PivotField } from '@/types';
+import type { AggFn, PivotField } from '@/types';
 
+// AggFn (not string) so USelectMenu emits a value assignable to PivotField.aggregation.
 interface AggregationOption {
-  value: string;
+  value: AggFn;
   label: string;
 }
 
@@ -173,7 +174,7 @@ function handleChange(evt: DragEvent): void {
             value-key="value"
             size="xs"
             class="w-20"
-            @update:model-value="(val: string) => emit('update', element.id, { aggregation: val })"
+            @update:model-value="(val: AggFn) => emit('update', element.id, { aggregation: val })"
           />
 
           <!-- Remove button -->

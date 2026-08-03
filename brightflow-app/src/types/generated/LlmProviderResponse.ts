@@ -3,7 +3,7 @@
 /**
  * One configured LLM provider (api_key redacted).
  */
-export type LlmProviderResponse = { id: bigint, name: string, baseUrl: string, 
+export type LlmProviderResponse = { id: number, name: string, baseUrl: string, 
 /**
  * True when an api key is stored (the key itself is never returned).
  */

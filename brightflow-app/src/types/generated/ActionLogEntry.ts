@@ -3,4 +3,4 @@
 /**
  * One row in the audit feed (mirrors `action_log`).
  */
-export type ActionLogEntry = { id: bigint, requestId: string, actorType: string, agentRunId?: bigint, actionKind: string, params: unknown, result?: unknown | null, status: string, undoable: boolean, createdAt: bigint, resolvedAt?: bigint, };
+export type ActionLogEntry = { id: number, requestId: string, actorType: string, agentRunId?: number, actionKind: string, params: unknown, result?: unknown | null, status: string, undoable: boolean, createdAt: number, resolvedAt?: number, };

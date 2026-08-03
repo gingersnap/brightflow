@@ -8,7 +8,7 @@
 
 import { Plus, X } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useOperators } from '@/composables/useOperators';
@@ -23,7 +23,7 @@ const queryStore = useQueryStore();
 const datasetStore = useDatasetStore();
 const uiStore = useUiStore();
 const connectionStore = useConnectionStore();
-const { getOperatorsForType, operatorNeedsValue, getDefaultOperator } = useOperators();
+const { getOperatorsForType, operatorNeedsValue, getDefaultOperator, isFilterOp } = useOperators();
 const { loadTableData } = useWsQuery();
 
 const filtersOpen = computed({
@@ -86,9 +86,12 @@ function handleColumnChange(filterId: string, columnName: string): void {
   });
 }
 
-// Handle operator change
+// Handle operator change. The guard narrows the select's string value.
+// Items come from OPERATORS, so the else branch is unreachable in practice.
 function handleOperatorChange(filterId: string, op: string): void {
-  queryStore.updateFilter(filterId, { op, value: null });
+  if (isFilterOp(op)) {
+    queryStore.updateFilter(filterId, { op, value: null });
+  }
 }
 
 // Handle value change

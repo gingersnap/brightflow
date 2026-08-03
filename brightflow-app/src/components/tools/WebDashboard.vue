@@ -7,7 +7,6 @@
  */
 
 import { useQuery } from '@pinia/colada';
-import { LineChart, BarChart } from 'echarts/charts';
 
 import '@/services/echarts';
 import { computed } from 'vue';
