@@ -1,9 +1,8 @@
 //! NLP primitives: tokenizing, vectorizing, clustering, and comparing text.
 //!
-//! Pure algorithms with no I/O and no Polars dependency (the `polars` submodule
-//! is the deliberate bridge), so the numeric behaviour is unit-testable in
-//! isolation. This is the substrate the topic modelling and text enrichment
-//! features are built from.
+//! Pure algorithms with no I/O and no Polars dependency, so the numeric
+//! behaviour is unit-testable in isolation. This is the substrate the topic
+//! modelling and text enrichment features are built from.
 
 pub mod classification_metrics;
 pub mod clean;
@@ -16,7 +15,6 @@ pub mod fingerprint;
 pub mod linear;
 pub mod near_dup;
 pub mod ngrams;
-pub mod polars;
 pub mod reduce;
 pub mod rng;
 pub mod similarity;
