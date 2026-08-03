@@ -1,7 +1,7 @@
 # Simplification & Philosophy-Closure
 
 **Date:** 2026-08-03
-**Status:** in progress
+**Status:** implemented (D13 push_values deferred as optional; see out-of-scope list)
 
 ## Context
 
