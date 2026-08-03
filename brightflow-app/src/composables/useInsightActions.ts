@@ -2,7 +2,7 @@
  * Dispatches curation actions from insight cards, with optimistic feedback.
  */
 
-import { useCurationStore } from '@/stores/curation';
+import { useCuration } from '@/composables/useCuration';
 import { type CurationPatch, useInsightsStore } from '@/stores/insights';
 import type { Action, DismissReason } from '@/types/generated';
 
@@ -53,7 +53,7 @@ export function useInsightActions(): {
   annotate: (scope: InsightActionScope, fingerprint: string, note: string) => Promise<void>;
   suppressSegment: (scope: InsightActionScope, target: string) => Promise<void>;
 } {
-  const curation = useCurationStore();
+  const curation = useCuration();
   const insightsStore = useInsightsStore();
   const toast = useToast();
 
@@ -72,7 +72,7 @@ export function useInsightActions(): {
       }
       toast.add({
         color: 'error',
-        description: curation.lastError ?? 'Unknown error',
+        description: curation.store.lastError ?? 'Unknown error',
         title: 'Action failed',
       });
       return false;

@@ -4,9 +4,9 @@ import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
+import { useCuration } from '@/composables/useCuration';
 import { usePromptAction } from '@/composables/usePromptAction';
 import { topicsApi } from '@/services/api';
-import { useCurationStore } from '@/stores/curation';
 import type { ClusterSummary, DocRef } from '@/types/generated';
 
 import { clusterColor } from './colors';
@@ -41,7 +41,7 @@ const { data: detail, isLoading } = useQuery({
 });
 
 // ── Curation actions (same dispatch path an LLM agent uses) ──────────────
-const curation = useCurationStore();
+const curation = useCuration();
 const queryCache = useQueryCache();
 const prompt = usePromptAction();
 

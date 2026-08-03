@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import { Bot, Check, RotateCcw, User, X } from '@lucide/vue';
-import { computed, onMounted } from 'vue';
+import { computed } from 'vue';
 
-import { useCurationStore } from '@/stores/curation';
+import { useCuration } from '@/composables/useCuration';
 import type { ActionLogEntry } from '@/types/generated';
 
-const curation = useCurationStore();
+// Queries fire on setup; the store merges WS pushes on top.
+const curation = useCuration();
 
-onMounted(() => {
-  curation.initRealtime();
-  void curation.refreshFeed();
-  void curation.refreshPendingCount();
-});
-
-const entries = computed(() => curation.feed);
-const pending = computed(() => curation.pendingCount);
+const entries = computed(() => curation.store.feed);
+const pending = computed(() => curation.store.pendingCount);
 
 /**
  * Bulk approve. Confirms first, because this applies every pending proposal at
@@ -98,20 +93,21 @@ const statusColor: Record<string, string> = {
         variant="soft"
         icon="i-lucide-check-check"
         class="flex-shrink-0"
-        :loading="curation.approvingAll"
+        :loading="curation.approvingAll.value"
         @click="() => void approveAll()"
       >
         Accept all ({{ pending }})
       </UButton>
     </div>
 
-    <p v-if="curation.lastError" class="border-b border-default px-4 py-2 text-sm text-red-500">
-      {{ curation.lastError }}
+    <p
+      v-if="curation.store.lastError"
+      class="border-b border-default px-4 py-2 text-sm text-red-500"
+    >
+      {{ curation.store.lastError }}
     </p>
     <div class="flex-1 overflow-y-auto">
-      <p v-if="curation.feedLoading && entries.length === 0" class="p-4 text-sm text-muted">
-        Loading…
-      </p>
+      <p v-if="entries.length === 0" class="p-4 text-sm text-muted">Loading…</p>
       <p v-else-if="entries.length === 0" class="p-4 text-sm text-muted">No actions yet.</p>
       <ul v-else class="divide-y divide-default">
         <li v-for="entry in entries" :key="entry.id" class="flex items-start gap-3 px-4 py-3">

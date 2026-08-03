@@ -2,8 +2,8 @@
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 
+import { useCuration } from '@/composables/useCuration';
 import { taxonomyApi } from '@/services/api';
-import { useCurationStore } from '@/stores/curation';
 import type { CurationDoc } from '@/types/generated';
 
 const props = defineProps<{
@@ -11,7 +11,7 @@ const props = defineProps<{
   table: string;
 }>();
 
-const curation = useCurationStore();
+const curation = useCuration();
 const queryCache = useQueryCache();
 
 /**
