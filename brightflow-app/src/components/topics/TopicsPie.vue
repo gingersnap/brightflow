@@ -3,8 +3,8 @@ import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
 import type { ClusterSummary } from '@/types/generated';
+import '@/services/echarts';
 
-import './echarts-setup';
 import { clusterColor } from './colors';
 
 const props = defineProps<{

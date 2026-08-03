@@ -9,7 +9,7 @@ const loading = ref(false);
 const testResults = ref<Record<number, string>>({});
 const formOpen = ref(false);
 const saving = ref(false);
-const error = ref<string | null>(null);
+const errorMessage = ref<string | null>(null);
 
 const form = reactive({
   name: '',
@@ -32,11 +32,11 @@ onMounted(() => void refresh());
 
 async function save(): Promise<void> {
   if (!form.name || !form.baseUrl || !form.model) {
-    error.value = 'Name, base URL, and model are required.';
+    errorMessage.value = 'Name, base URL, and model are required.';
     return;
   }
   saving.value = true;
-  error.value = null;
+  errorMessage.value = null;
   try {
     const result = await llmApi.upsertProvider({
       name: form.name,
@@ -51,9 +51,8 @@ async function save(): Promise<void> {
     form.baseUrl = '';
     form.apiKey = '';
     form.model = '';
-    // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Save failed';
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Save failed';
   } finally {
     saving.value = false;
   }
@@ -131,7 +130,7 @@ async function test(id: number): Promise<void> {
           <USwitch v-model="form.isDefault" />
           <span class="text-sm text-muted">Use as default provider</span>
         </div>
-        <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
+        <p v-if="errorMessage" class="text-sm text-red-500">{{ errorMessage }}</p>
         <div class="flex gap-2">
           <UButton size="md" color="primary" :loading="saving" @click="save">Save</UButton>
           <UButton size="md" color="neutral" variant="ghost" @click="formOpen = false">

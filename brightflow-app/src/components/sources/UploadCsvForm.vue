@@ -14,11 +14,11 @@ const file = ref<File | null>(null);
 const tableName = ref('');
 const preview = ref<CsvPreview | null>(null);
 const submitting = ref(false);
-const error = ref<string | null>(null);
+const errorMessage = ref<string | null>(null);
 
 watch(file, async (selected) => {
   preview.value = null;
-  error.value = null;
+  errorMessage.value = null;
   if (selected == null) {
     return;
   }
@@ -34,7 +34,7 @@ async function submit(): Promise<void> {
     return;
   }
   submitting.value = true;
-  error.value = null;
+  errorMessage.value = null;
   try {
     const result = await sourceApi.uploadCsv(selected, tableName.value);
     queryCache.invalidateQueries({ key: ['unified-sources'] });
@@ -42,9 +42,8 @@ async function submit(): Promise<void> {
       name: 'explore-table',
       params: { sourceId: result.sourceId, table: result.table },
     });
-    // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Upload failed';
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Upload failed';
   } finally {
     submitting.value = false;
   }
@@ -53,7 +52,9 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="space-y-4 rounded-lg border border-default bg-elevated p-4">
-    <div v-if="error" class="rounded bg-red-500/10 p-2 text-sm text-red-500">{{ error }}</div>
+    <div v-if="errorMessage" class="rounded bg-red-500/10 p-2 text-sm text-red-500">
+      {{ errorMessage }}
+    </div>
 
     <UFileUpload v-model="file" accept=".csv,text/csv" label="Drop a CSV here" class="w-full" />
 

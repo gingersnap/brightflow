@@ -11,11 +11,11 @@ import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 
 import { actionsApi } from '@/services/api';
+import { isActionEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
 import type {
   Action,
   ActionBatchPayload,
-  ActionEventPayload,
   ActionLogEntry,
   ActionResponse,
   BulkApproveResponse,
@@ -23,15 +23,6 @@ import type {
 
 /** Feed length the server returns and the client keeps. */
 const FEED_LIMIT = 100;
-
-/** Structural guard for a pushed `actionEvent` frame. */
-function isActionEvent(
-  m: Record<string, unknown>,
-): m is Record<string, unknown> & ActionEventPayload {
-  return (
-    typeof m['pendingCount'] === 'number' && typeof m['entry'] === 'object' && m['entry'] != null
-  );
-}
 
 /** Structural guard for a pushed `actionBatch` frame. */
 function isActionBatch(
@@ -179,9 +170,8 @@ export const useCurationStore = defineStore('curation', () => {
         offlineRefresh(true);
       }
       return response;
-      // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-    } catch (err) {
-      lastError.value = err instanceof Error ? err.message : 'Action failed';
+    } catch (error) {
+      lastError.value = error instanceof Error ? error.message : 'Action failed';
       return null;
     } finally {
       dispatching.value = false;
@@ -227,9 +217,8 @@ export const useCurationStore = defineStore('curation', () => {
       }
       offlineRefresh(true);
       return result;
-      // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-    } catch (err) {
-      lastError.value = err instanceof Error ? err.message : 'Bulk approve failed';
+    } catch (error) {
+      lastError.value = error instanceof Error ? error.message : 'Bulk approve failed';
       return null;
     } finally {
       approvingAll.value = false;

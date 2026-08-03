@@ -21,7 +21,7 @@ export function useSampleRun(functionId: () => string | null) {
   const previousRows = ref<SampleCell[]>([]);
   const result = ref<SampleRunResult | null>(null);
   const loading = ref(false);
-  const error = ref<string | null>(null);
+  const errorMessage = ref<string | null>(null);
   const runCount = ref(0);
   const limit = ref(10);
 
@@ -57,7 +57,7 @@ export function useSampleRun(functionId: () => string | null) {
       limit.value = requestedLimit;
     }
     loading.value = true;
-    error.value = null;
+    errorMessage.value = null;
     if (rows.value.length > 0) {
       previousRows.value = rows.value;
     }
@@ -73,9 +73,8 @@ export function useSampleRun(functionId: () => string | null) {
       result.value = response;
       rows.value = response.rows;
       runCount.value += 1;
-      // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Sample run failed';
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : 'Sample run failed';
     } finally {
       loading.value = false;
     }
@@ -90,14 +89,14 @@ export function useSampleRun(functionId: () => string | null) {
     rows.value = [];
     previousRows.value = [];
     result.value = null;
-    error.value = null;
+    errorMessage.value = null;
     runCount.value = 0;
     limit.value = 10;
   }
 
   return {
     changedKeys,
-    error,
+    errorMessage,
     limit,
     loading,
     previousByKey,

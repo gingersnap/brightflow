@@ -7,7 +7,7 @@ import type { AnalysisNode } from '@/services/api';
 import { formatCompact, formatNumber, humanizeColumn, humanizePeriod } from '@/utils/format';
 
 import { measureOf } from '../nodeMeta';
-import './echarts-setup';
+import '@/services/echarts';
 
 const props = defineProps<{ node: AnalysisNode }>();
 const colors = useChartColors();

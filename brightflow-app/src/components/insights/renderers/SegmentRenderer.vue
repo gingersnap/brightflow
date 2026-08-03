@@ -13,7 +13,7 @@ import {
 } from '@/utils/format';
 
 import { measureOf } from '../nodeMeta';
-import './echarts-setup';
+import '@/services/echarts';
 
 const props = defineProps<{ node: AnalysisNode }>();
 const colors = useChartColors();

@@ -1,13 +1,5 @@
 <script setup lang="ts">
-import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts';
-import {
-  GridComponent,
-  LegendComponent,
-  TitleComponent,
-  TooltipComponent,
-} from 'echarts/components';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
+import '@/services/echarts';
 import { computed, ref, watch } from 'vue';
 import VChart from 'vue-echarts';
 
@@ -18,18 +10,6 @@ import { useUiStore } from '@/stores/ui';
 import type { ChartType } from '@/types';
 
 // Register ECharts components
-use([
-  CanvasRenderer,
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  TitleComponent,
-  TooltipComponent,
-  LegendComponent,
-  GridComponent,
-]);
-
 const resultsStore = useResultsStore();
 const uiStore = useUiStore();
 const pivotStore = usePivotStore();

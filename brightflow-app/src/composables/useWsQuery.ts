@@ -8,7 +8,7 @@
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
-import { useQueryStore } from '@/stores/query';
+import { filterOperations, useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { AggFn } from '@/types';
@@ -32,18 +32,7 @@ export function useWsQuery() {
     const ops: Operation[] = [];
 
     // Add filters
-    if (queryStore.filters.length > 0) {
-      queryStore.filters.forEach((filter) => {
-        if (filter.column != null && filter.op !== '') {
-          ops.push({
-            column: filter.column,
-            op: filter.op,
-            type: 'filter',
-            value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
-          });
-        }
-      });
-    }
+    ops.push(...filterOperations(queryStore.filters));
 
     // Add limit (0 means no limit)
     if (queryStore.limit > 0) {
@@ -100,17 +89,8 @@ export function useWsQuery() {
       const ops: Operation[] = [];
 
       // Add any filters from query store
-      if (queryStore.sections.filter.enabled && queryStore.filters.length > 0) {
-        queryStore.filters.forEach((filter) => {
-          if (filter.column != null && filter.op !== '') {
-            ops.push({
-              column: filter.column,
-              op: filter.op,
-              type: 'filter',
-              value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
-            });
-          }
-        });
+      if (queryStore.sections.filter.enabled) {
+        ops.push(...filterOperations(queryStore.filters));
       }
 
       // Add pivot operation

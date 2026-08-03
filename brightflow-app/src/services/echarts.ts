@@ -1,8 +1,14 @@
 /**
- * Single-import ECharts component registration shared by all insight renderers.
- * Renderers import this module purely for its side-effect.
+ * Single-import ECharts registration for the whole app.
+ *
+ * Every chart surface (explore charts, dashboards, insight renderers, topics)
+ * imports this module for its side effect. One union registration instead of
+ * four per-area lists: the areas ship in the same bundle anyway, and split
+ * lists kept drifting (a renderer adding a mark type had to know which copy
+ * to touch).
  */
-import { BarChart, CustomChart, LineChart, ScatterChart } from 'echarts/charts';
+
+import { BarChart, CustomChart, LineChart, PieChart, ScatterChart } from 'echarts/charts';
 import {
   DataZoomComponent,
   GridComponent,
@@ -20,6 +26,7 @@ use([
   CanvasRenderer,
   BarChart,
   LineChart,
+  PieChart,
   ScatterChart,
   CustomChart,
   GridComponent,

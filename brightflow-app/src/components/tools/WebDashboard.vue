@@ -1,17 +1,14 @@
 <script setup lang="ts">
 import { useQuery } from '@pinia/colada';
 import { LineChart, BarChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
-import { use } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
+
+import '@/services/echarts';
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
 import { analyticsApi } from '@/services/api';
 import type { TimeseriesPoint } from '@/types';
-
-use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent]);
 
 const colors = useChartColors();
 

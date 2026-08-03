@@ -22,7 +22,7 @@ const emit = defineEmits<{
 
 const loading = ref(true);
 const saving = ref(false);
-const error = ref<string | null>(null);
+const errorMessage = ref<string | null>(null);
 const savedTick = ref(false);
 
 const form = ref<TopicModelFormValue>({
@@ -51,7 +51,7 @@ onMounted(async () => {
 
 async function save(): Promise<void> {
   saving.value = true;
-  error.value = null;
+  errorMessage.value = null;
   savedTick.value = false;
   try {
     const result = await topicsApi.updateEnrichment(props.sourceId, props.table, {
@@ -64,9 +64,8 @@ async function save(): Promise<void> {
       savedTick.value = true;
       emit('saved');
     }
-    // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Save failed';
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Save failed';
   } finally {
     saving.value = false;
   }
@@ -78,7 +77,7 @@ async function save(): Promise<void> {
     <p v-if="loading" class="text-sm text-muted">Loading…</p>
     <template v-else>
       <TopicModelForm v-model="form" />
-      <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
+      <p v-if="errorMessage" class="text-sm text-red-500">{{ errorMessage }}</p>
       <div class="flex items-center gap-2">
         <UButton size="md" color="primary" :loading="saving" @click="save">Save</UButton>
         <span v-if="savedTick" class="text-sm text-muted">Saved — recluster to apply</span>

@@ -4,6 +4,7 @@ import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';
 
 import { useResultsStore } from '@/stores/results';
+import { formatNumber } from '@/utils/format';
 
 const resultsStore = useResultsStore();
 
@@ -32,14 +33,9 @@ function formatCell(value: unknown, dtype: string): string {
   }
 
   switch (dtype) {
-    case 'int': {
-      return Number(value).toLocaleString();
-    }
+    case 'int':
     case 'float': {
-      return Number(value).toLocaleString(undefined, {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2,
-      });
+      return formatNumber(Number(value));
     }
     case 'string': {
       // Truncate long strings

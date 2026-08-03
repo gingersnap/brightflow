@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 
 import type { Filter } from '@/types';
 
-import { useQueryStore } from './query';
+import { filterOperations, useQueryStore } from './query';
 
 /*
  * Filters are pushed directly rather than via addFilter() so ids are
@@ -200,5 +200,19 @@ describe('previewTexts', () => {
     expect(store.previewTexts.select).toBe('1 columns');
     expect(store.previewTexts.sort).toBe('amount ASC');
     expect(store.previewTexts.limit).toBe('1,000 rows');
+  });
+});
+
+describe('filterOperations', () => {
+  test('skips incomplete filters and nulls the value for null-check ops', () => {
+    const filters: Filter[] = [
+      filter({ id: 'f1', op: 'eq', value: 42 }),
+      { column: null, id: 'f2', op: 'eq', value: 'ignored' },
+      filter({ id: 'f3', op: 'isNull', value: 'stale' }),
+    ];
+    expect(filterOperations(filters)).toEqual([
+      { column: 'amount', op: 'eq', type: 'filter', value: 42 },
+      { column: 'amount', op: 'isNull', type: 'filter', value: null },
+    ]);
   });
 });

@@ -17,6 +17,26 @@ import type { Operation } from '@/types/generated';
 
 type SectionKey = keyof QuerySections;
 
+/**
+ * Map filters to wire filter operations. Null-check operators force the value
+ * to null so a stale input value can't leak into the query. Shared with
+ * useWsQuery so table and pivot paths can't drift.
+ */
+export function filterOperations(filters: Filter[]): Operation[] {
+  const ops: Operation[] = [];
+  for (const filter of filters) {
+    if (filter.column != null && filter.op !== '') {
+      ops.push({
+        column: filter.column,
+        op: filter.op,
+        type: 'filter',
+        value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
+      });
+    }
+  }
+  return ops;
+}
+
 export const useQueryStore = defineStore('query', () => {
   // Section states
   const sections = ref<QuerySections>({
@@ -58,17 +78,8 @@ export const useQueryStore = defineStore('query', () => {
     const ops: Operation[] = [];
 
     // Add filters
-    if (sections.value.filter.enabled && filters.value.length > 0) {
-      filters.value.forEach((filter) => {
-        if (filter.column != null && filter.op !== '') {
-          ops.push({
-            column: filter.column,
-            op: filter.op,
-            type: 'filter',
-            value: ['isNull', 'isNotNull'].includes(filter.op) ? null : filter.value,
-          });
-        }
-      });
+    if (sections.value.filter.enabled) {
+      ops.push(...filterOperations(filters.value));
     }
 
     // Add group by

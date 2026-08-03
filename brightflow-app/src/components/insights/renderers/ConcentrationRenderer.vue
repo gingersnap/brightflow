@@ -5,8 +5,7 @@ import VChart from 'vue-echarts';
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/services/api';
 import { formatCompact, formatNumber } from '@/utils/format';
-
-import './echarts-setup';
+import '@/services/echarts';
 
 const props = defineProps<{ node: AnalysisNode }>();
 const colors = useChartColors();

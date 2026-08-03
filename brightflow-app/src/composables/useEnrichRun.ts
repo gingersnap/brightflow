@@ -18,7 +18,7 @@ import type { EnrichRun, RunScope } from '@/types/enrichment';
  */
 export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
   const run = ref<EnrichRun | null>(null);
-  const error = ref<string | null>(null);
+  const errorMessage = ref<string | null>(null);
 
   async function poll(): Promise<void> {
     if (run.value == null) {
@@ -41,7 +41,7 @@ export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
   });
 
   async function start(functionId: string, scope: RunScope): Promise<void> {
-    error.value = null;
+    errorMessage.value = null;
     try {
       const started = await enrichFnApi.startRun(functionId, scope);
       if (started == null) {
@@ -52,9 +52,8 @@ export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
         run.value = initial;
       }
       beginPolling();
-      // oxlint-disable-next-line unicorn/catch-error-name -- error shadows ref
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to start run';
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : 'Failed to start run';
     }
   }
 
@@ -84,8 +83,8 @@ export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
   function clear(): void {
     stopPolling();
     run.value = null;
-    error.value = null;
+    errorMessage.value = null;
   }
 
-  return { cancel, clear, error, resume, run, start };
+  return { cancel, clear, errorMessage, resume, run, start };
 }

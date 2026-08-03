@@ -13,8 +13,9 @@ import { computed, ref } from 'vue';
 
 import { dimensionOf, directionOf, measureOf } from '@/components/insights/nodeMeta';
 import { type AnalysisNode, type AnalysisTree, insightsApi } from '@/services/api';
+import { isActionEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
-import type { ActionEventPayload, ActionLogEntry } from '@/types/generated';
+import type { ActionLogEntry } from '@/types/generated';
 
 export type ReportType = 'review' | 'trends' | 'drivers';
 export type Cadence = 'daily' | 'weekly' | 'monthly';
@@ -95,15 +96,6 @@ function patchFromEntry(entry: ActionLogEntry): CurationPatch | null {
       return null;
     }
   }
-}
-
-/** Structural guard for a pushed `actionEvent` frame (same as curation store). */
-function isActionEvent(
-  m: Record<string, unknown>,
-): m is Record<string, unknown> & ActionEventPayload {
-  return (
-    typeof m['pendingCount'] === 'number' && typeof m['entry'] === 'object' && m['entry'] != null
-  );
 }
 
 export const useInsightsStore = defineStore('insights', () => {

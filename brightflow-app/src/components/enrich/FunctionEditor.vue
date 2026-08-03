@@ -217,9 +217,8 @@ async function persist(rerun: 'none' | 'missing' | 'all', create: boolean): Prom
     }
     savedSnapshot.value = snapshot();
     emit('saved', saved.id);
-    // oxlint-disable-next-line unicorn/catch-error-name -- saveError is the ref
-  } catch (err) {
-    saveError.value = err instanceof Error ? err.message : 'Save failed';
+  } catch (error) {
+    saveError.value = error instanceof Error ? error.message : 'Save failed';
   } finally {
     saving.value = false;
   }
@@ -363,7 +362,9 @@ async function deleteFn(dropColumns: boolean): Promise<void> {
       @rerun-failed="rerunFailed"
       @dismiss="enrichRun.clear()"
     />
-    <p v-if="enrichRun.error.value" class="text-sm text-error">{{ enrichRun.error.value }}</p>
+    <p v-if="enrichRun.errorMessage.value" class="text-sm text-error">
+      {{ enrichRun.errorMessage.value }}
+    </p>
 
     <!-- llm_prompt editor -->
     <template v-if="kind === 'llm_prompt'">
@@ -410,7 +411,9 @@ async function deleteFn(dropColumns: boolean): Promise<void> {
             </UButton>
           </div>
         </div>
-        <p v-if="sample.error.value" class="text-sm text-error">{{ sample.error.value }}</p>
+        <p v-if="sample.errorMessage.value" class="text-sm text-error">
+          {{ sample.errorMessage.value }}
+        </p>
 
         <template v-if="sample.rows.value.length > 0">
           <div class="flex items-center gap-3 text-sm text-muted">

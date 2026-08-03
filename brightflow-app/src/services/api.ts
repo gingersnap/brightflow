@@ -68,7 +68,10 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const url = `${API_BASE}${endpoint}`;
 
   const { body, ...restOptions } = options;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // FormData sets its own multipart Content-Type (with boundary); forcing
+  // JSON content-type on it would corrupt the upload.
+  const isForm = body instanceof FormData;
+  const headers: Record<string, string> = isForm ? {} : { 'Content-Type': 'application/json' };
   if (
     restOptions.headers != null &&
     typeof restOptions.headers === 'object' &&
@@ -83,7 +86,9 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     ...restOptions,
   };
 
-  if (body != null && typeof body === 'object') {
+  if (isForm) {
+    config.body = body;
+  } else if (body != null && typeof body === 'object') {
     config.body = JSON.stringify(body);
   }
 
@@ -266,24 +271,12 @@ export const sourceApi = {
     if (table != null && table.trim() !== '') {
       formData.append('table', table.trim());
     }
-    const response = await fetch(`${API_BASE}/api/sources/upload`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
-      const data: { message?: string; error?: { message?: string } } = await response
-        .json()
-        .catch(() => ({}));
-      throw new ApiError(
-        data.error?.message ?? data.message ?? 'Upload failed',
-        response.status,
-        data,
-      );
+    // Through request() so uploads get the same 401 handling as every call.
+    const result = await api.post<UploadSourceResult>('/api/sources/upload', formData);
+    if (result == null) {
+      throw new ApiError('Upload failed: empty response', 0, null);
     }
-    // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary
-    return response.json();
+    return result;
   },
 };
 
