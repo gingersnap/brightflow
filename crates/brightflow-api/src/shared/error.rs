@@ -55,9 +55,12 @@ pub enum AppError {
     Analysis(String),
 }
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, code, message) = match &self {
+impl AppError {
+    /// The one place a variant maps to (status, machine code, message).
+    /// `error_code()` and `IntoResponse` both read from here so the two can
+    /// never disagree.
+    fn parts(&self) -> (StatusCode, &'static str, String) {
+        match self {
             Self::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "UNAUTHORIZED",
@@ -111,7 +114,17 @@ impl IntoResponse for AppError {
                 "ANALYSIS_ERROR",
                 msg.clone(),
             ),
-        };
+        }
+    }
+
+    pub fn error_code(&self) -> &'static str {
+        self.parts().1
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let (status, code, message) = self.parts();
 
         let body = Json(json!({
             "error": {
@@ -124,26 +137,6 @@ impl IntoResponse for AppError {
     }
 }
 
-impl AppError {
-    pub fn error_code(&self) -> &'static str {
-        match self {
-            Self::Unauthorized => "UNAUTHORIZED",
-            Self::BadRequest(_) => "BAD_REQUEST",
-            Self::NotFound(_) => "NOT_FOUND",
-            Self::InvalidQuery(_) => "INVALID_QUERY",
-            Self::Conflict(_) => "CONFLICT",
-            Self::TooManyRequests(_) => "TOO_MANY_REQUESTS",
-            Self::Internal(_) => "INTERNAL_ERROR",
-            Self::Polars(_) => "POLARS_ERROR",
-            Self::Io(_) => "IO_ERROR",
-            Self::Json(_) => "JSON_ERROR",
-            Self::Join(_) => "TASK_ERROR",
-            Self::Store(_) => "STORE_ERROR",
-            Self::Analysis(_) => "ANALYSIS_ERROR",
-        }
-    }
-}
-
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
         Self::Analysis(format!("Analysis failed: {err}"))
@@ -151,3 +144,63 @@ impl From<anyhow::Error> for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_errors_get_4xx_and_server_errors_5xx() {
+        // Code and status come from the same match arm; this pins the
+        // class of each variant so a new arm can't silently 500 a client
+        // mistake (or vice versa).
+        let cases: Vec<(AppError, StatusCode, &str)> = vec![
+            (
+                AppError::Unauthorized,
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+            ),
+            (
+                AppError::BadRequest("x".into()),
+                StatusCode::BAD_REQUEST,
+                "BAD_REQUEST",
+            ),
+            (
+                AppError::NotFound("x".into()),
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+            ),
+            (
+                AppError::InvalidQuery("x".into()),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INVALID_QUERY",
+            ),
+            (
+                AppError::Conflict("x".into()),
+                StatusCode::CONFLICT,
+                "CONFLICT",
+            ),
+            (
+                AppError::TooManyRequests("x".into()),
+                StatusCode::TOO_MANY_REQUESTS,
+                "TOO_MANY_REQUESTS",
+            ),
+            (
+                AppError::Internal("x".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+            ),
+            (
+                AppError::Analysis("x".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "ANALYSIS_ERROR",
+            ),
+        ];
+        for (err, status, code) in cases {
+            let (s, c, _) = err.parts();
+            assert_eq!(s, status, "{code}");
+            assert_eq!(c, code);
+            assert_eq!(err.error_code(), code);
+        }
+    }
+}
