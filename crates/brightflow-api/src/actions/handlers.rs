@@ -18,7 +18,8 @@ use brightflow_engine::enrichment::{
 use crate::actions::events;
 use crate::actions::types::{
     Action, ActionLogEntry, ActionManifestEntry, ActionRequest, ActionResponse, ActionStatus,
-    BulkApproveFailure, BulkApproveResponse, PendingCount, SuppressKind, UndoOp, ACTION_KINDS,
+    BulkApproveFailure, BulkApproveResponse, PendingCount, Scope, SuppressKind, UndoOp,
+    ACTION_KINDS,
 };
 use crate::shared::{AppError, AppResult};
 use crate::state::cache_key;
@@ -523,8 +524,7 @@ pub async fn execute_action(
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
     match action {
         Action::RenameCluster {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             cluster_id,
             name,
         } => {
@@ -542,8 +542,7 @@ pub async fn execute_action(
             .await
         },
         Action::MergeClusters {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             from_cluster_id,
             into_cluster_id,
         } => {
@@ -566,8 +565,7 @@ pub async fn execute_action(
             .await
         },
         Action::MarkClusterNoise {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             cluster_id,
             is_noise,
         } => {
@@ -585,8 +583,7 @@ pub async fn execute_action(
             .await
         },
         Action::AssignClusterLabel {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             cluster_id,
             label,
         } => {
@@ -604,8 +601,7 @@ pub async fn execute_action(
             .await
         },
         Action::ExcludeTerm {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             term,
         } => {
             let (store, table_id) = table_ctx(state, source_id, table).await?;
@@ -626,7 +622,8 @@ pub async fn execute_action(
             ))
         },
         Action::SplitCluster {
-            source_id, table, ..
+            scope: Scope { source_id, table },
+            ..
         } => {
             // v1 semantics: refit with one more cluster slot. Not undoable.
             let overview =
@@ -638,8 +635,7 @@ pub async fn execute_action(
             ))
         },
         Action::Recluster {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             k,
             language,
             embedder,
@@ -663,8 +659,7 @@ pub async fn execute_action(
             Ok((json!({ "refit": true, "k": overview.k }), None))
         },
         Action::DismissInsight {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             fingerprint,
             reason,
         } => {
@@ -692,8 +687,7 @@ pub async fn execute_action(
             ))
         },
         Action::PinInsight {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             fingerprint,
             pinned,
         } => {
@@ -723,8 +717,7 @@ pub async fn execute_action(
             ))
         },
         Action::AnnotateInsight {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             fingerprint,
             note,
         } => {
@@ -751,8 +744,7 @@ pub async fn execute_action(
             ))
         },
         Action::SuppressTarget {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             target_kind,
             target,
         } => {
@@ -775,8 +767,7 @@ pub async fn execute_action(
             ))
         },
         Action::SetKpi {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             column,
             is_kpi,
         } => {
@@ -796,8 +787,7 @@ pub async fn execute_action(
             ))
         },
         Action::SetColumnPolarity {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             column,
             polarity,
         } => {
@@ -816,8 +806,7 @@ pub async fn execute_action(
             ))
         },
         Action::DefineTaxonomyCategory {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             name,
             description,
         } => {
@@ -857,8 +846,7 @@ pub async fn execute_action(
             ))
         },
         Action::RenameTaxonomyCategory {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             category_id,
             name,
         } => {
@@ -898,8 +886,7 @@ pub async fn execute_action(
             ))
         },
         Action::DeleteTaxonomyCategory {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             category_id,
         } => {
             let (store, table_id) = table_ctx(state, source_id, table).await?;
@@ -932,8 +919,7 @@ pub async fn execute_action(
             ))
         },
         Action::LabelDocument {
-            source_id,
-            table,
+            scope: Scope { source_id, table },
             row_id,
             categories,
         } => {

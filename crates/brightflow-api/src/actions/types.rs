@@ -12,6 +12,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// The (source_id, table) pair every action carries. Inlined into each
+/// variant's JSON/TS shape via flatten — not a wire type of its own.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, JsonSchema)]
+pub struct Scope {
+    pub source_id: String,
+    pub table: String,
+}
+
 /// A curation operation. Cluster actions key on the RAW cluster id of the
 /// current fit; durable storage attaches to the cluster's centroid so edits
 /// survive re-fits (see `cluster_edits` + reconciliation).
@@ -21,8 +29,9 @@ use ts_rs::TS;
 pub enum Action {
     /// Give a topic cluster a human-curated display name.
     RenameCluster {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         cluster_id: i64,
         name: String,
@@ -30,8 +39,9 @@ pub enum Action {
     /// Fold one cluster into another; sizes sum, terms union, applied at
     /// read time (the fitted artifacts are untouched).
     MergeClusters {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         from_cluster_id: i64,
         #[ts(type = "number")]
@@ -39,21 +49,24 @@ pub enum Action {
     },
     /// Split an over-broad cluster by refitting with one more cluster slot.
     SplitCluster {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         cluster_id: i64,
     },
     /// Remove a term from cluster naming and top-term lists.
     ExcludeTerm {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         term: String,
     },
     /// Hide a cluster as noise (its rows count as unassigned).
     MarkClusterNoise {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         cluster_id: i64,
         is_noise: bool,
@@ -67,8 +80,9 @@ pub enum Action {
     /// bias. Row-level intent labels (`LabelDocument`) train the classifier
     /// head, which supersedes this as the labeler.
     AssignClusterLabel {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         cluster_id: i64,
         label: String,
@@ -76,23 +90,26 @@ pub enum Action {
     /// Add an intent category to the table's taxonomy — the vocabulary of what
     /// tickets are ABOUT. Idempotent on (table, name).
     DefineTaxonomyCategory {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         name: String,
         description: Option<String>,
     },
     /// Rename an intent category. The human's right to fix the LLM's wording.
     RenameTaxonomyCategory {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         category_id: i64,
         name: String,
     },
     /// Remove an intent category; its row labels cascade away with it.
     DeleteTaxonomyCategory {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         #[ts(type = "number")]
         category_id: i64,
     },
@@ -102,15 +119,17 @@ pub enum Action {
     /// Row-level on purpose — this is the supervision that breaks the
     /// format-cluster loop.
     LabelDocument {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         row_id: String,
         categories: Vec<String>,
     },
     /// Refit topic clusters. Not undoable.
     Recluster {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         k: Option<u32>,
         language: Option<String>,
         embedder: Option<String>,
@@ -121,44 +140,50 @@ pub enum Action {
     },
     /// Hide an insight permanently (keyed by its stable fingerprint).
     DismissInsight {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         fingerprint: String,
         reason: DismissReason,
     },
     /// Pin an insight to the top of future runs (or unpin).
     PinInsight {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         fingerprint: String,
         pinned: bool,
     },
     /// Attach a free-text note to an insight.
     AnnotateInsight {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         fingerprint: String,
         note: String,
     },
     /// Never surface insights about this segment or column again.
     SuppressTarget {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         target_kind: SuppressKind,
         target: String,
     },
     /// Flag or unflag a column as KPI (delegates to column semantics).
     SetKpi {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         column: String,
         is_kpi: bool,
     },
     /// Declare which direction of movement in a measure is good news
     /// (delegates to column semantics; display-only in scoring v1).
     SetColumnPolarity {
-        source_id: String,
-        table: String,
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
         column: String,
         polarity: ColumnPolarity,
     },
@@ -227,59 +252,26 @@ impl Action {
 
     /// (source_id, table) scope of the action.
     pub fn scope(&self) -> (&str, &str) {
-        match self {
-            Self::RenameCluster {
-                source_id, table, ..
-            }
-            | Self::MergeClusters {
-                source_id, table, ..
-            }
-            | Self::SplitCluster {
-                source_id, table, ..
-            }
-            | Self::ExcludeTerm {
-                source_id, table, ..
-            }
-            | Self::MarkClusterNoise {
-                source_id, table, ..
-            }
-            | Self::AssignClusterLabel {
-                source_id, table, ..
-            }
-            | Self::DefineTaxonomyCategory {
-                source_id, table, ..
-            }
-            | Self::RenameTaxonomyCategory {
-                source_id, table, ..
-            }
-            | Self::DeleteTaxonomyCategory {
-                source_id, table, ..
-            }
-            | Self::LabelDocument {
-                source_id, table, ..
-            }
-            | Self::Recluster {
-                source_id, table, ..
-            }
-            | Self::DismissInsight {
-                source_id, table, ..
-            }
-            | Self::PinInsight {
-                source_id, table, ..
-            }
-            | Self::AnnotateInsight {
-                source_id, table, ..
-            }
-            | Self::SuppressTarget {
-                source_id, table, ..
-            }
-            | Self::SetKpi {
-                source_id, table, ..
-            }
-            | Self::SetColumnPolarity {
-                source_id, table, ..
-            } => (source_id, table),
-        }
+        let scope = match self {
+            Self::RenameCluster { scope, .. }
+            | Self::MergeClusters { scope, .. }
+            | Self::SplitCluster { scope, .. }
+            | Self::ExcludeTerm { scope, .. }
+            | Self::MarkClusterNoise { scope, .. }
+            | Self::AssignClusterLabel { scope, .. }
+            | Self::DefineTaxonomyCategory { scope, .. }
+            | Self::RenameTaxonomyCategory { scope, .. }
+            | Self::DeleteTaxonomyCategory { scope, .. }
+            | Self::LabelDocument { scope, .. }
+            | Self::Recluster { scope, .. }
+            | Self::DismissInsight { scope, .. }
+            | Self::PinInsight { scope, .. }
+            | Self::AnnotateInsight { scope, .. }
+            | Self::SuppressTarget { scope, .. }
+            | Self::SetKpi { scope, .. }
+            | Self::SetColumnPolarity { scope, .. } => scope,
+        };
+        (&scope.source_id, &scope.table)
     }
 }
 
@@ -731,65 +723,87 @@ mod tests {
     fn manifest_registry_is_complete() {
         let samples: Vec<Action> = vec![
             Action::RenameCluster {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 cluster_id: 0,
                 name: String::new(),
             },
             Action::MergeClusters {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 from_cluster_id: 0,
                 into_cluster_id: 1,
             },
             Action::SplitCluster {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 cluster_id: 0,
             },
             Action::ExcludeTerm {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 term: String::new(),
             },
             Action::MarkClusterNoise {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 cluster_id: 0,
                 is_noise: true,
             },
             Action::AssignClusterLabel {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 cluster_id: 0,
                 label: String::new(),
             },
             Action::DefineTaxonomyCategory {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 name: String::new(),
                 description: None,
             },
             Action::RenameTaxonomyCategory {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 category_id: 0,
                 name: String::new(),
             },
             Action::DeleteTaxonomyCategory {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 category_id: 0,
             },
             Action::LabelDocument {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 row_id: String::new(),
                 categories: Vec::new(),
             },
             Action::Recluster {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 k: None,
                 language: None,
                 embedder: None,
@@ -797,38 +811,50 @@ mod tests {
                 algorithm: None,
             },
             Action::DismissInsight {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 fingerprint: String::new(),
                 reason: DismissReason::Boring,
             },
             Action::PinInsight {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 fingerprint: String::new(),
                 pinned: true,
             },
             Action::AnnotateInsight {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 fingerprint: String::new(),
                 note: String::new(),
             },
             Action::SuppressTarget {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 target_kind: SuppressKind::Segment,
                 target: String::new(),
             },
             Action::SetKpi {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 column: String::new(),
                 is_kpi: true,
             },
             Action::SetColumnPolarity {
-                source_id: String::new(),
-                table: String::new(),
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
                 column: String::new(),
                 polarity: ColumnPolarity::HigherIsBetter,
             },
@@ -850,14 +876,19 @@ mod tests {
     #[test]
     fn action_serde_round_trip() {
         let action = Action::DismissInsight {
-            source_id: "s".to_string(),
-            table: "posts".to_string(),
+            scope: Scope {
+                source_id: "s".to_string(),
+                table: "posts".to_string(),
+            },
             fingerprint: "abc".to_string(),
             reason: DismissReason::Known,
         };
         let json = serde_json::to_string(&action).unwrap();
         assert!(json.contains("\"kind\":\"dismiss_insight\""));
+        // Flatten keeps scope fields inline at the top level of the object.
+        assert!(json.contains("\"source_id\":\"s\""));
         let back: Action = serde_json::from_str(&json).unwrap();
         assert_eq!(back.kind(), "dismiss_insight");
+        assert_eq!(back.scope(), ("s", "posts"));
     }
 }
