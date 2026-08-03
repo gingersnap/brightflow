@@ -3,8 +3,8 @@ import { useQuery } from '@pinia/colada';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useAuth } from '@/composables/useAuth';
 import { sourceApi } from '@/services/api';
-import { useAuthStore } from '@/stores/auth';
 import { useInsightsActivityStore } from '@/stores/insightsActivity';
 import { useSourceStore } from '@/stores/source';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
@@ -12,7 +12,7 @@ import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 const router = useRouter();
 const route = useRoute();
 const sourceStore = useSourceStore();
-const authStore = useAuthStore();
+const auth = useAuth();
 const insightsActivity = useInsightsActivityStore();
 
 insightsActivity.initRealtime();
@@ -186,7 +186,7 @@ function goToSources(): void {
         >
           <UIcon name="i-lucide-user" class="h-4 w-4 shrink-0 text-muted" />
           <span v-if="!collapsed" class="truncate text-sm text-highlighted">
-            {{ authStore.user?.displayName ?? 'User' }}
+            {{ auth.user.value?.displayName ?? 'User' }}
           </span>
         </button>
       </UDropdownMenu>

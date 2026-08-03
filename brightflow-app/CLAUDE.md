@@ -65,6 +65,13 @@ single global dataset.
 
 **WebSocket for queries** - REST felt too slow for interactive exploration. Connection managed in `stores/connection.ts`, query execution in `composables/useWsQuery.ts`.
 
+**Server data is Pinia Colada's job** - all server data is fetched and cached by
+Pinia Colada (`useQuery`/`useMutation`) in components and composables. Pinia
+stores hold client state only (selections, overlays, UI flags, WS-event merge
+state). Stores never import `services/api`. One paradigm, no per-case
+decisions: if it came over the network, it lives in the colada cache; if the
+user chose or toggled it, it lives in a store.
+
 **Query builder as primary UX** - users build queries visually rather than writing code. Each section (filter, group by, sort, limit) is toggleable. See `stores/query.ts` for state shape and `components/query/` for UI.
 
 ## Key Files

@@ -96,9 +96,14 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   if (!response.ok) {
     // Handle 401 for non-auth endpoints: clear auth state
     if (response.status === 401 && !endpoint.startsWith('/api/auth/')) {
-      const { useAuthStore } = await import('@/stores/auth');
-      const authStore = useAuthStore();
-      authStore.clearAuth();
+      // Clear the cached session so the whole UI logs out at once.
+      const [{ useQueryCache }, { AUTH_SESSION_KEY }, { resetIdentity }] = await Promise.all([
+        import('@pinia/colada'),
+        import('@/composables/useAuth'),
+        import('@/services/tracking'),
+      ]);
+      useQueryCache().setQueryData(AUTH_SESSION_KEY, null);
+      resetIdentity();
     }
     // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
     const data: { message?: string; error?: { message?: string } } = await response

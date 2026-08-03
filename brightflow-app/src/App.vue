@@ -1,39 +1,34 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
-
 import LoginPage from './components/auth/LoginPage.vue';
 import CommandPalette from './components/command/CommandPalette.vue';
 import AppSidebar from './components/layout/AppSidebar.vue';
+import { useAuth } from './composables/useAuth';
 import { resetOnLogout } from './stores';
-import { useAuthStore } from './stores/auth';
 import { useConnectionStore } from './stores/connection';
 import { useSystemStore } from './stores/system';
 
-const authStore = useAuthStore();
+// The session query fires on setup — no explicit checkAuth call needed.
+const auth = useAuth();
 const connectionStore = useConnectionStore();
 const systemStore = useSystemStore();
-
-onMounted(() => {
-  authStore.checkAuth();
-});
 
 async function handleLogout(): Promise<void> {
   connectionStore.disconnect();
   systemStore.disconnect();
   resetOnLogout();
-  await authStore.logout();
+  await auth.logout();
 }
 </script>
 
 <template>
   <UApp>
     <!-- Auth loading state -->
-    <div v-if="authStore.loading" class="flex h-screen items-center justify-center bg-default">
+    <div v-if="auth.loading.value" class="flex h-screen items-center justify-center bg-default">
       <p class="text-muted">Loading...</p>
     </div>
 
     <!-- Login page -->
-    <div v-else-if="!authStore.isAuthenticated" class="flex h-screen flex-col bg-default">
+    <div v-else-if="!auth.isAuthenticated.value" class="flex h-screen flex-col bg-default">
       <LoginPage />
     </div>
 

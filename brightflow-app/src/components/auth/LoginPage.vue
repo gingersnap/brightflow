@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-import { useAuthStore } from '@/stores/auth';
+import { useAuth } from '@/composables/useAuth';
 
-const authStore = useAuthStore();
+const auth = useAuth();
 
 const email = ref('');
 const password = ref('');
@@ -16,9 +16,9 @@ async function handleSubmit(): Promise<void> {
 
   submitting.value = true;
   try {
-    await authStore.login(email.value, password.value);
+    await auth.login(email.value, password.value);
   } catch {
-    // Error is set in the store
+    // Error is surfaced via auth.loginError
   } finally {
     submitting.value = false;
   }
@@ -56,8 +56,8 @@ async function handleSubmit(): Promise<void> {
           />
         </UFormField>
 
-        <p v-if="authStore.error" class="text-sm text-red-500">
-          {{ authStore.error }}
+        <p v-if="auth.loginError.value" class="text-sm text-red-500">
+          {{ auth.loginError.value }}
         </p>
 
         <UButton
