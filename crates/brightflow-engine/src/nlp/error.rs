@@ -1,9 +1,4 @@
 //! NLP error type.
-//!
-//! `GenerationMismatch` reports a `SparseVec` used against a vocabulary that has
-//! been re-fitted since — ids renumbered underneath it. It exists because the
-//! alternative failure is silent: such a comparison returns a plausible,
-//! meaningless number rather than going wrong visibly.
 
 /// Errors that can occur in NLP operations
 #[derive(Debug, thiserror::Error)]
@@ -11,10 +6,6 @@ pub enum SubtextError {
     /// Model has not been fitted yet
     #[error("vocabulary not fitted")]
     NotFitted,
-
-    /// Sparse vector was computed with a different vocabulary generation
-    #[error("generation mismatch: vector has generation {vector}, vocabulary is at {vocabulary}")]
-    GenerationMismatch { vector: u64, vocabulary: u64 },
 
     /// Input was empty where non-empty input is required
     #[error("empty input: {context}")]

@@ -1,13 +1,13 @@
 //! Token to stable-id mapping, plus document frequencies for IDF.
 //!
 //! Carries a `generation` counter, incremented by `fit`, `add_document` and
-//! `filter_extremes` — anything that can renumber ids. Vectors record the
-//! generation they were built under, which is what makes a stale one
-//! *detectable*: reinterpreting a vector against renumbered ids yields
-//! confidently wrong similarity scores rather than an obvious failure.
+//! `filter_extremes` — anything that can renumber ids. Each `SparseVec` records
+//! the generation it was built under.
 //!
-//! Detectability is all this provides. Code holding vectors across a re-fit is
-//! responsible for comparing generations before using them.
+//! Today this is informational metadata: no comparison path consults it, because
+//! vectors that meet in a comparison are always built from one fitted model in a
+//! single pass and so share a generation by construction. It is kept as the hook
+//! a guard would use if vectors ever start being compared across a re-fit.
 
 use std::collections::{HashMap, HashSet};
 
