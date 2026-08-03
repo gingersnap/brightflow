@@ -4,7 +4,9 @@ import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
   fmt: {
-    ignorePatterns: ['dist/**', 'src/types/generated/**'],
+    // Auto-imports/components d.ts are emitted semicolon-free by unplugin;
+    // Formatting them just creates a permanent regenerate-vs-format diff loop.
+    ignorePatterns: ['dist/**', 'src/types/generated/**', 'auto-imports.d.ts', 'components.d.ts'],
     semi: true,
     singleQuote: true,
     trailingComma: 'all',
@@ -18,7 +20,7 @@ export default defineConfig({
     },
   },
   lint: {
-    ignorePatterns: ['dist/**', 'src/types/generated/**'],
+    ignorePatterns: ['dist/**', 'src/types/generated/**', 'auto-imports.d.ts', 'components.d.ts'],
     options: {
       typeAware: true,
       typeCheck: true,
