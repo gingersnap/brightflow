@@ -15,8 +15,8 @@ import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { useCuration } from '@/composables/useCuration';
+import { useSources } from '@/composables/useSources';
 import { topicsApi } from '@/services/api';
-import { useSourceStore } from '@/stores/source';
 import type { SourceTable } from '@/types';
 import type { DocRef } from '@/types/generated';
 
@@ -33,11 +33,11 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const sourceStore = useSourceStore();
+const { sourceById } = useSources();
 const curation = useCuration();
 
 const enrichableTables = computed(
-  () => sourceStore.getSourceById(props.sourceId)?.tables.filter((t) => t.enrichable) ?? [],
+  () => sourceById(props.sourceId)?.tables.filter((t) => t.enrichable) ?? [],
 );
 const activeTable = computed(() => props.table);
 
