@@ -1,3 +1,11 @@
+//! SQLite persistence for connector configs, jobs, sync cursors, and run history.
+//!
+//! Owns its own pool and migrations so the scheduler can be constructed from a
+//! URL alone. All four tables are small and read far more often than written, so
+//! the pragmas favour read latency (WAL, generous cache, mmap) over write
+//! durability guarantees — losing a few seconds of sync-run history to a crash is
+//! acceptable; the cursors are re-derivable from the data itself.
+
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;

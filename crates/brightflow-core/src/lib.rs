@@ -1,3 +1,14 @@
+//! Types shared by every Brightflow crate: the base error and workspace paths.
+//!
+//! Kept deliberately tiny and dependency-light, because everything depends on it
+//! — anything added here is added to every crate's compile.
+//!
+//! `WorkspacePaths` is the single source of truth for where data lives. It exists
+//! so that no crate ever joins its own path from an env var: every location is
+//! derived from one base and one workspace name, which is what makes a second
+//! workspace (or a throwaway test workspace) a matter of changing two variables
+//! rather than auditing every call site.
+
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;

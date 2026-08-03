@@ -1,3 +1,12 @@
+//! Row types for the scheduler database, shared with the frontend via ts-rs.
+//!
+//! Timestamps are `String` rather than `DateTime` because SQLite stores them as
+//! ISO-8601 text and every consumer (the API, the UI) wants that text — parsing
+//! to a typed value here would only be re-serialized at the boundary.
+//!
+//! `SyncState` is the incremental-sync cursor, keyed by (connector, endpoint):
+//! it is what makes a re-run fetch only new rows rather than everything.
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 

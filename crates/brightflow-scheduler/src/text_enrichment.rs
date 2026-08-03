@@ -1,3 +1,14 @@
+//! Post-sync text enrichment hook: embed freshly-synced rows in place.
+//!
+//! Runs inside the sync path, so its guiding constraint is that it must never
+//! fail a sync. A missing column, an unconfigured embedder, or an absent model
+//! file returns `Ok(false)` or a non-fatal error rather than aborting — the rows
+//! landed successfully and the Topics tab surfaces the enrichment gap instead.
+//!
+//! It also never *fits* topic artifacts. Fitting is expensive and changes how
+//! every existing row is labelled, so it stays an explicit manual step (`topics
+//! fit` via CLI or API); this hook only applies artifacts that already exist.
+
 use std::path::Path;
 
 use polars::prelude::*;
