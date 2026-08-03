@@ -55,7 +55,12 @@ fn api_routes() -> Router<AppState> {
         .route("/collect", post(ingest_handlers::ingest_event))
         .route("/track", post(ingest_handlers::track_event))
         .route("/identify", post(ingest_handlers::identify_user))
-        .route("/script.js", get(ingest_handlers::serve_script));
+        .route("/script.js", get(ingest_handlers::serve_script))
+        // No public route takes a filesystem-bound path param today, but guard
+        // the whole router anyway so that stays true by construction.
+        .route_layer(middleware::from_fn(
+            crate::shared::reject_unsafe_path_params,
+        ));
 
     let protected = Router::new()
         // Available tables (metadata only, for lazy loading)
@@ -349,6 +354,12 @@ fn api_routes() -> Router<AppState> {
             "/analytics/{source_id}/users/{user_id}/profile",
             get(pa_handlers::user_profile),
         )
+        // Reject traversal in dynamic segments (source_id/table/name) before any
+        // handler runs — these are joined onto filesystem paths here and in the
+        // store. Layered alongside auth so it applies to every protected route.
+        .route_layer(middleware::from_fn(
+            crate::shared::reject_unsafe_path_params,
+        ))
         .route_layer(middleware::from_fn(require_auth));
 
     public.merge(protected)

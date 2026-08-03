@@ -5,8 +5,10 @@
 //! live in that area, not here.
 
 mod error;
+mod path_guard;
 
 pub use error::{AppError, AppResult};
+pub use path_guard::reject_unsafe_path_params;
 
 /// True when a stored `schema_json` contains at least one string column —
 /// the schema-based "enrichable" gate (any table with text can be enriched).
