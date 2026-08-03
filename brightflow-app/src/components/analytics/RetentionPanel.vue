@@ -2,8 +2,8 @@
 /**
  * Cohort retention for Product Analytics: pick a cohort event and a return
  * event, get a cohort-by-period matrix with cells shaded by retention rate.
- * The query is gated on an explicit Analyze click (`submitted`) rather than
- * firing on every config change.
+ * Nothing is fetched until the first explicit Analyze click (the
+ * `submitted` gate); after that, config changes re-key the query directly.
  */
 
 import { useQuery } from '@pinia/colada';

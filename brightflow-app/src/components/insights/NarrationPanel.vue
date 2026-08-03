@@ -8,10 +8,10 @@ import type { AgentRunEventPayload, AgentRunResponse } from '@/types/generated';
 
 /**
  * Display surface for LLM narration of the insights: the newest completed
- * narrate/triage run for this table. Agent runs store their output as
- * `detail = "{stats line}\n{narration}"`; the stats head stays in the trigger
- * row (AgentActions), the full prose lives here — and survives reloads via
- * the agent-run list.
+ * narrate/triage run for this table, found via live agentRun events plus an
+ * agent-run list fetch so it survives reloads. Splits `detail` on its first
+ * newline into a stats line (shown as header metadata) and the narration
+ * prose.
  */
 const props = defineProps<{
   sourceId: string;

@@ -2,9 +2,9 @@
 import { computed } from 'vue';
 
 /**
- * Pure v-model form for topic-model settings — rendered by both the Topics
- * header popover (via EnrichmentSettingsPanel) and the Enrich function
- * editor. No fetching here; the parent owns load/save.
+ * Pure v-model form for topic-model settings (algorithm, min cluster size,
+ * cleaning profile, language column). No fetching or saving here — the
+ * parent owns load/save.
  */
 export interface TopicModelFormValue {
   algorithm: string;

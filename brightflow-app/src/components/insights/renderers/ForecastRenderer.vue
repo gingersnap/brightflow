@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * History line with one extra category tick appended for the forecast
- * period: the expected value (amber dot), the actual (red dot), and the
- * prediction interval shaded only at that final tick. All the marks land on
- * the appended slot by null-padding each series to the history's length, so
- * the miss is read as actual-vs-expected inside (or outside) the band.
+ * period: the expected and actual values as marked dots (actual in fixed
+ * red), and the prediction interval shaded only at that final tick. All the
+ * marks land on the appended slot by null-padding each series to the
+ * history's length, so the miss is read as actual-vs-expected inside (or
+ * outside) the band.
  */
 
 import { computed } from 'vue';

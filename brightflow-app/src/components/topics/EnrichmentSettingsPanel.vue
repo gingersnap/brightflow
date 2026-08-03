@@ -6,10 +6,10 @@ import { topicsApi } from '@/services/api';
 import TopicModelForm, { type TopicModelFormValue } from './TopicModelForm.vue';
 
 /**
- * Per-table enrichment settings — the GUI twin of
- * GET/PUT /api/sources/{id}/tables/{table}/enrichment. Thin wrapper around
- * TopicModelForm (shared with the Enrich function editor): this panel owns
- * load/save, the form owns the fields.
+ * Per-table topic-enrichment settings panel: a thin wrapper around
+ * TopicModelForm — this panel owns load/save via topicsApi's enrichment
+ * endpoints, the form owns the fields. Saved settings apply on the next
+ * recluster.
  */
 const props = defineProps<{
   sourceId: string;

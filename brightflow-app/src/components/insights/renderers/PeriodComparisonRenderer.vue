@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Exactly two bars — previous period and current — in a single neutral
+ * Exactly two bars — previous period and current — in a single palette
  * color, with humanized period names on the axis. The size gap between the
  * bars is the entire visualization; nothing else is drawn.
  */

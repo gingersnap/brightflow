@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * Root shell: branches on session state between the loading screen, the
- * login page, and the authenticated dashboard group. Logout tears down
- * both WebSocket-backed stores and resets client state before ending the
- * session, so nothing per-user survives into the next login.
+ * login page, and the authenticated dashboard group. Logout disconnects
+ * both WebSocket-backed stores and resets client store state before
+ * ending the session.
  */
 
 import LoginPage from './components/auth/LoginPage.vue';

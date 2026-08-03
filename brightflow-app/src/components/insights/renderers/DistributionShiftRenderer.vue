@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Grouped histogram pair over shared bin edges — previous period muted grey,
- * current period red — so a shift reads as mass sliding between the same
+ * Grouped histogram pair over shared bin edges — previous and current period
+ * in two palette colors — so a shift reads as mass sliding between the same
  * buckets. Legend names are the analysis' actual periods, humanized, falling
  * back to generic "Previous"/"Current" only when those are missing.
  */

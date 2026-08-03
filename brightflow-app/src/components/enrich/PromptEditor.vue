@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * V-model editor for an LLM prompt template: a monospace textarea with an
+ * insert-column menu that places {{col:Name}} refs at the cursor, plus a
+ * chip strip of the referenced columns that flags refs missing from the
+ * table. Token parsing/insertion lives in promptTokens.
+ */
+
 import { computed, ref } from 'vue';
 
 import { extractColumnRefs, insertColumnRef } from './promptTokens';

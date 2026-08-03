@@ -2,8 +2,8 @@
 /**
  * Overlaid line chart for outlier-cluster findings: every series in the
  * Multi payload gets its own thin line on shared axes with a bottom legend,
- * all styled identically — the deviating member is meant to show against
- * the rest of the pack, not be pre-highlighted.
+ * each in its own palette color at the same weight — no member is
+ * pre-highlighted, so the deviating one has to show against the pack.
  */
 
 import { computed } from 'vue';

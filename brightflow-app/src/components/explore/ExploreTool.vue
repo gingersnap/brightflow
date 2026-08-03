@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Root of the Explore tool. Table selection lives in the route, so this
- * component watches the `table` prop: each switch resets every store, loads
+ * component watches the `table` prop: each switch resets the per-dataset
+ * stores (via `resetAllStores`), loads
  * the table, and seeds the results grid over REST before the WebSocket path
  * takes over. Until a table is chosen the downstream sections render inert
  * and greyed out instead of being hidden.

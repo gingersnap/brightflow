@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * Airtable's prompt-edit dialog: saving a changed prompt on a promoted
- * function asks whether existing rows should be recomputed. "Only new rows"
- * leaves old results in place until content changes; "re-run all" recomputes
- * everything under the new prompt.
+ * Dialog shown when saving a changed prompt on a promoted function: asks
+ * whether existing rows should be recomputed and emits the choice — 'none'
+ * (save only), 'missing' (only new rows), or 'all' (recompute everything).
+ * The parent performs the save and any rerun.
  */
 defineProps<{
   open: boolean;

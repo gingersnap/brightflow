@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * One bar per period, with the flagged period singled out purely by color —
- * red at the marker index, muted grey everywhere else — so the whole visual
- * is the flagged period's height against its ordinary neighbors.
+ * red at the marker index, a single palette color everywhere else — so the
+ * whole visual is the flagged period's height against its ordinary
+ * neighbors.
  */
 
 import { computed } from 'vue';
