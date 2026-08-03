@@ -31,11 +31,25 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 Three rules every change should follow, lifted from the engine-crate habits to
 repo-wide expectations:
 
-1. **Inline comments are the primary documentation.** Modules, non-trivial
-   functions, and non-obvious decisions get a comment explaining *why*, not
-   *what*. For Rust that means a `//!` module doc on every `src/` file; for the
-   frontend a `/** ... */` header on each module. External prose docs are for
-   architecture and onboarding, not for explaining individual functions.
+1. **Inline comments are the primary documentation, and they are maintained
+   with the code.** Modules, non-trivial functions, and non-obvious decisions
+   get a comment explaining *why*, not *what*. For Rust that means a `//!`
+   module doc on every `src/` file; for the frontend a `/** ... */` header on
+   each module. External prose docs are for architecture and onboarding, not for
+   explaining individual functions.
+
+   Presence is the easy half. When you change code, re-read the comments
+   covering what you changed and make them true again — correct them, or delete
+   them when the reason they recorded is gone. A comment you can only keep by
+   watering it down is one to remove. Same scope rule as the tests below: the
+   comments on what you touched, never a tree-wide audit.
+
+   And never write a *why* you have not confirmed. A header asserting a
+   rationale inferred from a skim is exactly the failure rule 3 describes — a
+   wrong doc is still believed, and this one is harder to catch because it sits
+   next to the code it misdescribes. `scripts/check-conventions.sh` can only
+   check that a comment exists; nothing mechanical can check that it is true, so
+   this rule is the only thing standing between a header and a confident lie.
 2. **Unit tests per piece the agent touches.** When you add or change pure
    logic, add or update a co-located unit test covering the new behavior. Don't
    leave a touched function without coverage; don't add tests for code you

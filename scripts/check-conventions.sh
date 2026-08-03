@@ -8,6 +8,10 @@
 # Do not "improve" this into a tree-wide scan; a check that fails on unrelated files gets
 # bypassed, and a bypassed check enforces nothing.
 #
+# Checks PRESENCE ONLY. Whether a comment is still *true* after a change is the other
+# half of rule 1, and nothing here can verify it — do not read a green tick as "the
+# docs are accurate", only as "a header is there".
+#
 # Checks:
 #   1. Staged .rs under crates/*/src/  -> must have `//!` within the first 3 lines
 #   2. Staged .ts under brightflow-app/src/ (excluding types/generated/)
