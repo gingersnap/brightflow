@@ -24,7 +24,6 @@ export class WebSocketClient {
   private reconnectCount = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly messageQueue: string[] = [];
   private handlers: Record<WsEventType, WsHandler[]> = {
     close: [],
     error: [],
@@ -75,14 +74,12 @@ export class WebSocketClient {
     }
   }
 
+  /** Drops silently unless connected — the caller gates on `isConnected`. */
   send(data: unknown): void {
     const message = typeof data === 'string' ? data : JSON.stringify(data);
 
     if (this.isConnected && this.ws) {
       this.ws.send(message);
-    } else {
-      // Queue message for when connection is established
-      this.messageQueue.push(message);
     }
   }
 
@@ -104,7 +101,6 @@ export class WebSocketClient {
       log.info('Connected');
       this.reconnectCount = 0;
       this.startHeartbeat();
-      this.flushMessageQueue();
       this.emit('open');
     };
 
@@ -174,15 +170,6 @@ export class WebSocketClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
-    }
-  }
-
-  private flushMessageQueue(): void {
-    while (this.messageQueue.length > 0) {
-      const message = this.messageQueue.shift();
-      if (message !== undefined && this.ws) {
-        this.ws.send(message);
-      }
     }
   }
 

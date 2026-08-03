@@ -88,28 +88,6 @@ describe('operations', () => {
     ]);
   });
 
-  test('aggregation alias falls back to function_column when blank', () => {
-    const store = useQueryStore();
-    store.sections.limit.enabled = false;
-    store.sections.groupBy.enabled = true;
-    store.groupByColumns = ['region'];
-    store.aggregations.push(
-      { alias: '', column: '*', function: 'count', id: 'a1' },
-      { alias: 'total', column: 'amount', function: 'sum', id: 'a2' },
-    );
-
-    expect(store.operations).toEqual([
-      {
-        aggs: [
-          { alias: 'count_*', column: '*', function: 'count' },
-          { alias: 'total', column: 'amount', function: 'sum' },
-        ],
-        by: ['region'],
-        type: 'groupBy',
-      },
-    ]);
-  });
-
   test('groupBy is skipped when no columns are grouped, even if enabled', () => {
     const store = useQueryStore();
     store.sections.limit.enabled = false;

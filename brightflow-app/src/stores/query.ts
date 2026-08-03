@@ -151,10 +151,6 @@ export const useQueryStore = defineStore('query', () => {
     sections.value[section].enabled = !sections.value[section].enabled;
   }
 
-  function toggleCollapse(section: SectionKey): void {
-    sections.value[section].collapsed = !sections.value[section].collapsed;
-  }
-
   function addFilter(): void {
     filters.value.push({
       column: null,
@@ -173,26 +169,6 @@ export const useQueryStore = defineStore('query', () => {
 
   function removeFilter(id: string): void {
     filters.value = filters.value.filter((f) => f.id !== id);
-  }
-
-  function addAggregation(): void {
-    aggregations.value.push({
-      alias: '',
-      column: '*',
-      function: 'count',
-      id: crypto.randomUUID(),
-    });
-  }
-
-  function updateAggregation(id: string, updates: Partial<Aggregation>): void {
-    const agg = aggregations.value.find((a) => a.id === id);
-    if (agg) {
-      Object.assign(agg, updates);
-    }
-  }
-
-  function removeAggregation(id: string): void {
-    aggregations.value = aggregations.value.filter((a) => a.id !== id);
   }
 
   function reset(): void {
@@ -233,13 +209,9 @@ export const useQueryStore = defineStore('query', () => {
     isValid,
     // Actions
     toggleSection,
-    toggleCollapse,
     addFilter,
     updateFilter,
     removeFilter,
-    addAggregation,
-    updateAggregation,
-    removeAggregation,
     reset,
   };
 });

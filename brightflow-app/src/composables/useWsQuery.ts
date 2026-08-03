@@ -226,11 +226,6 @@ export function useWsQuery() {
     });
   }
 
-  // Legacy alias
-  function execute(): void {
-    executePivot();
-  }
-
   /**
    * Check if query can be executed
    */
@@ -250,7 +245,6 @@ export function useWsQuery() {
     buildOperations,
     buildTableOperations,
     canExecute,
-    execute,
     executePivot,
     loadTableData,
   };

@@ -70,17 +70,10 @@ export const useUiStore = defineStore('ui', () => {
   const summarizeCollapsed = ref(false);
   const resultsCollapsed = ref(false);
 
-  // Sidebar collapsed state
-  const storedSidebarCollapsed = localStorage.getItem('brightflow-sidebar-collapsed');
-  const sidebarCollapsed = ref(storedSidebarCollapsed === 'true');
-
   // Track if we've shown pivot results yet (for auto-switch)
   const hasShownPivotResults = ref(false);
 
   // Persist preferences
-  watch(sidebarCollapsed, (val) => {
-    localStorage.setItem('brightflow-sidebar-collapsed', String(val));
-  });
   watch(textSize, (val) => {
     localStorage.setItem('brightflow-text-size', val);
     applyTextSize(val);
@@ -137,13 +130,11 @@ export const useUiStore = defineStore('ui', () => {
   return {
     chartType,
     filterCollapsed,
-    hasShownPivotResults,
     onPivotResults,
     resetForNewDataset,
     resultsCollapsed,
     setChartType,
     setTextSize,
-    sidebarCollapsed,
     setViewMode,
     summarizeCollapsed,
     textSize,

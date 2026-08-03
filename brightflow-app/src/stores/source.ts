@@ -7,7 +7,7 @@
  */
 
 import { defineStore } from 'pinia';
-import { computed, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 
 import type { UnifiedSource } from '@/types';
 
@@ -17,14 +17,6 @@ export const useSourceStore = defineStore('source', () => {
 
   // The actual source objects — set externally by component layer via setSourcesData
   const sourcesData = ref<UnifiedSource[]>([]);
-
-  // Computed
-  const availableTools = computed(() => {
-    if (sourcesData.value.length === 0) {
-      return [];
-    }
-    return [];
-  });
 
   // Persist
   watch(period, (val) => {
@@ -47,7 +39,6 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   return {
-    availableTools,
     getSourceById,
     period,
     reset,

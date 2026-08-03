@@ -27,27 +27,6 @@ export const useConnectionStore = defineStore('connection', () => {
 
   // Computed
   const isConnected = computed(() => status.value === 'connected');
-  const isConnecting = computed(() => status.value === 'connecting');
-  const isDisconnected = computed(
-    () => status.value === 'disconnected' || status.value === 'error',
-  );
-
-  const statusText = computed(() => {
-    switch (status.value) {
-      case 'connected': {
-        return 'Connected';
-      }
-      case 'connecting': {
-        return 'Connecting...';
-      }
-      case 'error': {
-        return 'Connection error';
-      }
-      case 'disconnected': {
-        return 'Disconnected';
-      }
-    }
-  });
 
   const statusColor = computed(() => {
     switch (status.value) {
@@ -178,8 +157,6 @@ export const useConnectionStore = defineStore('connection', () => {
     connect,
     disconnect,
     isConnected,
-    isConnecting,
-    isDisconnected,
     lastError,
     onMessage,
     reconnectCount,
@@ -187,6 +164,5 @@ export const useConnectionStore = defineStore('connection', () => {
     serverVersion,
     status,
     statusColor,
-    statusText,
   };
 });

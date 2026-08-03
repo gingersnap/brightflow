@@ -7,7 +7,7 @@
  */
 
 import { defineStore } from 'pinia';
-import { computed, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 
 import { insightRunsApi } from '@/services/api';
 import { useConnectionStore } from '@/stores/connection';
@@ -144,33 +144,15 @@ export const useInsightsActivityStore = defineStore('insightsActivity', () => {
     return count;
   }
 
-  const totalUnseen = computed(() => {
-    let count = 0;
-    for (const [key, run] of latestByTable.value) {
-      if (run.newFindingCount > 0 && run.computedAt > (seenAt.value[key] ?? 0)) {
-        count += run.newFindingCount;
-      }
-    }
-    return count;
-  });
-
   function markSeen(sourceId: string, table: string): void {
     seenAt.value[tableKey(sourceId, table)] = Math.floor(Date.now() / 1000);
     persistSeen();
   }
 
-  function latestFor(sourceId: string, table: string): InsightRunResponse | undefined {
-    return latestByTable.value.get(tableKey(sourceId, table));
-  }
-
   return {
     hydrate,
     initRealtime,
-    latestByTable,
-    latestFor,
     markSeen,
-    seenAt,
-    totalUnseen,
     unseenCount,
   };
 });

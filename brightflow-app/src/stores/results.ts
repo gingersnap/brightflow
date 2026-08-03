@@ -52,28 +52,15 @@ export const useResultsStore = defineStore('results', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  // Legacy computed (for backwards compatibility) - these return table data by default
+  // Table-data aliases, read by DataTable.vue
   const columns = computed(() => tableColumns.value);
   const rows = computed(() => tableRows.value);
-  const rowCount = computed(() => tableRowCount.value);
-  const totalRows = computed(() => tableTotalRows.value);
-  const executionTimeMs = computed(() => tableExecutionTimeMs.value);
 
   // Computed
   const hasTableResults = computed(() => tableRows.value.length > 0);
   const hasPivotResults = computed(() => pivotRows.value.length > 0);
   const hasResults = computed(() => hasTableResults.value || hasPivotResults.value);
-  const isEmpty = computed(() => !loading.value && error.value == null && !hasResults.value);
-  const isTruncated = computed(() => tableRowCount.value < tableTotalRows.value);
-
   const columnNames = computed(() => tableColumns.value.map((c) => c.name));
-
-  const columnTypes = computed(() =>
-    tableColumns.value.reduce<Record<string, string>>((acc, col) => {
-      acc[col.name] = col.dtype;
-      return acc;
-    }, {}),
-  );
 
   // Actions
   function setLoading(isLoading: boolean): void {
@@ -135,14 +122,6 @@ export const useResultsStore = defineStore('results', () => {
     error.value = null;
   }
 
-  function clearPivot(): void {
-    pivotColumns.value = [];
-    pivotRows.value = [];
-    pivotRowCount.value = 0;
-    pivotTotalRows.value = 0;
-    pivotExecutionTimeMs.value = null;
-  }
-
   // Export to CSV - supports both table and pivot data
   function exportCsv(type: ResultType = 'table'): void {
     const cols = type === 'pivot' ? pivotColumns.value : tableColumns.value;
@@ -180,30 +159,22 @@ export const useResultsStore = defineStore('results', () => {
     pivotRowCount,
     pivotTotalRows,
     pivotExecutionTimeMs,
-    // Legacy (backwards compat)
+    // Table-data aliases
     columns,
     rows,
-    rowCount,
-    totalRows,
-    executionTimeMs,
     // Shared
     loading,
     error,
     hasTableResults,
     hasPivotResults,
     hasResults,
-    isEmpty,
-    isTruncated,
     columnNames,
-    columnTypes,
     // Actions
     setLoading,
-    setResults,
     setTableResults,
     setPivotResults,
     setError,
     clear,
-    clearPivot,
     exportCsv,
   };
 });

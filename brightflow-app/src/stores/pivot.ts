@@ -8,9 +8,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import type { AggFn, PivotField, PivotOperation } from '@/types';
-
-type BucketName = 'rows' | 'columns' | 'values';
+import type { AggFn, PivotField } from '@/types';
 
 export const usePivotStore = defineStore('pivot', () => {
   // === Bucket State ===
@@ -25,7 +23,6 @@ export const usePivotStore = defineStore('pivot', () => {
 
   // === Settings ===
   const showSubtotals = ref(true);
-  const showRowTotals = ref(true);
   const showColumnTotals = ref(true);
   const showConditionalFormatting = ref(false);
   const decimalPlaces = ref(2); // Number of decimal places for numeric values
@@ -38,40 +35,6 @@ export const usePivotStore = defineStore('pivot', () => {
 
   // Check if pivot is configured (has at least values)
   const isConfigured = computed(() => valueFields.value.length > 0);
-
-  // Check if pivot has row grouping
-  const hasRowGroups = computed(() => rowFields.value.length > 0);
-
-  // Check if pivot has column breakdown
-  const hasColumnBreakdown = computed(() => columnFields.value.length > 0);
-
-  // Build operations for API
-  const pivotOperation = computed((): PivotOperation | null => {
-    if (!isConfigured.value) {
-      return null;
-    }
-
-    // For multi-value pivot, we need an enhanced format
-    const values = valueFields.value.map((v) => ({
-      agg: v.aggregation ?? 'count',
-      column: v.column,
-    }));
-
-    const firstValue = values[0];
-    if (!firstValue) {
-      return null;
-    }
-
-    return {
-      agg: values.length === 1 ? firstValue.agg : values.map((v) => v.agg),
-      columns: columnFields.value.length > 0 ? (columnFields.value[0]?.column ?? null) : null,
-      includeSubtotals: showSubtotals.value,
-      includeTotals: showRowTotals.value || showColumnTotals.value,
-      index: rowFields.value.map((f) => f.column),
-      type: 'pivot',
-      values: values.length === 1 ? firstValue.column : values,
-    };
-  });
 
   // === Actions ===
 
@@ -169,7 +132,6 @@ export const usePivotStore = defineStore('pivot', () => {
     columnFields.value = [];
     valueFields.value = [];
     showSubtotals.value = true;
-    showRowTotals.value = true;
     showColumnTotals.value = true;
     showConditionalFormatting.value = false;
     decimalPlaces.value = 2;
@@ -203,68 +165,18 @@ export const usePivotStore = defineStore('pivot', () => {
     collapsedGroups.value = new Set();
   }
 
-  // Move field between buckets
-  function moveField(fieldId: string, fromBucket: BucketName, toBucket: BucketName): void {
-    let field: PivotField | null = null;
-
-    // Find and remove from source bucket
-    if (fromBucket === 'rows') {
-      const idx = rowFields.value.findIndex((f) => f.id === fieldId);
-      if (idx !== -1) {
-        const removed = rowFields.value.splice(idx, 1)[0];
-        if (removed) {
-          field = removed;
-        }
-      }
-    } else if (fromBucket === 'columns') {
-      const idx = columnFields.value.findIndex((f) => f.id === fieldId);
-      if (idx !== -1) {
-        const removed = columnFields.value.splice(idx, 1)[0];
-        if (removed) {
-          field = removed;
-        }
-      }
-    } else if (fromBucket === 'values') {
-      const idx = valueFields.value.findIndex((f) => f.id === fieldId);
-      if (idx !== -1) {
-        const removed = valueFields.value.splice(idx, 1)[0];
-        if (removed) {
-          field = removed;
-        }
-      }
-    }
-
-    if (!field) {
-      return;
-    }
-
-    // Add to destination bucket
-    if (toBucket === 'rows') {
-      addRowField(field.column, field.dtype);
-    } else if (toBucket === 'columns') {
-      addColumnField(field.column, field.dtype);
-    } else if (toBucket === 'values') {
-      addValueField(field.column, field.dtype, field.aggregation);
-    }
-  }
-
   return {
     // State
     rowFields,
     columnFields,
     valueFields,
     showSubtotals,
-    showRowTotals,
     showColumnTotals,
     showConditionalFormatting,
     decimalPlaces,
-    collapsedGroups,
 
     // Computed
     isConfigured,
-    hasRowGroups,
-    hasColumnBreakdown,
-    pivotOperation,
 
     // Actions
     addRowField,
@@ -280,7 +192,6 @@ export const usePivotStore = defineStore('pivot', () => {
     isGroupCollapsed,
     expandAllGroups,
     collapseAllGroups,
-    moveField,
     flipRowsAndColumns,
     reset,
   };

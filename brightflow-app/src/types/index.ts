@@ -149,17 +149,6 @@ export interface PivotField {
   aggregation?: AggFn;
 }
 
-// Frontend-only pivot operation (extends wire format with UI-only fields)
-export interface PivotOperation {
-  type: 'pivot';
-  index: string[];
-  columns: string | null;
-  values: string | { column: string; agg: string }[];
-  agg: string | string[];
-  includeSubtotals?: boolean;
-  includeTotals?: boolean;
-}
-
 // Connection status (frontend-only)
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
 

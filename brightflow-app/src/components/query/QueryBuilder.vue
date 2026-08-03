@@ -37,7 +37,7 @@ const queryStore = useQueryStore();
 const datasetStore = useDatasetStore();
 const connectionStore = useConnectionStore();
 const uiStore = useUiStore();
-const { execute, canExecute } = useWsQuery();
+const { executePivot, canExecute } = useWsQuery();
 
 const summarizeOpen = computed({
   get: () => !uiStore.summarizeCollapsed,
@@ -134,7 +134,7 @@ watch(
     }
     debounceTimer = setTimeout(() => {
       if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
-        execute();
+        executePivot();
       }
     }, 300);
   },
