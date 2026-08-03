@@ -10,9 +10,8 @@ use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
 use super::types::{
-    AvailableConnectorResponse, ConnectorInfo, EnrichedSyncRun, PresetInfo, PresetScheduleRequest,
-    RunTriggerResponse, ScheduleRequest, ScheduleResponse, UnifiedConnector, UnifiedJob,
-    UnifiedSyncRun, UpdateTokenRequest,
+    AvailableConnectorResponse, EnrichedSyncRun, PresetInfo, RunTriggerResponse, ScheduleRequest,
+    ScheduleResponse, UnifiedConnector, UnifiedJob, UnifiedSyncRun, UpdateTokenRequest,
 };
 
 fn get_scheduler_db(
@@ -22,31 +21,6 @@ fn get_scheduler_db(
         .scheduler_db
         .as_ref()
         .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))
-}
-
-/// GET /api/connectors — list configured connectors from DB
-pub async fn list_connectors(State(state): State<AppState>) -> AppResult<Json<Vec<ConnectorInfo>>> {
-    let db = get_scheduler_db(&state)?;
-
-    let configs = db
-        .list_connector_configs()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let connectors = configs
-        .into_iter()
-        .map(|c| {
-            let valid =
-                brightflow_connect::get_builtin_connector_source(&c.connector_path).is_some();
-            ConnectorInfo {
-                connector: c.connector_path,
-                name: c.name,
-                valid,
-            }
-        })
-        .collect();
-
-    Ok(Json(connectors))
 }
 
 /// GET /api/connectors/available — discover all available connectors + their presets
@@ -342,79 +316,6 @@ pub async fn update_connector_token(
     }
 
     Ok(Json(serde_json::json!({ "ok": true })))
-}
-
-/// POST /api/presets/:id/run — trigger a run for a specific preset
-pub async fn run_preset(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> AppResult<Json<RunTriggerResponse>> {
-    let scheduler = state
-        .scheduler
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("Scheduler not configured".to_string()))?;
-
-    let db = get_scheduler_db(&state)?;
-    let config = db
-        .get_connector_config(&id)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound(format!("Preset not found: '{id}'")))?;
-
-    let run_id = scheduler
-        .trigger_connector_run(&config.id)
-        .await
-        .map_err(AppError::Internal)?;
-
-    Ok(Json(RunTriggerResponse {
-        run_id,
-        connector: config.connector_path,
-        status: "running".to_string(),
-    }))
-}
-
-/// POST /api/presets/:id/schedule — create or update a schedule for a preset
-pub async fn schedule_preset(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(body): Json<PresetScheduleRequest>,
-) -> AppResult<Json<ScheduleResponse>> {
-    let db = get_scheduler_db(&state)?;
-
-    let config = db
-        .get_connector_config(&id)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound(format!("Preset not found: '{id}'")))?;
-
-    // Find existing job or create one
-    let jobs = db
-        .list_scheduler_jobs()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    let existing = jobs.iter().find(|j| j.connector_id == config.id);
-
-    let job = if let Some(job) = existing {
-        db.update_scheduler_job(
-            &job.id,
-            Some(body.interval_secs),
-            Some(body.interval_secs > 0),
-        )
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
-        .ok_or_else(|| AppError::Internal("Failed to update job".to_string()))?
-    } else {
-        db.create_scheduler_job(&config.name, &config.id, body.interval_secs)
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?
-    };
-
-    Ok(Json(ScheduleResponse {
-        job_id: job.id,
-        connector_config_id: config.id,
-        interval_secs: job.interval_secs,
-        enabled: job.enabled,
-    }))
 }
 
 /// GET /api/connectors/runs — enriched run history with connector names

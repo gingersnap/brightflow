@@ -143,9 +143,6 @@ enum Commands {
         database_url: Option<String>,
     },
 
-    /// Start the scheduler daemon only (not yet implemented)
-    Schedule,
-
     /// Run statistical analysis on data
     #[command(subcommand)]
     Insights(InsightsCommands),
@@ -504,12 +501,6 @@ async fn main() -> Result<()> {
                 database_url.as_deref(),
             );
             brightflow_api::serve(config, Some(log_sender)).await?;
-        },
-
-        Commands::Schedule => {
-            init_tracing_simple("brightflow=info");
-            println!("Scheduler is now integrated into the API server.");
-            println!("Use `brightflow run-all` or `brightflow serve` to start with the scheduler enabled.");
         },
 
         Commands::Insights(insights_cmd) => match insights_cmd {

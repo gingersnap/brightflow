@@ -85,11 +85,6 @@ impl ParquetStore {
         self.db.list_tables_by_source(source_id).await
     }
 
-    /// Check if a table exists for the given source
-    pub async fn table_exists(&self, source_id: &str, name: &str) -> StoreResult<bool> {
-        table::table_exists(&self.db, source_id, name).await
-    }
-
     /// Get information about a table
     pub async fn table_info(&self, source_id: &str, name: &str) -> StoreResult<TableInfo> {
         table::get_table_info(&self.db, source_id, name, &self.root_path).await

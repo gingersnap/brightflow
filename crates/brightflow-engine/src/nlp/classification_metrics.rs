@@ -113,23 +113,7 @@ pub fn micro_f1(predicted: &[Vec<usize>], truth: &[Vec<usize>], n_labels: usize)
 }
 
 /// Macro-averaged precision.
-pub fn macro_precision(predicted: &[Vec<usize>], truth: &[Vec<usize>], n_labels: usize) -> f64 {
-    if n_labels == 0 {
-        return 0.0;
-    }
-    let counts = per_label_counts(predicted, truth, n_labels);
-    counts.iter().map(|c| c.precision()).sum::<f64>() / n_labels as f64
-}
-
 /// Macro-averaged recall.
-pub fn macro_recall(predicted: &[Vec<usize>], truth: &[Vec<usize>], n_labels: usize) -> f64 {
-    if n_labels == 0 {
-        return 0.0;
-    }
-    let counts = per_label_counts(predicted, truth, n_labels);
-    counts.iter().map(|c| c.recall()).sum::<f64>() / n_labels as f64
-}
-
 /// Binary F1 for one label index — the objective the threshold sweep maximises.
 pub fn binary_f1(scores: &[f32], positives: &[bool], threshold: f32) -> f64 {
     let mut counts = Counts::default();

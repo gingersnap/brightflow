@@ -92,12 +92,6 @@ impl DeltaDecomposition {
     }
 }
 
-/// Welch significance of one slice's current vs previous period values —
-/// exposed for report roots that test the whole-table total the same way.
-pub fn two_period_significance(slice: &DriverSlice) -> Significance {
-    welch_from_moments(slice)
-}
-
 fn welch_from_moments(slice: &DriverSlice) -> Significance {
     if slice.prev_n < 2 || slice.curr_n < 2 {
         return Significance::none();

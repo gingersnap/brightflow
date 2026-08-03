@@ -143,16 +143,6 @@ impl IngestDb {
         Ok(confirmed_salt)
     }
 
-    /// Clean up old salts (keep last N days).
-    pub async fn cleanup_old_salts(&self, keep_days: i64) -> IngestResult<u64> {
-        let result = sqlx::query("DELETE FROM salts WHERE date < date('now', ?)")
-            .bind(format!("-{keep_days} days"))
-            .execute(&self.pool)
-            .await?;
-
-        Ok(result.rows_affected())
-    }
-
     // ── User Profiles ────────────────────────────────────────────
 
     /// Upsert a user profile, merging new traits with existing ones.

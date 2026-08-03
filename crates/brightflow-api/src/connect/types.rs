@@ -7,26 +7,6 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// Info about a configured connector
-#[derive(Debug, Clone, Serialize, TS)]
-#[ts(export)]
-pub struct ConnectorInfo {
-    /// Connector name (e.g., "github")
-    pub name: String,
-    /// Connector type / path (same as name for built-ins)
-    pub connector: String,
-    /// Whether a matching built-in connector exists
-    pub valid: bool,
-}
-
-/// Optional request body for POST /connectors/:name/run
-#[derive(Debug, Deserialize, TS)]
-#[ts(export)]
-pub struct RunRequest {
-    /// Only sync specific endpoints (comma-separated)
-    pub only: Option<String>,
-}
-
 /// Request body for POST /connectors/:name/schedule
 #[derive(Debug, Deserialize, TS)]
 #[ts(export)]
@@ -120,14 +100,6 @@ pub struct PresetInfo {
     pub id: String,
     pub name: String,
     pub has_token: bool,
-}
-
-/// Request body for POST /presets/:id/schedule
-#[derive(Debug, Deserialize, TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct PresetScheduleRequest {
-    pub interval_secs: i64,
 }
 
 /// Enriched sync run with connector name resolved

@@ -553,14 +553,6 @@ impl StoreDb {
         Ok(row)
     }
 
-    pub async fn delete_table_settings(&self, table_id: &str) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM table_analysis_settings WHERE table_id = ?")
-            .bind(table_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
     // =====================================================
     // Table Enrichment Settings CRUD
     // =====================================================
@@ -576,17 +568,6 @@ impl StoreDb {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)
-    }
-
-    pub async fn get_all_enrichment_settings(
-        &self,
-    ) -> StoreResult<Vec<TableEnrichmentSettingsRow>> {
-        let rows = sqlx::query_as::<_, TableEnrichmentSettingsRow>(
-            "SELECT * FROM table_enrichment_settings",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -624,14 +605,6 @@ impl StoreDb {
         .fetch_one(&self.pool)
         .await?;
         Ok(row)
-    }
-
-    pub async fn delete_enrichment_settings(&self, table_id: &str) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM table_enrichment_settings WHERE table_id = ?")
-            .bind(table_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected() > 0)
     }
 
     // =====================================================
@@ -1765,21 +1738,6 @@ impl StoreDb {
             "SELECT * FROM enrichment_functions WHERE id = ?",
         )
         .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row)
-    }
-
-    pub async fn get_enrichment_function_by_name(
-        &self,
-        table_id: &str,
-        name: &str,
-    ) -> StoreResult<Option<EnrichmentFunctionRow>> {
-        let row = sqlx::query_as::<_, EnrichmentFunctionRow>(
-            "SELECT * FROM enrichment_functions WHERE table_id = ? AND name = ?",
-        )
-        .bind(table_id)
-        .bind(name)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row)

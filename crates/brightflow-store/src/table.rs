@@ -64,11 +64,6 @@ pub struct TableInfo {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-/// Check if a table exists in the database for the given source
-pub async fn table_exists(db: &StoreDb, source_id: &str, name: &str) -> StoreResult<bool> {
-    Ok(db.get_table(source_id, name).await?.is_some())
-}
-
 /// List all tables from the database
 pub async fn list_tables(db: &StoreDb, root: &Path) -> StoreResult<Vec<TableRef>> {
     let rows = db.list_tables().await?;

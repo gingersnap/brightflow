@@ -166,12 +166,7 @@ export const connectApi = {
   ): Promise<ConnectorConfigResponse | null> =>
     api.put<ConnectorConfigResponse>(`/api/connector-configs/${id}`, data),
   deleteConfig: (id: string): Promise<unknown> => api.delete(`/api/connector-configs/${id}`),
-  runPreset: (id: string): Promise<RunTriggerResponse | null> =>
-    api.post<RunTriggerResponse>(`/api/presets/${id}/run`),
-  schedulePreset: (id: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
-    api.post<ScheduleResponse>(`/api/presets/${id}/schedule`, { intervalSecs }),
-
-  // Legacy connector-name-based endpoints (still used)
+  // Connector-name-based run/schedule — the live path
   runConnector: (name: string): Promise<RunTriggerResponse | null> =>
     api.post<RunTriggerResponse>(`/api/connectors/${encodeURIComponent(name)}/run`),
   scheduleConnector: (name: string, intervalSecs: number): Promise<ScheduleResponse | null> =>
@@ -180,10 +175,7 @@ export const connectApi = {
     }),
   updateToken: (name: string, token: string): Promise<unknown> =>
     api.put(`/api/connectors/${encodeURIComponent(name)}/token`, { token }),
-  deleteJob: (id: string): Promise<unknown> => api.delete(`/api/scheduler/jobs/${id}`),
   deleteSchedule: (id: string): Promise<unknown> => api.delete(`/api/schedules/${id}`),
-  updateJob: (id: string, data: { intervalSecs?: number; enabled?: boolean }): Promise<unknown> =>
-    api.put(`/api/scheduler/jobs/${id}`, data),
 };
 
 // Re-export generated insights types

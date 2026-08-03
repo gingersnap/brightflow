@@ -235,21 +235,6 @@ impl SchedulerDb {
     // Sync State
     // =====================================================
 
-    pub async fn get_sync_state(
-        &self,
-        connector_id: &str,
-        endpoint: &str,
-    ) -> SchedulerResult<Option<SyncState>> {
-        let row = sqlx::query_as::<_, SyncState>(
-            "SELECT * FROM sync_state WHERE connector_id = ? AND endpoint = ?",
-        )
-        .bind(connector_id)
-        .bind(endpoint)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row)
-    }
-
     pub async fn list_sync_states(&self, connector_id: &str) -> SchedulerResult<Vec<SyncState>> {
         let rows = sqlx::query_as::<_, SyncState>(
             "SELECT * FROM sync_state WHERE connector_id = ? ORDER BY endpoint",

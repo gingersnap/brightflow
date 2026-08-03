@@ -46,34 +46,4 @@ impl ColumnCache {
 
         Ok(Self { numeric, dimension })
     }
-
-    /// Check if a dimension has meaningful data in a specific period
-    /// Returns (rows_in_period, unique_values_in_period)
-    pub fn dimension_coverage_in_period(
-        &self,
-        segment_col: &str,
-        period: &str,
-        period_labels: &[Option<String>],
-    ) -> (usize, usize) {
-        let Some(segment_values) = self.dimension.get(segment_col) else {
-            return (0, 0);
-        };
-
-        let mut values_in_period: std::collections::HashSet<&str> =
-            std::collections::HashSet::new();
-        let mut count = 0;
-
-        for (seg_val, period_label) in segment_values.iter().zip(period_labels.iter()) {
-            if let Some(p) = period_label {
-                if p == period {
-                    count += 1;
-                    if !seg_val.is_empty() {
-                        values_in_period.insert(seg_val);
-                    }
-                }
-            }
-        }
-
-        (count, values_in_period.len())
-    }
 }

@@ -215,7 +215,6 @@ fn api_routes() -> Router<AppState> {
         // WebSocket
         .route("/ws", get(handlers::ws_handler))
         // Connectors (DB-backed config + schedule + run)
-        .route("/connectors", get(connect_handlers::list_connectors))
         .route(
             "/connectors/available",
             get(connect_handlers::list_available_connectors),
@@ -244,15 +243,6 @@ fn api_routes() -> Router<AppState> {
             "/connectors/{name}/token",
             put(connect_handlers::update_connector_token),
         )
-        // Preset-based endpoints
-        .route(
-            "/presets/{id}/run",
-            post(connect_handlers::run_preset),
-        )
-        .route(
-            "/presets/{id}/schedule",
-            post(connect_handlers::schedule_preset),
-        )
         .route(
             "/schedules/{id}",
             delete(connect_handlers::delete_schedule),
@@ -269,27 +259,10 @@ fn api_routes() -> Router<AppState> {
                 .put(scheduler_handlers::update_connector_config)
                 .delete(scheduler_handlers::delete_connector_config),
         )
-        // Scheduler Job CRUD
-        .route(
-            "/scheduler/jobs",
-            get(scheduler_handlers::list_jobs).post(scheduler_handlers::create_job),
-        )
+        // Scheduler job mutation
         .route(
             "/scheduler/jobs/{id}",
-            get(scheduler_handlers::get_job)
-                .put(scheduler_handlers::update_job)
-                .delete(scheduler_handlers::delete_job),
-        )
-        .route(
-            "/scheduler/jobs/{id}/run",
-            post(scheduler_handlers::trigger_run),
-        )
-        // Sync Runs & State
-        .route("/sync/runs", get(scheduler_handlers::list_sync_runs))
-        .route("/sync/runs/{id}", get(scheduler_handlers::get_sync_run))
-        .route(
-            "/sync/state/{connector_id}",
-            get(scheduler_handlers::get_sync_state),
+            put(scheduler_handlers::update_job).delete(scheduler_handlers::delete_job),
         )
         // System observability
         .route("/system/ws", get(system_handlers::system_ws_handler))

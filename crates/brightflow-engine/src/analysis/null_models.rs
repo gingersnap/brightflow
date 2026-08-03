@@ -15,7 +15,7 @@
 //! not a measured guarantee. Lifting this needs a labelled corpus of real tables
 //! to calibrate against.
 
-use statrs::distribution::{ContinuousCDF, Normal, StudentsT};
+use statrs::distribution::{ContinuousCDF, Normal};
 
 use crate::stats::significance::{
     linear_regression, mean, p_value_for_correlation, p_value_welch_t_test, std_dev,
@@ -181,15 +181,6 @@ pub fn rank_change_null(rank_delta: usize, n_siblings: usize, n_periods: usize) 
     Significance::new(p, 1.0 - p, n_periods)
 }
 
-/// Correlation null: r = 0 (t-distributed).
-pub fn correlation_null(r: f64, n: usize) -> Significance {
-    if n < 4 {
-        return Significance::none();
-    }
-    let p = p_value_for_correlation(r, n);
-    Significance::new(p, r.abs() * (1.0 - p), n)
-}
-
 /// Two-sample comparison null (current vs previous period).
 pub fn comparison_null(
     curr_mean: f64,
@@ -215,12 +206,6 @@ fn one_tailed_upper_p(z: f64) -> f64 {
         Ok(normal) => (1.0 - normal.cdf(z)).clamp(0.0, 1.0),
         Err(_) => 1.0,
     }
-}
-
-/// Critical t helper exposed for tests.
-#[allow(dead_code)]
-fn t_cdf(t: f64, df: f64) -> f64 {
-    StudentsT::new(0.0, 1.0, df).map_or(0.5, |d| d.cdf(t))
 }
 
 #[cfg(test)]
