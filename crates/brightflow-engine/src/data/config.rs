@@ -22,6 +22,21 @@ pub enum ColumnRole {
     Ignored,
 }
 
+impl ColumnRole {
+    /// Parse the stored/wire string form ("measure", "dimension", ...).
+    /// Strict — legacy aliases are only accepted by the serde deserializer.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "measure" => Some(Self::Measure),
+            "dimension" => Some(Self::Dimension),
+            "time" => Some(Self::Time),
+            "entity" => Some(Self::Entity),
+            "ignored" => Some(Self::Ignored),
+            _ => None,
+        }
+    }
+}
+
 /// Custom deserializer that accepts legacy "kpi"/"metric" as aliases for "measure"
 impl<'de> Deserialize<'de> for ColumnRole {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -85,4 +100,21 @@ pub enum TimeGranularity {
     Month,
     Quarter,
     Year,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn column_role_parse_round_trips_the_wire_names() {
+        assert_eq!(ColumnRole::parse("measure"), Some(ColumnRole::Measure));
+        assert_eq!(ColumnRole::parse("dimension"), Some(ColumnRole::Dimension));
+        assert_eq!(ColumnRole::parse("time"), Some(ColumnRole::Time));
+        assert_eq!(ColumnRole::parse("entity"), Some(ColumnRole::Entity));
+        assert_eq!(ColumnRole::parse("ignored"), Some(ColumnRole::Ignored));
+        // Legacy aliases are serde-only, not part of the stored format.
+        assert_eq!(ColumnRole::parse("kpi"), None);
+        assert_eq!(ColumnRole::parse(""), None);
+    }
 }

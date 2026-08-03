@@ -117,7 +117,7 @@ pub async fn bulk_upsert_semantics(
         .columns
         .iter()
         .filter_map(|c| {
-            let role = parse_role(&c.role)?;
+            let role = ColumnRole::parse(&c.role)?;
             Some(ColumnOverride {
                 column_name: c.column_name.clone(),
                 role,
@@ -177,7 +177,7 @@ pub async fn upsert_column_semantic(
     // Invalidate cache and update in-memory overrides
     let key = cache_key(&source_id, &name);
     state.invalidate_schema_cache(&key);
-    if let Some(role) = parse_role(&req.role) {
+    if let Some(role) = ColumnRole::parse(&req.role) {
         let mut overrides = state
             .schema_overrides
             .get(&key)
@@ -320,17 +320,6 @@ pub async fn upsert_table_settings(
             comparison_periods: row.comparison_periods,
         },
     }))
-}
-
-fn parse_role(s: &str) -> Option<ColumnRole> {
-    match s {
-        "measure" => Some(ColumnRole::Measure),
-        "dimension" => Some(ColumnRole::Dimension),
-        "time" => Some(ColumnRole::Time),
-        "entity" => Some(ColumnRole::Entity),
-        "ignored" => Some(ColumnRole::Ignored),
-        _ => None,
-    }
 }
 
 fn parse_granularity(s: &str) -> Option<TimeGranularity> {

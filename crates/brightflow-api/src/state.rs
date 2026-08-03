@@ -351,16 +351,13 @@ pub(crate) fn cache_key(source_id: &str, table_name: &str) -> String {
 
 /// Convert a `ColumnSemanticRow` to a `ColumnOverride`.
 fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
-    let role = match row.role.as_str() {
-        "measure" => ColumnRole::Measure,
-        "dimension" => ColumnRole::Dimension,
-        "time" => ColumnRole::Time,
-        "entity" => ColumnRole::Entity,
-        "ignored" => ColumnRole::Ignored,
-        other => {
-            tracing::warn!("Unknown column role '{}' for '{}'", other, row.column_name);
-            return None;
-        },
+    let Some(role) = ColumnRole::parse(&row.role) else {
+        tracing::warn!(
+            "Unknown column role '{}' for '{}'",
+            row.role,
+            row.column_name
+        );
+        return None;
     };
     let polarity = Polarity::parse(&row.polarity).unwrap_or_else(|| {
         tracing::warn!(

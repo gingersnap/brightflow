@@ -1287,7 +1287,7 @@ async fn upsert_semantic_preserving(
     // column and drop the cached schema.
     let key = cache_key(source_id, table);
     state.invalidate_schema_cache(&key);
-    if let Some(role) = parse_role_str(&next.role) {
+    if let Some(role) = brightflow_engine::data::config::ColumnRole::parse(&next.role) {
         let mut overrides = state
             .schema_overrides
             .get(&key)
@@ -1306,18 +1306,6 @@ async fn upsert_semantic_preserving(
         state.schema_overrides.insert(key, overrides);
     }
     Ok(previous)
-}
-
-fn parse_role_str(s: &str) -> Option<brightflow_engine::data::config::ColumnRole> {
-    use brightflow_engine::data::config::ColumnRole;
-    match s {
-        "measure" => Some(ColumnRole::Measure),
-        "dimension" => Some(ColumnRole::Dimension),
-        "time" => Some(ColumnRole::Time),
-        "entity" => Some(ColumnRole::Entity),
-        "ignored" => Some(ColumnRole::Ignored),
-        _ => None,
-    }
 }
 
 /// Previous insight_state (state, reason, annotation) for undo capture.
