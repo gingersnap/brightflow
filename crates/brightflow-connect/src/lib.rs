@@ -7,10 +7,27 @@
 
 pub use longbow;
 
-use brightflow_core::{BrightflowError, Result};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
+
+/// Error from loading or running a connector.
+///
+/// Always a fully rendered message: every failure here is terminal for the
+/// run and callers only display it, so a structured hierarchy would carry
+/// no information anyone reads programmatically.
+#[derive(Debug)]
+pub struct ConnectError(pub String);
+
+impl std::fmt::Display for ConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ConnectError {}
+
+pub type Result<T> = std::result::Result<T, ConnectError>;
 
 /// A connector discovered from builtins or the filesystem.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -186,18 +203,18 @@ pub async fn run_connector(
 ) -> Result<ConnectorResult> {
     let config_str = config_path
         .to_str()
-        .ok_or_else(|| BrightflowError::Other("Invalid config path".to_string()))?;
+        .ok_or_else(|| ConnectError("Invalid config path".to_string()))?;
     let config = longbow::config::load_config(config_str)
-        .map_err(|e| BrightflowError::Other(format!("Failed to load config: {e}")))?;
+        .map_err(|e| ConnectError(format!("Failed to load config: {e}")))?;
 
     let lua = longbow::runtime::create_lua_runtime()
-        .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
+        .map_err(|e| ConnectError(format!("Failed to create Lua runtime: {e}")))?;
 
     let connector_str = connector_path
         .to_str()
-        .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
+        .ok_or_else(|| ConnectError("Invalid connector path".to_string()))?;
     let mut pipeline = longbow::pipeline::load_connector(&lua, connector_str, config)
-        .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
+        .map_err(|e| ConnectError(format!("Failed to load connector: {e}")))?;
 
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
@@ -214,7 +231,7 @@ pub async fn run_connector(
     let http = longbow::http::HttpClient::new();
     let run_result = longbow::pipeline::execute(&pipeline, &lua, &http)
         .await
-        .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
+        .map_err(|e| ConnectError(format!("Pipeline execution failed: {e}")))?;
 
     Ok(map_run_result(run_result, output_path, false))
 }
@@ -254,26 +271,26 @@ async fn run_connector_impl(
     if !options.cursor_values.is_empty() {
         if let Some(obj) = config.as_object_mut() {
             let cursors = serde_json::to_value(&options.cursor_values)
-                .map_err(|e| BrightflowError::Other(e.to_string()))?;
+                .map_err(|e| ConnectError(e.to_string()))?;
             obj.insert("_cursors".to_string(), cursors);
         }
     }
 
     let lua = longbow::runtime::create_lua_runtime()
-        .map_err(|e| BrightflowError::Other(format!("Failed to create Lua runtime: {e}")))?;
+        .map_err(|e| ConnectError(format!("Failed to create Lua runtime: {e}")))?;
 
     let mut pipeline = match source {
         ConnectorSource::Path(path) => {
             let connector_str = path
                 .to_str()
-                .ok_or_else(|| BrightflowError::Other("Invalid connector path".to_string()))?;
+                .ok_or_else(|| ConnectError("Invalid connector path".to_string()))?;
             longbow::pipeline::load_connector(&lua, connector_str, config)
         },
         ConnectorSource::Source(lua_src) => {
             longbow::pipeline::load_connector_from_source(&lua, lua_src, config)
         },
     }
-    .map_err(|e| BrightflowError::Other(format!("Failed to load connector: {e}")))?;
+    .map_err(|e| ConnectError(format!("Failed to load connector: {e}")))?;
 
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
@@ -290,7 +307,7 @@ async fn run_connector_impl(
     let http = longbow::http::HttpClient::new();
     let run_result = longbow::pipeline::execute(&pipeline, &lua, &http)
         .await
-        .map_err(|e| BrightflowError::Other(format!("Pipeline execution failed: {e}")))?;
+        .map_err(|e| ConnectError(format!("Pipeline execution failed: {e}")))?;
 
     Ok(map_run_result(run_result, output_path, false))
 }

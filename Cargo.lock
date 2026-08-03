@@ -715,7 +715,6 @@ dependencies = [
 name = "brightflow-connect"
 version = "0.1.0"
 dependencies = [
- "brightflow-core",
  "longbow",
  "serde",
  "serde_json",
@@ -725,10 +724,6 @@ dependencies = [
 [[package]]
 name = "brightflow-core"
 version = "0.1.0"
-dependencies = [
- "serde_json",
- "thiserror 2.0.19",
-]
 
 [[package]]
 name = "brightflow-engine"

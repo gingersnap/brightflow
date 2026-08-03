@@ -1,8 +1,7 @@
-//! Types shared by every Brightflow crate: the base error and workspace paths.
+//! Workspace paths shared by every Brightflow crate.
 //!
-//! Kept tiny and dependency-light (`serde_json` and `thiserror`, nothing else)
-//! because nearly every crate depends on it — anything added here lands in
-//! nearly every compile.
+//! Kept tiny and dependency-free because nearly every crate depends on it —
+//! anything added here lands in nearly every compile.
 //!
 //! `WorkspacePaths` is the single source of truth for where *data* lives: every
 //! location derives from one base and one workspace name, which is what makes a
@@ -14,29 +13,6 @@
 //! with the crate that owns the asset.
 
 use std::path::{Path, PathBuf};
-
-use thiserror::Error;
-
-/// Core error type for Brightflow
-#[derive(Debug, Error)]
-pub enum BrightflowError {
-    #[error("Dataset not found: {0}")]
-    DatasetNotFound(String),
-
-    #[error("Storage error: {0}")]
-    Storage(String),
-
-    #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("{0}")]
-    Other(String),
-}
-
-pub type Result<T> = std::result::Result<T, BrightflowError>;
 
 /// Resolved workspace paths — single source of truth for all data locations.
 ///

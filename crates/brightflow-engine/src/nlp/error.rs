@@ -3,17 +3,9 @@
 /// Errors that can occur in NLP operations
 #[derive(Debug, thiserror::Error)]
 pub enum SubtextError {
-    /// Model has not been fitted yet
-    #[error("vocabulary not fitted")]
-    NotFitted,
-
     /// Input was empty where non-empty input is required
     #[error("empty input: {context}")]
     EmptyInput { context: String },
-
-    /// A parameter value is invalid
-    #[error("invalid parameter: {0}")]
-    InvalidParameter(String),
 
     /// Indices and values length mismatch in sparse vector construction
     #[error("length mismatch: {indices_len} indices vs {values_len} values")]

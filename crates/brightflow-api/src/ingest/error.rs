@@ -26,9 +26,6 @@ pub enum IngestError {
     #[error("Join error: {0}")]
     Join(#[from] tokio::task::JoinError),
 
-    #[error("Unknown source domain: {0}")]
-    UnknownDomain(String),
-
     #[error("{0}")]
     Other(String),
 }

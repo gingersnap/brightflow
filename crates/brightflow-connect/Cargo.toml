@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-brightflow-core = { path = "../brightflow-core" }
 longbow = { path = "../../../longbow" }
 tokio = { workspace = true }
 serde = { workspace = true }
