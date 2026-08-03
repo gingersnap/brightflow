@@ -19,10 +19,10 @@ import {
 } from '@/components/command/paletteActions';
 import TextPromptModal from '@/components/command/TextPromptModal.vue';
 import { patchFromAction, useInsightActions } from '@/composables/useInsightActions';
+import { useSources } from '@/composables/useSources';
 import { actionsApi, taxonomyApi, topicsApi } from '@/services/api';
 import { useDatasetStore } from '@/stores/dataset';
 import { useInsightsStore } from '@/stores/insights';
-import { useSourceStore } from '@/stores/source';
 import { toolsForSource } from '@/types';
 import type { Action } from '@/types/generated';
 
@@ -47,7 +47,7 @@ export function useCommandPalette(
 ): { groups: Ref<PaletteGroup[]> } {
   const route = useRoute();
   const router = useRouter();
-  const sourceStore = useSourceStore();
+  const { sources } = useSources();
   const insightsStore = useInsightsStore();
   const datasetStore = useDatasetStore();
   const insightActions = useInsightActions();
@@ -157,7 +157,7 @@ export function useCommandPalette(
       void router.push({ name });
     };
     const items: PaletteItem[] = [];
-    for (const source of sourceStore.sourcesData) {
+    for (const source of sources.value) {
       for (const tool of toolsForSource(source)) {
         items.push({
           label: tool.label,

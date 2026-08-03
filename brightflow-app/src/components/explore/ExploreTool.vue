@@ -6,10 +6,12 @@ import FilterBar from '@/components/query/FilterBar.vue';
 import QueryBuilder from '@/components/query/QueryBuilder.vue';
 import ResultsPanel from '@/components/results/ResultsPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
-import { tableApi } from '@/services/api';
+import { datasetApi, tableApi } from '@/services/api';
 import { resetAllStores } from '@/stores';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
+import { useQueryStore } from '@/stores/query';
+import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { SourceTable } from '@/types';
 
@@ -21,6 +23,8 @@ const props = defineProps<{
 const router = useRouter();
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
+const queryStore = useQueryStore();
+const resultsStore = useResultsStore();
 const uiStore = useUiStore();
 
 const loadingTable = ref(false);
@@ -33,9 +37,30 @@ async function loadTable(name: string): Promise<void> {
     if (result) {
       datasetStore.setFromLoadResponse(result);
       connectionStore.connect();
+      await loadInitialRows();
     }
   } finally {
     loadingTable.value = false;
+  }
+}
+
+// Seed the results table via REST (the WS path takes over on the next query).
+async function loadInitialRows(): Promise<void> {
+  if (datasetStore.columns.length === 0) {
+    return;
+  }
+  resultsStore.setLoading(true);
+  try {
+    const ops: { type: string; n?: number }[] = [];
+    if (queryStore.limit > 0) {
+      ops.push({ n: queryStore.limit, type: 'limit' });
+    }
+    const result = await datasetApi.query(datasetStore.id, ops);
+    if (result) {
+      resultsStore.setTableResults(result);
+    }
+  } catch {
+    resultsStore.setError('Failed to load data');
   }
 }
 

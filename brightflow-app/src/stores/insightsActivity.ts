@@ -8,9 +8,8 @@
 
 import { useLocalStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 
-import { insightRunsApi } from '@/services/api';
 import { useConnectionStore } from '@/stores/connection';
 import type { InsightRunResponse, InsightsComputedPayload } from '@/types/generated';
 
@@ -69,7 +68,6 @@ export const useInsightsActivityStore = defineStore('insightsActivity', () => {
   );
 
   let realtimeInitialized = false;
-  const hydratedSources = new Set<string>();
 
   function upsertRun(run: InsightRunResponse): void {
     const key = tableKey(run.sourceId, run.table);
@@ -104,26 +102,15 @@ export const useInsightsActivityStore = defineStore('insightsActivity', () => {
         triggeredBy: payload.triggeredBy,
       });
     });
-
-    // Reconnect: refetch the latest runs for every source we've hydrated —
-    // Frames pushed while the socket was down are gone for good.
-    watch(
-      () => connection.isConnected,
-      (up) => {
-        if (up) {
-          for (const sourceId of hydratedSources) {
-            void hydrate(sourceId);
-          }
-        }
-      },
-    );
   }
 
-  /** REST hydration for one source (on view mount and reconnect). */
-  async function hydrate(sourceId: string): Promise<void> {
-    hydratedSources.add(sourceId);
-    const runs = await insightRunsApi.latest(sourceId);
-    for (const run of runs ?? []) {
+  /**
+   * Merge REST-fetched runs into the push-fed state. The fetch itself lives
+   * in `useInsightsActivityFeed` (colada); this store only reconciles, so a
+   * stale fetch can never clobber a newer push.
+   */
+  function ingestRuns(runs: InsightRunResponse[]): void {
+    for (const run of runs) {
       upsertRun(run);
     }
   }
@@ -145,7 +132,7 @@ export const useInsightsActivityStore = defineStore('insightsActivity', () => {
   }
 
   return {
-    hydrate,
+    ingestRuns,
     initRealtime,
     markSeen,
     unseenCount,

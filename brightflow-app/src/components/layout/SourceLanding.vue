@@ -1,25 +1,14 @@
 <script setup lang="ts">
 import { Plus } from '@lucide/vue';
-import { useQuery } from '@pinia/colada';
 import { useRouter } from 'vue-router';
 
 import SourceCard from '@/components/layout/SourceCard.vue';
-import { sourceApi } from '@/services/api';
-import { useSourceStore } from '@/stores/source';
+import { useSources } from '@/composables/useSources';
 import type { UnifiedSource } from '@/types';
 
 const router = useRouter();
-const sourceStore = useSourceStore();
 
-const { data: sources, isPending } = useQuery({
-  key: ['unified-sources'],
-  query: async () => {
-    const result = await sourceApi.unifiedList();
-    const data = result ?? ([] as UnifiedSource[]);
-    sourceStore.setSourcesData(data);
-    return data;
-  },
-});
+const { sources, isPending } = useSources();
 
 function handleSelect(id: string): void {
   router.push({ name: 'source-tool', params: { sourceId: id, tool: 'settings' } });

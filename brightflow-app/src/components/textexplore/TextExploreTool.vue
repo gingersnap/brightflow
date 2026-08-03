@@ -3,8 +3,8 @@ import { computed, toRef } from 'vue';
 import { useRouter } from 'vue-router';
 
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
+import { useSources } from '@/composables/useSources';
 import { useTextExplore } from '@/composables/useTextExplore';
-import { useSourceStore } from '@/stores/source';
 import type { SourceTable } from '@/types';
 
 import ResultsList from './ResultsList.vue';
@@ -17,10 +17,10 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const sourceStore = useSourceStore();
+const { sourceById } = useSources();
 
 const enrichableTables = computed(
-  () => sourceStore.getSourceById(props.sourceId)?.tables.filter((t) => t.enrichable) ?? [],
+  () => sourceById(props.sourceId)?.tables.filter((t) => t.enrichable) ?? [],
 );
 const activeTable = computed(() => props.table);
 

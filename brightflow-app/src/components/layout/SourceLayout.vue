@@ -16,6 +16,7 @@ import TextExploreTool from '@/components/textexplore/TextExploreTool.vue';
 import ConnectorDashboard from '@/components/tools/ConnectorDashboard.vue';
 import WebDashboard from '@/components/tools/WebDashboard.vue';
 import TopicsView from '@/components/topics/TopicsView.vue';
+import { useSources } from '@/composables/useSources';
 import { productAnalyticsApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
 import { TOOL_DEFS, type ToolId } from '@/types';
@@ -26,9 +27,10 @@ const props = defineProps<{
   table?: string;
 }>();
 
+const { sourceById } = useSources();
 const sourceStore = useSourceStore();
 
-const source = computed(() => sourceStore.getSourceById(props.sourceId));
+const source = computed(() => sourceById(props.sourceId));
 const activeTool = computed(() => (props.tool || 'dashboard') as ToolId);
 
 const toolLabel = computed(() => {

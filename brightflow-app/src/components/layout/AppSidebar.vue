@@ -1,42 +1,28 @@
 <script setup lang="ts">
-import { useQuery } from '@pinia/colada';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAuth } from '@/composables/useAuth';
-import { sourceApi } from '@/services/api';
+import { useInsightsActivityFeed } from '@/composables/useInsightsActivityFeed';
+import { useSources } from '@/composables/useSources';
 import { useInsightsActivityStore } from '@/stores/insightsActivity';
-import { useSourceStore } from '@/stores/source';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
 
 const router = useRouter();
 const route = useRoute();
-const sourceStore = useSourceStore();
 const auth = useAuth();
 const insightsActivity = useInsightsActivityStore();
+const { sources } = useSources();
 
 insightsActivity.initRealtime();
+// Badge hydration: latest insight run per table for every source.
+useInsightsActivityFeed(() => sources.value);
 
 const open = ref(false);
 
 const emit = defineEmits<{
   logout: [];
 }>();
-
-// Fetch sources so sidebar always has them
-useQuery({
-  key: ['unified-sources'],
-  query: async () => {
-    const result = await sourceApi.unifiedList();
-    const data = result ?? ([] as UnifiedSource[]);
-    sourceStore.setSourcesData(data);
-    // Badge hydration: latest insight run per table for every source.
-    for (const source of data) {
-      void insightsActivity.hydrate(source.id);
-    }
-    return data;
-  },
-});
 
 function sourceIcon(kind: UnifiedSource['kind']): string {
   if (kind === 'web-analytics') {
@@ -50,7 +36,7 @@ const navItems = computed(() => {
   const currentSourceId = route.params.sourceId as string | undefined;
   const currentTool = route.params.tool as string | undefined;
 
-  const sourceItems = sourceStore.sourcesData.map((source) => {
+  const sourceItems = sources.value.map((source) => {
     const tools = toolsForSource(source);
     return {
       label: source.name,

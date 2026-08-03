@@ -3,7 +3,7 @@ import { Table2 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
-import { useSourceStore } from '@/stores/source';
+import { useSources } from '@/composables/useSources';
 import type { SourceTable } from '@/types';
 
 const props = defineProps<{
@@ -18,10 +18,10 @@ const emit = defineEmits<{
   'auto-select-table': [table: SourceTable];
 }>();
 
-const sourceStore = useSourceStore();
+const { sourceById } = useSources();
 
 const sourceTables = computed(() => {
-  const src = sourceStore.getSourceById(props.sourceId);
+  const src = sourceById(props.sourceId);
   const tables = src?.tables ?? [];
   return props.enrichableOnly ? tables.filter((t) => t.enrichable) : tables;
 });
