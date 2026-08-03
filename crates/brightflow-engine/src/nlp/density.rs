@@ -108,7 +108,7 @@ pub fn hdbscan_dense(vectors: &[Vec<f32>], min_cluster_size: usize) -> DenseClus
         if let Some(c) = a {
             if let (Some(bucket), Some(centroid)) = (sims_by_cluster.get_mut(*c), centroids.get(*c))
             {
-                bucket.push(dot(v, centroid));
+                bucket.push(crate::nlp::similarity::dot_dense(v, centroid));
             }
         }
     }
@@ -128,7 +128,9 @@ pub fn hdbscan_dense(vectors: &[Vec<f32>], min_cluster_size: usize) -> DenseClus
     let inertia = vectors
         .iter()
         .zip(assignments.iter())
-        .filter_map(|(v, a)| a.map(|c| (1.0 - dot(v, &centroids[c])).max(0.0)))
+        .filter_map(|(v, a)| {
+            a.map(|c| (1.0 - crate::nlp::similarity::dot_dense(v, &centroids[c])).max(0.0))
+        })
         .sum();
 
     DenseClusterResult {
@@ -138,12 +140,6 @@ pub fn hdbscan_dense(vectors: &[Vec<f32>], min_cluster_size: usize) -> DenseClus
         inertia,
         assign_thresholds,
     }
-}
-
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .fold(0.0f32, |acc, (x, y)| x.mul_add(*y, acc))
 }
 
 #[cfg(test)]

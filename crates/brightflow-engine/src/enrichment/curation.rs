@@ -44,7 +44,8 @@ pub fn reconcile_edits(
                 if centroid.len() != edit.centroid.len() {
                     continue; // incomparable geometry (embedder change)
                 }
-                let sim = cosine(&edit.centroid, centroid);
+                let sim =
+                    crate::nlp::similarity::dense_cosine_unnormalized(&edit.centroid, centroid);
                 if best.is_none_or(|(_, b)| sim > b) {
                     best = Some((i, sim));
                 }
@@ -71,19 +72,6 @@ pub fn centroid_fingerprint(centroid: &[f32]) -> String {
     let quantized: Vec<String> = centroid.iter().map(|v| format!("{v:.4}")).collect();
     let joined = quantized.join(",");
     fingerprint(&["centroid", &joined])
-}
-
-fn cosine(a: &[f32], b: &[f32]) -> f32 {
-    let mut dot = 0.0f32;
-    let mut na = 0.0f32;
-    let mut nb = 0.0f32;
-    for (x, y) in a.iter().zip(b.iter()) {
-        dot = x.mul_add(*y, dot);
-        na = x.mul_add(*x, na);
-        nb = y.mul_add(*y, nb);
-    }
-    let denom = (na.sqrt() * nb.sqrt()).max(1e-12);
-    dot / denom
 }
 
 #[cfg(test)]

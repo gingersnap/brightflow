@@ -143,7 +143,7 @@ fn kmeans_pp_init(vectors: &[Vec<f32>], k: usize, rng: &mut SplitMix64) -> Vec<V
     let mut min_d2: Vec<f32> = vectors
         .iter()
         .map(|v| {
-            let d = (1.0 - dot(v, &centroids[0])).max(0.0);
+            let d = (1.0 - crate::nlp::similarity::dot_dense(v, &centroids[0])).max(0.0);
             d * d
         })
         .collect();
@@ -167,7 +167,7 @@ fn kmeans_pp_init(vectors: &[Vec<f32>], k: usize, rng: &mut SplitMix64) -> Vec<V
         };
         let new_centroid = vectors[idx].clone();
         for (i, v) in vectors.iter().enumerate() {
-            let d = (1.0 - dot(v, &new_centroid)).max(0.0);
+            let d = (1.0 - crate::nlp::similarity::dot_dense(v, &new_centroid)).max(0.0);
             let d2 = d * d;
             if d2 < min_d2[i] {
                 min_d2[i] = d2;
@@ -179,18 +179,11 @@ fn kmeans_pp_init(vectors: &[Vec<f32>], k: usize, rng: &mut SplitMix64) -> Vec<V
     centroids
 }
 
-#[inline]
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .fold(0.0_f32, |acc, (x, y)| x.mul_add(*y, acc))
-}
-
 fn nearest_centroid(vec: &[f32], centroids: &[Vec<f32>]) -> usize {
     let mut best_idx = 0;
     let mut best_sim = f32::NEG_INFINITY;
     for (i, centroid) in centroids.iter().enumerate() {
-        let sim = dot(vec, centroid);
+        let sim = crate::nlp::similarity::dot_dense(vec, centroid);
         if sim > best_sim {
             best_sim = sim;
             best_idx = i;
@@ -240,17 +233,12 @@ fn recompute_centroids(
     }
 }
 
-/// Cosine similarity for normalized vectors (dot product).
-pub fn dense_cosine(a: &[f32], b: &[f32]) -> f32 {
-    dot(a, b)
-}
-
 /// Sum of cosine distances of every point to its assigned centroid.
 fn compute_inertia(vectors: &[Vec<f32>], assignments: &[usize], centroids: &[Vec<f32>]) -> f32 {
     vectors
         .iter()
         .zip(assignments.iter())
-        .map(|(v, &a)| (1.0 - dot(v, &centroids[a])).max(0.0))
+        .map(|(v, &a)| (1.0 - crate::nlp::similarity::dot_dense(v, &centroids[a])).max(0.0))
         .sum()
 }
 
@@ -288,7 +276,7 @@ fn reseed_empty_clusters(
             if assignments[i] != largest {
                 continue;
             }
-            let sim = dot(vec, &centroids[largest]);
+            let sim = crate::nlp::similarity::dot_dense(vec, &centroids[largest]);
             if sim < worst_sim {
                 worst_sim = sim;
                 worst_vec_idx = Some(i);
@@ -319,7 +307,7 @@ fn trim_outliers(
         .iter()
         .zip(assignments.iter())
         .map(|(v, &a)| {
-            let s = dot(v, &centroids[a]);
+            let s = crate::nlp::similarity::dot_dense(v, &centroids[a]);
             sims_by_cluster[a].push(s);
             s
         })

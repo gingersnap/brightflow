@@ -27,7 +27,7 @@ pub use clean::{
     clean_for_embedding, effective_model_id, CleaningProfile, CLEAN_VERSION, MIN_EMBED_TOKENS,
 };
 pub use clustering::{kmeans, ClusterResult};
-pub use dense_clustering::{dense_cosine, kmeans_dense, DenseClusterResult};
+pub use dense_clustering::{kmeans_dense, DenseClusterResult};
 pub use density::{default_min_cluster_size, hdbscan_dense};
 pub use error::SubtextError;
 pub use fingerprint::fingerprint;
@@ -41,7 +41,9 @@ pub use near_dup::{
 pub use ngrams::ngrams;
 pub use reduce::Pca;
 pub use rng::SplitMix64;
-pub use similarity::{cosine, cosine_unnormalized};
+pub use similarity::{
+    cosine, cosine_unnormalized, dense_cosine, dense_cosine_unnormalized, dot_dense,
+};
 pub use sparse::SparseVec;
 pub use tfidf::{FittedTfIdf, TfIdf};
 pub use tokenizer::{TokenSpan, Tokenizer, TokenizerPreset};

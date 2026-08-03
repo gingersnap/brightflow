@@ -52,7 +52,7 @@ impl Pca {
             let mut gram = vec![vec![0.0f32; n]; n];
             for i in 0..n {
                 for j in i..n {
-                    let dot = dot(&centered[i], &centered[j]);
+                    let dot = crate::nlp::similarity::dot_dense(&centered[i], &centered[j]);
                     gram[i][j] = dot;
                     gram[j][i] = dot;
                 }
@@ -119,7 +119,10 @@ impl Pca {
     /// Project a vector into component space.
     pub fn transform(&self, v: &[f32]) -> Vec<f32> {
         let centered: Vec<f32> = v.iter().zip(self.mean.iter()).map(|(x, m)| x - m).collect();
-        self.components.iter().map(|c| dot(c, &centered)).collect()
+        self.components
+            .iter()
+            .map(|c| crate::nlp::similarity::dot_dense(c, &centered))
+            .collect()
     }
 
     pub fn transform_batch(&self, vectors: &[Vec<f32>]) -> Vec<Vec<f32>> {
@@ -148,7 +151,7 @@ fn power_iteration(matrix: &[Vec<f32>], salt: usize) -> Option<(Vec<f32>, f32)> 
     for _ in 0..POWER_ITERATIONS {
         let mut next = vec![0.0f32; n];
         for (i, row) in matrix.iter().enumerate() {
-            next[i] = dot(row, &v);
+            next[i] = crate::nlp::similarity::dot_dense(row, &v);
         }
         let norm = next.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm <= 1e-12 {
@@ -178,10 +181,6 @@ fn deflate(matrix: &mut [Vec<f32>], eigvec: &[f32], eigval: f32) {
             *m = (eigval * eigvec[i]).mul_add(-eigvec[j], *m);
         }
     }
-}
-
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
 fn normalize(v: &mut [f32]) {

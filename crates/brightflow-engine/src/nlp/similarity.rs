@@ -1,10 +1,47 @@
-//! Cosine similarity over sparse vectors.
+//! Cosine similarity over sparse and dense vectors.
 //!
-//! Two entry points on purpose: `cosine` assumes L2-normalized input and is a
-//! bare dot product, which is the common case after a TF-IDF transform;
-//! `cosine_unnormalized` pays for the norms when that assumption does not hold.
+//! Paired entry points on purpose: `cosine`/`dense_cosine` assume
+//! L2-normalized input and are a bare dot product, which is the common case
+//! after a TF-IDF transform or embedding normalization;
+//! `cosine_unnormalized`/`dense_cosine_unnormalized` pay for the norms when
+//! that assumption does not hold.
+//!
+//! The dense kernels use `mul_add` deliberately: one rounding per term keeps
+//! results reproducible across the fingerprinted artifacts that embed these
+//! numbers, so every caller must go through the same kernel rather than
+//! hand-rolling `x * y` sums with different rounding.
 
 use super::sparse::SparseVec;
+
+/// Dense dot product (fused multiply-add per term).
+#[inline]
+pub fn dot_dense(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .fold(0.0_f32, |acc, (x, y)| x.mul_add(*y, acc))
+}
+
+/// Cosine similarity for pre-normalized dense vectors (bare dot product).
+#[inline]
+pub fn dense_cosine(a: &[f32], b: &[f32]) -> f32 {
+    dot_dense(a, b)
+}
+
+/// Cosine similarity for arbitrary (unnormalized) dense vectors.
+///
+/// The `1e-12` floor keeps a zero vector at similarity 0 instead of NaN.
+pub fn dense_cosine_unnormalized(a: &[f32], b: &[f32]) -> f32 {
+    let mut dot = 0.0f32;
+    let mut na = 0.0f32;
+    let mut nb = 0.0f32;
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot = x.mul_add(*y, dot);
+        na = x.mul_add(*x, na);
+        nb = y.mul_add(*y, nb);
+    }
+    let denom = (na.sqrt() * nb.sqrt()).max(1e-12);
+    dot / denom
+}
 
 /// Cosine similarity for pre-normalized vectors (fast path).
 ///
@@ -89,5 +126,19 @@ mod tests {
             (sim_unnorm - sim_norm).abs() < 1e-5,
             "unnorm={sim_unnorm}, norm={sim_norm}"
         );
+    }
+
+    #[test]
+    fn dot_dense_known_value() {
+        assert!((dot_dense(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0]) - 32.0).abs() < 1e-6);
+        assert_eq!(dot_dense(&[], &[]), 0.0);
+    }
+
+    #[test]
+    fn dense_cosine_unnormalized_known_value() {
+        // (3,4)·(4,3) = 24, norms 5·5 → 0.96
+        assert!((dense_cosine_unnormalized(&[3.0, 4.0], &[4.0, 3.0]) - 0.96).abs() < 1e-6);
+        // zero vector floors to 0, not NaN
+        assert_eq!(dense_cosine_unnormalized(&[0.0, 0.0], &[1.0, 0.0]), 0.0);
     }
 }

@@ -712,13 +712,6 @@ fn train_classifier(
     })
 }
 
-#[inline]
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .fold(0.0_f32, |acc, (x, y)| x.mul_add(*y, acc))
-}
-
 const TITLE_NAME_MAX_CHARS: usize = 70;
 
 fn read_string_column(df: &DataFrame, col: &str) -> Option<Vec<Option<String>>> {
@@ -766,7 +759,7 @@ fn representative_titles(
         .filter_map(|(i, &c)| {
             if c == Some(cluster_idx) {
                 let v = embeddings.get(i)?.as_ref()?;
-                Some((i, dot(v, centroid)))
+                Some((i, crate::nlp::similarity::dot_dense(v, centroid)))
             } else {
                 None
             }
@@ -1350,7 +1343,7 @@ fn apply_topics(
             let mut best_id = 0usize;
             let mut best_sim = f32::NEG_INFINITY;
             for (i, centroid) in c.centroids.iter().enumerate() {
-                let sim = dot(emb, centroid);
+                let sim = crate::nlp::similarity::dot_dense(emb, centroid);
                 if sim > best_sim {
                     best_sim = sim;
                     best_id = i;
@@ -1446,7 +1439,7 @@ fn write_label_columns(
                         if centroid.len() != emb.len() {
                             continue;
                         }
-                        let sim = dot(emb, centroid);
+                        let sim = crate::nlp::similarity::dot_dense(emb, centroid);
                         if sim > best_sim {
                             best_sim = sim;
                             best_label = Some(label);
