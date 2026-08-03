@@ -41,7 +41,6 @@ import type {
   TimeseriesPoint,
   TopicsOverview,
   UnifiedConnector,
-  UploadResponse,
   User,
   UserProfile,
   UserTimelineEvent,
@@ -134,40 +133,6 @@ export const tableApi = {
   load: (sourceId: string, name: string): Promise<LoadTableResponse | null> =>
     api.post<LoadTableResponse>(
       `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/load`,
-    ),
-};
-
-// Column semantics / table settings API (source-scoped)
-export const semanticsApi = {
-  listSemantics: (sourceId: string, name: string): Promise<unknown> =>
-    api.get(
-      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/semantics`,
-    ),
-  bulkUpsertSemantics: (sourceId: string, name: string, body: unknown): Promise<unknown> =>
-    api.put(
-      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/semantics`,
-      body,
-    ),
-  upsertColumnSemantic: (
-    params: { sourceId: string; name: string; col: string },
-    body: unknown,
-  ): Promise<unknown> =>
-    api.put(
-      `/api/sources/${encodeURIComponent(params.sourceId)}/tables/${encodeURIComponent(params.name)}/semantics/${encodeURIComponent(params.col)}`,
-      body,
-    ),
-  deleteColumnSemantic: (sourceId: string, name: string, col: string): Promise<unknown> =>
-    api.delete(
-      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/semantics/${encodeURIComponent(col)}`,
-    ),
-  getTableSettings: (sourceId: string, name: string): Promise<unknown> =>
-    api.get(
-      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/settings`,
-    ),
-  upsertTableSettings: (sourceId: string, name: string, body: unknown): Promise<unknown> =>
-    api.put(
-      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/settings`,
-      body,
     ),
 };
 
@@ -285,25 +250,6 @@ export const datasetApi = {
   list: (): Promise<DatasetInfo[] | null> => api.get<DatasetInfo[]>('/api/datasets'),
   query: (datasetId: string, operations: unknown[]): Promise<QueryResponse | null> =>
     api.post<QueryResponse>('/api/query', { datasetId, operations }),
-  upload: async (file: File): Promise<UploadResponse> => {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch(`${API_BASE}/api/datasets/upload`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
-      const data: { message?: string } = await response.json().catch(() => ({}));
-      throw new ApiError(data.message ?? 'Upload failed', response.status, data);
-    }
-
-    // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary
-    return response.json();
-  },
 };
 
 // Analytics Source API
