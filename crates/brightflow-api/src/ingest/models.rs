@@ -4,6 +4,11 @@
 //! The `Raw*` types mirror what a browser sends and are deliberately permissive;
 //! `Event` is what has survived validation and enrichment. Keeping them separate
 //! is what stops unvalidated client fields from reaching storage.
+//!
+//! `Event` carries no raw IP or user-agent, only values derived from them
+//! (`browser`, `os`, `device_type`, and the hashed `visitor_id`). That is the
+//! privacy guarantee made concrete — adding either field here would undo it, so
+//! don't, however convenient it looks for debugging.
 
 use std::collections::HashMap;
 

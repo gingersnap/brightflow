@@ -1,9 +1,10 @@
 //! The authentication error type.
 //!
-//! `InvalidCredentials` is deliberately one variant covering both "no such user"
-//! and "wrong password" — distinguishing them in the type invites a handler that
-//! distinguishes them in the response, which is the enumeration oracle
-//! `auth::backend` goes out of its way to close.
+//! A failed login must report `InvalidCredentials` whether the account was
+//! missing or the password was wrong. The `UserNotFound` variant must not be
+//! used to tell a caller which: any response that distinguishes them reopens the
+//! account-enumeration oracle that `auth::backend` spends an extra Argon2
+//! verification to close.
 
 use thiserror::Error;
 

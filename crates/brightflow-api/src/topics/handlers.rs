@@ -1,8 +1,9 @@
 //! HTTP handlers for topic modelling and intent classification.
 //!
-//! Auth posture: session-authenticated. Some routes here are administrative —
-//! fitting a model rewrites how every existing row is labelled — which is why
-//! fitting is always an explicit request and never a side effect of a sync.
+//! Auth posture: session-authenticated. Some routes here are administrative:
+//! fitting a model rewrites how every existing row is labelled, so it must stay
+//! an explicit request and must not be wired into a sync or any other automatic
+//! path — a re-label nobody asked for is indistinguishable from data loss.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
