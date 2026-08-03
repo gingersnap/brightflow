@@ -1,11 +1,15 @@
 //! Significance tests, correlations, and interval estimates.
 //!
-//! Every function here degrades to the *non-significant* answer on degenerate
-//! input — too few points, zero variance, an unconstructable distribution all
-//! return p = 1.0 rather than an error. That is deliberate: these run across
-//! hundreds of column combinations where empty and near-empty slices are normal,
-//! and the safe failure is to report nothing rather than to abort the report or,
-//! worse, to claim significance from a division that never happened.
+//! Nothing here errors on degenerate input; each function degrades to its own
+//! "no signal" answer instead. The `p_value_*` functions return 1.0 — not
+//! significant — when there are too few points or the distribution cannot be
+//! constructed; the estimators that can genuinely fail (`pearson_correlation`,
+//! `linear_regression`, `autocorrelation`) return `None`.
+//!
+//! That is deliberate: these run across hundreds of column combinations where
+//! empty and near-empty slices are normal, so the safe failure is to report
+//! nothing rather than to abort the whole report or, worse, to claim
+//! significance from a division that never happened.
 
 use statrs::distribution::{ContinuousCDF, Normal, StudentsT};
 

@@ -1,9 +1,10 @@
 //! Persisted fitted models: TF-IDF, clustering, label centroids, classifiers.
 //!
-//! Every artifact carries `ARTIFACT_VERSION`. A version mismatch is rejected on
-//! load rather than tolerated, because the failure it prevents is silent: an
-//! artifact whose layout has shifted deserializes into plausible numbers and
-//! produces confidently wrong labels. Refitting is cheap; wrong labels are not.
+//! Every artifact carries `ARTIFACT_VERSION`, and a stale or undecodable one is
+//! treated as "refit needed" rather than as an error — see `ARTIFACT_VERSION`
+//! for that contract. What matters is that it is never *used*: an artifact whose
+//! layout has shifted would otherwise deserialize into plausible numbers and
+//! produce confidently wrong labels. Refitting is cheap; wrong labels are not.
 
 use std::collections::HashMap;
 use std::path::Path;
