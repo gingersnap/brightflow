@@ -739,7 +739,6 @@ dependencies = [
  "anyhow",
  "bincode",
  "blake3",
- "brightflow-core",
  "chrono",
  "hdbscan",
  "linfa",
@@ -795,7 +794,6 @@ dependencies = [
 name = "brightflow-store"
 version = "0.1.0"
 dependencies = [
- "brightflow-core",
  "chrono",
  "polars",
  "serde",
