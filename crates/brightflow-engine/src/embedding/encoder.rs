@@ -1,6 +1,6 @@
 //! Loads and runs the static embedding model.
 //!
-//! The ~120 MB model is held in a process-wide `OnceCell` and shared as an `Arc`
+//! The ~120 MB model is held in a process-wide `OnceLock` and shared as an `Arc`
 //! across the scheduler, API, and CLI; per-call loading would dominate every
 //! enrichment run. Note it is *stored* once, not necessarily *loaded* once —
 //! threads racing the first call each load a copy and all but the winner are
@@ -10,10 +10,9 @@
 //! optional), so it surfaces as an error the caller can report, not a panic.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use model2vec_rs::model::StaticModel;
-use once_cell::sync::OnceCell;
 use thiserror::Error;
 use tracing::info;
 
@@ -29,7 +28,7 @@ pub enum EmbedderError {
     LengthMismatch { got: usize, expected: usize },
 }
 
-static EMBEDDER: OnceCell<Arc<StaticModel>> = OnceCell::new();
+static EMBEDDER: OnceLock<Arc<StaticModel>> = OnceLock::new();
 
 /// Return the shared embedder, loading it lazily on first call.
 ///

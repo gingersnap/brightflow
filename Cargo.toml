@@ -10,7 +10,7 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 uuid = { version = "1.0", features = ["v4", "v7", "serde"] }
 tokio = { version = "1", features = ["full"] }
-polars = { version = "0.48", features = ["lazy", "csv", "json", "parquet", "pivot", "dtype-date", "strings", "regex"] }
+polars = { version = "0.48", features = ["lazy", "csv", "parquet", "pivot", "dtype-date", "strings", "regex"] }
 axum = { version = "0.8", features = ["ws", "multipart"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

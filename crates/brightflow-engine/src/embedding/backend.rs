@@ -9,9 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-
-use once_cell::sync::Lazy;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use super::encoder::{embed_batch, shared_embedder, EmbedderError};
 use super::paths::POTION_BASE_32M_DIR;
@@ -64,7 +62,7 @@ impl EmbedderId {
 type BackendRegistry = HashMap<EmbedderId, Arc<dyn EmbedderBackend>>;
 
 /// Per-id backend registry (one loaded model per process).
-static BACKENDS: Lazy<Mutex<BackendRegistry>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static BACKENDS: LazyLock<Mutex<BackendRegistry>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Return (loading if needed) the backend for an id.
 pub fn get_backend(

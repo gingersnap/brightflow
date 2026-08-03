@@ -8,8 +8,8 @@
 //! into the effective model id, so changing a cleaner automatically
 //! invalidates cached embeddings.
 
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock;
 
 /// Bump when any cleaner's behavior changes — flows into profile ids and
 /// therefore into effective model ids, forcing re-embedding.
@@ -120,56 +120,57 @@ fn is_embeddable(cleaned: &str) -> bool {
 // caught by the unit tests, matching the tokenizer.rs precedent.
 
 #[allow(clippy::expect_used)]
-static URL_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)\b(?:https?://|www\.)\S+").expect("valid regex"));
+static URL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(?:https?://|www\.)\S+").expect("valid regex"));
 
 /// `@handle` and dotted handles like `@user.bsky.social`.
 #[allow(clippy::expect_used)]
-static MENTION_RE: Lazy<Regex> = Lazy::new(|| {
+static MENTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"@[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_])?").expect("valid regex")
 });
 
 #[allow(clippy::expect_used)]
-static HASHTAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"#(\w)").expect("valid regex"));
+static HASHTAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"#(\w)").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static CODE_FENCE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?s)```.*?(?:```|\z)|~~~.*?(?:~~~|\z)").expect("valid regex"));
+static CODE_FENCE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)```.*?(?:```|\z)|~~~.*?(?:~~~|\z)").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static HTML_COMMENT_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?s)<!--.*?(?:-->|\z)").expect("valid regex"));
+static HTML_COMMENT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<!--.*?(?:-->|\z)").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static HTML_TAG_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"</?[A-Za-z][^>\n]*>").expect("valid regex"));
+static HTML_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"</?[A-Za-z][^>\n]*>").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static MD_IMAGE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"!\[([^\]]*)\]\([^)]*\)").expect("valid regex"));
+static MD_IMAGE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"!\[([^\]]*)\]\([^)]*\)").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static MD_LINK_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\[([^\]]*)\]\([^)]*\)").expect("valid regex"));
+static MD_LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\([^)]*\)").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static MD_HEADING_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?m)^\s{0,3}#{1,6}\s+").expect("valid regex"));
+static MD_HEADING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s{0,3}#{1,6}\s+").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static MD_EMPHASIS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[*_~`]{1,3}").expect("valid regex"));
+static MD_EMPHASIS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[*_~`]{1,3}").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static MD_QUOTE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?m)^\s{0,3}>\s?").expect("valid regex"));
+static MD_QUOTE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s{0,3}>\s?").expect("valid regex"));
 
 #[allow(clippy::expect_used)]
-static CHECKBOX_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?m)^\s*[-*+]\s+\[[ xX]\]\s*").expect("valid regex"));
+static CHECKBOX_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*[-*+]\s+\[[ xX]\]\s*").expect("valid regex"));
 
 /// Common issue-template headings that carry zero topical signal.
 #[allow(clippy::expect_used)]
-static BOILERPLATE_LINE_RE: Lazy<Regex> = Lazy::new(|| {
+static BOILERPLATE_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?im)^\s{0,3}(?:\*\*|#{1,6}\s*)?(?:describe the bug|bug description|expected behaviou?r|actual behaviou?r|steps? to reproduce|to reproduce|how to reproduce|reproduction(?: steps)?|screenshots?|additional context|system info(?:rmation)?|environment|your environment|version(?:s)? affected|possible solution|what happened\??|what did you expect(?: to happen)?\??|minimal reproducible example)(?:\*\*|:)?\s*$",
     )
@@ -177,7 +178,7 @@ static BOILERPLATE_LINE_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 #[allow(clippy::expect_used)]
-static WHITESPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").expect("valid regex"));
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("valid regex"));
 
 pub fn strip_urls(text: &str) -> String {
     URL_RE.replace_all(text, " ").into_owned()
