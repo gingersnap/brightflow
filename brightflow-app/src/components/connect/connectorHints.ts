@@ -1,3 +1,11 @@
+/**
+ * Per-connector field hints for the credential forms: labels, placeholders,
+ * conditional visibility, and defaults.
+ *
+ * Connector configs are free-form JSON on the server, so this is what makes them
+ * a real form instead of a text box.
+ */
+
 export interface FieldHint {
   key: string;
   label: string;

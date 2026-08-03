@@ -1,3 +1,10 @@
+/**
+ * Pivot builder state: the row, column, and value buckets.
+ *
+ * Field order within a bucket is meaningful (it is the nesting order of the
+ * resulting headers), which is why buckets are arrays rather than sets.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

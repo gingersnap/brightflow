@@ -1,3 +1,13 @@
+/**
+ * Insights report state: the analysis tree, client-side filters, and the
+ * curation overlay.
+ *
+ * Filtering happens client-side over the already-ranked findings so toggling a
+ * filter is instant and never re-runs the analysis. The overlay keeps optimistic
+ * curation edits separate from the server's tree, so a failed action reverts
+ * without having to refetch the report.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

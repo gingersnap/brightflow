@@ -1,3 +1,11 @@
+/**
+ * Pending and applied curation actions, kept in sync with server-pushed events.
+ *
+ * Actions are applied optimistically and reverted if the dispatch fails: the
+ * user is reviewing a list and the round trip is long enough that waiting makes
+ * the UI feel broken.
+ */
+
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 

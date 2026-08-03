@@ -1,3 +1,11 @@
+/**
+ * Reads the chart palette from CSS custom properties.
+ *
+ * Colors live in CSS so themes control them in one place; resolving them here
+ * lets chart libraries that need literal values stay theme-aware. Cached after
+ * first resolve, since `getComputedStyle` forces layout.
+ */
+
 const COUNT = 12;
 let cached: string[] | null = null;
 

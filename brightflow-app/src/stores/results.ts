@@ -1,3 +1,10 @@
+/**
+ * The current query result set and its metadata.
+ *
+ * Accepts both WebSocket frames and direct REST responses through one shape, so
+ * downstream views do not care which path produced the rows.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

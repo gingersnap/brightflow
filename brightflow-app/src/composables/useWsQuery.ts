@@ -1,3 +1,10 @@
+/**
+ * Builds and executes queries over the WebSocket connection.
+ *
+ * Assembles the operation chain from the query, pivot, and UI stores so callers
+ * do not each reimplement that translation.
+ */
+
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';

@@ -1,3 +1,11 @@
+/**
+ * The loaded dataset: its columns, its identity, and the reset cascade.
+ *
+ * Loading a table clears the query, results, and pivot stores, because every one
+ * of them holds state keyed to the previous table's columns — leaving them would
+ * surface stale rows under a new dataset's name.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

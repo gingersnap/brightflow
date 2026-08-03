@@ -1,3 +1,10 @@
+/**
+ * Enrichment run lifecycle: start or resume, poll, cancel.
+ *
+ * Resumes from the function's `activeRunId` on mount, so a reload during a long
+ * run reattaches to it instead of appearing to have lost it.
+ */
+
 import { onBeforeUnmount, ref } from 'vue';
 
 import { enrichFnApi } from '@/services/api';

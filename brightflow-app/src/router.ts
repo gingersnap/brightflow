@@ -1,3 +1,9 @@
+/**
+ * Route table. Every view is lazily imported so the initial bundle carries only
+ * the shell — the analytics views pull in Polars-sized result grids and charts
+ * that most sessions never open.
+ */
+
 import { createRouter, createWebHistory } from 'vue-router';
 
 const router = createRouter({

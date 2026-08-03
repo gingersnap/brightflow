@@ -1,11 +1,16 @@
+/**
+ * Store barrel and the cross-store reset.
+ *
+ * `resetAllStores` deliberately spares auth and source: those outlive a dataset
+ * switch, while everything else is keyed to the previous table's columns and
+ * would surface stale state under a new dataset's name.
+ */
+
 import router from '@/router';
 
 import { useDatasetStore } from './dataset';
 import { useInsightsStore } from './insights';
 import { usePivotStore } from './pivot';
-/**
- * Store utilities and exports
- */
 import { useQueryStore } from './query';
 import { useResultsStore } from './results';
 import { useSourceStore } from './source';

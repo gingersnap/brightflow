@@ -1,3 +1,10 @@
+/**
+ * Declarative catalogue of command-palette actions.
+ *
+ * Each entry owns its own confirm/prompt requirements, so the palette itself
+ * stays generic and adding an action never means touching the palette component.
+ */
+
 import type {
   Action,
   AnalysisNode,

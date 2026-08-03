@@ -1,3 +1,11 @@
+/**
+ * The currently selected source and reporting period.
+ *
+ * Period is persisted to localStorage because it is a preference that should
+ * survive a reload; the source list itself is pushed in by the component layer
+ * rather than fetched here.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 

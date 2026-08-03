@@ -1,3 +1,8 @@
+/**
+ * Single-value text prompt for context-menu and kebab actions, replacing
+ * `window.prompt`.
+ */
+
 import type { PromptOptions } from '@/components/command/paletteActions';
 import TextPromptModal from '@/components/command/TextPromptModal.vue';
 

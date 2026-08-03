@@ -1,3 +1,12 @@
+/**
+ * WebSocket lifecycle and message routing.
+ *
+ * One connection is shared by every feature that needs push updates (queries,
+ * insights, curation, system metrics), with handlers registered by message type.
+ * A socket per feature would multiply reconnect storms and server-side fan-out
+ * for no benefit.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

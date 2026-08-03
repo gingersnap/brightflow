@@ -1,3 +1,11 @@
+/**
+ * UI-only state for the Connect views (expanded rows, selection, cached run
+ * history).
+ *
+ * Deliberately holds no fetching logic: connector data is loaded by Pinia Colada
+ * in the views, so this store never needs to invalidate or refetch.
+ */
+
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 

@@ -1,3 +1,11 @@
+/**
+ * The sample→refine→scale loop for enrichment prompts.
+ *
+ * Snapshots the previous results before each run so "compare with previous" can
+ * show what a prompt edit actually changed — the question being asked while
+ * iterating on a prompt is always a diff, not an absolute.
+ */
+
 import { computed, ref } from 'vue';
 
 import { enrichFnApi } from '@/services/api';

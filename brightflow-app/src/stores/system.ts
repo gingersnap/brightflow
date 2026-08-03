@@ -1,3 +1,7 @@
+/**
+ * Live server metrics for the system panel, fed by WebSocket pushes.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

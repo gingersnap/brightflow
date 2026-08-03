@@ -1,3 +1,11 @@
+/**
+ * Presentation metadata for analysis nodes: icon, label, and the accessors that
+ * pull a measure, dimension, or direction out of a node's payload.
+ *
+ * Keeps the mapping from finding type to visual treatment in one place rather
+ * than spread across the renderer components.
+ */
+
 import {
   AlertTriangle,
   ArrowLeftRight,

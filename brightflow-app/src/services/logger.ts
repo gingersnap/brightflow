@@ -1,3 +1,11 @@
+/**
+ * Tagged console logger that compiles out in production.
+ *
+ * Non-DEV builds bind every level to a no-op, so debug logging can be left in
+ * place without shipping it — and without each call site guarding on an env
+ * check.
+ */
+
 interface Logger {
   debug: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;

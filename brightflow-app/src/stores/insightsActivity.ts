@@ -1,3 +1,11 @@
+/**
+ * Unread-insights tracking.
+ *
+ * "Seen" is deliberately client-side and persisted to localStorage — the server
+ * never tracks per-user read state, so this is a local convenience rather than
+ * an account-level fact, and clearing site data resets it.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 

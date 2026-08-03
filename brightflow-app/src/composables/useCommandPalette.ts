@@ -1,3 +1,8 @@
+/**
+ * Wires the command palette: builds the item list from the current route and
+ * context, and dispatches the chosen action.
+ */
+
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { type Ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';

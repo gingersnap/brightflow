@@ -1,3 +1,11 @@
+/**
+ * Session state for the logged-in user.
+ *
+ * `loading` starts true because on a cold load the session is unknown until
+ * `checkAuth` resolves — defaulting to "logged out" would flash the login screen
+ * at users who are in fact signed in.
+ */
+
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 

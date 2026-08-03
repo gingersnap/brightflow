@@ -1,3 +1,7 @@
+/**
+ * Dispatches curation actions from insight cards, with optimistic feedback.
+ */
+
 import { useCurationStore } from '@/stores/curation';
 import { type CurationPatch, useInsightsStore } from '@/stores/insights';
 import type { Action, DismissReason } from '@/types/generated';

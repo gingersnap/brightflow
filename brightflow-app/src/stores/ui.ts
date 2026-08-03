@@ -1,3 +1,12 @@
+/**
+ * View-level UI preferences: view mode, chart type, text size, section
+ * collapse.
+ *
+ * Persisted to localStorage and validated on read — a stored value from an older
+ * build that no longer names a valid mode falls back to the default instead of
+ * putting the UI into an unrenderable state.
+ */
+
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 

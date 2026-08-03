@@ -1,3 +1,10 @@
+/**
+ * Maps each analysis node type to the component that renders it.
+ *
+ * The registry is what lets the insights view render a heterogeneous tree
+ * without a switch statement over node types at the call site.
+ */
+
 import type { Component } from 'vue';
 
 import AnomalyRenderer from './AnomalyRenderer.vue';

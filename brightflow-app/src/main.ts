@@ -1,3 +1,8 @@
+/**
+ * Application entry point: mounts the Vue app with Pinia, Pinia Colada, Nuxt UI
+ * and the router.
+ */
+
 import ui from '@nuxt/ui/vue-plugin';
 import { PiniaColada } from '@pinia/colada';
 import { createPinia } from 'pinia';

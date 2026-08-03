@@ -1,3 +1,7 @@
+/**
+ * Ambient types for Vite's `import.meta.env` and `.vue` single-file components.
+ */
+
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
