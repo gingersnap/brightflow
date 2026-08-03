@@ -340,9 +340,9 @@ mod tests {
     }
 
     #[test]
-    fn store_ids_keep_the_store_prefix_for_bulk_unload() {
-        // `AppState::unload_store_tables` filters on this prefix; source scoping must
-        // not break that.
+    fn store_ids_keep_the_store_prefix() {
+        // The `store:` prefix is part of the dataset-id wire format
+        // (`parse_dataset_ref` strips it); source scoping must not break it.
         let mgr = DatasetManager::new();
         let id = mgr.add_dataset(
             "issues".to_string(),

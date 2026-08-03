@@ -10,7 +10,7 @@ use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
 use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
-use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
+use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
 use brightflow_engine::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
 use brightflow_store::{ColumnSemanticRow, ParquetStore, TableAnalysisSettingsRow, TableInfo};
@@ -114,34 +114,6 @@ impl AppState {
         }
     }
 
-    /// Create new AppState with an existing log broadcast sender (from init_tracing).
-    pub fn with_log_sender(log_sender: broadcast::Sender<LogEntry>) -> Self {
-        Self {
-            datasets: DatasetManager::new(),
-            table_index: Arc::new(RwLock::new(Vec::new())),
-            store: None,
-            schemas: Arc::new(DashMap::new()),
-            schema_overrides: Arc::new(DashMap::new()),
-            settings_overrides: Arc::new(DashMap::new()),
-            enrichment_overrides: Arc::new(DashMap::new()),
-            text_indexes: Arc::new(DashMap::new()),
-            agent_runs: Arc::new(DashMap::new()),
-            enrichment_jobs: Arc::new(DashMap::new()),
-            insight_auto_inflight: Arc::new(DashMap::new()),
-            scheduler: None,
-
-            auth_db: None,
-            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
-            scheduler_db: None,
-            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
-            log_sender,
-            curation_events: broadcast::channel(1024).0,
-            start_time: Instant::now(),
-            ingest: None,
-            paths: None,
-        }
-    }
-
     /// Load column semantic overrides from SQLite into memory (DashMaps).
     pub async fn load_overrides_from_store(&self) {
         let Some(store) = &self.store else {
@@ -207,30 +179,6 @@ impl AppState {
         }
     }
 
-    /// Get a cached schema, or build one on-demand from a DataFrame + overrides.
-    pub fn get_or_build_schema(
-        &self,
-        source_id: &str,
-        table_name: &str,
-        df: &DataFrame,
-    ) -> Result<DataSchema, anyhow::Error> {
-        let key = cache_key(source_id, table_name);
-        if let Some(cached) = self.schemas.get(&key) {
-            return Ok(cached.clone());
-        }
-
-        let overrides = self
-            .schema_overrides
-            .get(&key)
-            .map(|v| v.value().clone())
-            .unwrap_or_default();
-        let settings = self.settings_overrides.get(&key).map(|v| v.value().clone());
-
-        let schema = build_schema(df, &overrides, settings.as_ref())?;
-        self.schemas.insert(key, schema.clone());
-        Ok(schema)
-    }
-
     /// Invalidate the cached schema for a composite key (call after override mutations).
     pub fn invalidate_schema_cache(&self, key: &str) {
         self.schemas.remove(key);
@@ -279,78 +227,10 @@ impl AppState {
             index.len()
         );
 
-        let (log_sender, _) = broadcast::channel(1000);
         Self {
-            datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(index)),
             store: Some(Arc::new(store)),
-            schemas: Arc::new(DashMap::new()),
-            schema_overrides: Arc::new(DashMap::new()),
-            settings_overrides: Arc::new(DashMap::new()),
-            enrichment_overrides: Arc::new(DashMap::new()),
-            text_indexes: Arc::new(DashMap::new()),
-            agent_runs: Arc::new(DashMap::new()),
-            enrichment_jobs: Arc::new(DashMap::new()),
-            insight_auto_inflight: Arc::new(DashMap::new()),
-            scheduler: None,
-
-            auth_db: None,
-            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
-            scheduler_db: None,
-            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
-            log_sender,
-            curation_events: broadcast::channel(1024).0,
-            start_time: Instant::now(),
-            ingest: None,
-            paths: None,
-        }
-    }
-
-    /// Create AppState with a Parquet store and an existing log broadcast sender.
-    pub async fn with_store_and_log_sender(
-        store: ParquetStore,
-        log_sender: broadcast::Sender<LogEntry>,
-    ) -> Self {
-        let tables = store.list_tables().await.unwrap_or_default();
-
-        let mut index = Vec::with_capacity(tables.len());
-        for table_ref in tables {
-            if let Ok(info) = store
-                .table_info(&table_ref.source_id, &table_ref.name)
-                .await
-            {
-                index.push(info);
-            }
-        }
-
-        tracing::info!(
-            "Indexed {} tables (metadata only, no data loaded)",
-            index.len()
-        );
-
-        Self {
-            datasets: DatasetManager::new(),
-            table_index: Arc::new(RwLock::new(index)),
-            store: Some(Arc::new(store)),
-            schemas: Arc::new(DashMap::new()),
-            schema_overrides: Arc::new(DashMap::new()),
-            settings_overrides: Arc::new(DashMap::new()),
-            enrichment_overrides: Arc::new(DashMap::new()),
-            text_indexes: Arc::new(DashMap::new()),
-            agent_runs: Arc::new(DashMap::new()),
-            enrichment_jobs: Arc::new(DashMap::new()),
-            insight_auto_inflight: Arc::new(DashMap::new()),
-            scheduler: None,
-
-            auth_db: None,
-            login_limiter: Arc::new(crate::auth::LoginLimiter::new()),
-            scheduler_db: None,
-            system_metrics: Arc::new(RwLock::new(SystemSnapshot::default())),
-            log_sender,
-            curation_events: broadcast::channel(1024).0,
-            start_time: Instant::now(),
-            ingest: None,
-            paths: None,
+            ..Self::new()
         }
     }
 
@@ -461,85 +341,6 @@ impl AppState {
         );
 
         Ok(id)
-    }
-
-    /// Unload all store tables from memory (keeps "default" and uploaded datasets).
-    ///
-    /// No in-tree caller: `load_table` used to call this on every load, which is what
-    /// made concurrent tabs evict each other. Kept as public API for an explicit
-    /// "release everything" operation; the `store:` prefix it filters on is still
-    /// produced by `DatasetSource::StoreTable`.
-    pub fn unload_store_tables(&self) {
-        let to_remove: Vec<_> = self
-            .datasets
-            .list_datasets()
-            .iter()
-            .filter(|d| d.id.starts_with("store:"))
-            .map(|d| d.id.clone())
-            .collect();
-
-        for id in &to_remove {
-            self.datasets.delete_dataset(id);
-        }
-
-        if !to_remove.is_empty() {
-            tracing::info!("Unloaded {} table(s) from memory", to_remove.len());
-        }
-    }
-
-    /// Check if a table exists in the index for the given source
-    pub async fn table_exists(&self, source_id: &str, table_name: &str) -> bool {
-        let index = self.table_index.read().await;
-        index
-            .iter()
-            .any(|t| t.source_id == source_id && t.name == table_name)
-    }
-
-    /// Load a table directly from a store (lazy parquet scan)
-    pub async fn load_store_table(
-        &self,
-        store: &ParquetStore,
-        source_id: &str,
-        table_name: &str,
-    ) -> AppResult<String> {
-        let files = store.get_table_parquet_paths(source_id, table_name).await?;
-
-        let source = DatasetSource::StoreTable {
-            source_id: source_id.to_string(),
-            table_name: table_name.to_string(),
-            version: -1,
-        };
-
-        let id = self.datasets.add_dataset(
-            table_name.to_string(),
-            DatasetData::Parquet { files },
-            source,
-        );
-        Ok(id)
-    }
-
-    /// Load all tables from a store
-    pub async fn load_all_store_tables(
-        &self,
-        store: &ParquetStore,
-    ) -> Vec<(String, Result<String, String>)> {
-        let tables = match store.list_tables().await {
-            Ok(t) => t,
-            Err(e) => return vec![("*".to_string(), Err(e.to_string()))],
-        };
-
-        let mut results = Vec::with_capacity(tables.len());
-        for table_ref in tables {
-            let result = match self
-                .load_store_table(store, &table_ref.source_id, &table_ref.name)
-                .await
-            {
-                Ok(id) => Ok(id),
-                Err(e) => Err(e.to_string()),
-            };
-            results.push((table_ref.name, result));
-        }
-        results
     }
 }
 
