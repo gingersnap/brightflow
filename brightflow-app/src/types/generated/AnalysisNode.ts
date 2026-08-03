@@ -43,7 +43,7 @@ provenance: Array<ProvenanceStep>,
  */
 depth: number, 
 /**
- * Stable story fingerprint (see `analysis::fingerprint`) — keys history,
+ * Stable story fingerprint (see `nlp::fingerprint`) — keys history,
  * dismissals, and suppressions
  */
 fingerprint: string, 

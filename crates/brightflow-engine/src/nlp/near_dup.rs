@@ -21,7 +21,7 @@
 //! # Algorithm
 //!
 //! 1. **Exact pre-pass.** Rows are fingerprinted with
-//!    [`crate::analysis::fingerprint::fingerprint`] over their cleaned text.
+//!    [`crate::nlp::fingerprint::fingerprint`] over their cleaned text.
 //!    Identical fingerprints are unioned immediately — this catches verbatim
 //!    copy-paste in O(n) hashing, before any float math.
 //! 2. **Blocked O(n²) dot product.** Survivors are compared pairwise in cache-
@@ -55,8 +55,8 @@
 
 use std::collections::HashMap;
 
-use crate::analysis::fingerprint::fingerprint;
 use crate::nlp::dense_cosine;
+use crate::nlp::fingerprint::fingerprint;
 
 /// Cosine similarity at or above which two rows are considered near-duplicates.
 ///

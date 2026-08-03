@@ -1,12 +1,14 @@
-//! Stable insight fingerprints.
+//! Stable string fingerprint: FNV-1a over `|`-joined parts.
 //!
-//! A fingerprint identifies an insight's *story* — detector type, measure,
-//! aggregation, derivations, filters, granularity — while excluding the
-//! observed values and period, so "the same story next week" hashes the same.
-//! Consumed by insight history / novelty (1C) and dismiss/pin/suppress (3A).
+//! A low-level primitive that lives here, in the crate's lowest text layer, so
+//! both `analysis` (fingerprinting an insight's *story* for history and novelty)
+//! and `nlp::near_dup` (hashing cleaned text for exact-duplicate grouping) can
+//! reach it downward. It intentionally knows nothing about either use.
 //!
-//! Uses FNV-1a, NOT `std::hash::DefaultHasher`: DefaultHasher is explicitly
-//! not stable across releases/runs, and these hashes are persisted.
+//! FNV-1a, NOT `std::hash::DefaultHasher`: DefaultHasher is explicitly not
+//! stable across releases or runs, and these hashes are persisted and compared
+//! across them — a hash that shifted between versions would silently orphan
+//! every stored fingerprint.
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;

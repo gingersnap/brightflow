@@ -154,7 +154,7 @@ pub struct AnalysisNode {
     pub provenance: Vec<ProvenanceStep>,
     /// Composition depth: 1 = bare aggregate, +1 per filter/derivation
     pub depth: u8,
-    /// Stable story fingerprint (see `analysis::fingerprint`) — keys history,
+    /// Stable story fingerprint (see `nlp::fingerprint`) — keys history,
     /// dismissals, and suppressions
     #[serde(default)]
     pub fingerprint: String,

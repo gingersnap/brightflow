@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use crate::analysis::engine::ColumnCache;
-use crate::analysis::fingerprint::fingerprint;
 use crate::analysis::tree::ProvenanceStep;
+use crate::nlp::fingerprint::fingerprint;
 
 // ─── Provenance ───────────────────────────────────────────────────────────────
 
@@ -166,7 +166,7 @@ impl Provenance {
         u8::try_from(1 + self.filters.len() + self.derivations.len()).unwrap_or(u8::MAX)
     }
 
-    /// Stable story fingerprint (see `analysis::fingerprint`): excludes the
+    /// Stable story fingerprint (see `nlp::fingerprint`): excludes the
     /// observed values/period so recurring stories match across runs.
     pub fn fingerprint(&self, detector: &str) -> String {
         let filters = self

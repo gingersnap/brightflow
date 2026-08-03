@@ -14,7 +14,6 @@ pub mod dedup;
 pub mod distribution_shift;
 pub mod drivers;
 pub mod engine;
-pub mod fingerprint;
 pub mod forecast;
 pub mod history;
 pub mod membership;

@@ -7,7 +7,7 @@
 //! flagged orphaned for review. An embedder change orphans everything by
 //! design — the geometry is incomparable.
 
-use crate::analysis::fingerprint::fingerprint;
+use crate::nlp::fingerprint::fingerprint;
 
 /// Cosine floor for re-attaching an edit to a new centroid.
 pub const RECONCILE_MIN_COSINE: f32 = 0.80;

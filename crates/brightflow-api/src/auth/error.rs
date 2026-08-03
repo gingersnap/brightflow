@@ -1,10 +1,10 @@
 //! The authentication error type.
 //!
-//! A failed login must report `InvalidCredentials` whether the account was
-//! missing or the password was wrong. The `UserNotFound` variant must not be
-//! used to tell a caller which: any response that distinguishes them reopens the
-//! account-enumeration oracle that `auth::backend` spends an extra Argon2
-//! verification to close.
+//! There is deliberately no "user not found" variant. A failed login must report
+//! `InvalidCredentials` whether the account was missing or the password was
+//! wrong; any variant that distinguished them would invite a response that does
+//! too, reopening the account-enumeration oracle that `auth::backend` spends an
+//! extra Argon2 verification to close. Keep it that way.
 
 use thiserror::Error;
 
@@ -15,9 +15,6 @@ pub enum AuthError {
 
     #[error("Password hashing error: {0}")]
     Password(String),
-
-    #[error("User not found")]
-    UserNotFound,
 
     #[error("Invalid credentials")]
     InvalidCredentials,
