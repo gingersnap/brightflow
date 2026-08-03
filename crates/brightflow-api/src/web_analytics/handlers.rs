@@ -5,113 +5,13 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 
+use crate::analytics::events_scan::{run_query, scan_source_events, AnalyticsParams};
 use crate::ingest::models::{BreakdownRow, DashboardStats, TimeseriesPoint};
-use brightflow_store::ScanFilter;
 
-use crate::shared::{AppError, AppResult};
+use crate::shared::AppResult;
 use crate::state::AppState;
 
 use super::queries;
-
-/// Query parameters for analytics endpoints.
-#[derive(Debug, serde::Deserialize)]
-pub struct AnalyticsParams {
-    /// Period shorthand: "7d", "30d", "month", "12m"
-    #[serde(default = "default_period")]
-    pub period: String,
-    /// Custom start date (YYYY-MM-DD), overrides period
-    pub start: Option<String>,
-    /// Custom end date (YYYY-MM-DD), overrides period
-    pub end: Option<String>,
-}
-
-fn default_period() -> String {
-    "30d".to_string()
-}
-
-/// Resolve period to (start, end) date strings.
-fn resolve_dates(params: &AnalyticsParams) -> (String, String) {
-    if let (Some(start), Some(end)) = (&params.start, &params.end) {
-        return (start.clone(), end.clone());
-    }
-
-    let now = chrono::Utc::now();
-    let end = now.format("%Y-%m-%dT23:59:59").to_string();
-
-    let start = match params.period.as_str() {
-        "today" => now.format("%Y-%m-%dT00:00:00").to_string(),
-        "7d" => (now - chrono::Duration::days(7))
-            .format("%Y-%m-%dT00:00:00")
-            .to_string(),
-        "month" => now.format("%Y-%m-01T00:00:00").to_string(),
-        "12m" => (now - chrono::Duration::days(365))
-            .format("%Y-%m-%dT00:00:00")
-            .to_string(),
-        _ => (now - chrono::Duration::days(30))
-            .format("%Y-%m-%dT00:00:00")
-            .to_string(),
-    };
-
-    (start, end)
-}
-
-/// Build scan filters for a date range query.
-fn date_filters(start: &str, end: &str) -> Vec<ScanFilter> {
-    let date_start = &start[..10.min(start.len())];
-    let date_end = &end[..10.min(end.len())];
-    vec![
-        ScanFilter::PartitionRange {
-            key: "date".into(),
-            min: Some(date_start.into()),
-            max: Some(date_end.into()),
-        },
-        ScanFilter::ColumnRange {
-            column: "timestamp".into(),
-            min: Some(start.into()),
-            max: Some(end.into()),
-        },
-    ]
-}
-
-/// Run an analytics query in a blocking task with proper error logging.
-async fn run_query<T: Send + 'static>(
-    label: &str,
-    f: impl FnOnce() -> crate::ingest::error::IngestResult<T> + Send + 'static,
-) -> AppResult<T> {
-    let label = label.to_string();
-    match tokio::task::spawn_blocking(f).await {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(e)) => {
-            tracing::error!("Analytics {label} query error: {e}");
-            Err(AppError::Internal(e.to_string()))
-        },
-        Err(e) => {
-            tracing::error!("Analytics {label} task error: {e}");
-            Err(AppError::Internal(e.to_string()))
-        },
-    }
-}
-
-/// Scan events from the store for a source with date filters.
-/// Returns None if the store isn't available or the table doesn't exist.
-async fn scan_source_events(
-    state: &AppState,
-    source_id: &str,
-    start: &str,
-    end: &str,
-) -> AppResult<Option<polars::prelude::LazyFrame>> {
-    let Some(store) = state.store() else {
-        return Ok(None);
-    };
-    let store_source_id = format!("web:{source_id}");
-    let table_name = format!("events_{source_id}");
-    let filters = date_filters(start, end);
-    let lf = store
-        .scan_table(&store_source_id, &table_name, &filters)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(lf.map(queries::scan_events_from_store))
-}
 
 /// GET /api/analytics/:source_id/stats
 pub async fn stats(
@@ -119,7 +19,7 @@ pub async fn stats(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<DashboardStats>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
@@ -147,7 +47,7 @@ pub async fn timeseries(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<TimeseriesPoint>>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
@@ -168,7 +68,7 @@ pub async fn top_pages(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
@@ -189,7 +89,7 @@ pub async fn referrers(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
@@ -210,7 +110,7 @@ pub async fn utm(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
@@ -231,7 +131,7 @@ pub async fn devices(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
@@ -252,7 +152,7 @@ pub async fn geo(
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<BreakdownRow>>> {
-    let (start, end) = resolve_dates(&params);
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 

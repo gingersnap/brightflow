@@ -13,9 +13,11 @@ use crate::ingest::models::{
 };
 use crate::ingest::IngestState;
 
+use crate::analytics::events_scan::{
+    resolve_dates, run_query, scan_source_events, scan_source_events_all, AnalyticsParams,
+};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
-use crate::web_analytics::handlers::AnalyticsParams;
 
 use super::queries;
 
@@ -26,114 +28,13 @@ fn get_ingest(state: &AppState) -> AppResult<&Arc<IngestState>> {
         .ok_or_else(|| AppError::Internal("Ingest engine not initialized".to_string()))
 }
 
-/// Resolve period to (start, end) date strings.
-fn resolve_dates(period: &str, start: Option<&str>, end: Option<&str>) -> (String, String) {
-    if let (Some(s), Some(e)) = (start, end) {
-        return (s.to_string(), e.to_string());
-    }
-
-    let now = chrono::Utc::now();
-    let end_str = now.format("%Y-%m-%dT23:59:59").to_string();
-
-    let start_str = match period {
-        "today" => now.format("%Y-%m-%dT00:00:00").to_string(),
-        "7d" => (now - chrono::Duration::days(7))
-            .format("%Y-%m-%dT00:00:00")
-            .to_string(),
-        "month" => now.format("%Y-%m-01T00:00:00").to_string(),
-        "12m" => (now - chrono::Duration::days(365))
-            .format("%Y-%m-%dT00:00:00")
-            .to_string(),
-        _ => (now - chrono::Duration::days(30))
-            .format("%Y-%m-%dT00:00:00")
-            .to_string(),
-    };
-
-    (start_str, end_str)
-}
-
-/// Run a product analytics query in a blocking task.
-async fn run_query<T: Send + 'static>(
-    label: &str,
-    f: impl FnOnce() -> crate::ingest::error::IngestResult<T> + Send + 'static,
-) -> AppResult<T> {
-    let label = label.to_string();
-    match tokio::task::spawn_blocking(f).await {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(e)) => {
-            tracing::error!("Product analytics {label} query error: {e}");
-            Err(AppError::Internal(e.to_string()))
-        },
-        Err(e) => {
-            tracing::error!("Product analytics {label} task error: {e}");
-            Err(AppError::Internal(e.to_string()))
-        },
-    }
-}
-
-/// Scan events from the store for a source with date filters.
-/// Returns None if the store isn't available or the table doesn't exist.
-async fn scan_source_events(
-    state: &AppState,
-    source_id: &str,
-    start: &str,
-    end: &str,
-) -> AppResult<Option<polars::prelude::LazyFrame>> {
-    let Some(store) = state.store() else {
-        return Ok(None);
-    };
-    let store_source_id = format!("web:{source_id}");
-    let table_name = format!("events_{source_id}");
-    let date_start = &start[..10.min(start.len())];
-    let date_end = &end[..10.min(end.len())];
-    let filters = vec![
-        brightflow_store::ScanFilter::PartitionRange {
-            key: "date".into(),
-            min: Some(date_start.into()),
-            max: Some(date_end.into()),
-        },
-        brightflow_store::ScanFilter::ColumnRange {
-            column: "timestamp".into(),
-            min: Some(start.into()),
-            max: Some(end.into()),
-        },
-    ];
-    let lf = store
-        .scan_table(&store_source_id, &table_name, &filters)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(lf.map(crate::web_analytics::queries::scan_events_from_store))
-}
-
-/// Scan all events for a source (no date filter — used for user timeline).
-/// Returns None if the store isn't available.
-async fn scan_source_events_all(
-    state: &AppState,
-    source_id: &str,
-) -> AppResult<Option<polars::prelude::LazyFrame>> {
-    let Some(store) = state.store() else {
-        return Ok(None);
-    };
-    let store_source_id = format!("web:{source_id}");
-    let table_name = format!("events_{source_id}");
-    let lf = store
-        .scan_table(&store_source_id, &table_name, &[])
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(lf.map(crate::web_analytics::queries::scan_events_from_store))
-}
-
 /// GET /api/analytics/:source_id/events
 pub async fn event_list(
     State(state): State<AppState>,
     Path(source_id): Path<String>,
     Query(params): Query<AnalyticsParams>,
 ) -> AppResult<Json<Vec<EventListRow>>> {
-    let (start, end) = resolve_dates(
-        &params.period,
-        params.start.as_deref(),
-        params.end.as_deref(),
-    );
+    let (start, end) = params.resolve_dates();
 
     let lf = scan_source_events(&state, &source_id, &start, &end).await?;
 
