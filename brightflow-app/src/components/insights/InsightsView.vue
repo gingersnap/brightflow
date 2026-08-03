@@ -22,6 +22,7 @@ const props = defineProps<{
 
 const router = useRouter();
 const insightsStore = useInsightsStore();
+const insightsRuns = useInsightsRuns();
 const insightsActivity = useInsightsActivityStore();
 const activityOpen = ref(false);
 const historyOpen = ref(false);
@@ -74,11 +75,11 @@ function runAnalysis(): void {
     }
   };
   if (insightsStore.reportType === 'review') {
-    void insightsStore.runReview(insightsStore.cadence).then(markSeen);
+    void insightsRuns.runReview(insightsStore.cadence).then(markSeen);
   } else if (insightsStore.reportType === 'drivers') {
-    void insightsStore.runDrivers().then(markSeen);
+    void insightsRuns.runDrivers().then(markSeen);
   } else {
-    void insightsStore.runTrends().then(markSeen);
+    void insightsRuns.runTrends().then(markSeen);
   }
 }
 

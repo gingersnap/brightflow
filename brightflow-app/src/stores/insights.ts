@@ -5,17 +5,19 @@
  * Filtering happens client-side over the already-ranked findings so toggling a
  * filter is instant and never re-runs the analysis. The overlay keeps optimistic
  * curation edits separate from the server's tree, so a failed action reverts
- * without having to refetch the report.
+ * without having to refetch the report. The runs themselves are fired by
+ * `composables/useInsightsRuns`, which feeds results back in through
+ * `beginRun`/`completeRun`/`failRun`.
  */
 
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import { dimensionOf, directionOf, measureOf } from '@/components/insights/nodeMeta';
-import { type AnalysisNode, type AnalysisTree, insightsApi } from '@/services/api';
+import type { AnalysisNode, AnalysisTree } from '@/services/api';
 import { isActionEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
-import type { ActionLogEntry } from '@/types/generated';
+import type { ActionLogEntry, InsightsResponse } from '@/types/generated';
 
 export type ReportType = 'review' | 'trends' | 'drivers';
 export type Cadence = 'daily' | 'weekly' | 'monthly';
@@ -345,89 +347,42 @@ export const useInsightsStore = defineStore('insights', () => {
     overlay.value = emptyOverlay();
   }
 
-  async function runReview(selectedCadence: Cadence = cadence.value): Promise<void> {
+  /**
+   * Mark a run of `type` as started. Returns false — and sets `error` — when
+   * no table is selected, so the caller can skip the fetch entirely.
+   */
+  function beginRun(type: ReportType, selectedCadence?: Cadence): boolean {
     if (selectedSourceId.value == null || selectedTable.value == null) {
       error.value = 'No table selected';
-      return;
+      return false;
     }
     loading.value = true;
     error.value = null;
-    cadence.value = selectedCadence;
-    reportType.value = 'review';
-    try {
-      const result = await insightsApi.runReview({
-        cadence: selectedCadence,
-        datasetId: selectedTable.value,
-        sourceId: selectedSourceId.value,
-      });
-      handleResult(result);
-      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Analysis failed';
-      tree.value = null;
-    } finally {
-      loading.value = false;
+    if (selectedCadence != null) {
+      cadence.value = selectedCadence;
     }
+    reportType.value = type;
+    return true;
   }
 
-  async function runTrends(): Promise<void> {
-    if (selectedSourceId.value == null || selectedTable.value == null) {
-      error.value = 'No table selected';
-      return;
+  function completeRun(result: InsightsResponse | null): void {
+    if (result) {
+      tree.value = result.tree;
+      executionTimeMs.value = result.executionTimeMs;
+      nodeCount.value = result.nodeCount;
+      findingCount.value = result.findingCount;
+      firstLevelCount.value = result.firstLevelCount;
+      deeperCount.value = result.deeperCount;
+      totalCandidates.value = result.totalCandidates;
+      showAll.value = false;
     }
-    loading.value = true;
-    error.value = null;
-    reportType.value = 'trends';
-    try {
-      const result = await insightsApi.runTrends({
-        datasetId: selectedTable.value,
-        sourceId: selectedSourceId.value,
-      });
-      handleResult(result);
-      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Analysis failed';
-      tree.value = null;
-    } finally {
-      loading.value = false;
-    }
+    loading.value = false;
   }
 
-  async function runDrivers(): Promise<void> {
-    if (selectedSourceId.value == null || selectedTable.value == null) {
-      error.value = 'No table selected';
-      return;
-    }
-    loading.value = true;
-    error.value = null;
-    reportType.value = 'drivers';
-    try {
-      const result = await insightsApi.runDrivers({
-        datasetId: selectedTable.value,
-        sourceId: selectedSourceId.value,
-      });
-      handleResult(result);
-      // oxlint-disable-next-line unicorn/catch-error-name -- `error` shadows the store ref
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Analysis failed';
-      tree.value = null;
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  function handleResult(result: Awaited<ReturnType<typeof insightsApi.runReview>> | null): void {
-    if (!result) {
-      return;
-    }
-    tree.value = result.tree;
-    executionTimeMs.value = result.executionTimeMs;
-    nodeCount.value = result.nodeCount;
-    findingCount.value = result.findingCount;
-    firstLevelCount.value = result.firstLevelCount;
-    deeperCount.value = result.deeperCount;
-    totalCandidates.value = result.totalCandidates;
-    showAll.value = false;
+  function failRun(message: string): void {
+    error.value = message;
+    tree.value = null;
+    loading.value = false;
   }
 
   function reset(): void {
@@ -441,11 +396,14 @@ export const useInsightsStore = defineStore('insights', () => {
     applyPatch,
     availableMeasures,
     availableTypes,
+    beginRun,
     cadence,
+    completeRun,
     countAffectedBySuppress,
     deeperCount,
     error,
     executionTimeMs,
+    failRun,
     filters,
     findingCount,
     firstLevelCount,
@@ -456,9 +414,6 @@ export const useInsightsStore = defineStore('insights', () => {
     reportType,
     reset,
     revertPatch,
-    runDrivers,
-    runReview,
-    runTrends,
     selectTable,
     selectedSourceId,
     selectedTable,
