@@ -1,5 +1,10 @@
 /**
- * WebSocket client with automatic reconnection
+ * WebSocket client with automatic reconnection.
+ *
+ * One client class for every socket the app opens (query WS, system WS) so
+ * backoff, heartbeat, and the disconnect contract exist exactly once.
+ * `disconnect()` is a user action, not a config change: a later `connect()`
+ * on the same instance re-enables auto-reconnect.
  */
 
 import { createLogger } from '@/services/logger';
@@ -21,6 +26,7 @@ export class WebSocketClient {
   private readonly url: string;
   private readonly options: WebSocketOptions;
   private ws: WebSocket | null = null;
+  private userDisconnected = false;
   private reconnectCount = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -56,6 +62,7 @@ export class WebSocketClient {
       return;
     }
 
+    this.userDisconnected = false;
     try {
       this.ws = new WebSocket(this.url);
       this.setupEventHandlers();
@@ -65,7 +72,7 @@ export class WebSocketClient {
   }
 
   disconnect(): void {
-    this.options.reconnect = false;
+    this.userDisconnected = true;
     this.clearTimers();
 
     if (this.ws) {
@@ -109,7 +116,7 @@ export class WebSocketClient {
       this.clearTimers();
       this.emit('close', event);
 
-      if (this.options.reconnect && !event.wasClean) {
+      if (this.options.reconnect && !this.userDisconnected && !event.wasClean) {
         this.scheduleReconnect();
       }
     };
@@ -184,9 +191,15 @@ export class WebSocketClient {
   }
 }
 
-export function createWebSocketClient(): WebSocketClient {
-  const wsUrl =
+/**
+ * Client for an app WebSocket endpoint. `path` swaps the endpoint while
+ * keeping the VITE_WS_URL override working (the override names the query
+ * socket; other paths substitute into it).
+ */
+export function createWebSocketClient(path = '/api/ws'): WebSocketClient {
+  const base =
     import.meta.env.VITE_WS_URL ??
     `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
-  return new WebSocketClient(wsUrl);
+  const url = path === '/api/ws' ? base : base.replace(/\/api\/ws$/u, path);
+  return new WebSocketClient(url);
 }

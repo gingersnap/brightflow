@@ -1,9 +1,14 @@
 /**
  * Live server metrics for the system panel, fed by WebSocket pushes.
+ *
+ * Rides the shared WebSocketClient (backoff + heartbeat) rather than owning a
+ * socket; this store only decodes the two push shapes and caps the log buffer.
  */
 
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+
+import { createWebSocketClient, type WebSocketClient } from '@/services/websocket';
 
 export interface SystemMetrics {
   processRssBytes: number;
@@ -25,13 +30,6 @@ type SystemStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 const MAX_LOG_ENTRIES = 500;
 
-function getWsUrl(): string {
-  const base =
-    import.meta.env.VITE_WS_URL ??
-    `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
-  return base.replace(/\/api\/ws$/u, '/api/system/ws');
-}
-
 export const useSystemStore = defineStore('system', () => {
   const metrics = ref<SystemMetrics | null>(null);
   const logs = ref<LogEntry[]>([]);
@@ -39,93 +37,57 @@ export const useSystemStore = defineStore('system', () => {
 
   const isConnected = computed(() => status.value === 'connected');
 
-  let ws: WebSocket | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let reconnectCount = 0;
+  let client: WebSocketClient | null = null;
 
-  function connect(): void {
-    if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) {
+  function handleMessage(data: unknown): void {
+    if (data == null || typeof data !== 'object') {
       return;
     }
-
-    status.value = 'connecting';
-    reconnectCount = 0;
-
-    try {
-      ws = new WebSocket(getWsUrl());
-
-      ws.onopen = () => {
-        status.value = 'connected';
-        reconnectCount = 0;
+    // oxlint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- JSON boundary
+    const record = data as Record<string, unknown>;
+    if (record['type'] === 'systemMetrics') {
+      metrics.value = {
+        cpuPercent: Number(record['cpuPercent']),
+        processAnonBytes: Number(record['processAnonBytes']),
+        processRssBytes: Number(record['processRssBytes']),
+        systemTotalBytes: Number(record['systemTotalBytes']),
+        systemUsedBytes: Number(record['systemUsedBytes']),
+        uptimeSecs: Number(record['uptimeSecs']),
       };
-
-      ws.onmessage = (event: MessageEvent) => {
-        try {
-          // oxlint-disable-next-line @typescript-eslint/no-unsafe-assignment -- JSON boundary
-          const data: Record<string, unknown> = JSON.parse(String(event.data));
-
-          if (data['type'] === 'systemMetrics') {
-            metrics.value = {
-              cpuPercent: Number(data['cpuPercent']),
-              processAnonBytes: Number(data['processAnonBytes']),
-              processRssBytes: Number(data['processRssBytes']),
-              systemTotalBytes: Number(data['systemTotalBytes']),
-              systemUsedBytes: Number(data['systemUsedBytes']),
-              uptimeSecs: Number(data['uptimeSecs']),
-            };
-          } else if (data['type'] === 'logEntry') {
-            const entry: LogEntry = {
-              level: String(data['level']),
-              message: String(data['message']),
-              target: String(data['target']),
-              timestamp: String(data['timestamp']),
-            };
-            logs.value.push(entry);
-            // Cap the array
-            if (logs.value.length > MAX_LOG_ENTRIES) {
-              logs.value = logs.value.slice(-MAX_LOG_ENTRIES);
-            }
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      };
-
-      ws.onclose = () => {
-        status.value = 'disconnected';
-        scheduleReconnect();
-      };
-
-      ws.onerror = () => {
-        status.value = 'error';
-      };
-    } catch {
-      status.value = 'error';
+    } else if (record['type'] === 'logEntry') {
+      logs.value.push({
+        level: String(record['level']),
+        message: String(record['message']),
+        target: String(record['target']),
+        timestamp: String(record['timestamp']),
+      });
+      if (logs.value.length > MAX_LOG_ENTRIES) {
+        logs.value = logs.value.slice(-MAX_LOG_ENTRIES);
+      }
     }
+  }
+
+  function connect(): void {
+    if (client == null) {
+      client = createWebSocketClient('/api/system/ws');
+      client.on('open', () => {
+        status.value = 'connected';
+      });
+      client.on('close', () => {
+        status.value = 'disconnected';
+      });
+      client.on('error', () => {
+        status.value = 'error';
+      });
+      client.on('message', handleMessage);
+    }
+    status.value = 'connecting';
+    client.connect();
   }
 
   function disconnect(): void {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    reconnectCount = 10; // Prevent further reconnects
-    if (ws) {
-      ws.close(1000, 'Client disconnect');
-      ws = null;
-    }
+    client?.disconnect();
     status.value = 'disconnected';
-  }
-
-  function scheduleReconnect(): void {
-    if (reconnectCount >= 10) {
-      return;
-    }
-    const delay = Math.min(1000 * 2 ** reconnectCount, 30_000);
-    reconnectCount++;
-    reconnectTimer = setTimeout(() => {
-      connect();
-    }, delay);
   }
 
   function clearLogs(): void {
