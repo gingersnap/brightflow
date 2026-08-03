@@ -45,7 +45,6 @@ pub type PostSyncHook = Arc<
 pub struct Scheduler {
     db: Arc<SchedulerDb>,
     store: Arc<ParquetStore>,
-    #[allow(dead_code)]
     paths: WorkspacePaths,
     running: Arc<RwLock<HashSet<String>>>,
     post_sync_hook: Arc<RwLock<Option<PostSyncHook>>>,

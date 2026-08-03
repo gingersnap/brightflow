@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use chrono::Datelike;
 use polars::prelude::*;
 
 use crate::ingest::error::IngestResult;
@@ -305,7 +306,7 @@ pub fn query_retention(
     }
 
     // For each cohort, compute retention percentages
-    let all_period_keys = generate_period_keys(period_type, num_periods);
+    let all_period_keys = generate_period_keys(num_periods);
 
     let rows: Vec<RetentionRow> = sorted_cohorts
         .iter()
@@ -430,8 +431,6 @@ fn ts_to_period_key(ts: &str, period_type: &str) -> String {
     }
 }
 
-use chrono::Datelike;
-
 /// Offset a period key by N periods.
 #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
 fn offset_period_key(base_key: &str, offset: usize, period_type: &str) -> String {
@@ -466,6 +465,6 @@ fn offset_period_key(base_key: &str, offset: usize, period_type: &str) -> String
 }
 
 /// Generate a sequence of period keys for column headers.
-fn generate_period_keys(_period_type: &str, count: usize) -> Vec<String> {
+fn generate_period_keys(count: usize) -> Vec<String> {
     (0..count).map(|i| format!("P{i}")).collect()
 }
