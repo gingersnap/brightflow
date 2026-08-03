@@ -27,14 +27,14 @@ const kindIcon = computed(() => {
     <UIcon :name="kindIcon" class="size-4 shrink-0 text-muted" />
     <!-- Version + lifecycle chips: 12px is correct for status chips -->
     <span class="text-xs text-muted">v{{ fn.version }}</span>
-    <UBadge :color="fn.status === 'promoted' ? 'success' : 'neutral'" variant="subtle" size="sm">
+    <UBadge :color="fn.status === 'promoted' ? 'success' : 'neutral'" variant="subtle" size="md">
       {{ fn.status === 'promoted' ? 'Promoted' : 'Draft' }}
     </UBadge>
     <UBadge
       v-if="fn.kind === 'llm_prompt' && (fn.staleRowCount ?? 0) > 0"
       color="warning"
       variant="subtle"
-      size="sm"
+      size="md"
       :title="`~${fn.staleRowCount} rows not yet computed`"
     >
       ~{{ fn.staleRowCount }} stale

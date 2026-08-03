@@ -2,9 +2,14 @@
 
 Vue 3 web application for Brightflow analytics platform.
 
-Current features:
+Current features (per-source tools, see `ToolId` in `src/types/index.ts`):
 
-- **Explore** - Interactive data exploration via Rust+Polars backend
+- **Dashboard / Funnels / Retention / Users** - web/product analytics views
+- **Explore** - interactive data exploration via Rust+Polars backend
+- **Insights** - computed insight feed with curation
+- **Topics** - topic modeling, taxonomy, curation queue
+- **Text Explorer** - term-based text search
+- **Enrich** - LLM/topic-model enrichment functions
 
 ## Stack
 
@@ -112,10 +117,12 @@ Nuxt UI's UButton renders `size="xs"` and `size="sm"` at 12px text (only padding
 
 **UBadge sizes:**
 
-UBadge's default `size="md"` renders 12px text. No UBadge usages exist in the codebase yet, but when adding one:
+UBadge's default `size="md"` renders 12px text.
 
 - Default to `size="lg"` (14px) for badges the user reads.
-- Smaller sizes only for status chips and decorative markers.
+- `size="md"` only for status chips and decorative markers.
+- `size="sm"` / `size="xs"` are banned for the same reason as UButton's `sm`:
+  same 12px text as `md` with worse proportions.
 
 **UTooltip:** hardcoded at 12px in Nuxt UI's theme. Accept as-is — tooltips are conventionally compact and transient.
 

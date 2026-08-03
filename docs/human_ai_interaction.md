@@ -30,7 +30,8 @@ annotations) on top of immutable data.
 - **The engine (autonomous, read-only).** Cheap deterministic statistical
   methods run over everything and rank findings by signal. It never mutates
   state, so it needs no approval or undo — it only proposes findings into the
-  feed. Rank by effect size with false-discovery control, not raw p-values;
+  feed. Rank by effect size with multiplicity control (Bonferroni-style
+  correction for the number of comparisons), not raw p-values;
   dismissals and suppressions feed back into ranking.
 - **The workspace (interactive, pair analysis).** Where state changes happen —
   through the bus, logged, undoable, editable.

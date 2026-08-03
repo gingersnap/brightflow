@@ -11,8 +11,8 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 
 ## Project Structure
 
-- `crates/brightflow-cli` - Binary (run-all, serve, schedule, insights)
-- `crates/brightflow-core` - Shared types (TenantId, DatasetId, errors)
+- `crates/brightflow-cli` - Binary (run-all, serve, insights, connect, store, topics, create-admin, migrate-events, compact)
+- `crates/brightflow-core` - Workspace paths (`WorkspacePaths`) + shared error type
 - `crates/brightflow-connect` - Data connectors
 - `crates/brightflow-store` - SQLite-backed Parquet storage (Litehouse)
 - `crates/brightflow-engine` - Analysis engine, NLP primitives, enrichment orchestration
