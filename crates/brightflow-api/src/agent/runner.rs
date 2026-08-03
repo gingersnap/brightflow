@@ -198,23 +198,24 @@ async fn run_inner(
     Ok(summary)
 }
 
-/// One retry on rate-limit/server errors, then give up.
+/// One retry on transient errors, ~5s apart (plus jitter), then give up.
 async fn chat_with_retry(
     client: &ChatClient,
     messages: &[ChatMessage],
     tools: &[ToolDef],
 ) -> AppResult<brightflow_llm::ChatOutcome> {
-    match client.chat(messages, tools).await {
-        Ok(outcome) => Ok(outcome),
-        Err(brightflow_llm::LlmError::RateLimited(_) | brightflow_llm::LlmError::Server { .. }) => {
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            client
-                .chat(messages, tools)
-                .await
-                .map_err(|e| AppError::Internal(format!("llm: {e}")))
+    brightflow_llm::chat_with_backoff(
+        client,
+        messages,
+        tools,
+        &brightflow_llm::ChatOptions::default(),
+        &brightflow_llm::RetryPolicy {
+            max_attempts: 2,
+            base_delay_ms: 5000,
         },
-        Err(e) => Err(AppError::Internal(format!("llm: {e}"))),
-    }
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("llm: {e}")))
 }
 
 /// Parse tool-call arguments into a full Action, injecting the scope.
