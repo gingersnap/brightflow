@@ -1,7 +1,6 @@
 //! Trends report: "what is changing over time?"
 
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
 
 use anyhow::Result;
 use polars::prelude::*;
@@ -18,7 +17,6 @@ use crate::analysis::seasonality::detect_seasonality;
 use crate::analysis::tree::{AnalysisResult, AnalysisTree, AnalysisType, NodeData};
 use crate::analysis::trend::{detect_trend, detect_trend_in_series};
 use crate::data::schema::DataSchema;
-use crate::debug::DebugLog;
 
 use super::cache::ColumnCache;
 use super::meta::{measure_ref, set_legacy_meta};
@@ -36,14 +34,10 @@ impl AnalysisEngine {
         &self,
         df: &DataFrame,
         schema: &DataSchema,
-        debug: &DebugLog,
     ) -> Result<AnalysisResult> {
-        let start_time = Instant::now();
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
         let mut tree = AnalysisTree::new();
         let mut first_level_count: usize = 0;
-
-        debug.section("TRENDS REPORT");
 
         let cache = ColumnCache::new(df, schema)?;
         let period_labels: Vec<Option<String>> = if let Some(time_col) = &schema.time_column {
@@ -530,16 +524,6 @@ impl AnalysisEngine {
         dedup::dedup(&mut tree);
         crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
         crate::analysis::select::select_top(&mut tree, self.select_top);
-
-        let total_time = start_time.elapsed();
-        debug.section("TRENDS COMPLETE");
-        debug.kv("Root findings", &format!("{}", tree.roots.len()));
-        debug.kv("Total nodes", &format!("{}", tree.nodes.len()));
-        debug.kv(
-            "Total time",
-            &format!("{:.2}ms", total_time.as_secs_f64() * 1000.0),
-        );
-        debug.flush();
 
         Ok(AnalysisResult {
             tree,

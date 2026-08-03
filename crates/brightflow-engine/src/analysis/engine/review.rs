@@ -1,7 +1,6 @@
 //! Review reports: "what changed lately, and why?"
 
 use std::collections::VecDeque;
-use std::time::Instant;
 
 use anyhow::Result;
 use polars::prelude::*;
@@ -14,7 +13,6 @@ use crate::analysis::scoring;
 use crate::analysis::segment::{attribute_period_segments_cached, attribute_segment};
 use crate::analysis::tree::{AnalysisResult, AnalysisTree, AnalysisType, ReviewCadence};
 use crate::data::schema::DataSchema;
-use crate::debug::DebugLog;
 
 use super::cache::ColumnCache;
 use super::meta::{measure_ref, set_legacy_meta};
@@ -33,15 +31,11 @@ impl AnalysisEngine {
         df: &DataFrame,
         schema: &DataSchema,
         cadence: ReviewCadence,
-        debug: &DebugLog,
     ) -> Result<AnalysisResult> {
-        let start_time = Instant::now();
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
         let mut tree = AnalysisTree::new();
         let mut first_level_count: usize = 0;
         let mut deeper_count: usize = 0;
-
-        debug.section(&format!("{} REVIEW", cadence.title().to_uppercase()));
 
         let cache = ColumnCache::new(df, schema)?;
 
@@ -51,7 +45,7 @@ impl AnalysisEngine {
             get_period_labels(df.column(time_col)?, granularity)?
         } else {
             // No time column - fall back to simple anomaly detection
-            return self.run_review_impl(df, schema, debug);
+            return self.run_review_impl(df, schema);
         };
 
         // Find unique periods and get the latest two
@@ -64,7 +58,6 @@ impl AnalysisEngine {
         unique_periods.sort();
 
         if unique_periods.len() < 2 {
-            debug.log("Not enough periods for comparison");
             return Ok(AnalysisResult {
                 tree,
                 first_level_count: 0,
@@ -87,9 +80,6 @@ impl AnalysisEngine {
                 deeper_count: 0,
             });
         };
-
-        debug.kv("Current period", &current_period);
-        debug.kv("Previous period", &previous_period);
 
         // Compare each KPI between current and previous period
         for col in &schema.measure_columns {
@@ -384,16 +374,6 @@ impl AnalysisEngine {
         crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
         crate::analysis::select::select_top(&mut tree, self.select_top);
 
-        let total_time = start_time.elapsed();
-        debug.section("REVIEW COMPLETE");
-        debug.kv("Root findings", &format!("{}", tree.roots.len()));
-        debug.kv("Total nodes", &format!("{}", tree.nodes.len()));
-        debug.kv(
-            "Total time",
-            &format!("{:.2}ms", total_time.as_secs_f64() * 1000.0),
-        );
-        debug.flush();
-
         Ok(AnalysisResult {
             tree,
             first_level_count,
@@ -407,21 +387,13 @@ impl AnalysisEngine {
         &self,
         df: &DataFrame,
         schema: &DataSchema,
-        debug: &DebugLog,
     ) -> Result<AnalysisResult> {
-        let start_time = Instant::now();
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
         let mut tree = AnalysisTree::new();
         let mut first_level_count: usize = 0;
         let mut deeper_count: usize = 0;
 
-        debug.section("REVIEW REPORT");
-        debug.subsection("Configuration");
-        debug.kv("z_threshold", &format!("{}", self.z_threshold));
-        debug.kv("p_threshold", &format!("{}", self.p_threshold));
-
         let cache = ColumnCache::new(df, schema)?;
-        let setup_time = start_time.elapsed();
 
         // Queue anomaly detection for KPIs and metrics
         for col in &schema.measure_columns {
@@ -605,18 +577,7 @@ impl AnalysisEngine {
         crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
         crate::analysis::select::select_top(&mut tree, self.select_top);
 
-        let total_time = start_time.elapsed();
-        debug.section("REVIEW COMPLETE");
-        debug.kv("Root findings", &format!("{}", tree.roots.len()));
-        debug.kv("Total nodes", &format!("{}", tree.nodes.len()));
-        debug.kv(
-            "Total time",
-            &format!("{:.2}ms", total_time.as_secs_f64() * 1000.0),
-        );
-        debug.flush();
-
         // Suppress unused variable warning
-        let _ = setup_time;
 
         Ok(AnalysisResult {
             tree,

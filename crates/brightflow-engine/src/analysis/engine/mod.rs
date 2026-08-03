@@ -25,7 +25,6 @@ use crate::analysis::tree::{
 };
 use crate::data::config::TimeGranularity;
 use crate::data::schema::DataSchema;
-use crate::debug::DebugLog;
 
 pub struct AnalysisEngine {
     z_threshold: f64,
@@ -151,7 +150,7 @@ impl AnalysisEngine {
 
     /// Run review report: anomaly detection with attribution
     pub fn run_review(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisResult> {
-        self.run_review_with_cadence(df, schema, ReviewCadence::Daily, &DebugLog::disabled())
+        self.run_review_with_cadence(df, schema, ReviewCadence::Daily)
     }
 
     /// Run review report with specific cadence
@@ -160,33 +159,31 @@ impl AnalysisEngine {
         df: &DataFrame,
         schema: &DataSchema,
         cadence: ReviewCadence,
-        debug: &DebugLog,
     ) -> Result<AnalysisResult> {
-        self.run_review_cadence_impl(df, schema, cadence, debug)
+        self.run_review_cadence_impl(df, schema, cadence)
     }
 
     /// Run trends report: time-based patterns and forecasting
     pub fn run_trends(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisResult> {
-        self.run_report(df, schema, ReportType::Trends, &DebugLog::disabled())
+        self.run_report(df, schema, ReportType::Trends)
     }
 
     /// Run drivers report: composition and driver analysis
     pub fn run_drivers(&self, df: &DataFrame, schema: &DataSchema) -> Result<AnalysisResult> {
-        self.run_report(df, schema, ReportType::Drivers, &DebugLog::disabled())
+        self.run_report(df, schema, ReportType::Drivers)
     }
 
-    /// Run a specific report type with debug logging
+    /// Run a specific report type
     pub fn run_report(
         &self,
         df: &DataFrame,
         schema: &DataSchema,
         report_type: ReportType,
-        debug: &DebugLog,
     ) -> Result<AnalysisResult> {
         match report_type {
-            ReportType::Review => self.run_review_impl(df, schema, debug),
-            ReportType::Trends => self.run_trends_impl(df, schema, debug),
-            ReportType::Drivers => self.run_drivers_impl(df, schema, debug),
+            ReportType::Review => self.run_review_impl(df, schema),
+            ReportType::Trends => self.run_trends_impl(df, schema),
+            ReportType::Drivers => self.run_drivers_impl(df, schema),
         }
     }
 

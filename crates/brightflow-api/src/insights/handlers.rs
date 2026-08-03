@@ -25,7 +25,6 @@ use brightflow_engine::analysis::select::{dimension_of, measure_of};
 use brightflow_engine::analysis::tree::{AnalysisTree, ReportType, ReviewCadence};
 use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
 use brightflow_engine::data::schema::DataSchema;
-use brightflow_engine::debug::DebugLog;
 
 use crate::insights::types::{
     DriversRequest, EngineConfig, InsightRunResponse, InsightsResponse, ReviewRequest,
@@ -341,12 +340,10 @@ pub(crate) async fn run_report_core(
         .with_history(history, now_epoch());
         let mut result = match kind_for_engine {
             ReportKind::Review { cadence } => {
-                engine.run_review_with_cadence(&df, &schema, cadence, &DebugLog::disabled())?
+                engine.run_review_with_cadence(&df, &schema, cadence)?
             },
             ReportKind::Trends => engine.run_trends(&df, &schema)?,
-            ReportKind::Drivers => {
-                engine.run_report(&df, &schema, ReportType::Drivers, &DebugLog::disabled())?
-            },
+            ReportKind::Drivers => engine.run_report(&df, &schema, ReportType::Drivers)?,
         };
         // Display-only sentiment tags from measure polarity.
         apply_sentiment(&mut result.tree, &schema.polarity);

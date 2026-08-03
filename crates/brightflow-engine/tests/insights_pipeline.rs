@@ -20,7 +20,6 @@ use polars::prelude::*;
 use brightflow_engine::analysis::engine::AnalysisEngine;
 use brightflow_engine::analysis::tree::AnalysisType;
 use brightflow_engine::data::schema::detect_schema;
-use brightflow_engine::debug::DebugLog;
 
 fn build_test_dataframe() -> DataFrame {
     // 90 days × 3 regions × 2 channels = 540 rows
@@ -91,7 +90,6 @@ fn full_review_pipeline_populates_new_fields() {
             &df,
             &schema,
             brightflow_engine::analysis::tree::ReviewCadence::Daily,
-            &DebugLog::disabled(),
         )
         .unwrap();
 
@@ -237,7 +235,6 @@ fn planted_spike_outranks_weak_trend() {
             &df,
             &schema,
             brightflow_engine::analysis::tree::ReviewCadence::Daily,
-            &DebugLog::disabled(),
         )
         .unwrap();
     let tree = &result.tree;

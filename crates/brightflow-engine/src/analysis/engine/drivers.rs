@@ -6,8 +6,6 @@
 //! A composition sub-pass (Concentration + TopDominance) makes the report
 //! self-contained; on tables without a time column it IS the report.
 
-use std::time::Instant;
-
 use anyhow::Result;
 use polars::prelude::*;
 
@@ -23,7 +21,6 @@ use crate::analysis::tree::{
     ScoreBreakdown,
 };
 use crate::data::schema::DataSchema;
-use crate::debug::DebugLog;
 
 use super::cache::ColumnCache;
 use super::meta::{measure_ref, set_legacy_meta};
@@ -39,14 +36,10 @@ impl AnalysisEngine {
         &self,
         df: &DataFrame,
         schema: &DataSchema,
-        debug: &DebugLog,
     ) -> Result<AnalysisResult> {
-        let start_time = Instant::now();
         let mut tree = AnalysisTree::new();
         let mut first_level_count: usize = 0;
         let mut deeper_count: usize = 0;
-
-        debug.section("DRIVERS REPORT");
 
         let cache = ColumnCache::new(df, schema)?;
         let period_labels: Vec<Option<String>> = if let Some(time_col) = &schema.time_column {
@@ -88,7 +81,6 @@ impl AnalysisEngine {
 
         // ── Delta decomposition per measure (needs ≥2 real periods) ─────────
         if period_labels.is_empty() {
-            debug.log("No time column — composition analysis only");
         } else {
             for measure in &measures {
                 first_level_count += 1;
@@ -134,16 +126,6 @@ impl AnalysisEngine {
         // (measure, dimension) by construction, so there is nothing to dedup.
         crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
         crate::analysis::select::select_top(&mut tree, self.select_top);
-
-        let total_time = start_time.elapsed();
-        debug.section("DRIVERS COMPLETE");
-        debug.kv("Root findings", &format!("{}", tree.roots.len()));
-        debug.kv("Total nodes", &format!("{}", tree.nodes.len()));
-        debug.kv(
-            "Total time",
-            &format!("{:.2}ms", total_time.as_secs_f64() * 1000.0),
-        );
-        debug.flush();
 
         Ok(AnalysisResult {
             tree,

@@ -64,7 +64,6 @@ use brightflow_engine::analysis::scoring::ScoringContext;
 use brightflow_engine::analysis::tree::{ReportType, ReviewCadence};
 use brightflow_engine::data::loader::load_csv;
 use brightflow_engine::data::schema::detect_schema;
-use brightflow_engine::debug::DebugLog;
 use brightflow_engine::output::html::write_html;
 use brightflow_engine::output::json::write_output;
 use brightflow_engine::output::markdown::write_markdown;
@@ -778,8 +777,7 @@ fn run_review(args: &AnalyzeArgs, cadence: ReviewCadence) -> Result<()> {
         .with_scoring_ctx(
             ScoringContext::new().with_kpis(data_schema.kpi_columns.iter().cloned().collect()),
         );
-    let result =
-        engine.run_review_with_cadence(&df, &data_schema, cadence, &DebugLog::disabled())?;
+    let result = engine.run_review_with_cadence(&df, &data_schema, cadence)?;
     let tree = result.tree;
 
     write_outputs(args, &tree, &suffix, cadence.title())?;
@@ -805,7 +803,7 @@ fn run_report(args: &AnalyzeArgs, report_type: ReportType) -> Result<()> {
         .with_scoring_ctx(
             ScoringContext::new().with_kpis(data_schema.kpi_columns.iter().cloned().collect()),
         );
-    let result = engine.run_report(&df, &data_schema, report_type, &DebugLog::disabled())?;
+    let result = engine.run_report(&df, &data_schema, report_type)?;
     let tree = result.tree;
 
     write_outputs(args, &tree, suffix, report_type.title())?;
