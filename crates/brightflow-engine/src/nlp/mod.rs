@@ -7,7 +7,6 @@
 pub mod classification_metrics;
 pub mod clean;
 pub mod cluster_metrics;
-pub mod clustering;
 pub mod dense_clustering;
 pub mod density;
 pub mod error;
@@ -26,7 +25,6 @@ pub mod vocabulary;
 pub use clean::{
     clean_for_embedding, effective_model_id, CleaningProfile, CLEAN_VERSION, MIN_EMBED_TOKENS,
 };
-pub use clustering::{kmeans, ClusterResult};
 pub use dense_clustering::{kmeans_dense, DenseClusterResult};
 pub use density::{default_min_cluster_size, hdbscan_dense};
 pub use error::SubtextError;
