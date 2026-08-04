@@ -575,7 +575,7 @@ impl ParquetStore {
                 continue;
             }
             let source_id = source_entry.file_name().to_string_lossy().to_string();
-            let table_name = format!("events_{source_id}");
+            let table_name = brightflow_core::events_table_name(&source_id);
 
             let date_dirs = std::fs::read_dir(&source_path)?;
             for date_entry in date_dirs.flatten() {
@@ -590,7 +590,7 @@ impl ParquetStore {
                     let file_path = file_entry.path();
                     if file_path.extension().is_some_and(|ext| ext == "parquet") {
                         self.register_file(
-                            &format!("web:{source_id}"),
+                            &brightflow_core::web_source_id(&source_id),
                             &table_name,
                             &file_path,
                             &[("date", &date)],

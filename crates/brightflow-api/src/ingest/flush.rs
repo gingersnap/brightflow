@@ -130,11 +130,11 @@ impl FlushTask {
 
         // Register file in the catalog store
         if let Some(store) = &self.store {
-            let table_name = format!("events_{source_id}");
+            let table_name = brightflow_core::events_table_name(source_id);
             let file_stats = brightflow_store::extract_file_column_stats(&df_for_stats, "");
             if let Err(e) = store
                 .register_file(
-                    &format!("web:{source_id}"),
+                    &brightflow_core::web_source_id(source_id),
                     &table_name,
                     &path,
                     &[("date", date.as_str())],

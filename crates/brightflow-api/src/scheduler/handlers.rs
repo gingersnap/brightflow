@@ -200,7 +200,7 @@ pub async fn delete_connector_config(
 
     // Cascade: purge this preset's tables, parquet files, and connector-output dir.
     if let Some(store) = state.store() {
-        let source_key = format!("connector:{id}");
+        let source_key = brightflow_core::connector_source_id(&id);
         if let Err(e) = store.delete_source_data(&source_key).await {
             tracing::warn!("Failed to purge store data for source '{source_key}': {e}");
         }

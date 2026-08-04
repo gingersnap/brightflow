@@ -20,7 +20,7 @@ pub async fn list_unified_sources(
     if let Some(ingest) = &state.ingest {
         if let Ok(event_sources) = ingest.db.list_sources().await {
             for src in event_sources {
-                let source_id_key = format!("web:{}", src.id);
+                let source_id_key = brightflow_core::web_source_id(&src.id);
                 let tables: Vec<SourceTable> = match state.store() {
                     Some(store) => store
                         .list_tables_by_source(&source_id_key)
@@ -57,7 +57,7 @@ pub async fn list_unified_sources(
     if let Some(scheduler_db) = &state.scheduler_db {
         if let Ok(configs) = scheduler_db.list_connector_configs().await {
             for config in configs {
-                let source_id_key = format!("connector:{}", config.id);
+                let source_id_key = brightflow_core::connector_source_id(&config.id);
 
                 let tables: Vec<SourceTable> = match state.store() {
                     Some(store) => store

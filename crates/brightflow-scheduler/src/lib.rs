@@ -343,7 +343,7 @@ async fn execute_sync(
             continue;
         }
 
-        let source_id = format!("connector:{connector_id}");
+        let source_id = brightflow_core::connector_source_id(connector_id);
 
         // Enrich with text-derived columns when a promoted topic_model
         // function (or a builtin default) applies.

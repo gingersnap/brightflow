@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+brightflow-core = { path = "../brightflow-core" }
 tokio = { workspace = true }
 polars = { workspace = true, features = ["semi_anti_join"] }
 serde = { workspace = true }

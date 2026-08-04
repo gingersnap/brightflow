@@ -1,4 +1,4 @@
-//! Workspace paths shared by every Brightflow crate.
+//! Workspace paths and cross-crate naming shared by every Brightflow crate.
 //!
 //! Kept tiny and dependency-free because nearly every crate depends on it —
 //! anything added here lands in nearly every compile.
@@ -8,9 +8,15 @@
 //! second workspace — or a throwaway test one — a matter of setting
 //! `BRIGHTFLOW_DATA_DIR` and `BRIGHTFLOW_WORKSPACE` rather than auditing call
 //! sites. Resolve data paths through here rather than joining your own.
+//! `source_ids` plays the same role for how sources and event tables are
+//! *named* in the store catalog.
 //!
-//! Scope is data locations. Asset paths — model directories and similar — stay
-//! with the crate that owns the asset.
+//! Scope is data locations and naming contracts. Asset paths — model
+//! directories and similar — stay with the crate that owns the asset.
+
+pub mod source_ids;
+
+pub use source_ids::{connector_source_id, events_table_name, upload_source_id, web_source_id};
 
 use std::path::{Path, PathBuf};
 

@@ -287,7 +287,7 @@ pub async fn delete_source(
 
     // Purge the source's tables + parquet files from the catalog
     if let Some(store) = state.store() {
-        let source_key = format!("web:{id}");
+        let source_key = brightflow_core::web_source_id(&id);
         if let Err(e) = store.delete_source_data(&source_key).await {
             tracing::warn!("Failed to purge store data for source '{source_key}': {e}");
         }

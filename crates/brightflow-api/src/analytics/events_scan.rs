@@ -121,8 +121,8 @@ async fn scan_with_filters(
     let Some(store) = state.store() else {
         return Ok(None);
     };
-    let store_source_id = format!("web:{source_id}");
-    let table_name = format!("events_{source_id}");
+    let store_source_id = brightflow_core::web_source_id(source_id);
+    let table_name = brightflow_core::events_table_name(source_id);
     let lf = store
         .scan_table(&store_source_id, &table_name, filters)
         .await

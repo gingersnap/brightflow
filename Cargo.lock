@@ -787,6 +787,7 @@ dependencies = [
 name = "brightflow-store"
 version = "0.1.0"
 dependencies = [
+ "brightflow-core",
  "chrono",
  "polars",
  "serde",

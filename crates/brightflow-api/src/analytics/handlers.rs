@@ -231,7 +231,7 @@ async fn ingest_csv_as_source(
     }
 
     let table = table_override.map_or_else(|| slugify_table_name(filename), slugify_table_name);
-    let source_id = format!("upload:{}", uuid::Uuid::now_v7());
+    let source_id = brightflow_core::upload_source_id(&uuid::Uuid::now_v7().to_string());
 
     // Stage a temp parquet under the workspace so ingest can copy it in.
     let tmp_dir = paths.base().join("tmp");
