@@ -217,14 +217,10 @@ fn one_tailed_upper_p(z: f64) -> f64 {
 mod tests {
     use super::*;
 
-    /// Deterministic pseudo-noise in [-0.5, 0.5).
+    /// Deterministic pseudo-noise in [-0.5, 0.5), seeded per (index, salt).
     fn noise(i: usize, salt: u64) -> f64 {
-        let mut z = (i as u64)
-            .wrapping_add(salt)
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z ^= z >> 27;
-        ((z % 10_000) as f64 / 10_000.0) - 0.5
+        let mut rng = crate::nlp::SplitMix64::new((i as u64).wrapping_add(salt));
+        ((rng.next_u64() % 10_000) as f64 / 10_000.0) - 0.5
     }
 
     // ── Calibration: false-positive rate under H0 ─────────────────────────

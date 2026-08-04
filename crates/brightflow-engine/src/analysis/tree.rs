@@ -582,25 +582,10 @@ pub(crate) fn humanize_period(period: &str) -> String {
             return format!("Q{quarter} {year}");
         }
     } else if period.len() == 7 && period.contains('-') {
-        // "2023-03" format
-        let parts: Vec<&str> = period.split('-').collect();
-        if let (Some(year), Some(month_num)) = (parts.first(), parts.get(1)) {
-            let month_name = match *month_num {
-                "01" => "January",
-                "02" => "February",
-                "03" => "March",
-                "04" => "April",
-                "05" => "May",
-                "06" => "June",
-                "07" => "July",
-                "08" => "August",
-                "09" => "September",
-                "10" => "October",
-                "11" => "November",
-                "12" => "December",
-                _ => month_num,
-            };
-            return format!("{month_name} {year}");
+        // "2023-03" format; anything chrono can't parse (e.g. "2023-XX")
+        // falls through and is returned unchanged.
+        if let Ok(date) = chrono::NaiveDate::parse_from_str(&format!("{period}-01"), "%Y-%m-%d") {
+            return date.format("%B %Y").to_string();
         }
     }
     period.to_string()
@@ -1250,4 +1235,32 @@ pub struct AnalysisResult {
     pub tree: AnalysisTree,
     pub first_level_count: usize,
     pub deeper_count: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn humanize_period_month_week_quarter_year() {
+        assert_eq!(humanize_period("2023-03"), "March 2023");
+        assert_eq!(humanize_period("2023-12"), "December 2023");
+        assert_eq!(humanize_period("2023-W12"), "week 12 of 2023");
+        assert_eq!(humanize_period("2023-Q1"), "Q1 2023");
+        assert_eq!(humanize_period("2023"), "2023");
+    }
+
+    #[test]
+    fn humanize_period_garbage_passes_through() {
+        assert_eq!(humanize_period("2023-XX"), "2023-XX");
+        assert_eq!(humanize_period("2023-13"), "2023-13");
+        assert_eq!(humanize_period(""), "");
+    }
+
+    #[test]
+    fn pluralize_picks_the_right_form() {
+        assert_eq!(pluralize(1, "value", "values"), "1 value");
+        assert_eq!(pluralize(0, "value", "values"), "0 values");
+        assert_eq!(pluralize(2, "value", "values"), "2 values");
+    }
 }
