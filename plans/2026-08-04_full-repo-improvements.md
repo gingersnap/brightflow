@@ -1,6 +1,6 @@
 # Plan: implement the improvements from reports/2026-08-03_full-repo-review.md
 
-**Status:** in progress
+**Status:** implemented (2026-08-04)
 **Date:** 2026-08-04
 
 ## Context
