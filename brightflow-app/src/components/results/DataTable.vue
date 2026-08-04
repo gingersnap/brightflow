@@ -6,20 +6,50 @@
  * a column name or cell value; richer actions are deferred (see below).
  */
 
-import type { ContextMenuItem } from '@nuxt/ui';
+import type { ContextMenuItem, TableColumn } from '@nuxt/ui';
 import { useClipboard } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, h, ref } from 'vue';
 
 import { useResultsStore } from '@/stores/results';
 import { formatNumber } from '@/utils/format';
 
 const resultsStore = useResultsStore();
 
-// Build table columns for UTable (TanStack Table format)
-const tableColumns = computed(() =>
+type RowData = Record<string, unknown>;
+
+/*
+ * Build table columns for UTable (TanStack Table format). `id` + `accessorFn`
+ * rather than `accessorKey`: TanStack treats dots in accessorKey as deep
+ * paths, so a column literally named "a.b" would resolve to row.a.b and come
+ * back empty. Header and cell render functions carry the context-menu wiring,
+ * so the menu target comes from the render tree instead of DOM sniffing.
+ */
+const tableColumns = computed<TableColumn<RowData>[]>(() =>
   resultsStore.table.columns.map((col) => ({
-    accessorKey: col.name,
-    header: col.name,
+    accessorFn: (row: RowData) => row[col.name],
+    cell: ({ getValue }) => {
+      const value = String(getValue() ?? '');
+      return h(
+        'span',
+        {
+          onContextmenu: (e: MouseEvent) => {
+            openMenu(e, { colName: col.name, value });
+          },
+        },
+        value,
+      );
+    },
+    header: () =>
+      h(
+        'span',
+        {
+          onContextmenu: (e: MouseEvent) => {
+            openMenu(e, { colName: col.name });
+          },
+        },
+        col.name,
+      ),
+    id: col.name,
   })),
 );
 
@@ -55,11 +85,10 @@ function formatCell(value: unknown, dtype: string): string {
   }
 }
 
-// ── Context menu (clipboard-only v1) ───────────────────────────────────────
-// One UContextMenu wraps the table; a native @contextmenu on the wrapper
-// Inspects whether the cursor is on a header (<th>) or body (<td>) cell and
-// Captures the column / value. Sort / group-by / filter-by-this-value are
-// Deferred — wiring them needs query-store manipulation (see plan OQ2).
+/*
+ * Context menu (clipboard-only v1). Sort / group-by / filter-by-this-value
+ * are deferred — wiring them needs query-store manipulation (see plan OQ2).
+ */
 const open = ref(false);
 const isHeader = ref(false);
 const colName = ref<string | null>(null);
@@ -67,38 +96,11 @@ const cellValue = ref<string | null>(null);
 
 const { copy } = useClipboard();
 
-function onContextMenu(e: MouseEvent): void {
-  const target = e.target as HTMLElement | null;
-  const th = target?.closest('th') ?? null;
-  const td = target?.closest('td') ?? null;
-
-  if (th != null) {
-    const col = tableColumns.value[th.cellIndex];
-    if (col == null) {
-      return;
-    }
-    isHeader.value = true;
-    colName.value = col.header;
-    cellValue.value = null;
-  } else if (td == null) {
-    return;
-  } else {
-    const col = tableColumns.value[td.cellIndex];
-    const tr = td.closest('tr');
-    if (col == null || tr == null) {
-      return;
-    }
-    // RowIndex counts the header row; offset by one for the body index.
-    const row = tableData.value[tr.rowIndex - 1];
-    if (row == null) {
-      return;
-    }
-    const value = row[col.accessorKey];
-    isHeader.value = false;
-    colName.value = col.accessorKey;
-    cellValue.value = typeof value === 'string' ? value : String(value ?? '');
-  }
+function openMenu(e: MouseEvent, target: { colName: string; value?: string }): void {
   e.preventDefault();
+  isHeader.value = target.value === undefined;
+  colName.value = target.colName;
+  cellValue.value = target.value ?? null;
   open.value = true;
 }
 
@@ -120,7 +122,9 @@ const items = computed<ContextMenuItem[][]>(() => {
 
 <template>
   <UContextMenu v-model:open="open" :items="items">
-    <div class="h-full overflow-auto" @contextmenu="onContextMenu">
+    <!-- The no-op prevent covers right-clicks on td padding (outside the
+         rendered span): no app menu there, but no browser menu either. -->
+    <div class="h-full overflow-auto" @contextmenu.prevent>
       <UTable :data="tableData" :columns="tableColumns" class="w-full" />
     </div>
   </UContextMenu>
