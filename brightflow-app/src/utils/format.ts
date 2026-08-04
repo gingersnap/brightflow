@@ -27,6 +27,22 @@ export function formatNumber(value: number): string {
   return numberFormat.format(value);
 }
 
+/** Cached per-precision formatters for `formatDecimal`. */
+const decimalFormats = new Map<number, Intl.NumberFormat>();
+
+/** An en-US decimal with a caller-chosen max precision; formatters are cached. */
+export function formatDecimal(value: number, maxDecimals: number): string {
+  if (!Number.isFinite(value)) {
+    return String(value);
+  }
+  let format = decimalFormats.get(maxDecimals);
+  if (!format) {
+    format = new Intl.NumberFormat('en-US', { maximumFractionDigits: maxDecimals });
+    decimalFormats.set(maxDecimals, format);
+  }
+  return format.format(value);
+}
+
 /** Compact form for axis labels: 1.2M, 45K. */
 export function formatCompact(value: number): string {
   if (!Number.isFinite(value)) {

@@ -9,6 +9,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { AggFn, PivotField } from '@/types';
+import { isNumericDtype } from '@/utils/dtype';
 
 export const usePivotStore = defineStore('pivot', () => {
   // === Bucket State ===
@@ -77,7 +78,7 @@ export const usePivotStore = defineStore('pivot', () => {
   function addValueField(column: string, dtype: string, aggregation: AggFn | null = null): void {
     // Choose default aggregation based on type
     // Numeric types default to sum, strings default to count
-    const isNumeric = ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype);
+    const isNumeric = isNumericDtype(dtype);
     const defaultAgg: AggFn = isNumeric ? 'sum' : 'count';
 
     valueFields.value.push({

@@ -29,6 +29,7 @@ import { usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useUiStore } from '@/stores/ui';
 import type { PivotField } from '@/types';
+import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 
 import BucketDropzone from '../pivot/BucketDropzone.vue';
 
@@ -56,8 +57,8 @@ const columns = computed((): ColumnItem[] =>
   datasetStore.columns.map((col) => ({
     ...col,
     id: col.name,
-    isNumeric: ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(col.dtype),
-    isString: ['string', 'text', 'varchar'].includes(col.dtype),
+    isNumeric: isNumericDtype(col.dtype),
+    isString: isStringDtype(col.dtype),
   })),
 );
 
@@ -108,7 +109,7 @@ watch(
           pivotStore.addRowField(valueField.column, valueField.dtype);
         } else {
           const stringCol = datasetStore.columns.find(
-            (c) => ['string', 'text', 'varchar'].includes(c.dtype) && c.name !== valueField.column,
+            (c) => isStringDtype(c.dtype) && c.name !== valueField.column,
           );
           if (stringCol) {
             pivotStore.addRowField(stringCol.name, stringCol.dtype);

@@ -9,6 +9,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { ColumnInfo } from '@/types';
+import { escapeCsvCell } from '@/utils/csv';
 
 // Flexible type to accept WsMessage data and explicit result data
 interface ResultData {
@@ -21,17 +22,6 @@ interface ResultData {
 }
 
 type ResultType = 'table' | 'pivot';
-
-function escapeCsvCell(cell: unknown): string {
-  if (cell === null || cell === undefined) {
-    return '';
-  }
-  const str = typeof cell === 'string' ? cell : JSON.stringify(cell);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replaceAll('"', '""')}"`;
-  }
-  return str;
-}
 
 export const useResultsStore = defineStore('results', () => {
   // Table data (raw data)

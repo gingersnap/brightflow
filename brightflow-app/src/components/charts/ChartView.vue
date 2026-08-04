@@ -7,8 +7,9 @@
  * axes, stacking, and orientation.
  */
 
-import '@/services/echarts';
 import { computed, ref, watch } from 'vue';
+
+import '@/services/echarts';
 import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
@@ -16,6 +17,7 @@ import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { ChartType } from '@/types';
+import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 
 // Register ECharts components
 const resultsStore = useResultsStore();
@@ -66,15 +68,11 @@ const horizontal = ref(false);
 
 // Find suitable columns for chart (from pivot or table data)
 const stringColumns = computed(() =>
-  chartColumns.value
-    .filter((c) => ['string', 'text', 'varchar'].includes(c.dtype))
-    .map((c) => c.name),
+  chartColumns.value.filter((c) => isStringDtype(c.dtype)).map((c) => c.name),
 );
 
 const numericColumns = computed(() =>
-  chartColumns.value
-    .filter((c) => ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(c.dtype))
-    .map((c) => c.name),
+  chartColumns.value.filter((c) => isNumericDtype(c.dtype)).map((c) => c.name),
 );
 
 const allColumnNames = computed(() => chartColumns.value.map((c) => c.name));

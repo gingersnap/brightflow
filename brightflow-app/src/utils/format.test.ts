@@ -8,7 +8,13 @@
 
 import { describe, test, expect } from 'vitest';
 
-import { formatNumber, humanizePeriod, humanizeColumn, friendlyEngineError } from './format';
+import {
+  formatDecimal,
+  formatNumber,
+  humanizePeriod,
+  humanizeColumn,
+  friendlyEngineError,
+} from './format';
 
 describe('formatNumber', () => {
   test('adds thousands separators for magnitudes >= 1000', () => {
@@ -94,5 +100,18 @@ describe('friendlyEngineError', () => {
     const { message, detail } = friendlyEngineError(raw);
     expect(message).toBe('The analysis failed unexpectedly.');
     expect(detail).toBe(raw);
+  });
+});
+
+describe('formatDecimal', () => {
+  test('caps decimals at the requested precision with en-US separators', () => {
+    expect(formatDecimal(1234.5678, 2)).toBe('1,234.57');
+    expect(formatDecimal(1234.5678, 0)).toBe('1,235');
+    expect(formatDecimal(3, 2)).toBe('3');
+  });
+
+  test('non-finite values pass through as strings', () => {
+    expect(formatDecimal(Number.NaN, 2)).toBe('NaN');
+    expect(formatDecimal(Number.POSITIVE_INFINITY, 1)).toBe('Infinity');
   });
 });

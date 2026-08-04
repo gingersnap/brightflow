@@ -12,6 +12,7 @@ import { computed } from 'vue';
 
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
+import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
 
 const pivotStore = usePivotStore();
 const resultsStore = useResultsStore();
@@ -292,7 +293,7 @@ function formatValue(value: unknown, dtype: string | undefined): string {
   if (typeof value === 'number') {
     const decimals = pivotStore.decimalPlaces;
     // Format based on dtype
-    if (dtype === 'float' || dtype === 'decimal' || dtype === 'f64') {
+    if (isFloatDtype(dtype)) {
       return value.toLocaleString(undefined, {
         maximumFractionDigits: decimals,
         minimumFractionDigits: 0,
@@ -316,7 +317,7 @@ function isNumeric(dtype: string | undefined): boolean {
   if (!dtype) {
     return false;
   }
-  return ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(dtype);
+  return isNumericDtype(dtype);
 }
 </script>
 

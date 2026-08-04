@@ -11,6 +11,7 @@ import { computed } from 'vue';
 
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
+import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
 
 const resultsStore = useResultsStore();
 const pivotStore = usePivotStore();
@@ -57,7 +58,7 @@ const displayData = computed((): DisplayData => {
   // Find numeric columns
   const numericIndices = cols
     .map((col, idx) => ({ col, idx }))
-    .filter(({ col }) => ['int', 'float', 'decimal', 'number', 'i64', 'f64'].includes(col.dtype));
+    .filter(({ col }) => isNumericDtype(col.dtype));
 
   if (numericIndices.length === 0) {
     return null;
@@ -127,7 +128,7 @@ function formatNumber(value: unknown, dtype: string, compact = false): string {
     return String(value);
   }
 
-  const isFloat = ['float', 'decimal', 'f64'].includes(dtype);
+  const isFloat = isFloatDtype(dtype);
 
   if (compact && Math.abs(value) >= 1_000_000) {
     return new Intl.NumberFormat(undefined, {

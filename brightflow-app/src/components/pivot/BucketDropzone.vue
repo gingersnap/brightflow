@@ -11,6 +11,7 @@ import { type Component, ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 
 import type { AggFn, PivotField } from '@/types';
+import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 
 // AggFn (not string) so USelectMenu emits a value assignable to PivotField.aggregation.
 interface AggregationOption {
@@ -97,10 +98,10 @@ function canAcceptMore(): boolean {
 // Get icon for field type
 function getTypeIcon(field: PivotField): Component {
   const { dtype } = field;
-  if (['int', 'float', 'decimal', 'number'].includes(dtype)) {
+  if (isNumericDtype(dtype)) {
     return Hash;
   }
-  if (['string', 'text', 'varchar'].includes(dtype)) {
+  if (isStringDtype(dtype)) {
     return Type;
   }
   return HelpCircle;

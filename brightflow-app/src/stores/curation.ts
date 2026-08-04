@@ -11,24 +11,12 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 
-import { isActionEvent } from '@/services/wsGuards';
+import { isActionBatch, isActionEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
-import type { ActionBatchPayload, ActionLogEntry } from '@/types/generated';
+import type { ActionLogEntry } from '@/types/generated';
 
 /** Feed length the server returns and the client keeps. */
 export const FEED_LIMIT = 100;
-
-/** Structural guard for a pushed `actionBatch` frame. */
-function isActionBatch(
-  m: Record<string, unknown>,
-): m is Record<string, unknown> & ActionBatchPayload {
-  return (
-    Array.isArray(m['entries']) &&
-    typeof m['truncated'] === 'boolean' &&
-    typeof m['succeeded'] === 'number' &&
-    typeof m['pendingCount'] === 'number'
-  );
-}
 
 export const useCurationStore = defineStore('curation', () => {
   const feed = ref<ActionLogEntry[]>([]);

@@ -12,6 +12,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { ColumnInfo, LoadTableResponse } from '@/types';
+import { isNumericDtype } from '@/utils/dtype';
 
 import { useUiStore } from './ui';
 
@@ -25,9 +26,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const error = ref<string | null>(null);
 
   // Computed
-  const numericColumns = computed(() =>
-    columns.value.filter((c) => ['int', 'float', 'decimal', 'number'].includes(c.dtype)),
-  );
+  const numericColumns = computed(() => columns.value.filter((c) => isNumericDtype(c.dtype)));
 
   const hasData = computed(() => columns.value.length > 0);
 

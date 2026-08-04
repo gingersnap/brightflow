@@ -10,22 +10,12 @@ import { useLocalStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
+import { isInsightsComputed } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
-import type { InsightRunResponse, InsightsComputedPayload } from '@/types/generated';
+import type { InsightRunResponse } from '@/types/generated';
 
 /** Client-side "seen" memory survives reloads; the server never tracks it. */
 const SEEN_STORAGE_KEY = 'brightflow.insights.seenAt';
-
-/** Structural guard for a pushed `insightsComputed` frame. */
-function isInsightsComputed(
-  m: Record<string, unknown>,
-): m is Record<string, unknown> & InsightsComputedPayload {
-  return (
-    typeof m['sourceId'] === 'string' &&
-    typeof m['table'] === 'string' &&
-    typeof m['computedAt'] === 'number'
-  );
-}
 
 /** Parse + validate the stored seen-map; anything malformed becomes {}. */
 function readSeenAt(raw: string): Record<string, number> {
