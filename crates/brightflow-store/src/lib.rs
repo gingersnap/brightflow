@@ -27,6 +27,7 @@ mod error;
 mod ingest;
 mod models;
 pub mod scan;
+pub mod sqlite;
 mod stats;
 mod table;
 
@@ -40,6 +41,7 @@ pub use models::{
     TableEnrichmentSettingsRow, TableRow, TaxonomyCategoryRow,
 };
 pub use scan::ScanFilter;
+pub use sqlite::{open_sqlite_pool, SqlitePoolProfile};
 pub use stats::extract_file_column_stats;
 pub use table::{TableInfo, TableRef};
 

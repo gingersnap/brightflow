@@ -3,12 +3,10 @@
 //! One flat query module rather than per-domain repositories: each method is
 //! a self-contained named query over one pool, so there is exactly one place
 //! to look for "what does the store persist", and the migrations directory
-//! stays the only schema authority. WAL journaling with NORMAL sync is the
-//! deliberate latency/durability trade for a local, single-writer catalog.
+//! stays the only schema authority. The pool itself comes from the shared
+//! bootstrap in `crate::sqlite`.
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use std::str::FromStr;
 
 use crate::error::{StoreError, StoreResult};
 use crate::models::{
@@ -27,20 +25,11 @@ pub struct StoreDb {
 
 impl StoreDb {
     pub async fn new(database_url: &str) -> StoreResult<Self> {
-        let options = SqliteConnectOptions::from_str(database_url)?
-            .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-            .foreign_keys(true)
-            .pragma("synchronous", "NORMAL")
-            .pragma("cache_size", "-64000")
-            .pragma("mmap_size", "268435456")
-            .pragma("temp_store", "MEMORY")
-            .busy_timeout(std::time::Duration::from_secs(5));
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
+        let pool = crate::sqlite::open_sqlite_pool(
+            database_url,
+            crate::sqlite::SqlitePoolProfile::METADATA,
+        )
+        .await?;
 
         sqlx::migrate!("./migrations").run(&pool).await?;
 

@@ -4,9 +4,6 @@
 //! read on every single event — while the buffers are large, per-source, and
 //! write-heavy.
 
-use std::time::Duration;
-
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
 use super::error::{IngestError, IngestResult};
@@ -21,22 +18,11 @@ pub struct IngestDb {
 impl IngestDb {
     /// Open or create the ingest metadata database.
     pub async fn new(database_url: &str) -> IngestResult<Self> {
-        let options: SqliteConnectOptions = database_url
-            .parse::<SqliteConnectOptions>()
-            .map_err(|e| IngestError::Other(format!("Invalid database URL: {e}")))?
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .foreign_keys(true)
-            .pragma("synchronous", "NORMAL")
-            .pragma("cache_size", "-64000")
-            .pragma("mmap_size", "268435456")
-            .pragma("temp_store", "MEMORY")
-            .busy_timeout(Duration::from_secs(5));
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
+        let pool = brightflow_store::open_sqlite_pool(
+            database_url,
+            brightflow_store::SqlitePoolProfile::METADATA,
+        )
+        .await?;
 
         sqlx::migrate!("./migrations/ingest").run(&pool).await?;
 

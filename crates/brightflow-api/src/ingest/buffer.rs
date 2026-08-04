@@ -9,13 +9,11 @@
 //! never blocks a quiet one behind the same write lock.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use dashmap::DashMap;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
-use super::error::{IngestError, IngestResult};
+use super::error::IngestResult;
 use super::models::Event;
 
 const BUFFER_TABLE_SQL: &str = r"
@@ -82,21 +80,9 @@ impl EventBuffer {
         let db_path = self.buffer_dir.join(format!("{source_id}.db"));
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
 
-        let options: SqliteConnectOptions = url
-            .parse::<SqliteConnectOptions>()
-            .map_err(|e| IngestError::Other(format!("Invalid buffer DB URL: {e}")))?
-            .create_if_missing(true)
-            .journal_mode(SqliteJournalMode::Wal)
-            .pragma("synchronous", "NORMAL")
-            .pragma("cache_size", "-16000")
-            .pragma("mmap_size", "67108864")
-            .pragma("temp_store", "MEMORY")
-            .busy_timeout(Duration::from_secs(5));
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(3)
-            .connect_with(options)
-            .await?;
+        let pool =
+            brightflow_store::open_sqlite_pool(&url, brightflow_store::SqlitePoolProfile::BUFFER)
+                .await?;
 
         // Create buffer table if it doesn't exist
         sqlx::query(BUFFER_TABLE_SQL).execute(&pool).await?;

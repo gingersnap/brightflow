@@ -6,12 +6,11 @@
 //! policy — rows carry whatever hash the caller supplies, and nothing here
 //! verifies one.
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use std::str::FromStr;
 
 use crate::auth::error::AuthResult;
 use crate::auth::models::User;
+use brightflow_store::{open_sqlite_pool, SqlitePoolProfile};
 
 #[derive(Clone)]
 pub struct AuthDb {
@@ -20,19 +19,7 @@ pub struct AuthDb {
 
 impl AuthDb {
     pub async fn new(database_url: &str) -> AuthResult<Self> {
-        let options = SqliteConnectOptions::from_str(database_url)?
-            .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-            .pragma("synchronous", "NORMAL")
-            .pragma("cache_size", "-64000")
-            .pragma("mmap_size", "268435456")
-            .pragma("temp_store", "MEMORY")
-            .busy_timeout(std::time::Duration::from_secs(5));
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
+        let pool = open_sqlite_pool(database_url, SqlitePoolProfile::METADATA).await?;
 
         // Run migrations
         sqlx::migrate!("./migrations").run(&pool).await?;

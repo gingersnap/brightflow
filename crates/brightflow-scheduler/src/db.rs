@@ -10,9 +10,7 @@
 //! self-correcting: with no cursor for an endpoint the next sync re-fetches it
 //! from the beginning — slower, not wrong.
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use std::str::FromStr;
 
 use crate::error::SchedulerResult;
 use crate::models::{ConnectorConfig, SchedulerJob, SyncRun, SyncState};
@@ -24,19 +22,11 @@ pub struct SchedulerDb {
 
 impl SchedulerDb {
     pub async fn new(database_url: &str) -> SchedulerResult<Self> {
-        let options = SqliteConnectOptions::from_str(database_url)?
-            .create_if_missing(true)
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-            .pragma("synchronous", "NORMAL")
-            .pragma("cache_size", "-64000")
-            .pragma("mmap_size", "268435456")
-            .pragma("temp_store", "MEMORY")
-            .busy_timeout(std::time::Duration::from_secs(5));
-
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
+        let pool = brightflow_store::open_sqlite_pool(
+            database_url,
+            brightflow_store::SqlitePoolProfile::METADATA,
+        )
+        .await?;
 
         // Run migrations
         sqlx::migrate!("./migrations").run(&pool).await?;
