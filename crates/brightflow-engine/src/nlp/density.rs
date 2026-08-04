@@ -124,7 +124,11 @@ pub fn hdbscan_dense(vectors: &[Vec<f32>], min_cluster_size: usize) -> DenseClus
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::suboptimal_flops,
+    reason = "test fixtures cast small counts to floats; test math is written for readability, not FLOP count"
+)]
 mod tests {
     use super::*;
 

@@ -129,7 +129,7 @@ pub fn binary_f1(scores: &[f32], positives: &[bool], threshold: f32) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
+#[expect(clippy::float_cmp, reason = "tests assert exact expected values")]
 mod tests {
     use super::{binary_f1, macro_f1, micro_f1, per_label_counts, Counts};
 

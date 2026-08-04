@@ -108,7 +108,6 @@ pub(crate) fn distinctive_terms(subset_df: &[u32], corpus_df: &[u32]) -> Vec<Ran
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_possible_truncation)]
 mod tests {
     use super::*;
 

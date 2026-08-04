@@ -205,7 +205,11 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_precision_loss, clippy::redundant_clone)]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::redundant_clone,
+    reason = "explicit clones keep test fixtures independent; test fixtures cast small counts to floats"
+)]
 mod tests {
     use super::*;
 

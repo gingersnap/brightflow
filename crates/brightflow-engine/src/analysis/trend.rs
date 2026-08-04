@@ -67,7 +67,10 @@ pub fn detect_trend(df: &DataFrame, column: &str) -> Result<Option<TrendResult>>
 }
 
 #[cfg(test)]
-#[allow(clippy::suboptimal_flops)]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "test math is written for readability, not FLOP count"
+)]
 mod tests {
     use super::*;
 

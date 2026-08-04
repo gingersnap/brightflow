@@ -1,6 +1,9 @@
 //! Integration tests against a scripted mock OpenAI-compatible server.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration tests panic on failure by design"
+)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

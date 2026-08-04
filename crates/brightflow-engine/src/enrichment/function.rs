@@ -300,7 +300,10 @@ fn coerce_value(dtype: &OutputType, raw: &serde_json::Value) -> Result<serde_jso
 }
 
 #[cfg(test)]
-#[allow(clippy::shadow_unrelated)]
+#[expect(
+    clippy::shadow_unrelated,
+    reason = "sequential test cases reuse binding names"
+)]
 mod tests {
     use super::*;
 

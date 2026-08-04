@@ -256,7 +256,10 @@ pub(crate) fn snippet_runs(body: &str, terms: &[String], whole_word: bool) -> Ve
 }
 
 #[cfg(test)]
-#[allow(clippy::shadow_unrelated)]
+#[expect(
+    clippy::shadow_unrelated,
+    reason = "sequential test cases reuse binding names"
+)]
 mod tests {
     use super::*;
 

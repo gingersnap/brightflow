@@ -209,10 +209,11 @@ fn one_tailed_upper_p(z: f64) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::cast_precision_loss,
     clippy::cast_lossless,
-    clippy::suboptimal_flops
+    clippy::suboptimal_flops,
+    reason = "test fixtures cast small counts to floats; test fixtures use direct casts for brevity; test math is written for readability, not FLOP count"
 )]
 mod tests {
     use super::*;

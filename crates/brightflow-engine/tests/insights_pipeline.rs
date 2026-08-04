@@ -2,16 +2,13 @@
 //! in-memory DataFrame. Verifies that the new fields (data, scoreBreakdown,
 //! filterChain) are populated and that scoring/dedup behave reasonably.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::print_stderr,
-    clippy::indexing_slicing,
     clippy::cast_precision_loss,
     clippy::cognitive_complexity,
     clippy::suboptimal_flops,
-    clippy::panic,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "integration tests panic on failure by design"
 )]
 
 use chrono::NaiveDate;

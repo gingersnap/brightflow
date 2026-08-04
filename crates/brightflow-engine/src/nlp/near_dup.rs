@@ -333,7 +333,10 @@ impl UnionFind {
 }
 
 #[cfg(test)]
-#[allow(clippy::unnecessary_wraps)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "helper mirrors the Option-returning API under test"
+)]
 mod tests {
     use super::*;
 

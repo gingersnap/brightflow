@@ -196,7 +196,10 @@ fn render_row(
 }
 
 #[cfg(test)]
-#[allow(clippy::shadow_unrelated)]
+#[expect(
+    clippy::shadow_unrelated,
+    reason = "sequential test cases reuse binding names"
+)]
 mod tests {
     use super::*;
     use crate::textexplore::index::build_index;

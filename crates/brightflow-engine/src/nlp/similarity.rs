@@ -68,7 +68,7 @@ pub fn cosine_unnormalized(a: &SparseVec, b: &SparseVec) -> f32 {
 }
 
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
+#[expect(clippy::float_cmp, reason = "tests assert exact expected values")]
 mod tests {
     use super::*;
 

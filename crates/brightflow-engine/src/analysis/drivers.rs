@@ -264,7 +264,10 @@ pub fn decompose_latest_delta(
 }
 
 #[cfg(test)]
-#[allow(clippy::float_cmp, clippy::suboptimal_flops)]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "test math is written for readability, not FLOP count"
+)]
 mod tests {
     use super::*;
 

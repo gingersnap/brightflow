@@ -1,14 +1,11 @@
 //! Integration tests for the Drivers report: planted-delta attribution,
 //! sign-cancellation surfacing, and fingerprint hygiene across passes.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::print_stderr,
-    clippy::indexing_slicing,
     clippy::cast_precision_loss,
     clippy::suboptimal_flops,
-    clippy::panic
+    reason = "integration tests panic on failure by design"
 )]
 
 use std::collections::HashSet;

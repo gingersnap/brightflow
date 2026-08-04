@@ -193,7 +193,10 @@ fn normalize(v: &mut [f32]) {
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "test fixtures cast small counts to floats"
+)]
 mod tests {
     use super::*;
 

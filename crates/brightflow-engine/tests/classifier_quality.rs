@@ -62,13 +62,11 @@
 //! Assertions are on **macro**-F1. Micro would pool the labels and hide the
 //! very confusion under test behind the labels that work.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::cast_precision_loss,
     clippy::indexing_slicing,
-    clippy::print_stderr,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    reason = "integration tests panic on failure by design"
 )]
 
 use brightflow_engine::nlp::classification_metrics::macro_f1;

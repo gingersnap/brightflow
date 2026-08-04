@@ -366,10 +366,11 @@ fn two_tailed_p_from_z(z: f64) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::shadow_unrelated,
     clippy::suboptimal_flops,
-    clippy::redundant_clone
+    clippy::redundant_clone,
+    reason = "explicit clones keep test fixtures independent; sequential test cases reuse binding names; test math is written for readability, not FLOP count"
 )]
 mod tests {
     use super::*;

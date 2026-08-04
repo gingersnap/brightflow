@@ -4,11 +4,11 @@
 //! `insight_runs` row but never writes `insight_history` ("shown" means a
 //! human saw it); a manual run records both.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::panic
+    clippy::panic,
+    reason = "integration tests panic on failure by design"
 )]
 
 use std::sync::Arc;

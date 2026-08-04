@@ -122,7 +122,10 @@ pub fn dimension_of(node: &AnalysisNode) -> Option<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::suboptimal_flops)]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "test math is written for readability, not FLOP count"
+)]
 mod tests {
     use super::*;
     use crate::analysis::tree::{AnalysisTree, TrendDirection};

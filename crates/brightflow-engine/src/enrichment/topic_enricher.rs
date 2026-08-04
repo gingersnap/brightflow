@@ -1463,7 +1463,10 @@ fn write_label_columns(
 }
 
 #[cfg(test)]
-#[allow(clippy::cast_possible_wrap)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "test fixtures use small in-range casts"
+)]
 mod tests {
     use super::*;
     use crate::nlp::MultiLabelLinear;

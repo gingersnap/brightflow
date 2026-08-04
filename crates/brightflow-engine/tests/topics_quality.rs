@@ -6,13 +6,10 @@
 //! test is the pipeline (clean → embed → cluster), and a token-averaging
 //! embedder has exactly the noise-sensitivity that makes cleaning matter.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::cast_precision_loss,
+#![expect(
     clippy::indexing_slicing,
-    clippy::print_stderr,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    reason = "integration tests panic on failure by design"
 )]
 
 use brightflow_engine::nlp::cluster_metrics::adjusted_rand_index;

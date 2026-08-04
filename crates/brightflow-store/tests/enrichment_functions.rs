@@ -1,12 +1,11 @@
 //! Phase-1 store tests: migration 016 data-migration, function/version CRUD,
 //! cache round-trips, and `replace_table_data`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::indexing_slicing,
     clippy::shadow_unrelated,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "integration tests panic on failure by design"
 )]
 
 use brightflow_store::{IngestMode, IngestOptions, ParquetStore, StoreError};

@@ -363,7 +363,7 @@ fn trim_outliers(
 }
 
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
+#[expect(clippy::float_cmp, reason = "tests assert exact expected values")]
 mod tests {
     use super::*;
 
