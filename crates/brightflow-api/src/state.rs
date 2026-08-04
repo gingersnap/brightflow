@@ -37,8 +37,8 @@ pub struct AppState {
     /// Table analysis settings overrides keyed by table name
     pub settings_overrides: Arc<DashMap<String, TableSettingsOverride>>,
     /// Per-table enrichment overrides, keyed by `cache_key(source_id, table)`.
-    /// Hydrated from `table_enrichment_settings` at startup, updated by the
-    /// enrichment settings endpoints.
+    /// Hydrated from each table's promoted `topic_model` function at startup,
+    /// updated by the enrichment settings endpoints.
     pub enrichment_overrides:
         Arc<DashMap<String, brightflow_engine::enrichment::EnrichmentOverrides>>,
     /// Text Explorer indexes keyed by `cache_key(source_id, table)`.
@@ -394,9 +394,11 @@ fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
 /// Convert a `TableAnalysisSettingsRow` to a `TableSettingsOverride`.
 /// Load stored enrichment overrides into the state map at startup.
 ///
-/// Source of truth is each table's `topic_model` enrichment function
-/// (migration 016 converted every legacy `table_enrichment_settings` row
-/// into one; the deprecated table is now write-only dual-write).
+/// Source of truth is each table's **promoted** `topic_model` enrichment
+/// function (migration 016 converted every legacy `table_enrichment_settings`
+/// row into one; the deprecated table is now write-only dual-write). Promoted
+/// -only matches the scheduler and CLI: a draft function must not silently
+/// change what the API enriches.
 pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore) {
     let tables = store.list_tables().await.unwrap_or_default();
     let mut hydrated = 0;
@@ -404,27 +406,20 @@ pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore
         let Ok(Some(row)) = store.db().get_table(&t.source_id, &t.name).await else {
             continue;
         };
-        let Ok(functions) = store.db().list_enrichment_functions(&row.id).await else {
-            continue;
-        };
-        let Some(function) = functions.into_iter().find(|f| f.kind == "topic_model") else {
-            continue;
-        };
-        let Ok(Some(version)) = store
+        let Ok(Some(config_json)) = store
             .db()
-            .get_enrichment_function_version(&function.id, function.current_version)
+            .get_promoted_function_config(&row.id, "topic_model")
             .await
         else {
             continue;
         };
         let Ok(brightflow_engine::enrichment::FunctionSpec::TopicModel(tm)) =
-            serde_json::from_str::<brightflow_engine::enrichment::FunctionSpec>(
-                &version.config_json,
-            )
+            serde_json::from_str::<brightflow_engine::enrichment::FunctionSpec>(&config_json)
         else {
             tracing::warn!(
-                "topic_model function {} has unreadable config — not hydrated",
-                function.id
+                "promoted topic_model function for '{}/{}' has unreadable config — not hydrated",
+                t.source_id,
+                t.name,
             );
             continue;
         };

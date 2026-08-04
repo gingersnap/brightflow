@@ -470,3 +470,49 @@ async fn source_registry_round_trip() {
         .expect("list")
         .is_empty());
 }
+
+/// `get_promoted_function_config` returns the promoted function's *current*
+/// version config and None when nothing is promoted.
+#[tokio::test]
+async fn promoted_function_config_returns_current_version_only() {
+    let tmp = TempDir::new().expect("tmp");
+    let store = temp_store(&tmp).await;
+    let table_id = seed_table(&store, "src", "issues").await;
+    let db = store.db();
+
+    // Draft function: not promoted, so no config resolves.
+    let created = db
+        .create_enrichment_function(&table_id, "topics", "topic_model", "draft", r#"{"v":1}"#)
+        .await
+        .expect("create");
+    assert_eq!(
+        db.get_promoted_function_config(&table_id, "topic_model")
+            .await
+            .expect("query"),
+        None,
+        "draft functions must not resolve"
+    );
+
+    // Promote and bump: the *current* version's config comes back.
+    db.set_enrichment_function_status(&created.id, "promoted")
+        .await
+        .expect("promote");
+    db.update_enrichment_function_config(&created.id, r#"{"v":2}"#)
+        .await
+        .expect("bump");
+    assert_eq!(
+        db.get_promoted_function_config(&table_id, "topic_model")
+            .await
+            .expect("query")
+            .as_deref(),
+        Some(r#"{"v":2}"#)
+    );
+
+    // Kind is part of the key.
+    assert_eq!(
+        db.get_promoted_function_config(&table_id, "llm_prompt")
+            .await
+            .expect("query"),
+        None
+    );
+}

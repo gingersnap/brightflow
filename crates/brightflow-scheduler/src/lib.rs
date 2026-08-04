@@ -227,33 +227,16 @@ async fn resolve_topic_config(
     source_id: &str,
     table_name: &str,
 ) -> Option<brightflow_engine::enrichment::EnrichmentConfig> {
-    use brightflow_engine::enrichment::{EnrichmentConfig, FunctionSpec};
-    if let Ok(Some(table)) = store.db().get_table(source_id, table_name).await {
-        if let Ok(functions) = store
+    let stored = match store.db().get_table(source_id, table_name).await {
+        Ok(Some(table)) => store
             .db()
-            .list_promoted_functions(&table.id, "topic_model")
+            .get_promoted_function_config(&table.id, "topic_model")
             .await
-        {
-            if let Some(function) = functions.first() {
-                if let Ok(Some(version)) = store
-                    .db()
-                    .get_enrichment_function_version(&function.id, function.current_version)
-                    .await
-                {
-                    if let Ok(FunctionSpec::TopicModel(tm)) =
-                        serde_json::from_str::<FunctionSpec>(&version.config_json)
-                    {
-                        return Some(tm.to_config(table_name));
-                    }
-                    warn!(
-                        "topic_model function {} has unreadable config — falling back to builtin",
-                        function.id
-                    );
-                }
-            }
-        }
-    }
-    EnrichmentConfig::builtin_default(table_name)
+            .ok()
+            .flatten(),
+        _ => None,
+    };
+    brightflow_engine::enrichment::resolve_topic_config(table_name, stored.as_deref(), None)
 }
 
 /// Execute a full sync: load config, run connector, merge results, update state

@@ -13,19 +13,6 @@ impl StoreDb {
     // Table Enrichment Settings CRUD
     // =====================================================
 
-    pub async fn get_enrichment_settings(
-        &self,
-        table_id: &str,
-    ) -> StoreResult<Option<TableEnrichmentSettingsRow>> {
-        let row = sqlx::query_as::<_, TableEnrichmentSettingsRow>(
-            "SELECT * FROM table_enrichment_settings WHERE table_id = ?",
-        )
-        .bind(table_id)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row)
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub async fn upsert_enrichment_settings(
         &self,
@@ -148,6 +135,33 @@ impl StoreDb {
 
     /// Append a new config version and bump the header. Returns the new
     /// version number.
+    /// Current-version `config_json` of the table's promoted function of
+    /// `kind`, or None when no promoted function exists. One join, shared by
+    /// every consumer that resolves an effective enrichment config (API
+    /// hydration, scheduler syncs, CLI) so they cannot disagree on what
+    /// "promoted" means. Oldest promoted function wins, matching the
+    /// `list_promoted_functions` + first() sites it replaces.
+    pub async fn get_promoted_function_config(
+        &self,
+        table_id: &str,
+        kind: &str,
+    ) -> StoreResult<Option<String>> {
+        let row: Option<(String,)> = sqlx::query_as(
+            r"SELECT v.config_json
+              FROM enrichment_functions f
+              JOIN enrichment_function_versions v
+                ON v.function_id = f.id AND v.version = f.current_version
+              WHERE f.table_id = ? AND f.kind = ? AND f.status = 'promoted'
+              ORDER BY f.created_at
+              LIMIT 1",
+        )
+        .bind(table_id)
+        .bind(kind)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(json,)| json))
+    }
+
     pub async fn update_enrichment_function_config(
         &self,
         id: &str,

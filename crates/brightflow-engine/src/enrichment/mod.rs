@@ -11,7 +11,7 @@ pub use artifacts::{
     ArtifactError, ArtifactMeta, ClassifierArtifact, ClusteringArtifact, LabelCentroidsArtifact,
     TfIdfArtifact, ARTIFACT_VERSION,
 };
-pub use config::{EnrichmentConfig, EnrichmentOverrides};
+pub use config::{resolve_topic_config, EnrichmentConfig, EnrichmentOverrides};
 pub use curation::{
     centroid_fingerprint, reconcile_edits, EditCentroid, ReconcileOutcome, RECONCILE_MIN_COSINE,
 };

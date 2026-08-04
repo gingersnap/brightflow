@@ -310,13 +310,8 @@ pub(crate) fn resolve_enrichment(
         .enrichment_overrides
         .get(&cache_key(source_id, table))
         .map(|v| v.value().clone());
-    let config = match overrides {
-        Some(o) => {
-            Some(brightflow_engine::enrichment::TopicModelSpec { overrides: o }.to_config(table))
-        },
-        None => EnrichmentConfig::resolve(table, None),
-    };
-    config.filter(|c| !c.text_columns.is_empty())
+    brightflow_engine::enrichment::resolve_topic_config(table, None, overrides.as_ref())
+        .filter(|c| !c.text_columns.is_empty())
 }
 
 /// Refit topic clusters for a table: fit → ingest → reconcile → overview.
@@ -821,12 +816,8 @@ pub async fn get_enrichment_settings(
         .enrichment_overrides
         .get(&cache_key(&source_id, &table))
         .map(|v| v.value().clone());
-    let mut effective = match overrides.clone() {
-        Some(o) => {
-            Some(brightflow_engine::enrichment::TopicModelSpec { overrides: o }.to_config(&table))
-        },
-        None => EnrichmentConfig::resolve(&table, None),
-    };
+    let mut effective =
+        brightflow_engine::enrichment::resolve_topic_config(&table, None, overrides.as_ref());
 
     // Unconfigured non-builtin table: enrichable when it has a text column —
     // surface the plain-profile base so the settings form has defaults.

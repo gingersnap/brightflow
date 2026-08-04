@@ -1,14 +1,47 @@
 //! Per-table enrichment configuration.
 //!
-//! Source of truth for which tables are enrichable and how:
-//! builtin defaults per table type, overlaid with user overrides stored in
-//! `table_enrichment_settings` (loaded by the API/scheduler — the engine
-//! itself stays DB-free).
+//! Source of truth for which tables are enrichable and how: builtin defaults
+//! per table type, overlaid with user overrides carried by the table's
+//! promoted `topic_model` enrichment function. `resolve_topic_config` is the
+//! one precedence rule shared by API, scheduler, and CLI. The engine stays
+//! DB-free: callers fetch the stored spec JSON and pass it in.
 
 use serde::{Deserialize, Serialize};
 
 use crate::embedding::EmbedderId;
 use crate::nlp::CleaningProfile;
+
+/// Effective topic-model config for a table, from one precedence rule.
+///
+/// In-memory overrides > stored promoted-function spec > builtin default.
+/// Unreadable spec JSON logs a warning and falls back to builtin. No
+/// text-columns filter here — callers differ on whether an empty column
+/// list is an error or "surface the base config anyway".
+pub fn resolve_topic_config(
+    table_name: &str,
+    stored_spec_json: Option<&str>,
+    overrides: Option<&EnrichmentOverrides>,
+) -> Option<EnrichmentConfig> {
+    if let Some(o) = overrides {
+        return Some(
+            super::function::TopicModelSpec {
+                overrides: o.clone(),
+            }
+            .to_config(table_name),
+        );
+    }
+    if let Some(json) = stored_spec_json {
+        if let Ok(super::function::FunctionSpec::TopicModel(tm)) =
+            serde_json::from_str::<super::function::FunctionSpec>(json)
+        {
+            return Some(tm.to_config(table_name));
+        }
+        tracing::warn!(
+            "stored topic_model spec for '{table_name}' is unreadable — falling back to builtin"
+        );
+    }
+    EnrichmentConfig::builtin_default(table_name)
+}
 
 /// Effective enrichment configuration for one table.
 #[derive(Debug, Clone)]
@@ -92,8 +125,8 @@ impl EnrichmentConfig {
     }
 }
 
-/// User overrides, as stored in `table_enrichment_settings`. All fields are
-/// optional deltas over the builtin default.
+/// User overrides, as carried in a `topic_model` function spec. All fields
+/// are optional deltas over the builtin default.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EnrichmentOverrides {
     pub text_columns: Option<Vec<String>>,
@@ -203,5 +236,36 @@ mod tests {
         let config = EnrichmentConfig::resolve("posts", Some(&overrides)).unwrap();
         assert_eq!(config.cleaning_profile, CleaningProfile::Social);
         assert_eq!(config.embedder, EmbedderId::PotionBase32M);
+    }
+
+    #[test]
+    fn resolve_topic_config_precedence() {
+        // Overrides win over a stored spec.
+        let overrides = EnrichmentOverrides {
+            cleaning_profile: Some("plain".to_string()),
+            ..Default::default()
+        };
+        let stored = r#"{"kind":"topic_model","cleaning_profile":"social"}"#;
+        let c = resolve_topic_config("issues", Some(stored), Some(&overrides)).unwrap();
+        assert_eq!(c.cleaning_profile, CleaningProfile::Plain);
+
+        // Stored promoted spec beats builtin.
+        let from_stored = resolve_topic_config("issues", Some(stored), None).unwrap();
+        assert_eq!(from_stored.cleaning_profile, CleaningProfile::Social);
+
+        // Neither → builtin; unknown tables stay non-enrichable.
+        let builtin = resolve_topic_config("issues", None, None).unwrap();
+        assert_eq!(builtin.cleaning_profile, CleaningProfile::MarkdownIssue);
+        assert!(resolve_topic_config("users", None, None).is_none());
+    }
+
+    #[test]
+    fn resolve_topic_config_unreadable_spec_falls_back_to_builtin() {
+        let c = resolve_topic_config("issues", Some("not json"), None).unwrap();
+        assert_eq!(c.cleaning_profile, CleaningProfile::MarkdownIssue);
+        assert!(
+            resolve_topic_config("users", Some("not json"), None).is_none(),
+            "unreadable spec must not make a non-builtin table enrichable"
+        );
     }
 }

@@ -1249,27 +1249,16 @@ async fn resolve_enrichment_config(
     source: &str,
     table: &str,
 ) -> Result<brightflow_engine::enrichment::EnrichmentConfig> {
-    use brightflow_engine::enrichment::{EnrichmentConfig, EnrichmentOverrides};
-    let overrides = match store.db().get_table(source, table).await {
+    let stored = match store.db().get_table(source, table).await {
         Ok(Some(row)) => store
             .db()
-            .get_enrichment_settings(&row.id)
+            .get_promoted_function_config(&row.id, "topic_model")
             .await
             .ok()
-            .flatten()
-            .map(|r| {
-                EnrichmentOverrides::from_stored(
-                    r.text_columns.as_deref(),
-                    r.cleaning_profile,
-                    r.language_column,
-                    r.embedder,
-                    r.min_cluster_size,
-                    r.algorithm,
-                )
-            }),
+            .flatten(),
         _ => None,
     };
-    EnrichmentConfig::resolve(table, overrides.as_ref())
+    brightflow_engine::enrichment::resolve_topic_config(table, stored.as_deref(), None)
         .ok_or_else(|| anyhow::anyhow!("Table '{table}' is not enrichable"))
 }
 
