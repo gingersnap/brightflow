@@ -77,29 +77,10 @@ pub fn hdbscan_dense(vectors: &[Vec<f32>], min_cluster_size: usize) -> DenseClus
         labels.iter().map(|l| label_map.get(l).copied()).collect();
 
     // Full-dimension normalized centroids
-    let mut centroids = vec![vec![0.0f32; dim]; k];
-    let mut counts = vec![0usize; k];
-    for (v, a) in vectors.iter().zip(assignments.iter()) {
-        if let Some(c) = a {
-            counts[*c] += 1;
-            for (acc, x) in centroids[*c].iter_mut().zip(v.iter()) {
-                *acc += x;
-            }
-        }
-    }
-    for (centroid, count) in centroids.iter_mut().zip(counts.iter()) {
-        if *count == 0 {
-            continue;
-        }
-        let mut norm = 0.0f32;
-        for x in centroid.iter_mut() {
-            *x /= *count as f32;
-            norm = x.mul_add(*x, norm);
-        }
-        let norm = norm.sqrt().max(1e-12);
-        for x in centroid.iter_mut() {
-            *x /= norm;
-        }
+    let (mut centroids, _counts) =
+        super::dense_clustering::mean_centroids(vectors, assignments.iter().copied(), k, dim);
+    for centroid in &mut centroids {
+        super::dense_clustering::l2_normalize_in_place(centroid);
     }
 
     // Per-cluster assignment thresholds from member similarity spread
@@ -147,13 +128,8 @@ pub fn hdbscan_dense(vectors: &[Vec<f32>], min_cluster_size: usize) -> DenseClus
 mod tests {
     use super::*;
 
-    fn norm(v: &mut Vec<f32>) {
-        let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if n > 0.0 {
-            for x in v {
-                *x /= n;
-            }
-        }
+    fn norm(v: &mut [f32]) {
+        super::super::dense_clustering::l2_normalize_in_place(v);
     }
 
     #[test]

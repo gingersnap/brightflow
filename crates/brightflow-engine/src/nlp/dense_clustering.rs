@@ -198,37 +198,60 @@ fn recompute_centroids(
     assignments: &[usize],
     dim: usize,
 ) {
-    for c in centroids.iter_mut() {
-        for v in c.iter_mut() {
-            *v = 0.0;
+    let (fresh, counts) = mean_centroids(
+        vectors,
+        assignments.iter().map(|&a| Some(a)),
+        centroids.len(),
+        dim,
+    );
+    for (dst, (mut src, n)) in centroids.iter_mut().zip(fresh.into_iter().zip(counts)) {
+        if n > 0 {
+            l2_normalize_in_place(&mut src);
         }
+        // Empty clusters end up as zero vectors; reseed_empty_clusters
+        // detects and replants them.
+        *dst = src;
     }
-    let mut counts = vec![0u32; centroids.len()];
+}
 
-    for (i, vec) in vectors.iter().enumerate() {
-        let cluster = assignments[i];
-        counts[cluster] += 1;
-        let acc = &mut centroids[cluster];
-        for (j, &val) in vec.iter().enumerate().take(dim) {
-            acc[j] += val;
-        }
-    }
-
-    for (i, centroid) in centroids.iter_mut().enumerate() {
-        if counts[i] == 0 {
-            continue;
-        }
-        let count = counts[i] as f32;
-        let mut norm_sq = 0.0_f32;
-        for v in centroid.iter_mut() {
-            *v /= count;
-            norm_sq = v.mul_add(*v, norm_sq);
-        }
-        let norm = norm_sq.sqrt();
-        if norm > 0.0 {
-            for v in centroid.iter_mut() {
-                *v /= norm;
+/// Per-cluster mean vectors (and member counts) over `assignments`
+/// (`Some(c)` = member of cluster `c`, `None` = unassigned/noise).
+/// Empty clusters keep a zero vector; out-of-range indices are ignored.
+pub(crate) fn mean_centroids(
+    vectors: &[Vec<f32>],
+    assignments: impl IntoIterator<Item = Option<usize>>,
+    k: usize,
+    dim: usize,
+) -> (Vec<Vec<f32>>, Vec<usize>) {
+    let mut centroids = vec![vec![0.0f32; dim]; k];
+    let mut counts = vec![0usize; k];
+    for (v, a) in vectors.iter().zip(assignments) {
+        if let Some(c) = a {
+            if let (Some(acc), Some(count)) = (centroids.get_mut(c), counts.get_mut(c)) {
+                *count += 1;
+                for (accx, x) in acc.iter_mut().zip(v.iter()) {
+                    *accx += x;
+                }
             }
+        }
+    }
+    for (c, n) in centroids.iter_mut().zip(counts.iter()) {
+        if *n > 0 {
+            for x in c.iter_mut() {
+                *x /= *n as f32;
+            }
+        }
+    }
+    (centroids, counts)
+}
+
+/// L2-normalize `v` in place; zero vectors are left untouched (the `> 0.0`
+/// guard shared by every normalization site in this crate).
+pub(crate) fn l2_normalize_in_place(v: &mut [f32]) {
+    let norm = v.iter().fold(0.0_f32, |acc, x| x.mul_add(*x, acc)).sqrt();
+    if norm > 0.0 {
+        for x in v {
+            *x /= norm;
         }
     }
 }
@@ -344,13 +367,36 @@ fn trim_outliers(
 mod tests {
     use super::*;
 
-    fn norm(v: &mut Vec<f32>) {
-        let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if n > 0.0 {
-            for x in v {
-                *x /= n;
-            }
-        }
+    fn norm(v: &mut [f32]) {
+        l2_normalize_in_place(v);
+    }
+
+    #[test]
+    fn mean_centroids_averages_members_and_counts() {
+        let vectors = vec![
+            vec![2.0, 0.0],
+            vec![0.0, 2.0],
+            vec![4.0, 0.0],
+            vec![9.0, 9.0], // noise
+        ];
+        let assignments = [Some(0), Some(1), Some(0), None];
+        let (centroids, counts) = mean_centroids(&vectors, assignments, 3, 2);
+        assert_eq!(centroids[0], vec![3.0, 0.0]);
+        assert_eq!(centroids[1], vec![0.0, 2.0]);
+        assert_eq!(centroids[2], vec![0.0, 0.0], "empty cluster stays zero");
+        assert_eq!(counts, vec![2, 1, 0]);
+    }
+
+    #[test]
+    fn l2_normalize_in_place_unit_norm_and_zero_guard() {
+        let mut v = vec![3.0f32, 4.0];
+        l2_normalize_in_place(&mut v);
+        assert!((v[0] - 0.6).abs() < 1e-6);
+        assert!((v[1] - 0.8).abs() < 1e-6);
+
+        let mut z = vec![0.0f32, 0.0];
+        l2_normalize_in_place(&mut z);
+        assert_eq!(z, vec![0.0, 0.0], "zero vector must be left untouched");
     }
 
     fn make_vectors() -> Vec<Vec<f32>> {

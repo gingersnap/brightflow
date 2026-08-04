@@ -172,14 +172,7 @@ fn write_finding<W: Write>(writer: &mut W, tree: &AnalysisTree, node_id: NodeId)
         writeln!(writer, "            <strong>Why?</strong>")?;
 
         // Sort children by significance descending
-        let mut sorted_children = node.children.clone();
-        sorted_children.sort_by(|a, b| {
-            let a_sig = tree.nodes[a.0].significance;
-            let b_sig = tree.nodes[b.0].significance;
-            b_sig
-                .partial_cmp(&a_sig)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let sorted_children = tree.sorted_by_significance_desc(&node.children);
 
         for child_id in &sorted_children {
             let child = &tree.nodes[child_id.0];

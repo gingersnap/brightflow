@@ -1222,6 +1222,28 @@ impl AnalysisTree {
             n.filter_chain = chain;
         }
     }
+
+    /// The given node ids sorted by significance, highest first. Unknown ids
+    /// and NaN significances sort last (mapped to −∞ so the comparator stays
+    /// total); used by every report renderer so sibling order is identical
+    /// across output formats.
+    #[must_use]
+    pub fn sorted_by_significance_desc(&self, ids: &[NodeId]) -> Vec<NodeId> {
+        let sig = |id: &NodeId| {
+            let s = self
+                .nodes
+                .get(id.0)
+                .map_or(f64::NEG_INFINITY, |n| n.significance);
+            if s.is_nan() {
+                f64::NEG_INFINITY
+            } else {
+                s
+            }
+        };
+        let mut sorted = ids.to_vec();
+        sorted.sort_by(|a, b| sig(b).total_cmp(&sig(a)));
+        sorted
+    }
 }
 
 impl Default for AnalysisTree {
@@ -1255,6 +1277,50 @@ mod tests {
         assert_eq!(humanize_period("2023-XX"), "2023-XX");
         assert_eq!(humanize_period("2023-13"), "2023-13");
         assert_eq!(humanize_period(""), "");
+    }
+
+    #[test]
+    fn sorted_by_significance_desc_orders_and_survives_nan() {
+        let mut tree = AnalysisTree::new();
+        let a = tree.add_root(
+            AnalysisType::Anomaly {
+                column: "x".into(),
+                value: 1.0,
+                mean: 0.0,
+                std_dev: 1.0,
+                z_score: 1.0,
+            },
+            0.2,
+            "low".into(),
+        );
+        let b = tree.add_root(
+            AnalysisType::Anomaly {
+                column: "y".into(),
+                value: 1.0,
+                mean: 0.0,
+                std_dev: 1.0,
+                z_score: 1.0,
+            },
+            0.9,
+            "high".into(),
+        );
+        let c = tree.add_root(
+            AnalysisType::Anomaly {
+                column: "z".into(),
+                value: 1.0,
+                mean: 0.0,
+                std_dev: 1.0,
+                z_score: 1.0,
+            },
+            f64::NAN,
+            "nan".into(),
+        );
+        let sorted = tree.sorted_by_significance_desc(&[a, c, b]);
+        assert_eq!(sorted.first(), Some(&b), "highest significance first");
+        assert!(
+            sorted.contains(&a) && sorted.contains(&c),
+            "nothing dropped"
+        );
     }
 
     #[test]

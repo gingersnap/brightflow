@@ -111,15 +111,8 @@ fn write_node_tree<W: Write>(
             writeln!(writer)?;
         }
 
-        // Sort children by significance (contribution_pct for segments) descending
-        let mut sorted_children = node.children.clone();
-        sorted_children.sort_by(|a, b| {
-            let a_sig = tree.nodes[a.0].significance;
-            let b_sig = tree.nodes[b.0].significance;
-            b_sig
-                .partial_cmp(&a_sig)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // Sort children by significance descending
+        let sorted_children = tree.sorted_by_significance_desc(&node.children);
 
         for child_id in &sorted_children {
             write_node_tree(writer, tree, *child_id, depth + 1)?;

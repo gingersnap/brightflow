@@ -113,7 +113,7 @@ impl AnalysisEngine {
             }
             for measure in &measures {
                 first_level_count += 1;
-                self.detect_drivers_concentration(&cache, measure, dim, gran, &mut tree);
+                self.add_concentration_finding(&cache, measure, dim, gran, &mut tree);
             }
         }
 
@@ -310,9 +310,10 @@ impl AnalysisEngine {
         );
     }
 
-    /// Concentration finding for one (measure, dimension), same shape as the
-    /// Trends pass so fingerprints and dedup line up across reports.
-    fn detect_drivers_concentration(
+    /// Concentration finding for one (measure, dimension) — shared by the
+    /// Trends and Drivers passes so fingerprints and dedup line up across
+    /// reports.
+    pub(super) fn add_concentration_finding(
         &self,
         cache: &ColumnCache,
         column: &str,

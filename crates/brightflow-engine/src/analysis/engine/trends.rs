@@ -5,7 +5,6 @@ use std::collections::{HashMap, VecDeque};
 use anyhow::Result;
 use polars::prelude::*;
 
-use crate::analysis::concentration::detect_concentration;
 use crate::analysis::dedup;
 use crate::analysis::distribution_shift::detect_distribution_shift;
 use crate::analysis::forecast::detect_forecast_deviation;
@@ -299,57 +298,7 @@ impl AnalysisEngine {
                     column,
                     segment_col,
                 } => {
-                    let Some(target_values) = cache.numeric.get(&column) else {
-                        continue;
-                    };
-                    let Some(segment_values) = cache.dimension.get(&segment_col) else {
-                        continue;
-                    };
-                    if let Some(result) =
-                        detect_concentration(&column, &segment_col, target_values, segment_values)
-                    {
-                        let (conc_n_segments, conc_top_n, conc_top_share) =
-                            (result.n_segments, result.top_n, result.top_share);
-                        let description = format!(
-                            "Concentration in '{column}' by '{segment_col}': HHI={:.2}, top {} = {:.0}%",
-                            result.hhi, result.top_n, result.top_share
-                        );
-                        let data = Some(NodeData::Lorenz {
-                            cumulative_share: result.lorenz_share,
-                            cumulative_population: result.lorenz_population,
-                            gini: result.gini,
-                        });
-                        let analysis = AnalysisType::Concentration {
-                            column: result.column,
-                            segment_column: result.segment_column,
-                            hhi: result.hhi,
-                            top_n: result.top_n,
-                            top_share: result.top_share,
-                            hhi_delta: None,
-                            n_segments: result.n_segments,
-                            n_rows: result.n_rows,
-                        };
-                        let breakdown = scoring::score(&analysis, &self.scoring_ctx);
-                        if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
-                            continue;
-                        }
-                        let score = scoring::total(&breakdown);
-                        let why = format!(
-                            "covers the whole table; an even split across {conc_n_segments} values would put the top {conc_top_n} far below {conc_top_share:.0}%"
-                        );
-                        let node_id =
-                            tree.add_root_full(analysis, score, breakdown, description, data);
-                        set_legacy_meta(
-                            &mut tree,
-                            node_id,
-                            "concentration",
-                            measure_ref(&column),
-                            Aggregation::Sum,
-                            Some(&segment_col),
-                            gran,
-                            why,
-                        );
-                    }
+                    self.add_concentration_finding(&cache, &column, &segment_col, gran, &mut tree);
                 },
                 AnalysisTask::DetectDistributionShift { column } => {
                     let Some(values) = cache.numeric.get(&column) else {

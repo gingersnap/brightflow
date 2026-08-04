@@ -76,23 +76,10 @@ pub fn davies_bouldin(vectors: &[Vec<f32>], assignments: &[Option<usize>]) -> Op
     }
     let dim = vectors.first()?.len();
 
-    let mut centroids = vec![vec![0.0f32; dim]; k];
-    let mut counts = vec![0usize; k];
-    for (v, a) in vectors.iter().zip(assignments.iter()) {
-        if let Some(c) = a {
-            counts[*c] += 1;
-            for (acc, x) in centroids[*c].iter_mut().zip(v.iter()) {
-                *acc += x;
-            }
-        }
-    }
-    for (c, n) in centroids.iter_mut().zip(counts.iter()) {
-        if *n > 0 {
-            for x in c.iter_mut() {
-                *x /= *n as f32;
-            }
-        }
-    }
+    // Mean centroids, deliberately not normalized: scatter and separation
+    // are measured against the true cluster means.
+    let (centroids, counts) =
+        super::dense_clustering::mean_centroids(vectors, assignments.iter().copied(), k, dim);
 
     let mut scatter = vec![0.0f64; k];
     for (v, a) in vectors.iter().zip(assignments.iter()) {
@@ -212,17 +199,9 @@ fn count_true(v: &[bool]) -> usize {
     v.iter().filter(|b| **b).count()
 }
 
+/// Cosine distance (1 − cosine similarity) for arbitrary dense vectors.
 fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
-    let mut dot = 0.0f32;
-    let mut na = 0.0f32;
-    let mut nb = 0.0f32;
-    for (x, y) in a.iter().zip(b.iter()) {
-        dot = x.mul_add(*y, dot);
-        na = x.mul_add(*x, na);
-        nb = y.mul_add(*y, nb);
-    }
-    let denom = (na.sqrt() * nb.sqrt()).max(1e-12);
-    1.0 - (dot / denom)
+    1.0 - super::similarity::dense_cosine_unnormalized(a, b)
 }
 
 #[cfg(test)]
@@ -301,5 +280,14 @@ mod tests {
         let incoherent =
             npmi_coherence(&texts, &[vec!["rust".to_string(), "pandas".to_string()]]).unwrap();
         assert!(coherent > incoherent, "{coherent} vs {incoherent}");
+    }
+
+    #[test]
+    fn cosine_distance_known_value() {
+        // cos([3,4],[4,3]) = 24/25 = 0.96 → distance 0.04
+        assert!((cosine_distance(&[3.0, 4.0], &[4.0, 3.0]) - 0.04).abs() < 1e-6);
+        assert!((cosine_distance(&[1.0, 0.0], &[1.0, 0.0])).abs() < 1e-6);
+        // Zero vector floors to similarity 0 → distance 1
+        assert!((cosine_distance(&[0.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
     }
 }
