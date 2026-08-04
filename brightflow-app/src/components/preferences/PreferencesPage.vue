@@ -84,7 +84,7 @@ const textSizes: { value: TextSize; label: string; description: string }[] = [
                       ? 'bg-default text-highlighted shadow-sm'
                       : 'cursor-pointer text-muted hover:text-highlighted'
                   "
-                  @click="uiStore.setTextSize(size.value)"
+                  @click="uiStore.textSize = size.value"
                 >
                   {{ size.label }}
                 </button>

@@ -17,7 +17,7 @@ const resultsStore = useResultsStore();
 
 // Build table columns for UTable (TanStack Table format)
 const tableColumns = computed(() =>
-  resultsStore.columns.map((col) => ({
+  resultsStore.table.columns.map((col) => ({
     accessorKey: col.name,
     header: col.name,
   })),
@@ -25,9 +25,9 @@ const tableColumns = computed(() =>
 
 // Transform rows array to objects for UTable
 const tableData = computed(() =>
-  resultsStore.rows.map((row, index) => {
+  resultsStore.table.rows.map((row, index) => {
     const obj: Record<string, unknown> = { _index: index };
-    resultsStore.columns.forEach((col, i) => {
+    resultsStore.table.columns.forEach((col, i) => {
       obj[col.name] = formatCell(row[i], col.dtype);
     });
     return obj;

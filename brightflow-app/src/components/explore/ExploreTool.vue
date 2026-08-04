@@ -66,7 +66,7 @@ async function loadInitialRows(): Promise<void> {
     }
     const result = await datasetApi.query(datasetStore.id, ops);
     if (result) {
-      resultsStore.setTableResults(result);
+      resultsStore.setResults('table', result);
     }
   } catch {
     resultsStore.setError('Failed to load data');

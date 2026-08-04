@@ -48,8 +48,8 @@ type DisplayData = SingleDisplay | MultiDisplay | AggregateDisplay | null;
 const displayData = computed((): DisplayData => {
   // Use pivot results if available, otherwise table results
   const hasPivot = resultsStore.hasPivotResults;
-  const cols = hasPivot ? resultsStore.pivotColumns : resultsStore.tableColumns;
-  const rows = hasPivot ? resultsStore.pivotRows : resultsStore.tableRows;
+  const cols = hasPivot ? resultsStore.pivot.columns : resultsStore.table.columns;
+  const rows = hasPivot ? resultsStore.pivot.rows : resultsStore.table.rows;
 
   if (cols.length === 0 || rows.length === 0) {
     return null;

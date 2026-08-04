@@ -28,16 +28,16 @@ const colors = useChartColors();
 // Use pivot data when available, otherwise table data
 const chartColumns = computed(() => {
   if (pivotStore.isConfigured && resultsStore.hasPivotResults) {
-    return resultsStore.pivotColumns;
+    return resultsStore.pivot.columns;
   }
-  return resultsStore.tableColumns;
+  return resultsStore.table.columns;
 });
 
 const chartRows = computed(() => {
   if (pivotStore.isConfigured && resultsStore.hasPivotResults) {
-    return resultsStore.pivotRows;
+    return resultsStore.pivot.rows;
   }
-  return resultsStore.tableRows;
+  return resultsStore.table.rows;
 });
 
 const hasChartData = computed(() => {
@@ -346,7 +346,7 @@ const showHorizontalOption = computed(() => uiStore.chartType === 'bar');
           value-key="value"
           class="w-24"
           size="xs"
-          @update:model-value="(val: ChartType) => uiStore.setChartType(val)"
+          @update:model-value="(val: ChartType) => (uiStore.chartType = val)"
         />
       </div>
 

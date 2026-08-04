@@ -41,8 +41,8 @@ const pivotData = computed((): PivotData | null => {
     return null;
   }
 
-  const columns = resultsStore.pivotColumns;
-  const rows = resultsStore.pivotRows;
+  const columns = resultsStore.pivot.columns;
+  const rows = resultsStore.pivot.rows;
   const colNames = columns.map((c) => c.name);
   const colTypes = columns.map((c) => c.dtype);
 

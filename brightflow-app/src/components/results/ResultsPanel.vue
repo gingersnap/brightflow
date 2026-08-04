@@ -12,9 +12,10 @@ import { type Component, computed } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { usePivotStore } from '@/stores/pivot';
-import { useResultsStore } from '@/stores/results';
+import { type ResultType, useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { ViewMode } from '@/types';
+import { buildCsv } from '@/utils/csv';
 
 import BigNumber from '../charts/BigNumber.vue';
 import ChartView from '../charts/ChartView.vue';
@@ -47,25 +48,25 @@ const viewModes: ViewModeOption[] = [
 // Row count based on view mode
 const currentRowCount = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.pivotRowCount;
+    return resultsStore.pivot.rowCount;
   }
-  return resultsStore.tableRowCount;
+  return resultsStore.table.rowCount;
 });
 
 // Total rows (before limit) - will be used when backend supports it
 const currentTotalRows = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.pivotTotalRows;
+    return resultsStore.pivot.totalRows;
   }
-  return resultsStore.tableTotalRows;
+  return resultsStore.table.totalRows;
 });
 
 // Execution time based on view mode
 const currentExecutionTime = computed(() => {
   if (uiStore.viewMode === 'pivot') {
-    return resultsStore.pivotExecutionTimeMs;
+    return resultsStore.pivot.executionTimeMs;
   }
-  return resultsStore.tableExecutionTimeMs;
+  return resultsStore.table.executionTimeMs;
 });
 
 // Has results for current view
@@ -86,6 +87,28 @@ const rowCountDisplay = computed(() => {
   }
   return `${count.toLocaleString()} rows`;
 });
+
+/** Export the visible result set. Object URL is revoked after the click has
+ * been dispatched, not synchronously — Safari otherwise races the download. */
+function exportCsv(type: ResultType): void {
+  const { columns, rows } = resultsStore[type];
+  if (columns.length === 0 || rows.length === 0) {
+    return;
+  }
+  const csv = buildCsv(
+    columns.map((c) => c.name),
+    rows,
+  );
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${type}-results-${Date.now()}.csv`;
+  link.click();
+
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 </script>
 
 <template>
@@ -109,7 +132,7 @@ const rowCountDisplay = computed(() => {
             :variant="uiStore.viewMode === mode.value ? 'solid' : 'ghost'"
             :color="uiStore.viewMode === mode.value ? 'primary' : 'neutral'"
             size="md"
-            @click="uiStore.setViewMode(mode.value)"
+            @click="uiStore.viewMode = mode.value"
           >
             <component :is="mode.icon" class="h-3.5 w-3.5" />
           </UButton>
@@ -126,7 +149,7 @@ const rowCountDisplay = computed(() => {
           variant="ghost"
           color="neutral"
           size="md"
-          @click="resultsStore.exportCsv(uiStore.viewMode === 'pivot' ? 'pivot' : 'table')"
+          @click="exportCsv(uiStore.viewMode === 'pivot' ? 'pivot' : 'table')"
         >
           <Download class="mr-1 h-3.5 w-3.5" />
           Export

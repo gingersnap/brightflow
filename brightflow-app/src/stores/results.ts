@@ -1,15 +1,15 @@
 /**
- * The current query result set and its metadata.
+ * The current query result sets (table and pivot) and their metadata.
  *
- * Accepts both WebSocket frames and direct REST responses through one shape, so
- * downstream views do not care which path produced the rows.
+ * Accepts both WebSocket frames and direct REST responses through one shape,
+ * so downstream views do not care which path produced the rows. CSV export
+ * lives with the button that triggers it (ResultsPanel), not here.
  */
 
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, type Ref } from 'vue';
 
 import type { ColumnInfo } from '@/types';
-import { escapeCsvCell } from '@/utils/csv';
 
 // Flexible type to accept WsMessage data and explicit result data
 interface ResultData {
@@ -21,36 +21,34 @@ interface ResultData {
   [key: string]: unknown;
 }
 
-type ResultType = 'table' | 'pivot';
+export type ResultType = 'table' | 'pivot';
+
+/** One result set: columns, rows, and the counts/timing that came with it. */
+export interface ResultSet {
+  columns: ColumnInfo[];
+  rows: unknown[][];
+  rowCount: number;
+  totalRows: number;
+  executionTimeMs: number | null;
+}
+
+function emptyResultSet(): ResultSet {
+  return { columns: [], executionTimeMs: null, rowCount: 0, rows: [], totalRows: 0 };
+}
 
 export const useResultsStore = defineStore('results', () => {
-  // Table data (raw data)
-  const tableColumns = ref<ColumnInfo[]>([]);
-  const tableRows = ref<unknown[][]>([]);
-  const tableRowCount = ref(0);
-  const tableTotalRows = ref(0);
-  const tableExecutionTimeMs = ref<number | null>(null);
-
-  // Pivot data (aggregated data)
-  const pivotColumns = ref<ColumnInfo[]>([]);
-  const pivotRows = ref<unknown[][]>([]);
-  const pivotRowCount = ref(0);
-  const pivotTotalRows = ref(0);
-  const pivotExecutionTimeMs = ref<number | null>(null);
+  const table = ref<ResultSet>(emptyResultSet());
+  const pivot = ref<ResultSet>(emptyResultSet());
+  const byType: Record<ResultType, Ref<ResultSet>> = { pivot, table };
 
   // Shared state
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  // Table-data aliases, read by DataTable.vue
-  const columns = computed(() => tableColumns.value);
-  const rows = computed(() => tableRows.value);
-
   // Computed
-  const hasTableResults = computed(() => tableRows.value.length > 0);
-  const hasPivotResults = computed(() => pivotRows.value.length > 0);
+  const hasTableResults = computed(() => table.value.rows.length > 0);
+  const hasPivotResults = computed(() => pivot.value.rows.length > 0);
   const hasResults = computed(() => hasTableResults.value || hasPivotResults.value);
-  const columnNames = computed(() => tableColumns.value.map((c) => c.name));
 
   // Actions
   function setLoading(isLoading: boolean): void {
@@ -60,37 +58,18 @@ export const useResultsStore = defineStore('results', () => {
     }
   }
 
-  function setResults(data: ResultData, type: ResultType = 'table'): void {
-    const cols = data.columns ?? [];
-    const rowsData = data.rows ?? [];
-    const count = data.rowCount ?? rowsData.length;
-    const total = data.totalRows ?? count;
-    const time = data.executionTimeMs ?? null;
-
-    if (type === 'pivot') {
-      pivotColumns.value = cols;
-      pivotRows.value = rowsData;
-      pivotRowCount.value = count;
-      pivotTotalRows.value = total;
-      pivotExecutionTimeMs.value = time;
-    } else {
-      tableColumns.value = cols;
-      tableRows.value = rowsData;
-      tableRowCount.value = count;
-      tableTotalRows.value = total;
-      tableExecutionTimeMs.value = time;
-    }
-
+  function setResults(type: ResultType, data: ResultData): void {
+    const rows = data.rows ?? [];
+    const rowCount = data.rowCount ?? rows.length;
+    byType[type].value = {
+      columns: data.columns ?? [],
+      executionTimeMs: data.executionTimeMs ?? null,
+      rowCount,
+      rows,
+      totalRows: data.totalRows ?? rowCount,
+    };
     loading.value = false;
     error.value = null;
-  }
-
-  function setTableResults(data: ResultData): void {
-    setResults(data, 'table');
-  }
-
-  function setPivotResults(data: ResultData): void {
-    setResults(data, 'pivot');
   }
 
   function setError(err: string | { message?: string }): void {
@@ -99,72 +78,25 @@ export const useResultsStore = defineStore('results', () => {
   }
 
   function clear(): void {
-    tableColumns.value = [];
-    tableRows.value = [];
-    tableRowCount.value = 0;
-    tableTotalRows.value = 0;
-    tableExecutionTimeMs.value = null;
-    pivotColumns.value = [];
-    pivotRows.value = [];
-    pivotRowCount.value = 0;
-    pivotTotalRows.value = 0;
-    pivotExecutionTimeMs.value = null;
+    table.value = emptyResultSet();
+    pivot.value = emptyResultSet();
     error.value = null;
   }
 
-  // Export to CSV - supports both table and pivot data
-  function exportCsv(type: ResultType = 'table'): void {
-    const cols = type === 'pivot' ? pivotColumns.value : tableColumns.value;
-    const data = type === 'pivot' ? pivotRows.value : tableRows.value;
-
-    if (cols.length === 0 || data.length === 0) {
-      return;
-    }
-
-    const headers = cols.map((c) => escapeCsvCell(c.name)).join(',');
-    const csvRows = data.map((row) => row.map((cell) => escapeCsvCell(cell)).join(','));
-
-    const csv = [headers, ...csvRows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${type}-results-${Date.now()}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(url);
-  }
-
   return {
-    // Table data
-    tableColumns,
-    tableRows,
-    tableRowCount,
-    tableTotalRows,
-    tableExecutionTimeMs,
-    // Pivot data
-    pivotColumns,
-    pivotRows,
-    pivotRowCount,
-    pivotTotalRows,
-    pivotExecutionTimeMs,
-    // Table-data aliases
-    columns,
-    rows,
+    // Result sets
+    table,
+    pivot,
     // Shared
     loading,
     error,
     hasTableResults,
     hasPivotResults,
     hasResults,
-    columnNames,
     // Actions
     setLoading,
-    setTableResults,
-    setPivotResults,
+    setResults,
     setError,
     clear,
-    exportCsv,
   };
 });

@@ -75,25 +75,16 @@ export const useUiStore = defineStore('ui', () => {
   // Apply on init
   applyTextSize(textSize.value);
 
+  const collapsedBySection: Record<SectionName, typeof filterCollapsed> = {
+    filter: filterCollapsed,
+    results: resultsCollapsed,
+    summarize: summarizeCollapsed,
+  };
+
   // Actions
-  function setViewMode(mode: ViewMode): void {
-    viewMode.value = mode;
-  }
-
-  function setChartType(type: ChartType): void {
-    chartType.value = type;
-  }
-
   function toggleSection(section: SectionName): void {
-    if (section === 'filter') {
-      filterCollapsed.value = !filterCollapsed.value;
-    }
-    if (section === 'summarize') {
-      summarizeCollapsed.value = !summarizeCollapsed.value;
-    }
-    if (section === 'results') {
-      resultsCollapsed.value = !resultsCollapsed.value;
-    }
+    const collapsed = collapsedBySection[section];
+    collapsed.value = !collapsed.value;
   }
 
   // Called when pivot results are received
@@ -110,19 +101,12 @@ export const useUiStore = defineStore('ui', () => {
     viewMode.value = 'table';
   }
 
-  function setTextSize(size: TextSize): void {
-    textSize.value = size;
-  }
-
   return {
     chartType,
     filterCollapsed,
     onPivotResults,
     resetForNewDataset,
     resultsCollapsed,
-    setChartType,
-    setTextSize,
-    setViewMode,
     summarizeCollapsed,
     textSize,
     toggleSection,

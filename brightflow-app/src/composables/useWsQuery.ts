@@ -57,7 +57,7 @@ export function useWsQuery() {
     const unsubscribeResult = connectionStore.onMessage(
       'queryResult',
       (message: Record<string, unknown>) => {
-        resultsStore.setTableResults(message);
+        resultsStore.setResults('table', message);
         unsubscribeResult();
         unsubscribeError();
       },
@@ -182,7 +182,7 @@ export function useWsQuery() {
     const unsubscribeResult = connectionStore.onMessage(
       'queryResult',
       (message: Record<string, unknown>) => {
-        resultsStore.setPivotResults(message);
+        resultsStore.setResults('pivot', message);
         uiStore.onPivotResults();
         unsubscribeResult();
         unsubscribeError();

@@ -111,8 +111,6 @@ export const usePivotStore = defineStore('pivot', () => {
     } else {
       collapsedGroups.value.add(groupKey);
     }
-    // Trigger reactivity
-    collapsedGroups.value = new Set(collapsedGroups.value);
   }
 
   function isGroupCollapsed(groupKey: string): boolean {
