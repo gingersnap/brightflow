@@ -1167,9 +1167,7 @@ async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
 /// near-identical text, and prints the groups. Writes nothing.
 async fn topics_near_dup(source: &str, table: &str, threshold: Option<f32>) -> Result<()> {
     use brightflow_engine::embedding::get_backend;
-    use brightflow_engine::nlp::{
-        clean_for_embedding, find_near_duplicates, DEFAULT_NEAR_DUP_THRESHOLD,
-    };
+    use brightflow_engine::nlp::{find_near_duplicates, DEFAULT_NEAR_DUP_THRESHOLD};
 
     /// Characters of each member's text shown in the report.
     const SNIPPET_LEN: usize = 100;
@@ -1185,30 +1183,10 @@ async fn topics_near_dup(source: &str, table: &str, threshold: Option<f32>) -> R
     );
 
     // Clean the configured text columns into one string per row.
-    let mut texts: Vec<Option<String>> = Vec::with_capacity(df.height());
-    {
-        let mut per_col: Vec<Vec<String>> = Vec::new();
-        for col in &config.text_columns {
-            let values = df
-                .column(col)
-                .map_err(|e| anyhow::anyhow!("column {col}: {e}"))?
-                .as_materialized_series()
-                .str()
-                .map_err(|e| anyhow::anyhow!("column {col} not string: {e}"))?
-                .into_iter()
-                .map(|o| o.unwrap_or("").to_string())
-                .collect::<Vec<_>>();
-            per_col.push(values);
-        }
-        for row in 0..df.height() {
-            let raw = per_col
-                .iter()
-                .filter_map(|c| c.get(row).map(String::as_str))
-                .collect::<Vec<_>>()
-                .join(" ");
-            texts.push(clean_for_embedding(&raw, config.cleaning_profile));
-        }
-    }
+    let columns: Vec<&str> = config.text_columns.iter().map(String::as_str).collect();
+    let texts: Vec<Option<String>> =
+        brightflow_engine::enrichment::build_clean_texts(&df, &columns, config.cleaning_profile)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Embed only the eligible rows, then scatter back so indices line up with
     // `texts` (and therefore with the DataFrame's rows).
@@ -1368,33 +1346,12 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
         println!("    cluster {i}: {size:>6} docs · {name}");
     }
 
-    let table_dir = wp.store().join(source).join(table);
-    std::fs::create_dir_all(&table_dir)?;
-    let output_path = table_dir.join("enriched.parquet");
-    let file = std::fs::File::create(&output_path)?;
-    polars::prelude::ParquetWriter::new(file).finish(&mut enriched.clone())?;
-
-    let info = store
-        .ingest_parquet(
-            source,
-            table,
-            &output_path,
-            Some(IngestOptions {
-                mode: IngestMode::Overwrite,
-                ..Default::default()
-            }),
-        )
+    let (rows, cols) = (enriched.height(), enriched.width());
+    store
+        .replace_table_data(source, table, enriched, None)
         .await?;
 
-    println!(
-        "  Written: {} rows, {} columns",
-        info.num_rows.unwrap_or(0),
-        enriched.width()
-    );
-
-    if output_path.exists() {
-        drop(std::fs::remove_file(&output_path));
-    }
+    println!("  Written: {rows} rows, {cols} columns");
 
     println!("Done.");
     Ok(())
@@ -1412,9 +1369,7 @@ async fn topics_eval(source: &str, table: &str, algorithms: &str, k: usize) -> R
 
     use brightflow_engine::embedding::get_backend;
     use brightflow_engine::nlp::cluster_metrics::{davies_bouldin, npmi_coherence, silhouette};
-    use brightflow_engine::nlp::{
-        clean_for_embedding, default_min_cluster_size, hdbscan_dense, kmeans_dense,
-    };
+    use brightflow_engine::nlp::{default_min_cluster_size, hdbscan_dense, kmeans_dense};
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
@@ -1423,31 +1378,10 @@ async fn topics_eval(source: &str, table: &str, algorithms: &str, k: usize) -> R
     println!("Eval on {source}/{table}: {} rows", df.height());
 
     // Clean once (profile is embedder-independent)
-    let mut texts: Vec<Option<String>> = Vec::with_capacity(df.height());
-    {
-        let columns: Vec<&str> = config.text_columns.iter().map(String::as_str).collect();
-        let mut per_col: Vec<Vec<String>> = Vec::new();
-        for col in &columns {
-            let values = df
-                .column(col)
-                .map_err(|e| anyhow::anyhow!("column {col}: {e}"))?
-                .as_materialized_series()
-                .str()
-                .map_err(|e| anyhow::anyhow!("column {col} not string: {e}"))?
-                .into_iter()
-                .map(|o| o.unwrap_or("").to_string())
-                .collect::<Vec<_>>();
-            per_col.push(values);
-        }
-        for row in 0..df.height() {
-            let raw = per_col
-                .iter()
-                .filter_map(|c| c.get(row).map(String::as_str))
-                .collect::<Vec<_>>()
-                .join(" ");
-            texts.push(clean_for_embedding(&raw, config.cleaning_profile));
-        }
-    }
+    let columns: Vec<&str> = config.text_columns.iter().map(String::as_str).collect();
+    let texts: Vec<Option<String>> =
+        brightflow_engine::enrichment::build_clean_texts(&df, &columns, config.cleaning_profile)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
     let eligible: Vec<usize> = texts
         .iter()
         .enumerate()
@@ -1590,27 +1524,9 @@ async fn topics_embed(source: &str, table: &str) -> Result<()> {
     .map_err(|e| anyhow::anyhow!("embed join error: {e}"))?
     .map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
 
-    let table_dir = wp.store().join(source).join(table);
-    std::fs::create_dir_all(&table_dir)?;
-    let output_path = table_dir.join("enriched.parquet");
-    let file = std::fs::File::create(&output_path)?;
-    polars::prelude::ParquetWriter::new(file).finish(&mut enriched.clone())?;
-
     store
-        .ingest_parquet(
-            source,
-            table,
-            &output_path,
-            Some(IngestOptions {
-                mode: IngestMode::Overwrite,
-                ..Default::default()
-            }),
-        )
+        .replace_table_data(source, table, enriched, None)
         .await?;
-
-    if output_path.exists() {
-        drop(std::fs::remove_file(&output_path));
-    }
 
     println!("Done.");
     Ok(())

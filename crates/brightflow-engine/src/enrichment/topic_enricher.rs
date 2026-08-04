@@ -194,7 +194,7 @@ pub fn english_stopwords() -> std::collections::HashSet<String> {
 
 /// Concatenate the configured text columns (space-separated) into a single
 /// raw string per row.
-fn build_combined_text(df: &DataFrame, columns: &[&str]) -> Result<Vec<String>, TopicError> {
+pub fn build_combined_text(df: &DataFrame, columns: &[&str]) -> Result<Vec<String>, TopicError> {
     if columns.is_empty() {
         return Err(TopicError::MissingColumn(
             "no enrichable columns configured".to_string(),
@@ -231,7 +231,7 @@ fn build_combined_text(df: &DataFrame, columns: &[&str]) -> Result<Vec<String>, 
 
 /// Combined text per row, cleaned for embedding. `None` = row is ineligible
 /// (too thin after cleaning) and must not be embedded or clustered.
-fn build_clean_texts(
+pub fn build_clean_texts(
     df: &DataFrame,
     columns: &[&str],
     profile: CleaningProfile,
@@ -1703,5 +1703,41 @@ mod tests {
         assert!(!is_valid_embedding(&[0.0, 0.0, 0.0]));
         assert!(!is_valid_embedding(&[f32::NAN, 1.0]));
         assert!(is_valid_embedding(&[0.1, 0.2]));
+    }
+
+    #[test]
+    fn build_combined_text_joins_columns_with_spaces() {
+        let df = DataFrame::new(vec![
+            Column::new("title".into(), vec!["Login fails", ""]),
+            Column::new("body".into(), vec!["on mobile", "empty title row"]),
+        ])
+        .expect("frame");
+        let combined = build_combined_text(&df, &["title", "body"]).expect("combined");
+        assert_eq!(combined, vec!["Login fails on mobile", " empty title row"]);
+    }
+
+    #[test]
+    fn build_combined_text_errors_on_missing_or_no_columns() {
+        let df = DataFrame::new(vec![Column::new("title".into(), vec!["x"])]).expect("frame");
+        assert!(matches!(
+            build_combined_text(&df, &["nope"]),
+            Err(TopicError::MissingColumn(_))
+        ));
+        assert!(matches!(
+            build_combined_text(&df, &[]),
+            Err(TopicError::MissingColumn(_))
+        ));
+    }
+
+    #[test]
+    fn build_clean_texts_marks_too_thin_rows_ineligible() {
+        let df = DataFrame::new(vec![Column::new(
+            "text".into(),
+            vec!["the login page crashes every time", "ok"],
+        )])
+        .expect("frame");
+        let cleaned = build_clean_texts(&df, &["text"], CleaningProfile::Plain).expect("cleaned");
+        assert!(cleaned[0].is_some(), "real sentence stays eligible");
+        assert!(cleaned[1].is_none(), "too-thin row must be None");
     }
 }

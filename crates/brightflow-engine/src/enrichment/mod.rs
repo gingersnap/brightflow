@@ -20,7 +20,7 @@ pub use function::{
     ClassifierSpec, FunctionSpec, LlmPromptSpec, OutputField, OutputType, TopicModelSpec,
 };
 pub use topic_enricher::{
-    english_stopwords, enrich_with_topics, fit_topics, parse_label_targets,
-    read_existing_embeddings, FitOptions, FitOutcome, LabelTargets, Labeler, RowEmbeddings,
-    TopicError, DEFAULT_K,
+    build_clean_texts, build_combined_text, english_stopwords, enrich_with_topics, fit_topics,
+    parse_label_targets, read_existing_embeddings, FitOptions, FitOutcome, LabelTargets, Labeler,
+    RowEmbeddings, TopicError, DEFAULT_K,
 };

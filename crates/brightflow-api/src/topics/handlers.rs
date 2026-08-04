@@ -389,38 +389,11 @@ pub(crate) async fn run_recluster(
 
     // Re-ingest the enriched table.
     if let Some(store) = state.store() {
-        let store_path = state
-            .paths
-            .as_ref()
-            .map(brightflow_core::WorkspacePaths::store)
-            .ok_or_else(|| AppError::Internal("paths missing".to_string()))?;
-        let table_dir = store_path.join(source_id).join(table);
-        std::fs::create_dir_all(&table_dir).map_err(AppError::Io)?;
-        let output_path = table_dir.join("enriched.parquet");
-        let t = std::time::Instant::now();
-        {
-            let file = std::fs::File::create(&output_path).map_err(AppError::Io)?;
-            ParquetWriter::new(file)
-                .finish(&mut enriched.clone())
-                .map_err(AppError::Polars)?;
-        }
-        info!("Wrote enriched parquet in {:?}", t.elapsed());
         let t = std::time::Instant::now();
         store
-            .ingest_parquet(
-                source_id,
-                table,
-                &output_path,
-                Some(brightflow_store::IngestOptions {
-                    mode: brightflow_store::IngestMode::Overwrite,
-                    ..Default::default()
-                }),
-            )
+            .replace_table_data(source_id, table, enriched, None)
             .await?;
-        info!("Ingested into store in {:?}", t.elapsed());
-        if output_path.exists() {
-            drop(std::fs::remove_file(&output_path));
-        }
+        info!("Replaced table data in store in {:?}", t.elapsed());
     }
 
     // Re-point curation edits at the new centroids (or orphan them)
