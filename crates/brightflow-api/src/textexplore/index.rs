@@ -16,7 +16,8 @@ use crate::shared::{AppError, AppResult};
 use crate::state::{cache_key, AppState};
 
 /// Tables kept in memory at once. An index costs roughly 2.2× the table's
-/// text size; beyond this the least relevant entries are evicted.
+/// text size; beyond this cap entries are evicted arbitrarily (recency is not
+/// tracked — an evicted index is just rebuilt on next use).
 const MAX_CACHED_TABLES: usize = 3;
 
 /// Terms must appear in at least this many rows to enter the vocabulary

@@ -11,8 +11,8 @@
 //! is "concentration in revenue by region", not one specific region value.
 //! Detector strings must stay distinct from the derived-pass detectors
 //! (`trend`, `change_point`, `last_point`, `rank_change`, `top_dominance`) so
-//! the two passes can never fingerprint-collide (see the collision test in
-//! `tests/drivers_report.rs`).
+//! the two passes can never fingerprint-collide (an integration test pins
+//! this).
 
 use crate::analysis::candidates::{Aggregation, FilterSpec, MeasureRef, Provenance};
 use crate::analysis::scoring::{self, ScoringContext};

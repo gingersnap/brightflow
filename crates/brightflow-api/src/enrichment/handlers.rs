@@ -1,14 +1,14 @@
 //! Enrichment-function endpoints: CRUD + versions + lifecycle, synchronous
 //! sample runs, token estimates, and async full/incremental runs.
+//!
+//! This file is HTTP wiring over two siblings: the pure spec rules live in
+//! `validate` (unit-tested there), the async run loop in `runner`.
 
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 
-use brightflow_engine::embedding::EmbedderId;
-use brightflow_engine::enrichment::{
-    extract_column_refs, spec_hash, FunctionSpec, LlmPromptSpec, OutputType,
-};
+use brightflow_engine::enrichment::{spec_hash, FunctionSpec, LlmPromptSpec};
 use brightflow_store::{EnrichmentFunctionRow, ParquetStore, TableRow};
 
 use crate::enrichment::runner;
@@ -16,6 +16,9 @@ use crate::enrichment::types::{
     CreateFunctionRequest, EnrichFunctionResponse, EnrichRunResponse, EstimateResponse,
     FunctionVersionResponse, SampleCellResponse, SampleRunRequest, SampleRunResponse,
     StartEnrichRunRequest, StartEnrichRunResponse, UpdateFunctionRequest,
+};
+use crate::enrichment::validate::{
+    parse_spec, table_columns as schema_columns, valid_name, validate_spec,
 };
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -30,139 +33,9 @@ fn store(state: &AppState) -> AppResult<&std::sync::Arc<ParquetStore>> {
     state.require_store()
 }
 
-/// A legal derived-column / function name.
-fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && name
-            .chars()
-            .enumerate()
-            .all(|(i, c)| c == '_' || c.is_ascii_alphanumeric() && (i > 0 || !c.is_ascii_digit()))
-        && !name.starts_with(|c: char| c.is_ascii_digit())
-}
-
-/// Column names from the table's stored schema_json.
+/// Column names for a table row's stored schema (see `validate::table_columns`).
 fn table_columns(table: &TableRow) -> Vec<String> {
-    table
-        .schema_json
-        .as_deref()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .and_then(|v| {
-            v.get("fields").and_then(|f| f.as_array()).map(|fields| {
-                fields
-                    .iter()
-                    .filter_map(|f| f.get("name").and_then(|n| n.as_str()).map(String::from))
-                    .collect()
-            })
-        })
-        .unwrap_or_default()
-}
-
-/// Assemble a `FunctionSpec` from a kind + kind-less config payload.
-fn parse_spec(kind: &str, config: &serde_json::Value) -> AppResult<FunctionSpec> {
-    let mut merged = config.clone();
-    let obj = merged
-        .as_object_mut()
-        .ok_or_else(|| AppError::BadRequest("config must be a JSON object".to_string()))?;
-    obj.insert("kind".to_string(), serde_json::json!(kind));
-    serde_json::from_value(merged)
-        .map_err(|e| AppError::BadRequest(format!("invalid {kind} config: {e}")))
-}
-
-/// Validate a spec against the table it will run on.
-fn validate_spec(spec: &FunctionSpec, columns: &[String]) -> AppResult<()> {
-    match spec {
-        FunctionSpec::LlmPrompt(llm) => validate_llm_spec(llm, columns),
-        FunctionSpec::TopicModel(tm) => {
-            let o = &tm.overrides;
-            if let Some(profile) = o.cleaning_profile.as_deref() {
-                if brightflow_engine::nlp::CleaningProfile::parse(profile).is_none() {
-                    return Err(AppError::BadRequest(format!(
-                        "Unknown cleaning profile '{profile}'"
-                    )));
-                }
-            }
-            if let Some(embedder) = o.embedder.as_deref() {
-                if EmbedderId::parse(embedder).is_none() {
-                    return Err(AppError::BadRequest(format!(
-                        "Unknown embedder '{embedder}'"
-                    )));
-                }
-            }
-            if let Some(algo) = o.algorithm.as_deref() {
-                if algo != "kmeans" && algo != "hdbscan" {
-                    return Err(AppError::BadRequest(format!(
-                        "Unknown algorithm '{algo}' (kmeans | hdbscan)"
-                    )));
-                }
-            }
-            if let Some(cols) = &o.text_columns {
-                for col in cols {
-                    if !columns.iter().any(|c| c == col) {
-                        return Err(AppError::BadRequest(format!(
-                            "text column '{col}' not found in table"
-                        )));
-                    }
-                }
-            }
-            Ok(())
-        },
-        FunctionSpec::Classifier(_) => Ok(()),
-    }
-}
-
-fn validate_llm_spec(spec: &LlmPromptSpec, columns: &[String]) -> AppResult<()> {
-    if spec.prompt_template.trim().is_empty() {
-        return Err(AppError::BadRequest("prompt template is empty".to_string()));
-    }
-    let refs = extract_column_refs(&spec.prompt_template);
-    if refs.is_empty() {
-        return Err(AppError::BadRequest(
-            "prompt template references no columns — insert at least one {{col:…}}".to_string(),
-        ));
-    }
-    for r in &refs {
-        if !columns.iter().any(|c| c == r) {
-            return Err(AppError::BadRequest(format!(
-                "template references unknown column '{r}'"
-            )));
-        }
-    }
-    if spec.outputs.is_empty() {
-        return Err(AppError::BadRequest(
-            "at least one output field is required".to_string(),
-        ));
-    }
-    let mut seen = std::collections::HashSet::new();
-    for field in &spec.outputs {
-        if !valid_name(&field.name) {
-            return Err(AppError::BadRequest(format!(
-                "output name '{}' is not a legal column name",
-                field.name
-            )));
-        }
-        if !seen.insert(field.name.as_str()) {
-            return Err(AppError::BadRequest(format!(
-                "duplicate output name '{}'",
-                field.name
-            )));
-        }
-        if columns.iter().any(|c| c == &field.name) {
-            return Err(AppError::BadRequest(format!(
-                "output name '{}' collides with an existing table column",
-                field.name
-            )));
-        }
-        if let OutputType::Enum { values } = &field.dtype {
-            if values.is_empty() || values.iter().any(|v| v.trim().is_empty()) {
-                return Err(AppError::BadRequest(format!(
-                    "enum output '{}' needs at least one non-empty value",
-                    field.name
-                )));
-            }
-        }
-    }
-    Ok(())
+    schema_columns(table.schema_json.as_deref())
 }
 
 async fn to_response(

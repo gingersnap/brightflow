@@ -51,7 +51,6 @@ use std::path::PathBuf;
 
 use brightflow_connect::list_builtin_connectors;
 use brightflow_engine::analysis::tree::{ReportType, ReviewCadence};
-// Scheduler is now integrated into the API server
 use brightflow_store::ParquetStore;
 
 mod commands;
@@ -449,6 +448,7 @@ async fn main() -> Result<()> {
         connector_configs: None,
         database_url: None,
     }) {
+        // `run-all` and `serve` start the same server; one body, two names.
         Commands::RunAll {
             host,
             port,
@@ -457,24 +457,8 @@ async fn main() -> Result<()> {
             tables,
             connector_configs,
             database_url,
-        } => {
-            let log_sender = init_tracing("brightflow=info,brightflow_api=debug,tower_http=debug");
-
-            let config = build_serve_config(
-                host.as_deref(),
-                port,
-                dataset,
-                store.as_deref(),
-                tables,
-                connector_configs.as_deref(),
-                database_url.as_deref(),
-            );
-
-            // Scheduler is now integrated into the API server (started automatically)
-            brightflow_api::serve(config, Some(log_sender)).await?;
-        },
-
-        Commands::Serve {
+        }
+        | Commands::Serve {
             host,
             port,
             dataset,
@@ -494,6 +478,7 @@ async fn main() -> Result<()> {
                 connector_configs.as_deref(),
                 database_url.as_deref(),
             );
+
             brightflow_api::serve(config, Some(log_sender)).await?;
         },
 
@@ -569,30 +554,12 @@ async fn main() -> Result<()> {
                     .await?;
                 println!("Compacted {merged} files for {source}/{table}/date={date}");
             } else if all_dates {
-                // List all distinct date partitions for this table
-                let table_row = store
-                    .table_info(&source, &table)
+                // Partition values come from the store catalog, which is
+                // authoritative — never from parsing the on-disk layout here.
+                let dates = store
+                    .list_partition_values(&source, &table, "date")
                     .await
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-                // Query files and extract partition values
-                let files = store
-                    .get_table_parquet_paths(&source, &table)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-                // Extract unique dates from file paths (events/{source}/{date}/*.parquet)
-                let mut dates: Vec<String> = files
-                    .iter()
-                    .filter_map(|p| {
-                        p.parent()
-                            .and_then(|parent| parent.file_name())
-                            .and_then(|name| name.to_str())
-                            .map(ToString::to_string)
-                    })
-                    .collect();
-                dates.sort();
-                dates.dedup();
 
                 let mut total = 0usize;
                 for date_val in &dates {
@@ -605,10 +572,8 @@ async fn main() -> Result<()> {
                     }
                 }
                 println!(
-                    "Done. Compacted {total} files across {} partitions ({} from table '{}')",
+                    "Done. Compacted {total} files across {} date partitions of {source}/{table}",
                     dates.len(),
-                    table_row.name,
-                    table
                 );
             } else {
                 println!("Specify --date <YYYY-MM-DD> or --all-dates");

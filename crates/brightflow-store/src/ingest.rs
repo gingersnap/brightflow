@@ -438,8 +438,8 @@ pub(crate) fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
     if dfs.is_empty() {
         return Ok(DataFrame::empty());
     }
-    if dfs.len() == 1 {
-        return Ok(dfs[0].clone());
+    if let [only] = dfs {
+        return Ok(only.clone());
     }
 
     // Collect the union of all column names, preserving insertion order
@@ -487,9 +487,13 @@ pub(crate) fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    let mut result = aligned[0].clone();
-    for df in &aligned[1..] {
-        result.vstack_mut(df)?;
+    let mut aligned_iter = aligned.into_iter();
+    let Some(mut result) = aligned_iter.next() else {
+        // Unreachable: the empty-input case returned above.
+        return Ok(DataFrame::empty());
+    };
+    for df in aligned_iter {
+        result.vstack_mut(&df)?;
     }
     Ok(result)
 }
@@ -560,5 +564,133 @@ mod tests {
         // Each source gets its own on-disk directory.
         assert!(tmp.path().join(source_a).join("issues").is_dir());
         assert!(tmp.path().join(source_b).join("issues").is_dir());
+    }
+
+    /// `rows_updated`/`rows_inserted` are the semi-join math: a source row
+    /// whose keys already exist counts as updated, the rest as inserted.
+    #[tokio::test]
+    async fn merge_parquet_counts_overlapping_keys_as_updates() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        let store = ParquetStore::new(tmp.path(), &db_url).await.expect("store");
+        let pks = vec!["id".to_string()];
+        let source = "connector:cccccccc";
+
+        let write = |name: &str, mut frame: DataFrame| -> std::path::PathBuf {
+            let path = tmp.path().join(name);
+            let file = std::fs::File::create(&path).expect("create");
+            ParquetWriter::new(file).finish(&mut frame).expect("write");
+            path
+        };
+
+        // First merge into an empty table: everything is an insert.
+        let first = write(
+            "first.parquet",
+            df!("id" => [1i64, 2, 3], "v" => ["a", "b", "c"]).expect("df"),
+        );
+        let metrics = store
+            .merge_parquet(source, "issues", &first, &pks)
+            .await
+            .expect("merge 1");
+        assert_eq!(metrics.rows_updated, 0);
+        assert_eq!(metrics.rows_inserted, 3);
+
+        // Second merge overlaps on ids 2 and 3: source_height (4) minus
+        // matched (2) rows are inserts.
+        let second = write(
+            "second.parquet",
+            df!("id" => [2i64, 3, 4, 5], "v" => ["B", "C", "d", "e"]).expect("df"),
+        );
+        let metrics = store
+            .merge_parquet(source, "issues", &second, &pks)
+            .await
+            .expect("merge 2");
+        assert_eq!(metrics.rows_updated, 2);
+        assert_eq!(metrics.rows_inserted, 2);
+
+        // The table ends at 5 distinct keys, with source rows winning.
+        let tables = store.list_tables_by_source(source).await.expect("list");
+        assert_eq!(tables.first().map(|t| t.total_rows), Some(5));
+    }
+
+    #[test]
+    fn concat_df_empty_input_gives_empty_frame() {
+        let out = concat_df(&[]).expect("concat");
+        assert_eq!(out.height(), 0);
+        assert_eq!(out.width(), 0);
+    }
+
+    #[test]
+    fn concat_df_single_frame_passes_through() {
+        let frame = df!("a" => [1i64, 2]).expect("df");
+        let out = concat_df(std::slice::from_ref(&frame)).expect("concat");
+        assert!(out.equals(&frame));
+    }
+
+    #[test]
+    fn concat_df_identical_schemas_stack() {
+        let a = df!("id" => [1i64, 2], "v" => ["x", "y"]).expect("df");
+        let b = df!("id" => [3i64], "v" => ["z"]).expect("df");
+        let out = concat_df(&[a, b]).expect("concat");
+
+        assert_eq!(out.height(), 3);
+        let ids: Vec<Option<i64>> = out
+            .column("id")
+            .expect("id")
+            .as_materialized_series()
+            .i64()
+            .expect("i64")
+            .into_iter()
+            .collect();
+        assert_eq!(ids, vec![Some(1), Some(2), Some(3)]);
+    }
+
+    #[test]
+    fn concat_df_disjoint_columns_null_fill_both_directions() {
+        let a = df!("a" => [1i64, 2]).expect("df");
+        let b = df!("b" => ["x"]).expect("df");
+        let out = concat_df(&[a, b]).expect("concat");
+
+        assert_eq!(out.height(), 3);
+        // Union column order is first-seen across the inputs.
+        assert_eq!(out.get_column_names(), ["a", "b"]);
+
+        // Each side keeps its dtype and is null-filled for the other's rows.
+        let a_col = out.column("a").expect("a");
+        assert_eq!(a_col.dtype(), &DataType::Int64);
+        assert_eq!(a_col.null_count(), 1);
+        let b_col = out.column("b").expect("b");
+        assert_eq!(b_col.dtype(), &DataType::String);
+        assert_eq!(b_col.null_count(), 2);
+    }
+
+    #[test]
+    fn concat_df_reordered_columns_align_by_name() {
+        let a = df!("a" => [1i64], "b" => ["x"]).expect("df");
+        let b = df!("b" => ["y"], "a" => [2i64]).expect("df");
+        let out = concat_df(&[a, b]).expect("concat");
+
+        assert_eq!(out.get_column_names(), ["a", "b"]);
+        let ids: Vec<Option<i64>> = out
+            .column("a")
+            .expect("a")
+            .as_materialized_series()
+            .i64()
+            .expect("i64")
+            .into_iter()
+            .collect();
+        assert_eq!(ids, vec![Some(1), Some(2)]);
+        let vs: Vec<Option<&str>> = out
+            .column("b")
+            .expect("b")
+            .as_materialized_series()
+            .str()
+            .expect("str")
+            .into_iter()
+            .collect();
+        assert_eq!(vs, vec![Some("x"), Some("y")]);
     }
 }

@@ -1,7 +1,7 @@
 //! Schema merge: combine auto-detected schema with user overrides.
 //!
-//! Plain Rust structs — no store dependency. Conversion from SQLite rows
-//! happens in the API layer.
+//! Plain Rust structs — no store dependency. Callers convert whatever rows
+//! they persist into these structs before handing them in.
 
 use anyhow::Result;
 use polars::prelude::*;

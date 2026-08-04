@@ -622,3 +622,364 @@ async fn drive_run(
     )
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use brightflow_llm::{ToolCall, ToolCallFunction};
+    use polars::df;
+    use serde_json::json;
+
+    fn spec(template: &str) -> LlmPromptSpec {
+        LlmPromptSpec {
+            input_columns: vec![],
+            prompt_template: template.to_string(),
+            outputs: vec![],
+            provider_id: "p1".to_string(),
+            model: None,
+        }
+    }
+
+    fn cell(status: &str, cached: bool) -> CellResult {
+        CellResult {
+            status: status.to_string(),
+            value: None,
+            error: None,
+            cached,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+        }
+    }
+
+    /// A ChatOutcome with optional text content and/or tool calls.
+    fn outcome(content: Option<&str>, calls: &[(&str, &str)]) -> ChatOutcome {
+        let tool_calls = if calls.is_empty() {
+            None
+        } else {
+            Some(
+                calls
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (name, args))| ToolCall {
+                        id: format!("t{i}"),
+                        call_type: "function".to_string(),
+                        function: ToolCallFunction {
+                            name: (*name).to_string(),
+                            arguments: (*args).to_string(),
+                        },
+                    })
+                    .collect(),
+            )
+        };
+        ChatOutcome {
+            message: ChatMessage {
+                role: "assistant".to_string(),
+                content: content.map(str::to_string),
+                tool_calls,
+                tool_call_id: None,
+            },
+            finish_reason: None,
+            total_tokens: None,
+            prompt_tokens: None,
+            completion_tokens: None,
+        }
+    }
+
+    fn token_outcome(
+        prompt: Option<u64>,
+        completion: Option<u64>,
+        total: Option<u64>,
+    ) -> ChatOutcome {
+        let mut out = outcome(None, &[]);
+        out.prompt_tokens = prompt;
+        out.completion_tokens = completion;
+        out.total_tokens = total;
+        out
+    }
+
+    fn field(name: &str, dtype: OutputType) -> OutputField {
+        OutputField {
+            name: name.to_string(),
+            dtype,
+            description: String::new(),
+        }
+    }
+
+    // ── progress_counts ───────────────────────────────────────────
+
+    #[test]
+    fn progress_counts_empty_cells() {
+        assert_eq!(progress_counts(&HashMap::new(), &HashMap::new()), (0, 0, 0));
+    }
+
+    #[test]
+    fn progress_counts_weights_rows_by_multiplicity() {
+        let cells = HashMap::from([
+            ("h1".to_string(), cell("ok", false)),
+            ("h2".to_string(), cell("error", true)),
+            ("h3".to_string(), cell("ok", true)),
+        ]);
+        // h3 is absent from the multiplicity map: it falls back to weight 1.
+        let multiplicity = HashMap::from([("h1".to_string(), 3), ("h2".to_string(), 2)]);
+        let (done, failed, cached) = progress_counts(&cells, &multiplicity);
+        assert_eq!(done, 6);
+        assert_eq!(failed, 2);
+        assert_eq!(cached, 3);
+    }
+
+    // ── prepare_inputs / column_as_strings ────────────────────────
+
+    #[test]
+    fn prepare_inputs_renders_rows_and_hashes_by_content() {
+        let df = df!(
+            "title" => &[Some("Alpha"), None, Some("Alpha")],
+            "n" => &[Some(1_i64), Some(2), Some(1)],
+        )
+        .unwrap();
+        let inputs = prepare_inputs(&df, &spec("{{col:title}} ({{col:n}})")).unwrap();
+        assert_eq!(inputs.len(), 3);
+        assert_eq!(inputs[0].rendered["title"], "Alpha");
+        assert_eq!(inputs[0].rendered["n"], "1");
+        // A null cell renders as the empty string.
+        assert_eq!(inputs[1].rendered["title"], "");
+        // Identical row content ⇒ identical hash; different ⇒ different.
+        assert_eq!(inputs[0].hash, inputs[2].hash);
+        assert_ne!(inputs[0].hash, inputs[1].hash);
+        // The hash is input_hash over (name, value) pairs in BTreeMap
+        // (name-sorted) order.
+        let expected = input_hash(&[
+            ("n".to_string(), "1".to_string()),
+            ("title".to_string(), "Alpha".to_string()),
+        ]);
+        assert_eq!(inputs[0].hash, expected);
+    }
+
+    #[test]
+    fn prepare_inputs_missing_column_is_bad_request() {
+        let df = df!("title" => &["a"]).unwrap();
+        let err = prepare_inputs(&df, &spec("{{col:nope}}")).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(ref m) if m.contains("nope")));
+    }
+
+    #[test]
+    fn prepare_inputs_without_refs_gives_every_row_the_same_hash() {
+        let df = df!("title" => &["a", "b"]).unwrap();
+        let inputs = prepare_inputs(&df, &spec("no references here")).unwrap();
+        assert_eq!(inputs.len(), 2);
+        assert!(inputs[0].rendered.is_empty());
+        assert_eq!(inputs[0].hash, inputs[1].hash);
+        assert_eq!(inputs[0].hash, input_hash(&[]));
+    }
+
+    #[test]
+    fn prepare_inputs_empty_frame_yields_no_rows() {
+        let df = df!("title" => Vec::<String>::new()).unwrap();
+        assert!(prepare_inputs(&df, &spec("{{col:title}}"))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn column_as_strings_casts_and_fills_nulls() {
+        let df = df!("n" => &[Some(7_i64), None]).unwrap();
+        assert_eq!(column_as_strings(&df, "n").unwrap(), vec!["7", ""]);
+        let err = column_as_strings(&df, "missing").unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    // ── set_values_tool / extract_args ────────────────────────────
+
+    #[test]
+    fn set_values_tool_uses_output_schema() {
+        let outputs = vec![field("score", OutputType::Number)];
+        let tool = set_values_tool(&outputs);
+        assert_eq!(tool.name, TOOL_NAME);
+        assert!(!tool.description.is_empty());
+        assert_eq!(tool.parameters, output_tool_schema(&outputs));
+    }
+
+    #[test]
+    fn extract_args_prefers_the_named_tool_call() {
+        let out = outcome(
+            None,
+            &[("other", r#"{"x": 1}"#), (TOOL_NAME, r#"{"a": 1}"#)],
+        );
+        assert_eq!(extract_args(&out).unwrap(), json!({"a": 1}));
+    }
+
+    #[test]
+    fn extract_args_falls_back_to_the_first_tool_call() {
+        // A differently-named call still counts (providers rename freely).
+        let out = outcome(None, &[("other", r#"{"x": 1}"#)]);
+        assert_eq!(extract_args(&out).unwrap(), json!({"x": 1}));
+    }
+
+    #[test]
+    fn extract_args_rejects_malformed_tool_arguments() {
+        let out = outcome(None, &[(TOOL_NAME, "{not json")]);
+        let err = extract_args(&out).unwrap_err();
+        assert!(err.contains("tool arguments not valid JSON"));
+    }
+
+    #[test]
+    fn extract_args_parses_plain_text_json() {
+        let out = outcome(Some(r#" {"a": 1} "#), &[]);
+        assert_eq!(extract_args(&out).unwrap(), json!({"a": 1}));
+    }
+
+    #[test]
+    fn extract_args_strips_code_fences() {
+        let fenced = outcome(Some("```json\n{\"a\": 1}\n```"), &[]);
+        assert_eq!(extract_args(&fenced).unwrap(), json!({"a": 1}));
+        let bare = outcome(Some("```\n{\"a\": 1}\n```"), &[]);
+        assert_eq!(extract_args(&bare).unwrap(), json!({"a": 1}));
+    }
+
+    #[test]
+    fn extract_args_empty_response_is_an_error() {
+        for out in [outcome(None, &[]), outcome(Some("   "), &[])] {
+            let err = extract_args(&out).unwrap_err();
+            assert!(err.contains("neither a tool call nor JSON"));
+        }
+    }
+
+    #[test]
+    fn extract_args_prose_text_is_an_error() {
+        let out = outcome(Some("cannot comply"), &[]);
+        assert!(extract_args(&out).unwrap_err().contains("not valid JSON"));
+    }
+
+    // ── add_tokens ────────────────────────────────────────────────
+
+    #[test]
+    fn add_tokens_accumulates_a_reported_split() {
+        let (mut prompt, mut completion) = (1_i64, 2_i64);
+        add_tokens(
+            &token_outcome(Some(10), Some(5), Some(15)),
+            &mut prompt,
+            &mut completion,
+        );
+        assert_eq!((prompt, completion), (11, 7));
+        // Prompt reported without completion: completion side adds 0.
+        add_tokens(
+            &token_outcome(Some(10), None, None),
+            &mut prompt,
+            &mut completion,
+        );
+        assert_eq!((prompt, completion), (21, 7));
+    }
+
+    #[test]
+    fn add_tokens_without_split_attributes_total_to_prompt() {
+        let (mut prompt, mut completion) = (0_i64, 0_i64);
+        add_tokens(
+            &token_outcome(None, None, Some(30)),
+            &mut prompt,
+            &mut completion,
+        );
+        assert_eq!((prompt, completion), (30, 0));
+        // Nothing reported at all: both stay put.
+        add_tokens(
+            &token_outcome(None, None, None),
+            &mut prompt,
+            &mut completion,
+        );
+        assert_eq!((prompt, completion), (30, 0));
+    }
+
+    #[test]
+    fn add_tokens_drops_completion_when_prompt_is_missing() {
+        // Pins current behavior: a completion count without a prompt count is
+        // discarded — only the total lands, on the prompt side.
+        let (mut prompt, mut completion) = (0_i64, 0_i64);
+        add_tokens(
+            &token_outcome(None, Some(5), Some(30)),
+            &mut prompt,
+            &mut completion,
+        );
+        assert_eq!((prompt, completion), (30, 0));
+    }
+
+    // ── build_output_column ───────────────────────────────────────
+
+    #[test]
+    fn build_output_column_number_ignores_wrong_types() {
+        let values = vec![
+            Some(json!({"score": 2})),
+            Some(json!({"score": "two"})),
+            Some(json!({})),
+            None,
+        ];
+        let col = build_output_column(&field("score", OutputType::Number), &values);
+        assert_eq!(col.name().as_str(), "score");
+        assert_eq!(col.dtype(), &DataType::Float64);
+        let got: Vec<Option<f64>> = col
+            .as_materialized_series()
+            .f64()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(got, vec![Some(2.0), None, None, None]);
+    }
+
+    #[test]
+    fn build_output_column_bool() {
+        let values = vec![
+            Some(json!({"flag": true})),
+            Some(json!({"flag": "yes"})),
+            None,
+        ];
+        let col = build_output_column(&field("flag", OutputType::Bool), &values);
+        let got: Vec<Option<bool>> = col
+            .as_materialized_series()
+            .bool()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(got, vec![Some(true), None, None]);
+    }
+
+    #[test]
+    fn build_output_column_string_and_enum_take_only_strings() {
+        let values = vec![Some(json!({"label": "a"})), Some(json!({"label": 3})), None];
+        for dtype in [
+            OutputType::String,
+            OutputType::Enum {
+                values: vec!["a".to_string()],
+            },
+        ] {
+            let col = build_output_column(&field("label", dtype), &values);
+            let got: Vec<Option<&str>> = col
+                .as_materialized_series()
+                .str()
+                .unwrap()
+                .into_iter()
+                .collect();
+            assert_eq!(got, vec![Some("a"), None, None]);
+        }
+    }
+
+    #[test]
+    fn build_output_column_json_serializes_any_value() {
+        let values = vec![
+            Some(json!({"data": {"k": 1}})),
+            Some(json!({"data": "s"})),
+            Some(json!({})),
+        ];
+        let col = build_output_column(&field("data", OutputType::Json), &values);
+        let got: Vec<Option<&str>> = col
+            .as_materialized_series()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        // A JSON-string value is re-serialized, so it keeps its quotes.
+        assert_eq!(got, vec![Some(r#"{"k":1}"#), Some(r#""s""#), None]);
+    }
+
+    #[test]
+    fn build_output_column_empty_input_is_empty_column() {
+        let col = build_output_column(&field("score", OutputType::Number), &[]);
+        assert_eq!(col.len(), 0);
+    }
+}

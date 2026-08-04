@@ -8,11 +8,11 @@ use anyhow::Result;
 
 pub(crate) async fn handle_create_admin(email: &str, name: &str, database_url: &str) -> Result<()> {
     // Ensure data directory exists
-    if let Some(path) = database_url.strip_prefix("sqlite:") {
-        let db_path = path.split('?').next().unwrap_or(path);
-        if let Some(parent) = std::path::Path::new(db_path).parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = brightflow_core::sqlite_db_path(database_url)
+        .as_deref()
+        .and_then(std::path::Path::parent)
+    {
+        std::fs::create_dir_all(parent)?;
     }
 
     let db = brightflow_api::auth::AuthDb::new(database_url).await?;

@@ -146,3 +146,78 @@ impl StoreDb {
 
     // =====================================================
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Fresh, fully migrated `StoreDb` backed by a SQLite file in `tmp`.
+    async fn temp_db(tmp: &TempDir) -> StoreDb {
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        StoreDb::new(&db_url).await.expect("failed to open db")
+    }
+
+    /// Bulk approve applies proposals **oldest first**, and this is the accessor
+    /// that guarantees it.
+    ///
+    /// The ordering is a correctness requirement, not a preference: an agent
+    /// proposes `define_taxonomy_category` before the `label_document` that
+    /// names it, so applying newest-first would fail every label with "not a
+    /// category in this table's taxonomy". The neighbouring `list_actions`
+    /// (the audit feed) is deliberately DESC, so this is an easy thing to get
+    /// backwards by copy-paste.
+    #[tokio::test]
+    async fn list_proposed_actions_is_oldest_first_and_only_proposed() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+
+        // Insert in creation order: two proposals, one already applied, one more.
+        for (request_id, kind, status) in [
+            ("r1", "define_taxonomy_category", "proposed"),
+            ("r2", "label_document", "proposed"),
+            ("r3", "rename_cluster", "applied"),
+            ("r4", "label_document", "proposed"),
+        ] {
+            let row = db
+                .insert_action(request_id, "agent", Some(1), kind, "{}", status, 0)
+                .await
+                .expect("insert")
+                .expect("no request_id conflict");
+            if status == "applied" {
+                db.update_action_result(row.id, "applied", None, None, 0)
+                    .await
+                    .expect("mark applied");
+            }
+        }
+
+        let proposed = db.list_proposed_actions().await.expect("list");
+        assert_eq!(proposed.len(), 3, "the applied action must not be returned");
+
+        let ids: Vec<i64> = proposed.iter().map(|r| r.id).collect();
+        let mut ascending = ids.clone();
+        ascending.sort_unstable();
+        assert_eq!(
+            ids, ascending,
+            "must be oldest-first, or dependent proposals fail"
+        );
+        assert_eq!(
+            proposed.first().map(|r| r.action_kind.as_str()),
+            Some("define_taxonomy_category"),
+            "the category must be applied before the label that names it"
+        );
+
+        assert_eq!(db.count_proposed_actions().await.expect("count"), 3);
+    }
+
+    #[tokio::test]
+    async fn count_proposed_actions_is_zero_on_a_fresh_store() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+        assert_eq!(db.count_proposed_actions().await.expect("count"), 0);
+        assert!(db.list_proposed_actions().await.expect("list").is_empty());
+    }
+}

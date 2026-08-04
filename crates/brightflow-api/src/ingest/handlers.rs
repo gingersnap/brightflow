@@ -365,3 +365,41 @@ fn extract_ip(headers: &HeaderMap) -> String {
         })
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (k, v) in pairs {
+            map.insert(
+                axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                v.parse().unwrap(),
+            );
+        }
+        map
+    }
+
+    #[test]
+    fn extract_ip_prefers_first_forwarded_hop() {
+        // X-Forwarded-For is client-appended-first: the first entry is the
+        // original client, later entries are proxies.
+        let multi_hop = headers(&[("x-forwarded-for", "203.0.113.7, 10.0.0.1, 10.0.0.2")]);
+        assert_eq!(extract_ip(&multi_hop), "203.0.113.7");
+        let padded = headers(&[("x-forwarded-for", "  203.0.113.7  ")]);
+        assert_eq!(extract_ip(&padded), "203.0.113.7");
+    }
+
+    #[test]
+    fn extract_ip_falls_back_to_real_ip_then_empty() {
+        let real_ip_only = headers(&[("x-real-ip", "198.51.100.4")]);
+        assert_eq!(extract_ip(&real_ip_only), "198.51.100.4");
+        let both = headers(&[
+            ("x-forwarded-for", "203.0.113.7"),
+            ("x-real-ip", "198.51.100.4"),
+        ]);
+        assert_eq!(extract_ip(&both), "203.0.113.7", "forwarded-for wins");
+        assert_eq!(extract_ip(&HeaderMap::new()), "");
+    }
+}

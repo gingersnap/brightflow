@@ -1,8 +1,9 @@
 //! Insight-history novelty: decay scores of stories the user has already seen.
 //!
-//! The engine stays DB-free — the API layer loads `insight_history` rows,
-//! converts them to [`HistoryEntry`] keyed by fingerprint, and hands the map
-//! in; `apply_novelty` mutates the tree's score breakdowns before selection.
+//! The engine stays DB-free — callers load prior exposure from wherever they
+//! store it, convert it to [`HistoryEntry`] keyed by fingerprint, and hand the
+//! map in; `apply_novelty` mutates the tree's score breakdowns before
+//! selection.
 
 use std::collections::HashMap;
 

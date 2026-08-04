@@ -10,8 +10,8 @@
 //! seconds. A fixed window gives both the same treatment and lets an attacker
 //! burst at every boundary.
 //!
-//! State lives in a `DashMap` on `AppState` — `dashmap` is already a dependency
-//! and the state already holds nine of them, so this adds no crate. That also
+//! State lives in a `DashMap` on `AppState` — `dashmap` is already a
+//! dependency there, so this adds no crate. That also
 //! means the limit is **per process**, not shared across replicas; with more than
 //! one API instance behind a load balancer the effective rate is multiplied by
 //! the instance count. Sufficient for the single-process deployment this ships

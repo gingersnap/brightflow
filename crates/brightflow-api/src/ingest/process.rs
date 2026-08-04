@@ -55,8 +55,9 @@ struct ParsedUrl {
 
 /// Process a raw event into an enriched event.
 ///
-/// This is a pure function (aside from the geo reader). IP and User-Agent
-/// are used for hashing/parsing but never stored in the output.
+/// Deterministic given its inputs except for the geo lookup, the generated
+/// event id (`Uuid::now_v7`) and the ingest timestamp (`Utc::now`). IP and
+/// User-Agent are used for hashing/parsing but never stored in the output.
 pub fn process_event(
     raw: &RawEvent,
     ip: &str,

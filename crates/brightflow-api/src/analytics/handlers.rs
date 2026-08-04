@@ -543,3 +543,25 @@ async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slugify_lowercases_and_replaces_separators() {
+        assert_eq!(slugify_table_name("Q3 Leads.csv"), "q3_leads");
+        assert_eq!(slugify_table_name("my--weird  file.csv"), "my_weird_file");
+    }
+
+    #[test]
+    fn slugify_edge_cases() {
+        // Leading digit gets a prefix so the name stays a legal identifier.
+        assert_eq!(slugify_table_name("2024 report.csv"), "t_2024_report");
+        // Nothing usable in the stem falls back to a generic name.
+        assert_eq!(slugify_table_name("!!!.csv"), "table");
+        assert_eq!(slugify_table_name(""), "table");
+        // Underscore runs collapse and ends are trimmed.
+        assert_eq!(slugify_table_name("__a__b__.csv"), "a_b");
+    }
+}

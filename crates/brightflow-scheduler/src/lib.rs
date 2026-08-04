@@ -1,6 +1,15 @@
-//! Brightflow Scheduler - Background job scheduling for data pipelines
+//! Recurring connector syncs: a 30-second tick loop over SQLite job
+//! definitions.
 //!
-//! Manages recurring connector syncs backed by SQLite job definitions.
+//! Each tick lists enabled jobs, decides due-ness from the last run's
+//! `started_at` (`job_is_due`), and spawns due jobs onto background tasks. An
+//! in-flight set keyed by `inflight_key` stops the tick from double-spawning
+//! a job that is still running; stale `running` rows from a previous process
+//! are deleted once at startup. `execute_sync` owns the sync pipeline itself:
+//! config lookup, env-var interpolation in connector configs, the connector
+//! run, Parquet merge per endpoint, cursor persistence, and the post-sync
+//! hook. Failures of a sync are recorded on its `SyncRun` row, not
+//! propagated — the loop must survive any single job.
 
 #![allow(
     clippy::cognitive_complexity,
@@ -32,8 +41,8 @@ mod text_enrichment;
 /// Hook invoked after each endpoint's merge, with `(source_id, table_name)`.
 ///
 /// Failures must be handled inside the hook — they never fail the sync. The
-/// API installs one to trigger incremental LLM-enrichment runs; the
-/// scheduler itself gains no LLM dependency.
+/// hook is how sync-completion side effects stay out of this crate: the
+/// scheduler itself gains no dependency on whatever the hook triggers.
 pub type PostSyncHook = Arc<
     dyn Fn(String, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
         + Send
@@ -109,17 +118,12 @@ impl Scheduler {
             }
 
             // Check if job is due
-            let should_run = match self.db.get_latest_sync_run_for_job(&job.id).await? {
-                None => true,
-                Some(last_run) => {
-                    if let Ok(started) = last_run.started_at.parse::<DateTime<Utc>>() {
-                        let elapsed = Utc::now().signed_duration_since(started).num_seconds();
-                        elapsed >= job.interval_secs
-                    } else {
-                        true
-                    }
-                },
-            };
+            let last_run = self.db.get_latest_sync_run_for_job(&job.id).await?;
+            let should_run = job_is_due(
+                last_run.as_ref().map(|r| r.started_at.as_str()),
+                Utc::now(),
+                job.interval_secs,
+            );
 
             if should_run {
                 info!("Spawning scheduled job '{}' ({})", job.name, job.id);
@@ -178,11 +182,10 @@ impl Scheduler {
         let hook = self.post_sync_hook.read().await.clone();
 
         // Mark as running
-        running.write().await.insert(
-            job_id_owned
-                .clone()
-                .unwrap_or_else(|| connector_id_owned.clone()),
-        );
+        running
+            .write()
+            .await
+            .insert(inflight_key(job_id_owned.as_deref(), &connector_id_owned));
 
         tokio::spawn(async move {
             let result = execute_sync(
@@ -197,7 +200,7 @@ impl Scheduler {
             .await;
 
             // Remove from running set
-            let key = job_id_owned.unwrap_or(connector_id_owned);
+            let key = inflight_key(job_id_owned.as_deref(), &connector_id_owned);
             running.write().await.remove(&key);
 
             if let Err(e) = result {
@@ -389,6 +392,30 @@ async fn execute_sync(
     Ok(())
 }
 
+/// Whether a job is due, given the raw `started_at` of its most recent run.
+///
+/// `None` (never ran) and an unparseable timestamp both count as due: the
+/// failure mode of a corrupt timestamp is one early re-sync, not a job that
+/// silently never runs again.
+fn job_is_due(last_started_at: Option<&str>, now: DateTime<Utc>, interval_secs: i64) -> bool {
+    match last_started_at {
+        None => true,
+        Some(raw) => raw.parse::<DateTime<Utc>>().map_or(true, |started| {
+            now.signed_duration_since(started).num_seconds() >= interval_secs
+        }),
+    }
+}
+
+/// Key for the in-flight set: the job id when present, else the connector id.
+///
+/// Contract: for a scheduled job the key must equal the job id, because the
+/// tick's already-running check looks the job id up directly. Ad-hoc runs
+/// (no job id) key by connector, which keeps them from ever colliding with a
+/// scheduled run of the same connector.
+fn inflight_key(job_id: Option<&str>, connector_id: &str) -> String {
+    job_id.unwrap_or(connector_id).to_string()
+}
+
 /// Recursively expand `${ENV_VAR}` patterns in JSON string values
 fn substitute_env_vars_in_json(value: serde_json::Value) -> serde_json::Value {
     match value {
@@ -522,5 +549,30 @@ mod tests {
         assert_eq!(out["missing"], serde_json::Value::Null);
         assert_eq!(out["nested"]["headers"][0], serde_json::json!(""));
         assert_eq!(out["nested"]["headers"][1], serde_json::json!("static"));
+    }
+    #[test]
+    fn job_is_due_when_never_run_or_interval_elapsed() {
+        let now = "2026-08-04T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert!(job_is_due(None, now, 300), "a job with no runs is due");
+        assert!(job_is_due(Some("2026-08-04T11:54:59Z"), now, 300));
+        assert!(
+            job_is_due(Some("2026-08-04T11:55:00Z"), now, 300),
+            "exact interval is due"
+        );
+        assert!(!job_is_due(Some("2026-08-04T11:55:01Z"), now, 300));
+    }
+
+    #[test]
+    fn job_is_due_on_unparseable_timestamp() {
+        let now = "2026-08-04T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        // A corrupt timestamp re-syncs early rather than parking the job.
+        assert!(job_is_due(Some("not a timestamp"), now, 300));
+        assert!(job_is_due(Some(""), now, 300));
+    }
+
+    #[test]
+    fn inflight_key_prefers_job_id() {
+        assert_eq!(inflight_key(Some("job-1"), "github"), "job-1");
+        assert_eq!(inflight_key(None, "github"), "github");
     }
 }

@@ -1,6 +1,8 @@
-//! Tracing setup for the CLI: broadcast layer for the API's /system feed,
-//! daily-rotated file appender (logs/backend.log.<date>, last 7 kept), and
-//! the simple stderr-only variant for one-shot commands.
+//! Tracing setup for the CLI. Both variants log to stdout plus the
+//! daily-rotated file appender (logs/backend.log.<date>, last 7 kept):
+//! `init_tracing` additionally installs the broadcast layer that feeds the
+//! API's /system feed; `init_tracing_simple`, for one-shot commands, skips
+//! the broadcast layer — there is no server to feed.
 
 use std::sync::OnceLock;
 

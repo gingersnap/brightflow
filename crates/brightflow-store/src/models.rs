@@ -243,11 +243,11 @@ pub struct DocumentLabelWithName {
     pub source: String,
 }
 
-/// One registered connector-less source (currently only CSV uploads).
+/// One registered connector-less source.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct SourceRow {
     pub source_id: String,
-    /// Only 'upload' today (CHECK-constrained).
+    /// CHECK-constrained; the allowed set lives in the `sources` migration.
     pub kind: String,
     pub name: String,
     pub meta_json: Option<String>,

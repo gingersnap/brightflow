@@ -329,4 +329,216 @@ mod tests {
         // It must remain a std error so callers can box/`?` it.
         let _: &dyn std::error::Error = &err;
     }
+
+    // -- discover_connectors ------------------------------------------------
+
+    /// Write `contents` as `<dir>/<file_name>` and return the directory path.
+    fn write_lua(dir: &Path, file_name: &str, contents: &str) {
+        std::fs::write(dir.join(file_name), contents).unwrap();
+    }
+
+    #[test]
+    fn discovery_without_custom_dir_lists_only_builtins() {
+        let found = discover_connectors(None);
+        let names: Vec<&str> = found.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"github"));
+        assert!(names.contains(&"bluesky"));
+        assert!(found.iter().all(|c| c.source_type == "builtin"));
+    }
+
+    #[test]
+    fn discovery_keeps_builtin_on_name_collision_and_adds_custom_files() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Collides with the builtin "github" via its frontmatter name.
+        write_lua(
+            dir.path(),
+            "my_github.lua",
+            "--[[ @longbow\nname = \"github\"\nversion = \"9.9.9\"\n]]\nreturn function(p) end\n",
+        );
+        // Does not collide; no frontmatter name, so the file stem is the name.
+        write_lua(dir.path(), "acme.lua", "return function(p) end\n");
+        // Wrong extension: must be ignored entirely.
+        write_lua(dir.path(), "notes.txt", "not a connector");
+
+        let found = discover_connectors(Some(dir.path()));
+
+        // Exactly one "github" survives, and it is the builtin: its hash is
+        // the builtin source's hash, not the custom file's.
+        let githubs: Vec<_> = found.iter().filter(|c| c.name == "github").collect();
+        assert_eq!(githubs.len(), 1);
+        assert_eq!(githubs[0].source_type, "builtin");
+        let builtin_hash =
+            longbow::pipeline::parse_frontmatter(get_builtin_connector_source("github").unwrap())
+                .source_hash;
+        assert_eq!(githubs[0].source_hash, builtin_hash);
+        assert_ne!(githubs[0].version.as_deref(), Some("9.9.9"));
+
+        // The non-colliding custom file is discovered under its file stem.
+        let acme = found.iter().find(|c| c.name == "acme").unwrap();
+        assert_eq!(acme.source_type, "custom");
+
+        // The .txt file contributed nothing.
+        assert_eq!(found.len(), discover_connectors(None).len() + 1);
+    }
+
+    #[test]
+    fn discovery_ignores_a_missing_custom_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("does-not-exist");
+        assert_eq!(
+            discover_connectors(Some(&gone)).len(),
+            discover_connectors(None).len()
+        );
+    }
+
+    // -- pipeline helpers ---------------------------------------------------
+
+    /// Build a real `Pipeline` by evaluating an inline Lua connector — the
+    /// same loader production uses — since longbow's `Pipeline`/`Endpoint`
+    /// are `#[non_exhaustive]` and cannot be struct-literal'd here.
+    fn pipeline_from_lua(source: &str) -> longbow::pipeline::Pipeline {
+        let lua = longbow::runtime::create_lua_runtime().unwrap();
+        longbow::pipeline::load_connector_from_source(&lua, source, serde_json::json!({})).unwrap()
+    }
+
+    /// A two-endpoint pipeline with a parquet output block.
+    fn two_endpoint_pipeline() -> longbow::pipeline::Pipeline {
+        pipeline_from_lua(
+            r#"
+            return function(p)
+                p.base_url("https://example.test")
+                p.output(output.parquet({ path = "/data/out" }))
+                p.endpoint("issues", {
+                    path = "/issues",
+                    primary_key = { "org", "id" },
+                    cursor_field = "updated_at",
+                })
+                p.endpoint("stars", { path = "/stars" })
+            end
+            "#,
+        )
+    }
+
+    // -- apply_endpoint_filter ----------------------------------------------
+
+    fn endpoint_names(pipeline: &longbow::pipeline::Pipeline) -> Vec<&str> {
+        pipeline.endpoints.iter().map(|e| e.name.as_str()).collect()
+    }
+
+    #[test]
+    fn endpoint_filter_none_is_a_no_op() {
+        let mut pipeline = two_endpoint_pipeline();
+        apply_endpoint_filter(&mut pipeline, None);
+        assert_eq!(endpoint_names(&pipeline), ["issues", "stars"]);
+    }
+
+    #[test]
+    fn endpoint_filter_retains_only_named_endpoints() {
+        let mut pipeline = two_endpoint_pipeline();
+        apply_endpoint_filter(&mut pipeline, Some(&"stars".to_string()));
+        assert_eq!(endpoint_names(&pipeline), ["stars"]);
+    }
+
+    #[test]
+    fn endpoint_filter_splits_on_commas_and_trims_whitespace() {
+        let mut pipeline = two_endpoint_pipeline();
+        apply_endpoint_filter(&mut pipeline, Some(&" stars ,  issues".to_string()));
+        // retain() preserves pipeline order regardless of filter order.
+        assert_eq!(endpoint_names(&pipeline), ["issues", "stars"]);
+    }
+
+    #[test]
+    fn endpoint_filter_with_unknown_name_empties_the_pipeline() {
+        let mut pipeline = two_endpoint_pipeline();
+        apply_endpoint_filter(&mut pipeline, Some(&"nope".to_string()));
+        assert!(pipeline.endpoints.is_empty());
+    }
+
+    // -- build_dry_run_result -----------------------------------------------
+
+    #[test]
+    fn dry_run_result_carries_endpoint_shape_with_zeroed_execution_fields() {
+        let result = build_dry_run_result(&two_endpoint_pipeline());
+
+        assert!(result.dry_run);
+        assert_eq!(result.output_path, "/data/out");
+        assert_eq!(result.duration_ms, 0);
+        assert_eq!(result.endpoints.len(), 2);
+
+        let issues = &result.endpoints[0];
+        assert_eq!(issues.name, "issues");
+        assert_eq!(issues.primary_key, ["org", "id"]);
+        assert_eq!(issues.cursor_field.as_deref(), Some("updated_at"));
+        // Nothing executed, so no artifacts and no counters.
+        assert_eq!(issues.parquet_path, None);
+        assert_eq!(issues.rows, 0);
+        assert_eq!(issues.cursor_value, None);
+        assert_eq!(issues.duration_ms, 0);
+
+        let stars = &result.endpoints[1];
+        assert_eq!(stars.name, "stars");
+        // longbow defaults primary_key to ["id"] when the connector omits it.
+        assert_eq!(stars.primary_key, ["id"]);
+        assert_eq!(stars.cursor_field, None);
+    }
+
+    #[test]
+    fn dry_run_result_output_path_is_empty_without_an_output_block() {
+        let pipeline = pipeline_from_lua(
+            r#"
+            return function(p)
+                p.endpoint("issues", { path = "/issues" })
+            end
+            "#,
+        );
+        let result = build_dry_run_result(&pipeline);
+        assert_eq!(result.output_path, "");
+    }
+
+    // -- map_run_result -----------------------------------------------------
+
+    #[test]
+    fn map_run_result_translates_every_field_verbatim() {
+        let run_result = longbow::RunResult {
+            meta: longbow::pipeline::ConnectorMeta::default(),
+            endpoints: vec![longbow::pipeline::EndpointResult {
+                name: "issues".to_string(),
+                parquet_path: Some("/data/out/issues.parquet".to_string()),
+                rows: 42,
+                primary_key: vec!["id".to_string()],
+                cursor_field: Some("updated_at".to_string()),
+                cursor_value: Some("2026-08-01T00:00:00Z".to_string()),
+                duration_ms: 7,
+            }],
+            duration_ms: 123,
+        };
+
+        let result = map_run_result(run_result, "/data/out".to_string(), false);
+
+        assert!(!result.dry_run);
+        assert_eq!(result.output_path, "/data/out");
+        assert_eq!(result.duration_ms, 123);
+        assert_eq!(result.endpoints.len(), 1);
+        let ep = &result.endpoints[0];
+        assert_eq!(ep.name, "issues");
+        assert_eq!(ep.parquet_path.as_deref(), Some("/data/out/issues.parquet"));
+        assert_eq!(ep.rows, 42);
+        assert_eq!(ep.primary_key, ["id"]);
+        assert_eq!(ep.cursor_field.as_deref(), Some("updated_at"));
+        assert_eq!(ep.cursor_value.as_deref(), Some("2026-08-01T00:00:00Z"));
+        assert_eq!(ep.duration_ms, 7);
+    }
+
+    #[test]
+    fn map_run_result_passes_the_dry_run_flag_through() {
+        let run_result = longbow::RunResult {
+            meta: longbow::pipeline::ConnectorMeta::default(),
+            endpoints: vec![],
+            duration_ms: 0,
+        };
+        let result = map_run_result(run_result, String::new(), true);
+        assert!(result.dry_run);
+        assert!(result.endpoints.is_empty());
+    }
 }

@@ -10,10 +10,10 @@
 //! of variance tracks format/vocabulary, so any *unsupervised* consumer of
 //! that geometry — k-means, HDBSCAN, nearest-centroid — follows it. No choice
 //! of `k`, cleaning profile, or distance metric fixes it, and better LLM
-//! cluster naming cannot fix it either: the `auto_label` agent faithfully
-//! names format clusters ("Automated Backport Commits" is an *accurate* label
-//! for a cluster of backport commits). The clustering is upstream of the
-//! problem.
+//! cluster naming cannot fix it either: a labeler that faithfully names a
+//! format cluster is *accurate* ("Automated Backport Commits" is the right
+//! label for a cluster of backport commits). The clustering is upstream of
+//! the problem.
 //!
 //! Supervision is the one mode that defeats the format axis: labels let a
 //! trained head *downweight* format-correlated dimensions and *upweight*

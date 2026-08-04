@@ -218,3 +218,20 @@ pub async fn delete_table(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_path_joins_relative_paths_onto_root() {
+        let out = resolve_path(Path::new("/data/store"), "src1/issues/f.parquet");
+        assert_eq!(out, PathBuf::from("/data/store/src1/issues/f.parquet"));
+    }
+
+    #[test]
+    fn resolve_path_passes_absolute_paths_through() {
+        let out = resolve_path(Path::new("/data/store"), "/elsewhere/f.parquet");
+        assert_eq!(out, PathBuf::from("/elsewhere/f.parquet"));
+    }
+}

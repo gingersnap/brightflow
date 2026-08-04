@@ -1,9 +1,9 @@
 //! Curated row labels: SQLite → engine.
 //!
-//! The engine is deliberately storage-agnostic, so it never reads the
-//! database. This module is the store-fetch glue: it loads curated
-//! `document_labels` rows and hands them to the engine's
-//! `align_label_targets`, which owns the id-based row alignment.
+//! This module is the store-fetch glue that lets the engine stay
+//! storage-agnostic: it loads curated `document_labels` rows and hands them
+//! to the engine's `align_label_targets`, so id-based row alignment stays on
+//! the engine side and this module never re-implements it.
 
 use brightflow_engine::enrichment::LabelTargets;
 use polars::prelude::*;

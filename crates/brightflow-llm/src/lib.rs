@@ -335,13 +335,25 @@ fn build_request_body(
     body
 }
 
+/// Byte budget for provider error bodies embedded in `LlmError` messages.
+const ERROR_BODY_MAX_BYTES: usize = 300;
+
+/// Trim and cap a provider error body at `ERROR_BODY_MAX_BYTES` bytes,
+/// appending an ellipsis when cut. The cut always lands on a UTF-8 char
+/// boundary (backing off past any multi-byte tail), so this never panics on
+/// arbitrary provider bytes.
 fn truncate(s: &str) -> String {
     let trimmed = s.trim();
-    if trimmed.len() > 300 {
-        format!("{}…", &trimmed[..300])
-    } else {
-        trimmed.to_string()
+    if trimmed.len() <= ERROR_BODY_MAX_BYTES {
+        return trimmed.to_string();
     }
+    // Walk back from the budget to the nearest char boundary; at most 3 steps
+    // since a UTF-8 sequence is at most 4 bytes.
+    let mut end = ERROR_BODY_MAX_BYTES;
+    while !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &trimmed[..end])
 }
 
 #[derive(Debug, Deserialize)]
@@ -479,6 +491,50 @@ mod tests {
         assert_eq!(body["temperature"], serde_json::json!(0.0));
         assert_eq!(body["max_tokens"], serde_json::json!(512));
         assert_eq!(body["tools"][0]["function"]["name"], "set_values");
+    }
+
+    #[test]
+    fn truncate_cuts_ascii_over_limit() {
+        let long = "a".repeat(ERROR_BODY_MAX_BYTES + 50);
+        let out = truncate(&long);
+        assert_eq!(out, format!("{}…", "a".repeat(ERROR_BODY_MAX_BYTES)));
+    }
+
+    #[test]
+    fn truncate_keeps_exact_limit_untouched() {
+        let exact = "b".repeat(ERROR_BODY_MAX_BYTES);
+        assert_eq!(truncate(&exact), exact);
+    }
+
+    #[test]
+    fn truncate_backs_off_to_char_boundary_mid_multibyte() {
+        // 'x' + 151×'ä' (2 bytes each) = 303 bytes; every 'ä' boundary is odd,
+        // so byte 300 falls mid-character. Pre-fix this sliced at 300 and
+        // panicked; now it must back off to byte 299.
+        let s = format!("x{}", "ä".repeat(151));
+        let out = truncate(&s);
+        assert_eq!(out, format!("x{}…", "ä".repeat(149)));
+        assert!(out.len() <= ERROR_BODY_MAX_BYTES + '…'.len_utf8());
+    }
+
+    #[test]
+    fn truncate_backs_off_mid_emoji() {
+        // 'y' + 76×4-byte emoji = 305 bytes; boundaries sit at 1 + 4k, so byte
+        // 300 lands inside an emoji and the cut must retreat to byte 297.
+        let s = format!("y{}", "😀".repeat(76));
+        let out = truncate(&s);
+        assert_eq!(out, format!("y{}…", "😀".repeat(74)));
+    }
+
+    #[test]
+    fn jitter_stays_within_half_backoff() {
+        // Jitter is time-seeded so the exact value is not assertable, but the
+        // contract `[0, backoff/2]` (and 0 for backoff 0) is.
+        assert_eq!(jitter_ms(0), 0);
+        assert_eq!(jitter_ms(1), 0);
+        for backoff in [2, 100, 4000] {
+            assert!(jitter_ms(backoff) <= backoff / 2);
+        }
     }
 
     #[test]

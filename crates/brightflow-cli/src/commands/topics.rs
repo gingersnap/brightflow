@@ -170,31 +170,17 @@ async fn topics_near_dup(source: &str, table: &str, threshold: Option<f32>) -> R
         brightflow_engine::enrichment::build_clean_texts(&df, &columns, config.cleaning_profile)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // Embed only the eligible rows, then scatter back so indices line up with
-    // `texts` (and therefore with the DataFrame's rows).
-    let eligible: Vec<usize> = texts
-        .iter()
-        .enumerate()
-        .filter_map(|(i, t)| t.as_ref().map(|_| i))
-        .collect();
-    let clean_texts: Vec<String> = eligible
-        .iter()
-        .filter_map(|&i| texts.get(i).cloned().flatten())
-        .collect();
-    println!("  {} rows eligible after cleaning", eligible.len());
+    println!(
+        "  {} rows eligible after cleaning",
+        texts.iter().flatten().count()
+    );
 
+    // Embedding and the index re-alignment both live in the engine; this
+    // command only reports.
     let backend = get_backend(&wp.root(), config.embedder)
         .map_err(|e| anyhow::anyhow!("embedder unavailable: {e}"))?;
-    let vectors = backend
-        .embed(&clean_texts)
+    let embeddings = brightflow_engine::embedding::embed_aligned(backend.as_ref(), &texts)
         .map_err(|e| anyhow::anyhow!("embed failed: {e}"))?;
-
-    let mut embeddings: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
-    for (slot, vector) in eligible.iter().zip(vectors) {
-        if let Some(cell) = embeddings.get_mut(*slot) {
-            *cell = Some(vector);
-        }
-    }
 
     let groups = find_near_duplicates(&embeddings, &texts, threshold)
         .map_err(|e| anyhow::anyhow!("near-dup detection failed: {e}"))?;
@@ -226,8 +212,8 @@ async fn topics_near_dup(source: &str, table: &str, threshold: Option<f32>) -> R
     Ok(())
 }
 
-/// Curated labels for `table`, aligned with `df` (same rule as the API's
-/// topics module — the alignment itself lives in the engine).
+/// Curated labels for `table`, aligned with `df`. This only fetches rows;
+/// the id-based alignment is delegated to the engine's `align_label_targets`.
 async fn load_label_targets(
     store: &ParquetStore,
     source: &str,
@@ -365,12 +351,7 @@ async fn topics_eval(source: &str, table: &str, algorithms: &str, k: usize) -> R
     let texts: Vec<Option<String>> =
         brightflow_engine::enrichment::build_clean_texts(&df, &columns, config.cleaning_profile)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let eligible: Vec<usize> = texts
-        .iter()
-        .enumerate()
-        .filter_map(|(i, t)| t.as_ref().map(|_| i))
-        .collect();
-    let clean_texts: Vec<String> = eligible.iter().filter_map(|&i| texts[i].clone()).collect();
+    let (eligible, clean_texts) = brightflow_engine::embedding::eligible_texts(&texts);
     println!("  {} rows eligible after cleaning", eligible.len());
 
     println!(

@@ -2,8 +2,8 @@
 //!
 //! Rising revenue is good; rising churn is not. `apply_sentiment` walks a
 //! finished tree and tags every directional finding whose measure has a
-//! non-neutral polarity. Display-only in v1: scoring never reads sentiment
-//! (the hook point for a future boost is `scoring::kpi_boost_for`).
+//! non-neutral polarity. Display-only in v1: this module writes sentiment onto
+//! the tree for renderers and feeds nothing back into scoring.
 
 use std::collections::HashMap;
 
@@ -13,8 +13,9 @@ use crate::data::config::Polarity;
 
 /// Which way a finding points, if it points anywhere.
 ///
-/// Rust port of the frontend `directionOf` (`nodeMeta.ts`) — keep the two in
-/// lockstep; a unit test pins the table.
+/// Contract: this table mirrors the frontend's `directionOf` (`nodeMeta.ts`)
+/// and the two must stay in lockstep — a unit test here pins the table so a
+/// drift shows up as a failing test, not a silent disagreement.
 pub fn direction_of(node: &AnalysisNode) -> Option<bool> {
     // true = up, false = down
     match &node.analysis {

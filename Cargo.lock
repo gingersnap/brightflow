@@ -676,6 +676,7 @@ dependencies = [
  "thiserror 2.0.19",
  "time",
  "tokio",
+ "tower",
  "tower-http",
  "tower-sessions",
  "tower-sessions-sqlx-store",
@@ -718,6 +719,7 @@ dependencies = [
  "longbow",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.19",
  "tokio",
 ]

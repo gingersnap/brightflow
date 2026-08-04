@@ -207,3 +207,174 @@ pub fn query_breakdown(
 
     Ok(rows)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use polars::df;
+
+    /// Four events over two days: session s1 has two pageviews, s2 has one
+    /// pageview (a bounce), s3 has only a custom event.
+    fn events() -> DataFrame {
+        df!(
+            "id" => &["e1", "e2", "e3", "e4"],
+            "timestamp" => &[
+                "2026-01-01T10:00:00Z",
+                "2026-01-01T11:00:00Z",
+                "2026-01-02T09:00:00Z",
+                "2026-01-02T10:00:00Z",
+            ],
+            "visitor_id" => &["v1", "v1", "v2", "v3"],
+            "session_id" => &["s1", "s1", "s2", "s3"],
+            "event_name" => &["pageview", "pageview", "pageview", "click"],
+            "page_url" => &["/home", "/about", "/home", "/home"],
+        )
+        .unwrap()
+    }
+
+    /// Zero rows but the full event schema, so every query still resolves
+    /// its columns.
+    fn no_events() -> DataFrame {
+        df!(
+            "id" => Vec::<String>::new(),
+            "timestamp" => Vec::<String>::new(),
+            "visitor_id" => Vec::<String>::new(),
+            "session_id" => Vec::<String>::new(),
+            "event_name" => Vec::<String>::new(),
+            "page_url" => Vec::<String>::new(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn scan_events_fills_null_user_id() {
+        let df = df!(
+            "id" => &["e1", "e2"],
+            "user_id" => &[Some("u1"), None],
+        )
+        .unwrap();
+        let out = scan_events_from_store(df.lazy()).collect().unwrap();
+        let user_id: Vec<Option<&str>> = out
+            .column("user_id")
+            .unwrap()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(user_id, vec![Some("u1"), Some("")]);
+    }
+
+    #[test]
+    fn scan_events_adds_missing_user_id() {
+        let df = df!("id" => &["e1", "e2"]).unwrap();
+        let out = scan_events_from_store(df.lazy()).collect().unwrap();
+        let user_id: Vec<Option<&str>> = out
+            .column("user_id")
+            .unwrap()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(user_id, vec![Some(""), Some("")]);
+    }
+
+    #[test]
+    fn filter_date_range_start_inclusive_end_exclusive() {
+        // Start equals e1's timestamp (kept); end equals e4's (dropped).
+        let df = filter_date_range(
+            events().lazy(),
+            "2026-01-01T10:00:00Z",
+            "2026-01-02T10:00:00Z",
+        )
+        .collect()
+        .unwrap();
+        let ids: Vec<Option<&str>> = df
+            .column("id")
+            .unwrap()
+            .str()
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(ids, vec![Some("e1"), Some("e2"), Some("e3")]);
+    }
+
+    #[test]
+    fn query_stats_aggregates_and_bounce_rate() {
+        let stats = query_stats(events().lazy(), "2026-01-01", "2026-01-03").unwrap();
+        assert_eq!(stats.visitors, 3);
+        // `pageviews` counts every event in range, custom events included
+        // (e4 is a click).
+        assert_eq!(stats.pageviews, 4);
+        // Bounce counting, by contrast, looks only at pageview events:
+        // s2 is the sole single-pageview session out of 3 total sessions.
+        assert!((stats.bounce_rate - 1.0 / 3.0).abs() < 1e-12);
+        assert_eq!(stats.prev_visitors, None);
+        assert_eq!(stats.prev_pageviews, None);
+    }
+
+    #[test]
+    fn query_stats_empty_frame_is_all_zero() {
+        let stats = query_stats(no_events().lazy(), "2026-01-01", "2026-01-03").unwrap();
+        assert_eq!(stats.visitors, 0);
+        assert_eq!(stats.pageviews, 0);
+        assert!(stats.bounce_rate.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn query_stats_out_of_range_rows_are_excluded() {
+        // Range covering only day one: e3/e4 fall away.
+        let stats = query_stats(events().lazy(), "2026-01-01", "2026-01-02").unwrap();
+        assert_eq!(stats.visitors, 1);
+        assert_eq!(stats.pageviews, 2);
+    }
+
+    #[test]
+    fn query_timeseries_groups_by_day_sorted() {
+        let points = query_timeseries(events().lazy(), "2026-01-01", "2026-01-03").unwrap();
+        assert_eq!(points.len(), 2);
+        assert_eq!(points[0].date, "2026-01-01");
+        assert_eq!(points[0].visitors, 1);
+        assert_eq!(points[0].pageviews, 2);
+        assert_eq!(points[1].date, "2026-01-02");
+        assert_eq!(points[1].visitors, 2);
+        // Non-pageview events count here too (e4 is a click).
+        assert_eq!(points[1].pageviews, 2);
+    }
+
+    #[test]
+    fn query_timeseries_empty_frame() {
+        let points = query_timeseries(no_events().lazy(), "2026-01-01", "2026-01-03").unwrap();
+        assert!(points.is_empty());
+    }
+
+    #[test]
+    fn query_breakdown_sorts_desc_and_limits() {
+        let rows =
+            query_breakdown(events().lazy(), "2026-01-01", "2026-01-03", "page_url", 10).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].name, "/home");
+        assert_eq!(rows[0].visitors, 3);
+        assert_eq!(rows[0].pageviews, 3);
+        assert_eq!(rows[1].name, "/about");
+        assert_eq!(rows[1].visitors, 1);
+        assert_eq!(rows[1].pageviews, 1);
+
+        let limited =
+            query_breakdown(events().lazy(), "2026-01-01", "2026-01-03", "page_url", 1).unwrap();
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].name, "/home");
+    }
+
+    #[test]
+    fn query_breakdown_empty_frame() {
+        let rows = query_breakdown(
+            no_events().lazy(),
+            "2026-01-01",
+            "2026-01-03",
+            "page_url",
+            5,
+        )
+        .unwrap();
+        assert!(rows.is_empty());
+    }
+}

@@ -1,4 +1,8 @@
-//! Error types for the store crate
+//! The store's single error enum and its `StoreResult` alias. Infrastructure
+//! failures (SQLite, migrations, Polars, IO) convert in via `#[from]`; the
+//! remaining variants are domain signals callers can match on — notably
+//! `VersionConflict`, which carries the expected/found versions of a failed
+//! optimistic-concurrency check on a full-table rewrite.
 
 use std::path::PathBuf;
 

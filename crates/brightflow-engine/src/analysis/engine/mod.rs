@@ -135,8 +135,8 @@ impl AnalysisEngine {
         self
     }
 
-    /// Provide prior insight exposure for novelty decay. The API layer loads
-    /// this from `insight_history`; the engine itself never touches the DB.
+    /// Provide prior insight exposure for novelty decay. Callers load this
+    /// from their own storage; the engine itself never touches a DB.
     pub fn with_history(mut self, history: HashMap<String, HistoryEntry>, now_epoch: i64) -> Self {
         self.history = history;
         self.now_epoch = now_epoch;

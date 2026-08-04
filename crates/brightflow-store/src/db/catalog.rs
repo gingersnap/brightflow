@@ -350,6 +350,29 @@ impl StoreDb {
         Ok(rows)
     }
 
+    /// Distinct values of one partition key across a table's files, sorted
+    /// ascending. Reads the `file_partitions` rows — the same join
+    /// `get_partition_file_ids` uses — rather than inferring from file paths.
+    pub async fn list_partition_values(
+        &self,
+        table_id: &str,
+        key: &str,
+    ) -> StoreResult<Vec<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            r"SELECT DISTINCT fp.partition_value
+              FROM file_partitions fp
+              INNER JOIN table_files tf ON tf.id = fp.file_id
+              WHERE tf.table_id = ?
+                AND fp.partition_key = ?
+              ORDER BY fp.partition_value",
+        )
+        .bind(table_id)
+        .bind(key)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(v,)| v).collect())
+    }
+
     /// Delete specific file records by ID (cascade cleans up partitions + stats).
     pub async fn delete_files_by_ids(&self, file_ids: &[String]) -> StoreResult<()> {
         for id in file_ids {
@@ -578,4 +601,73 @@ impl StoreDb {
     }
 
     // =====================================================
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Fresh, fully migrated `StoreDb` backed by a SQLite file in `tmp`.
+    async fn temp_db(tmp: &TempDir) -> StoreDb {
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        StoreDb::new(&db_url).await.expect("failed to open db")
+    }
+
+    /// Values must come deduplicated (many files share a partition value),
+    /// sorted, and scoped to the requested table and key.
+    #[tokio::test]
+    async fn list_partition_values_dedupes_sorts_and_scopes() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+
+        let table = db.create_table("events", "web:s1").await.expect("table");
+        let other = db.create_table("events", "web:s2").await.expect("other");
+
+        // Two files in date=2026-01-02, one in date=2026-01-01, plus a
+        // different key and a different table that must both be excluded.
+        for (path, date) in [
+            ("f1.parquet", "2026-01-02"),
+            ("f2.parquet", "2026-01-02"),
+            ("f3.parquet", "2026-01-01"),
+        ] {
+            let file = db
+                .add_table_file(&table.id, path, 1, 1)
+                .await
+                .expect("file");
+            db.add_file_partitions(&file.id, &[("date", date)])
+                .await
+                .expect("partitions");
+        }
+        let hour_file = db
+            .add_table_file(&table.id, "f4.parquet", 1, 1)
+            .await
+            .expect("file");
+        db.add_file_partitions(&hour_file.id, &[("hour", "07")])
+            .await
+            .expect("partitions");
+        let other_file = db
+            .add_table_file(&other.id, "g1.parquet", 1, 1)
+            .await
+            .expect("file");
+        db.add_file_partitions(&other_file.id, &[("date", "2025-12-31")])
+            .await
+            .expect("partitions");
+
+        let values = db
+            .list_partition_values(&table.id, "date")
+            .await
+            .expect("list");
+        assert_eq!(values, vec!["2026-01-01", "2026-01-02"]);
+
+        // Unknown key and empty table return empty, not an error.
+        assert!(db
+            .list_partition_values(&table.id, "region")
+            .await
+            .expect("list")
+            .is_empty());
+    }
 }

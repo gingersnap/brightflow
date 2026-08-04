@@ -4,6 +4,7 @@
 pub mod handlers;
 pub mod runner;
 pub mod types;
+pub(crate) mod validate;
 
 use crate::state::AppState;
 

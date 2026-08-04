@@ -1,9 +1,7 @@
 //! Live curation events: typed payloads pushed to every `/api/ws` client.
 //!
 //! Single-tenant assumption: there is one workspace, so every connected
-//! client gets every event — no per-tenant or per-scope filtering. If
-//! multi-tenancy ever lands, the fan-out in `analytics::handlers` is where
-//! scoping belongs.
+//! client gets every event — no per-tenant or per-scope filtering.
 //!
 //! All emits are best-effort: a `send` error just means nobody is connected.
 

@@ -117,13 +117,11 @@ impl AnalysisEngine {
             }
         }
 
-        // Novelty decay + diverse top-N, but NO dedup: dedup exists to clean
-        // up noisy scans, and both its passes break this report's deliberate
-        // structure — story grouping folds the decomposition root into the
-        // same-column Concentration root, and lattice collapse drops ranked
-        // driver children (a contribution child rarely scores 1.2× its root).
-        // The report emits exactly one root per (measure) and per
-        // (measure, dimension) by construction, so there is nothing to dedup.
+        // Novelty decay + diverse top-N, but NO dedup: this report emits
+        // exactly one root per (measure) and per (measure, dimension) by
+        // construction, so there is nothing to dedup — and dedup's collapse
+        // heuristics are tuned for noisy scans, which this deliberately
+        // structured report is not.
         crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
         crate::analysis::select::select_top(&mut tree, self.select_top);
 

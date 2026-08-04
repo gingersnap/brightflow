@@ -1,4 +1,10 @@
-//! NLP error type.
+//! NLP error type: input-contract violations raised by the pure primitives
+//! (sparse-vector construction, TF-IDF fitting, vocabulary alignment).
+//!
+//! Every variant carries the offending values, so the violation is
+//! diagnosable from the message alone. Deliberately Polars-free: `nlp/`
+//! promises to be unit-testable with no Polars dependency, and a
+//! `#[from] PolarsError` here is what once silently broke that promise.
 
 /// Errors that can occur in NLP operations
 #[derive(Debug, thiserror::Error)]
@@ -21,26 +27,6 @@ pub enum SubtextError {
         prev: u32,
         current: u32,
     },
-
-    /// Other error
-    #[error("{0}")]
-    Other(String),
-
-    /// Error from Polars
-    #[error("polars: {0}")]
-    Polars(#[from] polars::prelude::PolarsError),
-
-    /// Serialization error (bincode)
-    #[error("serialization: {0}")]
-    Serialization(String),
-
-    /// Column type mismatch
-    #[error("column type mismatch: expected {expected}, got {actual}")]
-    TypeMismatch { expected: String, actual: String },
-
-    /// Missing column
-    #[error("column not found: {0}")]
-    ColumnNotFound(String),
 }
 
 /// Result type for NLP operations

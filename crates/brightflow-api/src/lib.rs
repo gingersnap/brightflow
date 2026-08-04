@@ -151,18 +151,12 @@ pub async fn serve(
     bootstrap::start_scheduler(&mut state, &paths).await?;
     bootstrap::start_ingest(&mut state, &paths).await;
 
-    let (auth_layer, deletion_task) = bootstrap::build_session_auth_layers(auth_db).await?;
     let cors = bootstrap::build_cors(
         config.cors_origin.as_deref(),
         std::env::var("APP_ENV").ok().as_deref(),
     )?;
 
-    // Build router
-    let app = routes::create_router()
-        .layer(TraceLayer::new_for_http())
-        .layer(cors)
-        .layer(auth_layer)
-        .with_state(state);
+    let (app, session_sweeper) = build_app(state, auth_db, cors).await?;
 
     // Bind and serve
     let addr = SocketAddr::from((config.host, config.port));
@@ -174,7 +168,30 @@ pub async fn serve(
 
     axum::serve(listener, app).await?;
 
-    deletion_task.abort();
+    session_sweeper.abort();
 
     Ok(())
+}
+
+/// Assemble the served app: router + trace + CORS + session/auth stack, in
+/// the exact layer order production runs.
+///
+/// Public so integration tests can exercise route-layer contracts (the auth
+/// wall, the path-param guard) as mounted, rather than re-assembling an
+/// approximation that could drift.
+///
+/// Also returns the abort handle for the background expired-session sweeper;
+/// `serve` aborts it on shutdown, tests can drop it.
+pub async fn build_app(
+    state: state::AppState,
+    auth_db: auth::AuthDb,
+    cors: tower_http::cors::CorsLayer,
+) -> anyhow::Result<(axum::Router, tokio::task::AbortHandle)> {
+    let (auth_layer, deletion_task) = bootstrap::build_session_auth_layers(auth_db).await?;
+    let app = routes::create_router()
+        .layer(TraceLayer::new_for_http())
+        .layer(cors)
+        .layer(auth_layer)
+        .with_state(state);
+    Ok((app, deletion_task.abort_handle()))
 }

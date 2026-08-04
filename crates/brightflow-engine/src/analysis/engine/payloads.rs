@@ -1,4 +1,10 @@
 //! Chart-data payload builders attached to analysis nodes.
+//!
+//! Every builder here is pure — slices in, `NodeData` out — so the chart
+//! payload for a finding is reproducible from the finding's inputs alone.
+//! Long raw series are stride-downsampled to a glance-chart budget
+//! ([`MAX_POINTS`]) before fit lines and bands are computed, so those overlays
+//! always have the same length as the points actually drawn.
 
 use std::collections::HashMap;
 
@@ -6,8 +12,9 @@ use crate::analysis::tree::{NamedSeries, NodeData};
 
 use super::cache::ColumnCache;
 
-/// LTTB-ish downsample to ≤MAX_POINTS (simple stride sampling — good enough for
-/// glance-charts; replace with LTTB if precision matters later)
+/// Downsample to ≤MAX_POINTS via stride sampling — good enough for
+/// glance-charts; replace with LTTB if precision matters later. Labels are the
+/// original indices, so a downsampled point is still traceable to its row.
 const MAX_POINTS: usize = 200;
 
 fn downsample(values: &[f64]) -> (Vec<String>, Vec<f64>) {
@@ -16,14 +23,16 @@ fn downsample(values: &[f64]) -> (Vec<String>, Vec<f64>) {
         let labels = (0..n).map(|i| i.to_string()).collect();
         return (labels, values.to_vec());
     }
-    let stride = n / MAX_POINTS;
+    // Ceiling division: flooring made the bound a lie for MAX_POINTS < n <
+    // 2*MAX_POINTS (stride 1 emitted every point).
+    let stride = n.div_ceil(MAX_POINTS);
     let mut out = Vec::with_capacity(MAX_POINTS);
     let mut labels = Vec::with_capacity(MAX_POINTS);
     let mut i = 0;
     while i < n {
         out.push(values[i]);
         labels.push(i.to_string());
-        i += stride.max(1);
+        i += stride;
     }
     (labels, out)
 }
@@ -290,5 +299,195 @@ pub(super) fn build_scatter_data(
         y_label: y_label.to_string(),
         fit_slope: slope,
         fit_intercept: intercept,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::float_cmp,
+        reason = "tests compare exactly constructed values, not computed approximations"
+    )]
+
+    use super::*;
+
+    #[test]
+    fn downsample_short_series_is_identity() {
+        let values: Vec<f64> = (0..MAX_POINTS).map(|i| i as f64).collect();
+        let (labels, out) = downsample(&values);
+        assert_eq!(out, values);
+        assert_eq!(labels.first().map(String::as_str), Some("0"));
+        assert_eq!(labels.last().unwrap(), &(MAX_POINTS - 1).to_string());
+    }
+
+    #[test]
+    fn downsample_bound_holds_just_over_the_budget() {
+        // Regression: flooring stride made 200 < n < 400 emit every point.
+        let values: Vec<f64> = (0..399).map(f64::from).collect();
+        let (labels, out) = downsample(&values);
+        assert!(out.len() <= MAX_POINTS, "399 points emitted {}", out.len());
+        assert_eq!(labels.len(), out.len());
+    }
+
+    #[test]
+    fn downsample_bound_holds_across_sizes() {
+        for n in [201, 400, 401, 999, 1000, 5000] {
+            let values: Vec<f64> = (0..n).map(f64::from).collect();
+            let (labels, out) = downsample(&values);
+            assert!(out.len() <= MAX_POINTS, "n={n} emitted {}", out.len());
+            // Labels are original indices: each sampled value matches its label.
+            for (label, val) in labels.iter().zip(&out) {
+                assert_eq!(label.parse::<f64>().unwrap(), *val);
+            }
+            assert_eq!(labels[0], "0", "first point always kept");
+        }
+    }
+
+    #[test]
+    fn anomaly_series_bands_are_mean_plus_minus_two_sigma() {
+        let values = [1.0, 2.0, 3.0];
+        let NodeData::Series {
+            band_low,
+            band_high,
+            marker_index,
+            values: vals,
+            ..
+        } = build_anomaly_series(&values, 2.0, 0.5)
+        else {
+            panic!("expected Series");
+        };
+        assert_eq!(band_low.unwrap(), vec![1.0; 3]);
+        assert_eq!(band_high.unwrap(), vec![3.0; 3]);
+        assert_eq!(marker_index, Some(2));
+        assert_eq!(vals, values);
+    }
+
+    #[test]
+    fn trend_fit_matches_series_length_and_slope() {
+        let values = [10.0, 12.0, 14.0, 16.0];
+        let NodeData::SeriesWithFit {
+            values: vals, fit, ..
+        } = build_trend_data(&values, 2.0)
+        else {
+            panic!("expected SeriesWithFit");
+        };
+        assert_eq!(fit.len(), vals.len());
+        // Fit passes through the mean with the given slope: consecutive fit
+        // points differ by exactly the slope.
+        assert!((fit[1] - fit[0] - 2.0).abs() < 1e-9);
+        // Perfectly linear input: the fit reproduces the series.
+        for (f, v) in fit.iter().zip(&vals) {
+            assert!((f - v).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn trend_data_empty_input_is_safe() {
+        let NodeData::SeriesWithFit { values, fit, .. } = build_trend_data(&[], 1.0) else {
+            panic!("expected SeriesWithFit");
+        };
+        assert!(values.is_empty());
+        assert!(fit.is_empty());
+    }
+
+    #[test]
+    fn period_comparison_averages_each_period() {
+        let values = [10.0, 20.0, 40.0, 60.0];
+        let periods = [
+            Some("2025-01".to_string()),
+            Some("2025-01".to_string()),
+            Some("2025-02".to_string()),
+            Some("2025-02".to_string()),
+        ];
+        let Some(NodeData::PairedBars {
+            previous, current, ..
+        }) = build_period_comparison_data(&values, &periods, "2025-02", "2025-01")
+        else {
+            panic!("expected PairedBars");
+        };
+        assert_eq!(previous, vec![15.0]);
+        assert_eq!(current, vec![50.0]);
+    }
+
+    #[test]
+    fn period_comparison_requires_both_periods() {
+        let values = [1.0, 2.0];
+        let periods = [Some("2025-01".to_string()), Some("2025-01".to_string())];
+        assert!(build_period_comparison_data(&values, &periods, "2025-02", "2025-01").is_none());
+    }
+
+    #[test]
+    fn seasonality_sorts_periods_and_averages() {
+        let values = [4.0, 2.0, 6.0];
+        let periods = [
+            Some("2025-02".to_string()),
+            Some("2025-01".to_string()),
+            Some("2025-02".to_string()),
+        ];
+        let Some(NodeData::Series {
+            labels,
+            values: vals,
+            ..
+        }) = build_seasonality_data(&values, &periods)
+        else {
+            panic!("expected Series");
+        };
+        assert_eq!(labels, vec!["2025-01", "2025-02"]);
+        assert_eq!(vals, vec![2.0, 5.0]);
+    }
+
+    #[test]
+    fn seasonality_empty_periods_is_none() {
+        assert!(build_seasonality_data(&[1.0], &[None]).is_none());
+    }
+
+    #[test]
+    fn forecast_interval_is_twenty_percent_of_expected() {
+        let history = vec![("2025-01".to_string(), 5.0)];
+        let Some(NodeData::Forecast {
+            pi_low,
+            pi_high,
+            expected,
+            ..
+        }) = build_forecast_data(&history, 10.0, 12.0)
+        else {
+            panic!("expected Forecast");
+        };
+        assert_eq!(expected, 10.0);
+        assert_eq!(pi_low, 8.0);
+        assert_eq!(pi_high, 12.0);
+        assert!(build_forecast_data(&[], 1.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn scatter_fit_recovers_a_perfect_line() {
+        let xs: Vec<f64> = (0..10).map(f64::from).collect();
+        let ys: Vec<f64> = xs.iter().map(|x| 3.0f64.mul_add(*x, 1.0)).collect();
+        let NodeData::Scatter {
+            fit_slope,
+            fit_intercept,
+            ..
+        } = build_scatter_data(&xs, &ys, "x", "y", 1.0)
+        else {
+            panic!("expected Scatter");
+        };
+        assert!((fit_slope.unwrap() - 3.0).abs() < 1e-9);
+        assert!((fit_intercept.unwrap() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn scatter_constant_x_has_no_fit() {
+        let xs = [2.0, 2.0, 2.0];
+        let ys = [1.0, 2.0, 3.0];
+        let NodeData::Scatter {
+            fit_slope,
+            fit_intercept,
+            ..
+        } = build_scatter_data(&xs, &ys, "x", "y", 0.0)
+        else {
+            panic!("expected Scatter");
+        };
+        assert!(fit_slope.is_none());
+        assert!(fit_intercept.is_none());
     }
 }

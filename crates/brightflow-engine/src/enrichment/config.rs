@@ -3,8 +3,9 @@
 //! Source of truth for which tables are enrichable and how: builtin defaults
 //! per table type, overlaid with user overrides carried by the table's
 //! promoted `topic_model` enrichment function. `resolve_topic_config` is the
-//! one precedence rule shared by API, scheduler, and CLI. The engine stays
-//! DB-free: callers fetch the stored spec JSON and pass it in.
+//! single precedence rule: callers must resolve through it rather than
+//! re-deriving precedence locally. The engine stays DB-free: callers fetch
+//! the stored spec JSON and pass it in.
 
 use serde::{Deserialize, Serialize};
 

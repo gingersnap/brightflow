@@ -4,10 +4,10 @@
 //! `filter_extremes` — anything that can renumber ids. Each `SparseVec` records
 //! the generation it was built under.
 //!
-//! Today this is informational metadata: no comparison path consults it, because
-//! vectors that meet in a comparison are always built from one fitted model in a
-//! single pass and so share a generation by construction. It is kept as the hook
-//! a guard would use if vectors ever start being compared across a re-fit.
+//! Vectors that are built from one fitted model in a single pass share a
+//! generation by construction. The counter is the hook a guard would use if
+//! vectors are ever compared across a re-fit — comparing across generations is
+//! meaningless, because a re-fit can renumber every id.
 
 use std::collections::{HashMap, HashSet};
 

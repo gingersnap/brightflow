@@ -1,8 +1,8 @@
 //! Eval-only quality summaries behind `topics eval` / `topics eval-classifier`.
 //!
 //! Pure functions over vectors, assignments, and label targets, so the
-//! numbers are testable without a store or an embedder — the CLI only
-//! formats what comes back.
+//! numbers are testable without a store or an embedder. Everything returned
+//! is display-ready — callers should format, not recompute.
 
 use std::collections::{HashMap, HashSet};
 

@@ -139,3 +139,37 @@ fn parse_granularity(s: &str) -> Option<TimeGranularity> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_granularity_covers_every_variant_and_rejects_unknown() {
+        assert!(matches!(
+            parse_granularity("day"),
+            Some(TimeGranularity::Day)
+        ));
+        assert!(matches!(
+            parse_granularity("week"),
+            Some(TimeGranularity::Week)
+        ));
+        assert!(matches!(
+            parse_granularity("month"),
+            Some(TimeGranularity::Month)
+        ));
+        assert!(matches!(
+            parse_granularity("quarter"),
+            Some(TimeGranularity::Quarter)
+        ));
+        assert!(matches!(
+            parse_granularity("year"),
+            Some(TimeGranularity::Year)
+        ));
+        assert!(parse_granularity("fortnight").is_none());
+        assert!(
+            parse_granularity("Day").is_none(),
+            "matching is case-sensitive"
+        );
+    }
+}

@@ -179,15 +179,25 @@ impl WorkspacePaths {
             self.scheduler_url(),
             self.ingest_url(),
         ] {
-            if let Some(path) = url.strip_prefix("sqlite:") {
-                let db_path = path.split('?').next().unwrap_or(path);
-                if let Some(parent) = Path::new(db_path).parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
+            if let Some(parent) = sqlite_db_path(&url).as_deref().and_then(Path::parent) {
+                std::fs::create_dir_all(parent)?;
             }
         }
         Ok(())
     }
+}
+
+/// The filesystem path inside a `sqlite:` URL, with any `?options` stripped;
+/// `None` for anything that is not a SQLite URL.
+///
+/// This is the inverse of the URL formatting in `env_url_or`, kept next to it
+/// so the two cannot drift: code that needs the path behind a workspace DB
+/// URL (e.g. to create its parent directory) must use this instead of
+/// re-parsing the URL locally.
+#[must_use]
+pub fn sqlite_db_path(url: &str) -> Option<PathBuf> {
+    let path = url.strip_prefix("sqlite:")?;
+    Some(PathBuf::from(path.split('?').next().unwrap_or(path)))
 }
 
 /// Check env var for a path override, otherwise use the default.
@@ -213,8 +223,9 @@ mod tests {
         let overridden = defaulted.with_store("/elsewhere/store");
         assert_eq!(overridden.store(), Path::new("/elsewhere/store"));
 
-        // ...and beats the env var (this test owns BRIGHTFLOW_STORE; no other
-        // test reads it, so the process-global write cannot race a reader).
+        // ...and beats the env var. This test owns BRIGHTFLOW_STORE: any
+        // other test that touches this env var must serialize with this one,
+        // because env writes are process-global.
         std::env::set_var("BRIGHTFLOW_STORE", "/from-env/store");
         assert_eq!(overridden.store(), Path::new("/elsewhere/store"));
         let plain = WorkspacePaths::new("/base", "ws");
@@ -240,5 +251,19 @@ mod tests {
             plain.connector_configs(),
             Path::new("/base/workspaces/ws/connector-configs")
         );
+    }
+
+    #[test]
+    fn sqlite_db_path_strips_scheme_and_options() {
+        assert_eq!(
+            sqlite_db_path("sqlite:/data/meta.db?mode=rwc"),
+            Some(PathBuf::from("/data/meta.db"))
+        );
+        assert_eq!(
+            sqlite_db_path("sqlite:/data/meta.db"),
+            Some(PathBuf::from("/data/meta.db"))
+        );
+        assert_eq!(sqlite_db_path("postgres://host/db"), None);
+        assert_eq!(sqlite_db_path("/data/meta.db"), None);
     }
 }

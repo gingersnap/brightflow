@@ -13,7 +13,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use axum::{Json, Router};
 
-use brightflow_llm::{ChatClient, ChatMessage, LlmError, ToolDef};
+use brightflow_llm::{
+    chat_with_backoff, ChatClient, ChatMessage, ChatOptions, LlmError, RetryPolicy, ToolDef,
+};
 
 /// Scripted responses served in order; repeats the last one when exhausted.
 #[derive(Clone)]
@@ -150,6 +152,99 @@ async fn tool_calls_are_parsed() {
     assert_eq!(calls[0].function.name, "rename_cluster");
     let args: serde_json::Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
     assert_eq!(args["name"], "Payments");
+}
+
+/// A 1 ms base delay keeps the real `tokio::time::sleep` in the backoff loop
+/// negligible (~3 ms worst case across the retries below).
+fn fast_policy(max_attempts: u32) -> RetryPolicy {
+    RetryPolicy {
+        max_attempts,
+        base_delay_ms: 1,
+    }
+}
+
+#[tokio::test]
+async fn backoff_retries_rate_limit_then_succeeds() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let base = serve(Script {
+        responses: Arc::new(vec![
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                serde_json::json!({"error": "slow down"}),
+            ),
+            (StatusCode::OK, text_response("recovered")),
+        ]),
+        hits: Arc::clone(&hits),
+        require_bearer: None,
+    })
+    .await;
+    let client = ChatClient::new(base, None, "m");
+    let outcome = chat_with_backoff(
+        &client,
+        &[ChatMessage::user("x")],
+        &[],
+        &ChatOptions::default(),
+        &fast_policy(3),
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.text(), "recovered");
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn backoff_exhausts_attempts_on_persistent_server_error() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let base = serve(Script {
+        // Single scripted response: the mock repeats it once exhausted, so
+        // every attempt sees a 500.
+        responses: Arc::new(vec![(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({"error": "boom"}),
+        )]),
+        hits: Arc::clone(&hits),
+        require_bearer: None,
+    })
+    .await;
+    let client = ChatClient::new(base, None, "m");
+    let err = chat_with_backoff(
+        &client,
+        &[ChatMessage::user("x")],
+        &[],
+        &ChatOptions::default(),
+        &fast_policy(3),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, LlmError::Server { status: 500, .. }));
+    // max_attempts bounds the tries exactly: no retry after the last failure.
+    assert_eq!(hits.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn backoff_does_not_retry_auth_errors() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let base = serve(Script {
+        responses: Arc::new(vec![(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({"error": "bad key"}),
+        )]),
+        hits: Arc::clone(&hits),
+        require_bearer: None,
+    })
+    .await;
+    let client = ChatClient::new(base, None, "m");
+    let err = chat_with_backoff(
+        &client,
+        &[ChatMessage::user("x")],
+        &[],
+        &ChatOptions::default(),
+        &fast_policy(3),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, LlmError::Auth { status: 401, .. }));
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

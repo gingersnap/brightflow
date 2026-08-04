@@ -61,7 +61,7 @@ pub async fn list_available_connectors(
 
 /// GET /api/connectors/unified — unified view: config + schedule + last run per connector
 ///
-/// Now starts from discovery so connectors always appear even without a DB preset.
+/// Starts from discovery, so connectors appear even without a DB preset.
 pub async fn list_unified_connectors(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<UnifiedConnector>>> {

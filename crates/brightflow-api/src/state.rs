@@ -41,9 +41,9 @@ pub struct AppState {
     /// updated by the enrichment settings endpoints.
     pub enrichment_overrides:
         Arc<DashMap<String, brightflow_engine::enrichment::EnrichmentOverrides>>,
-    /// Text Explorer indexes keyed by `cache_key(source_id, table)`.
-    /// Version-checked against `tables.version` on every request; bounded
-    /// eviction lives in `textexplore::index`.
+    /// Text Explorer index cache, keyed by `cache_key(source_id, table)`.
+    /// The index module owns the caching contract (versioning + eviction);
+    /// this is only the shared map it lives in.
     pub text_indexes: Arc<DashMap<String, Arc<crate::textexplore::index::TextIndex>>>,
     /// Abort handles for in-flight agent runs, keyed by run id.
     pub agent_runs: Arc<DashMap<i64, tokio::task::AbortHandle>>,
@@ -391,14 +391,12 @@ fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
     })
 }
 
-/// Convert a `TableAnalysisSettingsRow` to a `TableSettingsOverride`.
 /// Load stored enrichment overrides into the state map at startup.
 ///
 /// Source of truth is each table's **promoted** `topic_model` enrichment
-/// function (migration 016 converted every legacy `table_enrichment_settings`
-/// row into one; the deprecated table is now write-only dual-write). Promoted
-/// -only matches the scheduler and CLI: a draft function must not silently
-/// change what the API enriches.
+/// function (since migration 016, which converted the legacy
+/// `table_enrichment_settings` rows). Promoted-only on purpose: a draft
+/// function must not silently change what gets enriched.
 pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore) {
     let tables = store.list_tables().await.unwrap_or_default();
     let mut hydrated = 0;

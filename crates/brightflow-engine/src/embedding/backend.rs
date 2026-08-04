@@ -106,9 +106,93 @@ impl EmbedderBackend for PotionBackend {
     }
 }
 
+/// Indices and owned texts of the rows that survived cleaning: the inputs an
+/// embed call wants (`Some` rows only), paired with where each row came from.
+#[must_use]
+pub fn eligible_texts(texts: &[Option<String>]) -> (Vec<usize>, Vec<String>) {
+    let mut indices = Vec::new();
+    let mut owned = Vec::new();
+    for (i, t) in texts.iter().enumerate() {
+        if let Some(t) = t {
+            indices.push(i);
+            owned.push(t.clone());
+        }
+    }
+    (indices, owned)
+}
+
+/// Embed the `Some` rows of an aligned text column, scattering vectors back.
+///
+/// The result is index-aligned with `texts` — and therefore with whatever
+/// rows `texts` was built from; rows whose text is `None` stay `None`. The
+/// alignment is the point: callers compare vectors against per-row data, and
+/// an off-by-one here silently pairs every row with a neighbour's embedding.
+pub fn embed_aligned(
+    backend: &dyn EmbedderBackend,
+    texts: &[Option<String>],
+) -> Result<Vec<Option<Vec<f32>>>, EmbedderError> {
+    let (indices, owned) = eligible_texts(texts);
+    let vectors = backend.embed(&owned)?;
+    let mut aligned: Vec<Option<Vec<f32>>> = vec![None; texts.len()];
+    for (slot, vector) in indices.into_iter().zip(vectors) {
+        if let Some(cell) = aligned.get_mut(slot) {
+            *cell = Some(vector);
+        }
+    }
+    Ok(aligned)
+}
+
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::cast_precision_loss,
+        reason = "test double encodes tiny text lengths as f32"
+    )]
+
     use super::*;
+
+    /// Deterministic test double: "embeds" a text as `[len]`, so tests can
+    /// tell exactly which text landed in which output slot.
+    struct LenBackend;
+
+    impl EmbedderBackend for LenBackend {
+        fn model_id(&self) -> &'static str {
+            "len-test"
+        }
+        fn dim(&self) -> usize {
+            1
+        }
+        fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+            Ok(texts.iter().map(|t| vec![t.len() as f32]).collect())
+        }
+    }
+
+    #[test]
+    fn eligible_texts_keeps_indices_and_order() {
+        let texts = vec![None, Some("ab".to_string()), None, Some("cdef".to_string())];
+        let (indices, owned) = eligible_texts(&texts);
+        assert_eq!(indices, vec![1, 3]);
+        assert_eq!(owned, vec!["ab", "cdef"]);
+        assert_eq!(eligible_texts(&[]), (Vec::new(), Vec::new()));
+    }
+
+    #[test]
+    fn embed_aligned_scatters_back_to_source_rows() {
+        let texts = vec![None, Some("ab".to_string()), None, Some("cdef".to_string())];
+        let aligned = embed_aligned(&LenBackend, &texts).unwrap();
+        assert_eq!(aligned.len(), texts.len());
+        assert_eq!(aligned[0], None);
+        assert_eq!(aligned[1], Some(vec![2.0]));
+        assert_eq!(aligned[2], None);
+        assert_eq!(aligned[3], Some(vec![4.0]));
+    }
+
+    #[test]
+    fn embed_aligned_all_none_never_calls_into_trouble() {
+        let texts = vec![None, None];
+        let aligned = embed_aligned(&LenBackend, &texts).unwrap();
+        assert_eq!(aligned, vec![None, None]);
+    }
 
     #[test]
     fn id_names_round_trip() {

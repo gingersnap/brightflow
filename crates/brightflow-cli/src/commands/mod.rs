@@ -1,5 +1,4 @@
-//! One module per subcommand family; `main.rs` stays the clap surface and
-//! dispatch only.
+//! One module per subcommand family.
 
 pub mod admin;
 pub mod insights;
