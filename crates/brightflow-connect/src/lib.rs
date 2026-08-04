@@ -16,16 +16,9 @@ use std::sync::LazyLock;
 /// Always a fully rendered message: every failure here is terminal for the
 /// run and callers only display it, so a structured hierarchy would carry
 /// no information anyone reads programmatically.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 pub struct ConnectError(pub String);
-
-impl std::fmt::Display for ConnectError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ConnectError {}
 
 pub type Result<T> = std::result::Result<T, ConnectError>;
 
@@ -323,4 +316,17 @@ pub fn list_builtin_connectors() -> Vec<String> {
 /// Get the embedded Lua source for a built-in connector by name.
 pub fn get_builtin_connector_source(name: &str) -> Option<&'static str> {
     BUILTIN_CONNECTORS.get(name).copied()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connect_error_displays_its_message_verbatim() {
+        let err = ConnectError("pipeline exploded".to_string());
+        assert_eq!(err.to_string(), "pipeline exploded");
+        // It must remain a std error so callers can box/`?` it.
+        let _: &dyn std::error::Error = &err;
+    }
 }
