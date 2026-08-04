@@ -1048,7 +1048,7 @@ async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
     use brightflow_engine::embedding::get_backend;
     use brightflow_engine::enrichment::read_existing_embeddings;
     use brightflow_engine::nlp::linear::{min_examples_per_label, min_labelled_rows_to_train};
-    use brightflow_engine::nlp::{fit_centroid_baseline, fit_multilabel_linear};
+    use brightflow_engine::nlp::{classifier_eval, labelled_feature_rows};
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
@@ -1063,7 +1063,7 @@ async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
         anyhow::anyhow!("no usable `embedding` column on {source}/{table} — run `topics fit` first")
     })?;
 
-    let targets = brightflow_api::topics::labels::load_label_targets(&store, source, table, &df)
+    let targets = load_label_targets(&store, source, table, &df)
         .await
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -1072,21 +1072,7 @@ async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
             )
         })?;
 
-    // Train on rows having BOTH an embedding and >=1 label — the same rule
-    // `fit_topics` step 7b applies.
-    let mut features: Vec<Vec<f32>> = Vec::new();
-    let mut row_targets: Vec<Vec<usize>> = Vec::new();
-    for (i, ids) in targets.per_row.iter().enumerate() {
-        if ids.is_empty() {
-            continue;
-        }
-        if let Some(Some(v)) = embeddings.get(i) {
-            if v.len() == dim {
-                features.push(v.clone());
-                row_targets.push(ids.clone());
-            }
-        }
-    }
+    let (features, row_targets) = labelled_feature_rows(&embeddings, &targets.per_row, dim);
 
     println!("Classifier eval: {source}/{table}");
     println!(
@@ -1098,8 +1084,7 @@ async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
         anyhow::bail!("no rows have both an embedding and a label");
     }
 
-    let Some(outcome) = fit_multilabel_linear(&features, &row_targets, targets.names.len(), dim)
-    else {
+    let Some(eval) = classifier_eval(&features, &row_targets, targets.names.len(), dim) else {
         println!(
             "\n  Not enough signal to train (need >= {} labelled rows and >= {} examples \
              for at least one category).",
@@ -1109,7 +1094,7 @@ async fn topics_eval_classifier(source: &str, table: &str) -> Result<()> {
         return Ok(());
     };
 
-    let base = fit_centroid_baseline(&features, &row_targets, &outcome.retained_labels, dim);
+    let (outcome, base) = (eval.outcome, eval.baseline);
 
     println!(
         "  train {} rows / {} retained categories\n",
@@ -1244,6 +1229,20 @@ async fn topics_near_dup(source: &str, table: &str, threshold: Option<f32>) -> R
     Ok(())
 }
 
+/// Curated labels for `table`, aligned with `df` (same rule as the API's
+/// topics module — the alignment itself lives in the engine).
+async fn load_label_targets(
+    store: &ParquetStore,
+    source: &str,
+    table: &str,
+    df: &polars::prelude::DataFrame,
+) -> Option<brightflow_engine::enrichment::LabelTargets> {
+    let table_row = store.db().get_table(source, table).await.ok()??;
+    let labels = store.db().get_document_labels(&table_row.id).await.ok()?;
+    let pairs: Vec<(String, String)> = labels.into_iter().map(|l| (l.row_id, l.name)).collect();
+    brightflow_engine::enrichment::align_label_targets(df, table, &pairs)
+}
+
 async fn resolve_enrichment_config(
     store: &ParquetStore,
     source: &str,
@@ -1280,8 +1279,7 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
 
     // Curated row labels train the classifier head. Absent => fall back to the
     // table's own `label_names` column, as before taxonomies existed.
-    let labels =
-        brightflow_api::topics::labels::load_label_targets(&store, source, table, &df).await;
+    let labels = load_label_targets(&store, source, table, &df).await;
     match labels.as_ref() {
         Some(t) => println!(
             "  {} curated categories over {} labelled rows",
@@ -1354,11 +1352,10 @@ async fn topics_fit(source: &str, table: &str, num_clusters: Option<usize>) -> R
     clippy::too_many_lines
 )]
 async fn topics_eval(source: &str, table: &str, algorithms: &str, k: usize) -> Result<()> {
-    use std::collections::HashMap;
-
     use brightflow_engine::embedding::get_backend;
-    use brightflow_engine::nlp::cluster_metrics::{davies_bouldin, npmi_coherence, silhouette};
-    use brightflow_engine::nlp::{default_min_cluster_size, hdbscan_dense, kmeans_dense};
+    use brightflow_engine::nlp::{
+        default_min_cluster_size, eval_clustering, hdbscan_dense, kmeans_dense,
+    };
 
     let wp = brightflow_core::WorkspacePaths::from_env();
     let store = ParquetStore::new(wp.store(), &wp.litehouse_url()).await?;
@@ -1400,45 +1397,20 @@ async fn topics_eval(source: &str, table: &str, algorithms: &str, k: usize) -> R
             _ => kmeans_dense(&vectors, k, 30),
         };
         let wall = t_cluster.elapsed() + embed_time;
-        let unassigned = result.assignments.iter().filter(|a| a.is_none()).count() as f64
-            / result.assignments.len().max(1) as f64
-            * 100.0;
-
-        let sil = silhouette(&vectors, &result.assignments);
-        let db = davies_bouldin(&vectors, &result.assignments);
-
-        // Top terms per cluster by in-cluster document frequency (quick,
-        // eval-only naming — the real pipeline uses c-TF-IDF)
         let n_clusters = result.centroids.len();
-        let mut term_df: Vec<HashMap<String, usize>> = vec![HashMap::new(); n_clusters];
-        for (text, assigned) in clean_texts.iter().zip(result.assignments.iter()) {
-            let Some(c) = assigned else { continue };
-            let mut seen = std::collections::HashSet::new();
-            for token in text.to_lowercase().split_whitespace() {
-                if token.len() > 3 && seen.insert(token.to_string()) {
-                    *term_df[*c].entry(token.to_string()).or_insert(0) += 1;
-                }
-            }
-        }
-        let cluster_terms: Vec<Vec<String>> = term_df
-            .iter()
-            .map(|counts| {
-                let mut ranked: Vec<(&String, &usize)> = counts.iter().collect();
-                ranked.sort_by(|a, b| b.1.cmp(a.1));
-                ranked.into_iter().take(6).map(|(t, _)| t.clone()).collect()
-            })
-            .collect();
-        let npmi = npmi_coherence(&clean_texts, &cluster_terms);
+        let eval = eval_clustering(&vectors, &result.assignments, n_clusters, &clean_texts);
 
         println!(
             "{:<38} {:<9} {:>4} {:>10} {:>8} {:>7} {:>8.1}% {:>8.1}s",
             embedder_name,
             algo,
             n_clusters,
-            sil.map_or("-".to_string(), |v| format!("{v:.3}")),
-            db.map_or("-".to_string(), |v| format!("{v:.3}")),
-            npmi.map_or("-".to_string(), |v| format!("{v:.3}")),
-            unassigned,
+            eval.silhouette
+                .map_or("-".to_string(), |v| format!("{v:.3}")),
+            eval.davies_bouldin
+                .map_or("-".to_string(), |v| format!("{v:.3}")),
+            eval.npmi.map_or("-".to_string(), |v| format!("{v:.3}")),
+            eval.unassigned_pct,
             wall.as_secs_f64(),
         );
     }

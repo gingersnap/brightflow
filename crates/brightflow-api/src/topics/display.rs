@@ -41,9 +41,12 @@ impl DocDisplay {
     // the cluster-sample renderer reads `label_names` via this mapping. Keep
     // both in mind when changing which column a surface keys off.
     pub fn for_table(table_name: &str) -> Self {
+        // The id column doubles as the label join key; the engine owns that
+        // mapping so the CLI and API cannot disagree on it.
+        let id_column = brightflow_engine::enrichment::label_join_id_column(table_name);
         match table_name {
             "issues" => Self {
-                id_column: "id",
+                id_column,
                 number_column: Some("number"),
                 title_column: Some("title"),
                 body_column: Some("body"),
@@ -52,7 +55,7 @@ impl DocDisplay {
                 timestamp_column: "created_at",
             },
             "posts" => Self {
-                id_column: "uri",
+                id_column,
                 number_column: None,
                 title_column: None,
                 body_column: Some("text"),
@@ -61,7 +64,7 @@ impl DocDisplay {
                 timestamp_column: "created_at",
             },
             _ => Self {
-                id_column: "id",
+                id_column,
                 number_column: None,
                 title_column: None,
                 body_column: None,

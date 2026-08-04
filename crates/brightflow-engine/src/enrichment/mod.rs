@@ -5,6 +5,7 @@ pub mod artifacts;
 pub mod config;
 pub mod curation;
 pub mod function;
+pub mod labels_io;
 pub mod topic_enricher;
 
 pub use artifacts::{
@@ -19,6 +20,7 @@ pub use function::{
     extract_column_refs, input_hash, output_tool_schema, render_prompt, spec_hash, validate_output,
     ClassifierSpec, FunctionSpec, LlmPromptSpec, OutputField, OutputType, TopicModelSpec,
 };
+pub use labels_io::{align_label_targets, label_join_id_column, read_row_ids};
 pub use topic_enricher::{
     build_clean_texts, build_combined_text, english_stopwords, enrich_with_topics, fit_topics,
     parse_label_targets, read_existing_embeddings, FitOptions, FitOutcome, LabelTargets, Labeler,
