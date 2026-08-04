@@ -8,25 +8,43 @@
  */
 
 import { useQuery } from '@pinia/colada';
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 
-import FunnelPanel from '@/components/analytics/FunnelPanel.vue';
-import RetentionPanel from '@/components/analytics/RetentionPanel.vue';
-import UserExplorerPanel from '@/components/analytics/UserExplorerPanel.vue';
-import EnrichTool from '@/components/enrich/EnrichTool.vue';
-import ExploreTool from '@/components/explore/ExploreTool.vue';
-import InsightsView from '@/components/insights/InsightsView.vue';
 import PeriodSelector from '@/components/layout/PeriodSelector.vue';
-import ConnectorSourceSettings from '@/components/settings/ConnectorSourceSettings.vue';
-import WebSourceSettings from '@/components/settings/WebSourceSettings.vue';
-import TextExploreTool from '@/components/textexplore/TextExploreTool.vue';
-import ConnectorDashboard from '@/components/tools/ConnectorDashboard.vue';
-import WebDashboard from '@/components/tools/WebDashboard.vue';
-import TopicsView from '@/components/topics/TopicsView.vue';
 import { useSources } from '@/composables/useSources';
 import { productAnalyticsApi } from '@/services/api';
 import { useSourceStore } from '@/stores/source';
 import { TOOL_DEFS, type ToolId } from '@/types';
+
+/*
+ * Tools load on demand: the router's lazy-loading stops at this layout, so a
+ * static import here would pull every tool (echarts included) into the first
+ * chunk. Each tool becomes its own chunk and loads when its tab is opened.
+ */
+const WebDashboard = defineAsyncComponent(() => import('@/components/tools/WebDashboard.vue'));
+const ConnectorDashboard = defineAsyncComponent(
+  () => import('@/components/tools/ConnectorDashboard.vue'),
+);
+const FunnelPanel = defineAsyncComponent(() => import('@/components/analytics/FunnelPanel.vue'));
+const RetentionPanel = defineAsyncComponent(
+  () => import('@/components/analytics/RetentionPanel.vue'),
+);
+const UserExplorerPanel = defineAsyncComponent(
+  () => import('@/components/analytics/UserExplorerPanel.vue'),
+);
+const ExploreTool = defineAsyncComponent(() => import('@/components/explore/ExploreTool.vue'));
+const InsightsView = defineAsyncComponent(() => import('@/components/insights/InsightsView.vue'));
+const TopicsView = defineAsyncComponent(() => import('@/components/topics/TopicsView.vue'));
+const TextExploreTool = defineAsyncComponent(
+  () => import('@/components/textexplore/TextExploreTool.vue'),
+);
+const EnrichTool = defineAsyncComponent(() => import('@/components/enrich/EnrichTool.vue'));
+const WebSourceSettings = defineAsyncComponent(
+  () => import('@/components/settings/WebSourceSettings.vue'),
+);
+const ConnectorSourceSettings = defineAsyncComponent(
+  () => import('@/components/settings/ConnectorSourceSettings.vue'),
+);
 
 const props = defineProps<{
   sourceId: string;
