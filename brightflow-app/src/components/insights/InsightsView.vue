@@ -7,7 +7,6 @@
  * seen both on open and after each run.
  */
 
-import { Play } from '@lucide/vue';
 import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -184,7 +183,7 @@ watch(
 
         <!-- Run button -->
         <UButton size="md" :loading="insightsStore.loading" @click="runAnalysis">
-          <Play class="mr-1.5 h-3.5 w-3.5" />
+          <UIcon name="i-lucide-play" class="mr-1.5 h-3.5 w-3.5" />
           Run Analysis
         </UButton>
       </div>

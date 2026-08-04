@@ -7,7 +7,6 @@
  * settings.
  */
 
-import { Database, Globe, Upload } from '@lucide/vue';
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -137,7 +136,7 @@ async function handlePresetCreate(data: {
               "
               @click="tab = 'web'"
             >
-              <Globe class="h-4 w-4" />
+              <UIcon name="i-lucide-globe" class="h-4 w-4" />
               Web analytics
             </button>
             <button
@@ -149,7 +148,7 @@ async function handlePresetCreate(data: {
               "
               @click="tab = 'connector'"
             >
-              <Database class="h-4 w-4" />
+              <UIcon name="i-lucide-database" class="h-4 w-4" />
               Connector
             </button>
             <button
@@ -161,7 +160,7 @@ async function handlePresetCreate(data: {
               "
               @click="tab = 'upload'"
             >
-              <Upload class="h-4 w-4" />
+              <UIcon name="i-lucide-upload" class="h-4 w-4" />
               CSV upload
             </button>
           </div>
@@ -226,7 +225,7 @@ async function handlePresetCreate(data: {
                 class="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-default px-3 py-2.5 text-left transition-colors hover:bg-elevated"
                 @click="pickConnector(c)"
               >
-                <Database class="h-5 w-5 shrink-0 text-muted" />
+                <UIcon name="i-lucide-database" class="h-5 w-5 shrink-0 text-muted" />
                 <div class="min-w-0 flex-1">
                   <div class="flex items-baseline gap-2">
                     <span class="text-sm font-medium text-highlighted">{{ c.name }}</span>

@@ -6,7 +6,6 @@
  * to that preset and adds the run-now / schedule quick actions.
  */
 
-import { Play } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { useIntervalFn } from '@vueuse/core';
 import { computed, watch } from 'vue';
@@ -152,7 +151,11 @@ function triggerRunNow(): void {
           :disabled="triggering || presetIsRunning"
           @click="triggerRunNow"
         >
-          <Play v-if="!(triggering || presetIsRunning)" class="mr-1.5 h-3.5 w-3.5" />
+          <UIcon
+            name="i-lucide-play"
+            v-if="!(triggering || presetIsRunning)"
+            class="mr-1.5 h-3.5 w-3.5"
+          />
           {{ presetIsRunning ? 'Running…' : 'Run now' }}
         </UButton>
 

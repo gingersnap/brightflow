@@ -7,19 +7,8 @@
  * 300ms debounce — there is no run button.
  */
 
-import {
-  ArrowDown,
-  ArrowLeftRight,
-  ArrowUp,
-  ArrowUpDown,
-  GripVertical,
-  Hash,
-  HelpCircle,
-  RotateCcw,
-  Type,
-} from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
-import { type Component, computed, watch } from 'vue';
+import { computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
@@ -63,14 +52,14 @@ const columns = computed((): ColumnItem[] =>
 );
 
 // Get icon for column type
-function getTypeIcon(col: ColumnItem): Component {
+function getTypeIcon(col: ColumnItem): string {
   if (col.isNumeric) {
-    return Hash;
+    return 'i-lucide-hash';
   }
   if (col.isString) {
-    return Type;
+    return 'i-lucide-type';
   }
-  return HelpCircle;
+  return 'i-lucide-circle-help';
 }
 
 // Clone function for draggable
@@ -237,7 +226,7 @@ const sortColumnOptions = computed(() =>
 
         <!-- Reset -->
         <UButton variant="ghost" size="md" @click="pivotStore.reset()">
-          <RotateCcw class="h-3 w-3" />
+          <UIcon name="i-lucide-rotate-ccw" class="h-3 w-3" />
         </UButton>
       </template>
     </template>
@@ -259,8 +248,11 @@ const sortColumnOptions = computed(() =>
               <div
                 class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-sm transition-colors hover:bg-default active:cursor-grabbing"
               >
-                <GripVertical class="h-3 w-3 text-muted/30 group-hover:text-muted/60" />
-                <component :is="getTypeIcon(element)" class="h-3 w-3 text-muted" />
+                <UIcon
+                  name="i-lucide-grip-vertical"
+                  class="h-3 w-3 text-muted/30 group-hover:text-muted/60"
+                />
+                <UIcon :name="getTypeIcon(element)" class="h-3 w-3 text-muted" />
                 <span class="flex-1 truncate">{{ element.name }}</span>
               </div>
             </template>
@@ -291,7 +283,7 @@ const sortColumnOptions = computed(() =>
               title="Flip rows and columns"
               @click="pivotStore.flipRowsAndColumns()"
             >
-              <ArrowLeftRight class="h-3 w-3" />
+              <UIcon name="i-lucide-arrow-left-right" class="h-3 w-3" />
             </button>
             <BucketDropzone
               title="Columns"
@@ -324,7 +316,7 @@ const sortColumnOptions = computed(() =>
             :class="queryStore.sections.sort.enabled ? 'text-muted' : 'text-muted/50'"
             @click="toggleSort"
           >
-            <ArrowUpDown class="h-3.5 w-3.5" />
+            <UIcon name="i-lucide-arrow-up-down" class="h-3.5 w-3.5" />
             Sort
           </button>
 
@@ -346,7 +338,7 @@ const sortColumnOptions = computed(() =>
               @click="toggleSortDirection"
             >
               <component
-                :is="queryStore.sortDescending ? ArrowDown : ArrowUp"
+                :is="queryStore.sortDescending ? 'i-lucide-arrow-down' : 'i-lucide-arrow-up'"
                 class="mr-1 h-3.5 w-3.5"
               />
               {{ queryStore.sortDescending ? 'DESC' : 'ASC' }}

@@ -7,7 +7,6 @@
  * column, with subtotals accumulated per group.
  */
 
-import { ChevronDown, ChevronRight } from '@lucide/vue';
 import { computed } from 'vue';
 
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -374,7 +373,7 @@ function isNumeric(dtype: string | undefined): boolean {
               >
                 <div class="flex items-center gap-2">
                   <component
-                    :is="row.isCollapsed ? ChevronRight : ChevronDown"
+                    :is="row.isCollapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-down'"
                     class="h-4 w-4 text-muted"
                   />
                   <span>{{ row.groupLabel }}</span>

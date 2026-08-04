@@ -6,7 +6,6 @@
  * see approveAll for what it confirms and deliberately does not promise.
  */
 
-import { Bot, Check, RotateCcw, User, X } from '@lucide/vue';
 import { computed } from 'vue';
 
 import { useCuration } from '@/composables/useCuration';
@@ -118,8 +117,8 @@ const statusColor: Record<string, string> = {
       <p v-else-if="entries.length === 0" class="p-4 text-sm text-muted">No actions yet.</p>
       <ul v-else class="divide-y divide-default">
         <li v-for="entry in entries" :key="entry.id" class="flex items-start gap-3 px-4 py-3">
-          <component
-            :is="entry.actorType === 'agent' ? Bot : User"
+          <UIcon
+            :name="entry.actorType === 'agent' ? 'i-lucide-bot' : 'i-lucide-user'"
             class="mt-0.5 h-4 w-4 flex-shrink-0"
             :class="entry.actorType === 'agent' ? 'text-violet-500' : 'text-muted'"
           />
@@ -141,7 +140,7 @@ const statusColor: Record<string, string> = {
               title="Approve"
               @click="curation.approve(entry.id)"
             >
-              <Check class="h-3.5 w-3.5" />
+              <UIcon name="i-lucide-check" class="h-3.5 w-3.5" />
             </UButton>
             <UButton
               v-if="entry.status === 'proposed'"
@@ -151,7 +150,7 @@ const statusColor: Record<string, string> = {
               title="Reject"
               @click="curation.reject(entry.id)"
             >
-              <X class="h-3.5 w-3.5" />
+              <UIcon name="i-lucide-x" class="h-3.5 w-3.5" />
             </UButton>
             <UButton
               v-if="entry.undoable"
@@ -161,7 +160,7 @@ const statusColor: Record<string, string> = {
               title="Undo"
               @click="curation.undo(entry.id)"
             >
-              <RotateCcw class="h-3.5 w-3.5" />
+              <UIcon name="i-lucide-rotate-ccw" class="h-3.5 w-3.5" />
             </UButton>
           </div>
         </li>

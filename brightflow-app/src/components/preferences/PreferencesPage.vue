@@ -5,7 +5,6 @@
  * the UI store, and the LLM provider settings section.
  */
 
-import { Moon, Sun } from '@lucide/vue';
 import { useColorMode } from '@vueuse/core';
 import { computed } from 'vue';
 
@@ -57,9 +56,9 @@ const textSizes: { value: TextSize; label: string; description: string }[] = [
                   </p>
                 </div>
                 <div class="flex items-center gap-2">
-                  <Sun class="h-4 w-4 text-muted" />
+                  <UIcon name="i-lucide-sun" class="h-4 w-4 text-muted" />
                   <USwitch v-model="isDark" />
-                  <Moon class="h-4 w-4 text-muted" />
+                  <UIcon name="i-lucide-moon" class="h-4 w-4 text-muted" />
                 </div>
               </div>
             </div>

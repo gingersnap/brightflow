@@ -7,7 +7,6 @@
  * "scroll to bottom" button to re-pin.
  */
 
-import { Trash2 } from '@lucide/vue';
 import { useScroll } from '@vueuse/core';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -127,7 +126,7 @@ watch(
           <span class="text-sm text-muted">{{ systemStore.status }}</span>
 
           <UButton variant="ghost" size="md" @click="systemStore.clearLogs()">
-            <Trash2 class="h-3.5 w-3.5" />
+            <UIcon name="i-lucide-trash-2" class="h-3.5 w-3.5" />
             Clear
           </UButton>
         </template>

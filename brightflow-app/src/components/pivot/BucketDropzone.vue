@@ -6,8 +6,7 @@
  * an `add` event for the store to apply, and reorders are emitted whole.
  */
 
-import { GripVertical, Hash, HelpCircle, Type, X } from '@lucide/vue';
-import { type Component, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 
 import type { AggFn, PivotField } from '@/types';
@@ -96,15 +95,15 @@ function canAcceptMore(): boolean {
 }
 
 // Get icon for field type
-function getTypeIcon(field: PivotField): Component {
+function getTypeIcon(field: PivotField): string {
   const { dtype } = field;
   if (isNumericDtype(dtype)) {
-    return Hash;
+    return 'i-lucide-hash';
   }
   if (isStringDtype(dtype)) {
-    return Type;
+    return 'i-lucide-type';
   }
-  return HelpCircle;
+  return 'i-lucide-circle-help';
 }
 
 // Handle all drag changes - differentiates between add and reorder
@@ -161,8 +160,8 @@ function handleChange(evt: DragEvent): void {
         <div
           class="group mb-1 flex cursor-grab items-center gap-2 rounded-md border border-default bg-default px-2 py-1.5 transition-colors hover:border-primary/50 active:cursor-grabbing"
         >
-          <GripVertical class="h-3 w-3 text-muted/50" />
-          <component :is="getTypeIcon(element)" class="h-3.5 w-3.5 flex-shrink-0 text-muted" />
+          <UIcon name="i-lucide-grip-vertical" class="h-3 w-3 text-muted/50" />
+          <UIcon :name="getTypeIcon(element)" class="h-3.5 w-3.5 flex-shrink-0 text-muted" />
           <span class="flex-1 truncate text-sm text-default">
             {{ element.column }}
           </span>
@@ -183,7 +182,7 @@ function handleChange(evt: DragEvent): void {
             class="rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 hover:bg-muted"
             @click.stop="emit('remove', element.id)"
           >
-            <X class="h-3.5 w-3.5 text-muted hover:text-default" />
+            <UIcon name="i-lucide-x" class="h-3.5 w-3.5 text-muted hover:text-default" />
           </button>
         </div>
       </template>

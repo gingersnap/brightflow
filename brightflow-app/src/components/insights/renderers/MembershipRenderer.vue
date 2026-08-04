@@ -5,7 +5,6 @@
  * minus), each capped at eight entries with a "+N more" tail.
  */
 
-import { Minus, Plus } from '@lucide/vue';
 import { computed } from 'vue';
 
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -29,7 +28,7 @@ const MAX_DISPLAY = 8;
   <div class="flex flex-col gap-2 sm:flex-row" v-if="data">
     <div class="flex-1 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
       <div class="mb-1.5 flex items-center gap-1.5">
-        <Plus class="h-3.5 w-3.5 text-emerald-500" />
+        <UIcon name="i-lucide-plus" class="h-3.5 w-3.5 text-emerald-500" />
         <span class="text-xs tracking-wider text-muted uppercase">
           Added ({{ data.added.length }})
         </span>
@@ -45,7 +44,7 @@ const MAX_DISPLAY = 8;
     </div>
     <div class="flex-1 rounded-md border border-red-500/20 bg-red-500/5 p-3">
       <div class="mb-1.5 flex items-center gap-1.5">
-        <Minus class="h-3.5 w-3.5 text-red-500" />
+        <UIcon name="i-lucide-minus" class="h-3.5 w-3.5 text-red-500" />
         <span class="text-xs tracking-wider text-muted uppercase">
           Removed ({{ data.removed.length }})
         </span>

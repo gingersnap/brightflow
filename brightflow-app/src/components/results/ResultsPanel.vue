@@ -7,8 +7,7 @@
  * uses.
  */
 
-import { BarChart3, Download, Hash, Split, Table, TableProperties } from '@lucide/vue';
-import { type Component, computed } from 'vue';
+import { computed } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
@@ -35,15 +34,15 @@ const resultsOpen = computed({
 interface ViewModeOption {
   value: ViewMode;
   label: string;
-  icon: Component;
+  icon: string;
 }
 
 const viewModes: ViewModeOption[] = [
-  { icon: Table, label: 'Table', value: 'table' },
-  { icon: TableProperties, label: 'Pivot', value: 'pivot' },
-  { icon: Hash, label: 'Number', value: 'number' },
-  { icon: BarChart3, label: 'Chart', value: 'chart' },
-  { icon: Split, label: 'Split', value: 'split' },
+  { icon: 'i-lucide-table', label: 'Table', value: 'table' },
+  { icon: 'i-lucide-table-properties', label: 'Pivot', value: 'pivot' },
+  { icon: 'i-lucide-hash', label: 'Number', value: 'number' },
+  { icon: 'i-lucide-bar-chart-3', label: 'Chart', value: 'chart' },
+  { icon: 'i-lucide-split', label: 'Split', value: 'split' },
 ];
 
 // Row count based on view mode
@@ -135,7 +134,7 @@ function exportCsv(type: ResultType): void {
             size="md"
             @click="uiStore.viewMode = mode.value"
           >
-            <component :is="mode.icon" class="h-3.5 w-3.5" />
+            <UIcon :name="mode.icon" class="h-3.5 w-3.5" />
           </UButton>
         </div>
 
@@ -152,7 +151,7 @@ function exportCsv(type: ResultType): void {
           size="md"
           @click="exportCsv(uiStore.viewMode === 'pivot' ? 'pivot' : 'table')"
         >
-          <Download class="mr-1 h-3.5 w-3.5" />
+          <UIcon name="i-lucide-download" class="mr-1 h-3.5 w-3.5" />
           Export
         </UButton>
       </template>
@@ -187,7 +186,7 @@ function exportCsv(type: ResultType): void {
       </div>
       <div v-else class="flex h-full items-center justify-center">
         <div class="p-8 text-center">
-          <TableProperties class="mx-auto mb-4 h-12 w-12 text-muted/50" />
+          <UIcon name="i-lucide-table-properties" class="mx-auto mb-4 h-12 w-12 text-muted/50" />
           <div class="text-muted">Configure your pivot table</div>
           <div class="mt-1 text-sm text-muted/70">Drag columns into Values to create a pivot</div>
         </div>

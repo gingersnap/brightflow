@@ -6,7 +6,6 @@
  * and only while connected with data loaded.
  */
 
-import { Plus, X } from '@lucide/vue';
 import { watchDebounced } from '@vueuse/core';
 import { computed } from 'vue';
 
@@ -163,7 +162,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
             class="rounded p-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
             @click="queryStore.removeFilter(filter.id)"
           >
-            <X class="h-3 w-3" />
+            <UIcon name="i-lucide-x" class="h-3 w-3" />
           </button>
         </div>
 
@@ -172,7 +171,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
           class="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted transition-colors hover:bg-muted/30 hover:text-default"
           @click="queryStore.addFilter()"
         >
-          <Plus class="h-3.5 w-3.5" />
+          <UIcon name="i-lucide-plus" class="h-3.5 w-3.5" />
           <span>Add</span>
         </button>
       </div>

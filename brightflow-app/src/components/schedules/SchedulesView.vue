@@ -5,7 +5,6 @@
  * of refetching anything itself, so all consumers of those keys update.
  */
 
-import { RefreshCw } from '@lucide/vue';
 import { useQueryCache } from '@pinia/colada';
 
 import SchedulesPanel from '@/components/connect/SchedulesPanel.vue';
@@ -27,7 +26,7 @@ function refreshAll(): void {
         </template>
         <template #trailing>
           <UButton variant="ghost" size="md" @click="refreshAll">
-            <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
+            <UIcon name="i-lucide-refresh-cw" class="mr-1.5 h-3.5 w-3.5" />
             Refresh
           </UButton>
         </template>

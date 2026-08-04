@@ -7,7 +7,6 @@
  * means creating a new one. Deletion keeps stored data.
  */
 
-import { Key, Pencil, Trash2 } from '@lucide/vue';
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -175,7 +174,7 @@ watch(presetId, () => void refreshConfig());
               <p v-if="connectorPath" class="mt-0.5 text-sm text-muted">{{ connectorPath }}</p>
             </div>
             <UButton variant="ghost" size="md" @click="startEditName">
-              <Pencil class="mr-1 h-3.5 w-3.5" />
+              <UIcon name="i-lucide-pencil" class="mr-1 h-3.5 w-3.5" />
               Edit
             </UButton>
           </div>
@@ -199,7 +198,7 @@ watch(presetId, () => void refreshConfig());
               class="inline-flex items-center gap-1.5 text-sm"
               :class="config?.hasToken ? 'text-green-500' : 'text-amber-500'"
             >
-              <Key class="h-3.5 w-3.5" />
+              <UIcon name="i-lucide-key" class="h-3.5 w-3.5" />
               {{ config?.hasToken ? 'Token set' : 'No token' }}
             </span>
             <UButton variant="ghost" size="md" @click="toggleTokenEdit">
@@ -279,7 +278,7 @@ watch(presetId, () => void refreshConfig());
           <div v-if="deleteError" class="text-sm text-red-500">{{ deleteError }}</div>
           <div v-if="!confirmingDelete">
             <UButton variant="ghost" color="error" size="md" @click="confirmingDelete = true">
-              <Trash2 class="mr-1.5 h-3.5 w-3.5" />
+              <UIcon name="i-lucide-trash-2" class="mr-1.5 h-3.5 w-3.5" />
               Delete source
             </UButton>
           </div>

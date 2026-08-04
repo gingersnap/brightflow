@@ -6,7 +6,6 @@
  * automatic selection different navigation semantics than a user click.
  */
 
-import { Table2 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
@@ -94,7 +93,7 @@ function handleCardClick(table: SourceTable): void {
           :aria-pressed="table.name === selectedTable"
           @click="handleCardClick(table)"
         >
-          <Table2 class="h-5 w-5 text-muted" />
+          <UIcon name="i-lucide-table-2" class="h-5 w-5 text-muted" />
           <div>
             <p class="text-sm font-medium text-highlighted">{{ table.name }}</p>
             <p v-if="table.numRows != null" class="text-sm text-muted">

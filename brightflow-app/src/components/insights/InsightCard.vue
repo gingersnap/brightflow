@@ -8,7 +8,6 @@
  * the user on the raw rows behind the finding.
  */
 
-import { ChevronDown, ChevronRight, ExternalLink, Info } from '@lucide/vue';
 import type { ContextMenuItem } from '@nuxt/ui';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -253,7 +252,7 @@ const scoreRows = computed(() => [
       >
         <!-- Type icon -->
         <div class="flex-shrink-0 rounded-md p-1.5" :class="typeMeta.bg">
-          <component :is="typeMeta.icon" class="h-4 w-4" :class="typeMeta.color" />
+          <UIcon :name="typeMeta.icon" class="h-4 w-4" :class="typeMeta.color" />
         </div>
 
         <!-- Content -->
@@ -307,7 +306,7 @@ const scoreRows = computed(() => [
         <div v-if="hasChildren" class="mt-0.5 flex-shrink-0">
           <span class="mr-1 text-xs text-muted">{{ childNodes.length }}</span>
           <component
-            :is="expanded ? ChevronDown : ChevronRight"
+            :is="expanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
             class="inline h-4 w-4 text-muted"
           />
         </div>
@@ -324,7 +323,7 @@ const scoreRows = computed(() => [
           class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
           @click.stop="showDetails = !showDetails"
         >
-          <Info class="h-3 w-3" />
+          <UIcon name="i-lucide-info" class="h-3 w-3" />
           Details
         </button>
         <button
@@ -332,7 +331,7 @@ const scoreRows = computed(() => [
           class="inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-elevated hover:text-highlighted"
           @click.stop="openInExplore"
         >
-          <ExternalLink class="h-3 w-3" />
+          <UIcon name="i-lucide-external-link" class="h-3 w-3" />
           Open in Explore
         </button>
         <UTooltip :text="`Composite score ${node.significance.toFixed(2)}`" class="ml-auto">

@@ -5,7 +5,6 @@
  * Read-only — the only action here is navigation.
  */
 
-import { Cable, Search, Table2 } from '@lucide/vue';
 import { useRouter } from 'vue-router';
 
 import type { UnifiedSource } from '@/types';
@@ -25,7 +24,7 @@ function openInExplore(tableName: string): void {
 <template>
   <div class="flex h-full flex-col overflow-y-auto p-4">
     <div class="mb-4 flex items-center gap-3">
-      <Cable class="h-5 w-5 text-muted" />
+      <UIcon name="i-lucide-cable" class="h-5 w-5 text-muted" />
       <div>
         <h2 class="text-sm font-semibold text-highlighted">{{ source.name }}</h2>
         <p class="text-sm text-muted">{{ source.connectorName }} connector</p>
@@ -42,14 +41,14 @@ function openInExplore(tableName: string): void {
           class="flex items-center justify-between rounded-lg border border-default bg-elevated p-3"
         >
           <div class="flex items-center gap-2">
-            <Table2 class="h-4 w-4 text-muted" />
+            <UIcon name="i-lucide-table-2" class="h-4 w-4 text-muted" />
             <span class="text-sm font-medium text-highlighted">{{ table.name }}</span>
             <span v-if="table.numRows != null" class="text-sm text-muted">
               {{ table.numRows.toLocaleString() }} rows
             </span>
           </div>
           <UButton size="md" variant="ghost" @click="openInExplore(table.name)">
-            <Search class="h-3.5 w-3.5" />
+            <UIcon name="i-lucide-search" class="h-3.5 w-3.5" />
             Explore
           </UButton>
         </div>

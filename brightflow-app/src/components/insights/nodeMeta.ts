@@ -6,21 +6,6 @@
  * than spread across the renderer components.
  */
 
-import {
-  AlertTriangle,
-  ArrowLeftRight,
-  BarChart3,
-  GitBranch,
-  PieChart,
-  Sigma,
-  Split,
-  Target,
-  TrendingUp,
-  Users,
-  Waves,
-} from '@lucide/vue';
-import type { Component } from 'vue';
-
 import type { AnalysisNode } from '@/types/generated';
 
 /**
@@ -121,77 +106,102 @@ export function directionOf(n: AnalysisNode): 'up' | 'down' | null {
 export interface AnalysisTypeMeta {
   bg: string;
   color: string;
-  icon: Component;
+  icon: string;
   label: string;
 }
 
 /** Icon + color + human label per analysis type (cards, filter chips). */
 export const ANALYSIS_TYPE_META: Record<AnalysisNode['analysis']['type'], AnalysisTypeMeta> = {
-  Anomaly: { bg: 'bg-red-500/10', color: 'text-red-500', icon: AlertTriangle, label: 'Anomaly' },
-  ChangePoint: { bg: 'bg-rose-500/10', color: 'text-rose-500', icon: Sigma, label: 'Change Point' },
+  Anomaly: {
+    bg: 'bg-red-500/10',
+    color: 'text-red-500',
+    icon: 'i-lucide-triangle-alert',
+    label: 'Anomaly',
+  },
+  ChangePoint: {
+    bg: 'bg-rose-500/10',
+    color: 'text-rose-500',
+    icon: 'i-lucide-sigma',
+    label: 'Change Point',
+  },
   Concentration: {
     bg: 'bg-violet-500/10',
     color: 'text-violet-500',
-    icon: PieChart,
+    icon: 'i-lucide-pie-chart',
     label: 'Concentration',
   },
   Correlation: {
     bg: 'bg-pink-500/10',
     color: 'text-pink-500',
-    icon: GitBranch,
+    icon: 'i-lucide-git-branch',
     label: 'Correlation',
   },
   DistributionShift: {
     bg: 'bg-cyan-500/10',
     color: 'text-cyan-500',
-    icon: Split,
+    icon: 'i-lucide-split',
     label: 'Distribution Shift',
   },
   ForecastDeviation: {
     bg: 'bg-amber-500/10',
     color: 'text-amber-500',
-    icon: Target,
+    icon: 'i-lucide-target',
     label: 'Forecast',
   },
   MembershipChange: {
     bg: 'bg-emerald-500/10',
     color: 'text-emerald-500',
-    icon: Users,
+    icon: 'i-lucide-users',
     label: 'Membership',
   },
   OutlierCluster: {
     bg: 'bg-red-400/10',
     color: 'text-red-400',
-    icon: AlertTriangle,
+    icon: 'i-lucide-triangle-alert',
     label: 'Outlier Cluster',
   },
   PeriodAnomaly: {
     bg: 'bg-orange-500/10',
     color: 'text-orange-500',
-    icon: AlertTriangle,
+    icon: 'i-lucide-triangle-alert',
     label: 'Period Anomaly',
   },
   PeriodComparison: {
     bg: 'bg-purple-500/10',
     color: 'text-purple-500',
-    icon: ArrowLeftRight,
+    icon: 'i-lucide-arrow-left-right',
     label: 'Period',
   },
   RankChange: {
     bg: 'bg-sky-500/10',
     color: 'text-sky-500',
-    icon: ArrowLeftRight,
+    icon: 'i-lucide-arrow-left-right',
     label: 'Rank Change',
   },
-  Seasonality: { bg: 'bg-teal-500/10', color: 'text-teal-500', icon: Waves, label: 'Seasonality' },
-  Segment: { bg: 'bg-indigo-500/10', color: 'text-indigo-500', icon: BarChart3, label: 'Segment' },
+  Seasonality: {
+    bg: 'bg-teal-500/10',
+    color: 'text-teal-500',
+    icon: 'i-lucide-waves',
+    label: 'Seasonality',
+  },
+  Segment: {
+    bg: 'bg-indigo-500/10',
+    color: 'text-indigo-500',
+    icon: 'i-lucide-bar-chart-3',
+    label: 'Segment',
+  },
   TopDominance: {
     bg: 'bg-fuchsia-500/10',
     color: 'text-fuchsia-500',
-    icon: PieChart,
+    icon: 'i-lucide-pie-chart',
     label: 'Dominance',
   },
-  Trend: { bg: 'bg-blue-500/10', color: 'text-blue-500', icon: TrendingUp, label: 'Trend' },
+  Trend: {
+    bg: 'bg-blue-500/10',
+    color: 'text-blue-500',
+    icon: 'i-lucide-trending-up',
+    label: 'Trend',
+  },
 };
 
 export interface QualitativeScore {

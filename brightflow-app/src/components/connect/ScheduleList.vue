@@ -6,7 +6,6 @@
  * details are shown only for completed runs.
  */
 
-import { Trash2 } from '@lucide/vue';
 import { formatTimeAgo, useNow } from '@vueuse/core';
 import { computed } from 'vue';
 
@@ -115,7 +114,7 @@ function lastCompletedLabel(c: UnifiedConnector): string | null {
 
       <!-- Delete -->
       <UButton size="md" variant="ghost" color="error" @click="emit('delete', c.job!.id)">
-        <Trash2 class="h-3 w-3" />
+        <UIcon name="i-lucide-trash-2" class="h-3 w-3" />
       </UButton>
     </div>
   </div>

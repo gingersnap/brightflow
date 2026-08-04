@@ -8,7 +8,6 @@
  * store keeps the numeric threshold.
  */
 
-import { FileSearch, Filter as FilterIcon } from '@lucide/vue';
 import { computed, ref } from 'vue';
 
 import { useInsightsStore } from '@/stores/insights';
@@ -99,7 +98,7 @@ const friendlyError = computed(() =>
     <!-- Empty -->
     <div v-else-if="!insightsStore.tree" class="flex h-64 items-center justify-center">
       <div class="text-center">
-        <FileSearch class="mx-auto mb-3 h-10 w-10 text-muted" />
+        <UIcon name="i-lucide-file-search" class="mx-auto mb-3 h-10 w-10 text-muted" />
         <p class="text-sm text-muted">Select a report type and click Run to start analysis</p>
       </div>
     </div>
@@ -110,7 +109,7 @@ const friendlyError = computed(() =>
       class="flex h-64 items-center justify-center"
     >
       <div class="text-center">
-        <FileSearch class="mx-auto mb-3 h-10 w-10 text-muted" />
+        <UIcon name="i-lucide-file-search" class="mx-auto mb-3 h-10 w-10 text-muted" />
         <p class="text-sm text-muted">Not enough data to analyze this table yet</p>
         <p class="mt-1 text-sm text-muted">
           Analyses need a few periods of history — sync more data and try again
@@ -159,7 +158,7 @@ const friendlyError = computed(() =>
             :class="filtersOpen ? 'text-highlighted' : ''"
             @click="filtersOpen = !filtersOpen"
           >
-            <FilterIcon class="h-3.5 w-3.5" />
+            <UIcon name="i-lucide-filter" class="h-3.5 w-3.5" />
             Filters
           </button>
         </div>

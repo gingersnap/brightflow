@@ -5,7 +5,6 @@
  * see it, then shown with a copy button for pasting into the site's head.
  */
 
-import { Copy, Pencil, Trash2 } from '@lucide/vue';
 import { useMutation, useQueryCache } from '@pinia/colada';
 import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';
@@ -95,7 +94,7 @@ const { mutate: deleteSource } = useMutation({
               <p v-if="source.domain" class="mt-0.5 text-sm text-muted">{{ source.domain }}</p>
             </div>
             <UButton variant="ghost" size="md" @click="startEditName">
-              <Pencil class="mr-1 h-3.5 w-3.5" />
+              <UIcon name="i-lucide-pencil" class="mr-1 h-3.5 w-3.5" />
               Edit
             </UButton>
           </div>
@@ -129,7 +128,7 @@ const { mutate: deleteSource } = useMutation({
                 Add this to your website's &lt;head&gt;
               </span>
               <UButton size="md" variant="ghost" @click="copySnippet">
-                <Copy class="h-3.5 w-3.5" />
+                <UIcon name="i-lucide-copy" class="h-3.5 w-3.5" />
               </UButton>
             </div>
             <code class="block rounded bg-default p-2 text-sm text-highlighted">{{
@@ -144,7 +143,7 @@ const { mutate: deleteSource } = useMutation({
         <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Danger zone</h3>
         <div class="rounded-lg border border-default bg-elevated p-4">
           <UButton variant="ghost" color="error" size="md" @click="deleteSource()">
-            <Trash2 class="mr-1.5 h-3.5 w-3.5" />
+            <UIcon name="i-lucide-trash-2" class="mr-1.5 h-3.5 w-3.5" />
             Delete source
           </UButton>
         </div>
