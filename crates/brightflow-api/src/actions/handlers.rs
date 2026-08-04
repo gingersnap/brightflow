@@ -11,18 +11,12 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 
-use brightflow_engine::enrichment::{
-    centroid_fingerprint, ClusteringArtifact, LabelCentroidsArtifact, ARTIFACT_VERSION,
-};
-
 use crate::actions::events;
 use crate::actions::types::{
     Action, ActionLogEntry, ActionManifestEntry, ActionRequest, ActionResponse, ActionStatus,
-    BulkApproveFailure, BulkApproveResponse, PendingCount, Scope, SuppressKind, UndoOp,
-    ACTION_KINDS,
+    BulkApproveFailure, BulkApproveResponse, PendingCount, Scope, UndoOp, ACTION_KINDS,
 };
 use crate::shared::{AppError, AppResult};
-use crate::state::cache_key;
 use crate::state::AppState;
 
 /// Who performed an action. The agent runner (3C) passes `Agent`.
@@ -498,51 +492,31 @@ pub async fn undo(
 // ─── Execution ────────────────────────────────────────────────────────────────
 
 /// Execute one action. Returns (result payload, inverse op when undoable).
-/// This is THE action execution path — REST, approval, and the agent runner
-/// all land here.
+///
+/// One line per arm, no wildcard: the bodies live in `exec::*`, adjacent to
+/// their undos, and a new `Action` variant fails to compile until it has one.
 pub async fn execute_action(
     state: &AppState,
     action: &Action,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
+    use crate::actions::exec::{clusters, insights, semantics, taxonomy};
     match action {
         Action::RenameCluster {
             scope: Scope { source_id, table },
             cluster_id,
             name,
-        } => {
-            edit_cluster(
-                state,
-                source_id,
-                table,
-                *cluster_id,
-                Some(Some(name.as_str())),
-                None,
-                None,
-                None,
-                false,
-            )
-            .await
-        },
+        } => clusters::execute_rename_cluster(state, source_id, table, *cluster_id, name).await,
         Action::MergeClusters {
             scope: Scope { source_id, table },
             from_cluster_id,
             into_cluster_id,
         } => {
-            if from_cluster_id == into_cluster_id {
-                return Err(AppError::BadRequest(
-                    "cannot merge a cluster into itself".to_string(),
-                ));
-            }
-            edit_cluster(
+            clusters::execute_merge_clusters(
                 state,
                 source_id,
                 table,
                 *from_cluster_id,
-                None,
-                None,
-                None,
-                Some(Some(*into_cluster_id)),
-                false,
+                *into_cluster_id,
             )
             .await
         },
@@ -551,70 +525,25 @@ pub async fn execute_action(
             cluster_id,
             is_noise,
         } => {
-            edit_cluster(
-                state,
-                source_id,
-                table,
-                *cluster_id,
-                None,
-                None,
-                Some(*is_noise),
-                None,
-                false,
-            )
-            .await
+            clusters::execute_mark_cluster_noise(state, source_id, table, *cluster_id, *is_noise)
+                .await
         },
         Action::AssignClusterLabel {
             scope: Scope { source_id, table },
             cluster_id,
             label,
         } => {
-            edit_cluster(
-                state,
-                source_id,
-                table,
-                *cluster_id,
-                None,
-                Some(Some(label.as_str())),
-                None,
-                None,
-                true,
-            )
-            .await
+            clusters::execute_assign_cluster_label(state, source_id, table, *cluster_id, label)
+                .await
         },
         Action::ExcludeTerm {
             scope: Scope { source_id, table },
             term,
-        } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let term = term.trim().to_lowercase();
-            if term.is_empty() {
-                return Err(AppError::BadRequest("term must not be empty".to_string()));
-            }
-            store
-                .db()
-                .add_excluded_term(&table_id, &term, chrono::Utc::now().timestamp())
-                .await?;
-            Ok((
-                json!({ "excluded": term }),
-                Some(UndoOp::RemoveExcludedTerm {
-                    table_id,
-                    term: term.clone(),
-                }),
-            ))
-        },
+        } => clusters::execute_exclude_term(state, source_id, table, term).await,
         Action::SplitCluster {
             scope: Scope { source_id, table },
             ..
-        } => {
-            // v1 semantics: refit with one more cluster slot. Not undoable.
-            let overview =
-                crate::topics::handlers::run_recluster(state, source_id, table, None).await?;
-            Ok((
-                json!({ "refit": true, "k": overview.k, "note": "split refits with k+1" }),
-                None,
-            ))
-        },
+        } => clusters::execute_split_cluster(state, source_id, table).await,
         Action::Recluster {
             scope: Scope { source_id, table },
             k,
@@ -623,366 +552,92 @@ pub async fn execute_action(
             min_cluster_size,
             algorithm,
         } => {
-            let req = crate::topics::types::ReclusterRequest {
-                k: k.map(|v| v as usize),
-                language: language.clone(),
-                embedder: embedder.clone(),
-                min_cluster_size: min_cluster_size.map(|v| v as usize),
-                algorithm: algorithm.clone(),
-            };
-            let overview =
-                crate::topics::handlers::run_recluster(state, source_id, table, Some(req)).await?;
-            Ok((json!({ "refit": true, "k": overview.k }), None))
+            clusters::execute_recluster(
+                state,
+                source_id,
+                table,
+                &clusters::ReclusterArgs {
+                    k: *k,
+                    language: language.as_deref(),
+                    embedder: embedder.as_deref(),
+                    min_cluster_size: *min_cluster_size,
+                    algorithm: algorithm.as_deref(),
+                },
+            )
+            .await
         },
         Action::DismissInsight {
             scope: Scope { source_id, table },
             fingerprint,
             reason,
-        } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let previous = existing_state(&store, &table_id, fingerprint).await?;
-            let reason_str = match reason {
-                crate::actions::types::DismissReason::Boring => "boring",
-                crate::actions::types::DismissReason::Known => "known",
-                crate::actions::types::DismissReason::Wrong => "wrong",
-            };
-            store
-                .db()
-                .upsert_insight_state(
-                    &table_id,
-                    fingerprint,
-                    "dismissed",
-                    Some(reason_str),
-                    None,
-                    chrono::Utc::now().timestamp(),
-                )
-                .await?;
-            Ok((
-                json!({ "dismissed": fingerprint, "reason": reason_str }),
-                Some(undo_for_state(&table_id, fingerprint, previous)),
-            ))
-        },
+        } => insights::execute_dismiss_insight(state, source_id, table, fingerprint, reason).await,
         Action::PinInsight {
             scope: Scope { source_id, table },
             fingerprint,
             pinned,
-        } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let previous = existing_state(&store, &table_id, fingerprint).await?;
-            if *pinned {
-                store
-                    .db()
-                    .upsert_insight_state(
-                        &table_id,
-                        fingerprint,
-                        "pinned",
-                        None,
-                        None,
-                        chrono::Utc::now().timestamp(),
-                    )
-                    .await?;
-            } else {
-                store
-                    .db()
-                    .delete_insight_state(&table_id, fingerprint)
-                    .await?;
-            }
-            Ok((
-                json!({ "pinned": pinned }),
-                Some(undo_for_state(&table_id, fingerprint, previous)),
-            ))
-        },
+        } => insights::execute_pin_insight(state, source_id, table, fingerprint, *pinned).await,
         Action::AnnotateInsight {
             scope: Scope { source_id, table },
             fingerprint,
             note,
-        } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let previous = existing_state(&store, &table_id, fingerprint).await?;
-            // Annotation rides on the existing state (or pins implicitly).
-            let (kept_state, kept_reason) = previous
-                .as_ref()
-                .map_or(("pinned", None), |p| (p.0.as_str(), p.1.as_deref()));
-            store
-                .db()
-                .upsert_insight_state(
-                    &table_id,
-                    fingerprint,
-                    kept_state,
-                    kept_reason,
-                    Some(note),
-                    chrono::Utc::now().timestamp(),
-                )
-                .await?;
-            Ok((
-                json!({ "annotated": fingerprint }),
-                Some(undo_for_state(&table_id, fingerprint, previous)),
-            ))
-        },
+        } => insights::execute_annotate_insight(state, source_id, table, fingerprint, note).await,
         Action::SuppressTarget {
             scope: Scope { source_id, table },
             target_kind,
             target,
-        } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let kind = match target_kind {
-                SuppressKind::Segment => "segment",
-                SuppressKind::Column => "column",
-            };
-            store
-                .db()
-                .add_insight_suppression(&table_id, kind, target, chrono::Utc::now().timestamp())
-                .await?;
-            Ok((
-                json!({ "suppressed": target, "kind": kind }),
-                Some(UndoOp::DeleteSuppression {
-                    table_id,
-                    kind: kind.to_string(),
-                    target: target.clone(),
-                }),
-            ))
-        },
+        } => insights::execute_suppress_target(state, source_id, table, target_kind, target).await,
         Action::SetKpi {
             scope: Scope { source_id, table },
             column,
             is_kpi,
-        } => {
-            let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-                s.is_kpi = *is_kpi;
-            })
-            .await?;
-            Ok((
-                json!({ "column": column, "isKpi": is_kpi }),
-                Some(UndoOp::RestoreKpi {
-                    source_id: source_id.clone(),
-                    table: table.clone(),
-                    column: column.clone(),
-                    role: previous.role,
-                    is_kpi: previous.is_kpi,
-                }),
-            ))
-        },
+        } => semantics::execute_set_kpi(state, source_id, table, column, *is_kpi).await,
         Action::SetColumnPolarity {
             scope: Scope { source_id, table },
             column,
             polarity,
         } => {
-            let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-                s.polarity = polarity.as_str().to_string();
-            })
-            .await?;
-            Ok((
-                json!({ "column": column, "polarity": polarity.as_str() }),
-                Some(UndoOp::RestorePolarity {
-                    source_id: source_id.clone(),
-                    table: table.clone(),
-                    column: column.clone(),
-                    polarity: previous.polarity,
-                }),
-            ))
+            semantics::execute_set_column_polarity(state, source_id, table, column, polarity).await
         },
         Action::DefineTaxonomyCategory {
             scope: Scope { source_id, table },
             name,
             description,
         } => {
-            let name = name.trim();
-            if name.is_empty() {
-                return Err(AppError::BadRequest(
-                    "category name cannot be empty".to_string(),
-                ));
-            }
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let previous = store
-                .db()
-                .get_taxonomy_category_by_name(&table_id, name)
-                .await?;
-            let row = store
-                .db()
-                .upsert_taxonomy_category(
-                    &table_id,
-                    name,
-                    description.as_deref(),
-                    chrono::Utc::now().timestamp(),
-                )
-                .await?;
-            Ok((
-                json!({
-                    "categoryId": row.id,
-                    "name": row.name,
-                    "description": row.description,
-                    "created": previous.is_none(),
-                }),
-                Some(UndoOp::RestoreTaxonomyCategory {
-                    category_id: row.id,
-                    delete_row: previous.is_none(),
-                    name: previous.as_ref().map(|p| p.name.clone()),
-                    description: previous.and_then(|p| p.description),
-                }),
-            ))
+            taxonomy::execute_define_taxonomy_category(
+                state,
+                source_id,
+                table,
+                name,
+                description.as_deref(),
+            )
+            .await
         },
         Action::RenameTaxonomyCategory {
             scope: Scope { source_id, table },
             category_id,
             name,
         } => {
-            let name = name.trim();
-            if name.is_empty() {
-                return Err(AppError::BadRequest(
-                    "category name cannot be empty".to_string(),
-                ));
-            }
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let previous = owned_category(&store, &table_id, *category_id).await?;
-            // UNIQUE(table_id, name) would otherwise surface as an opaque 500.
-            if let Some(clash) = store
-                .db()
-                .get_taxonomy_category_by_name(&table_id, name)
-                .await?
-            {
-                if clash.id != *category_id {
-                    return Err(AppError::BadRequest(format!(
-                        "'{name}' is already a category in this table"
-                    )));
-                }
-            }
-            let row = store
-                .db()
-                .rename_taxonomy_category(*category_id, name)
-                .await?
-                .ok_or_else(|| AppError::NotFound(format!("category {category_id} not found")))?;
-            Ok((
-                json!({ "categoryId": row.id, "name": row.name }),
-                Some(UndoOp::RestoreTaxonomyCategory {
-                    category_id: row.id,
-                    delete_row: false,
-                    name: Some(previous.name),
-                    description: previous.description,
-                }),
-            ))
+            taxonomy::execute_rename_taxonomy_category(state, source_id, table, *category_id, name)
+                .await
         },
         Action::DeleteTaxonomyCategory {
             scope: Scope { source_id, table },
             category_id,
         } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-            let previous = owned_category(&store, &table_id, *category_id).await?;
-            // Snapshot the labels BEFORE deleting — the FK cascade is about to
-            // destroy them, and they are curated human work.
-            let labels: Vec<(String, String, i64)> = store
-                .db()
-                .get_document_labels_for_category(*category_id)
-                .await?
-                .into_iter()
-                .map(|l| (l.row_id, l.source, l.created_at))
-                .collect();
-            let deleted = store.db().delete_taxonomy_category(*category_id).await?;
-            if !deleted {
-                return Err(AppError::NotFound(format!(
-                    "category {category_id} not found"
-                )));
-            }
-            Ok((
-                json!({ "categoryId": category_id, "labelsRemoved": labels.len() }),
-                Some(UndoOp::RecreateTaxonomyCategory {
-                    table_id,
-                    category_id: *category_id,
-                    name: previous.name,
-                    description: previous.description,
-                    created_at: previous.created_at,
-                    labels,
-                }),
-            ))
+            taxonomy::execute_delete_taxonomy_category(state, source_id, table, *category_id).await
         },
         Action::LabelDocument {
             scope: Scope { source_id, table },
             row_id,
             categories,
-        } => {
-            let (store, table_id) = table_ctx(state, source_id, table).await?;
-
-            // Resolve names -> ids against the APPROVED taxonomy. An unknown
-            // name is an error, not an implicit create: the taxonomy is the
-            // ratified vocabulary, and letting a labeling call invent
-            // categories would route around human approval entirely.
-            let mut category_ids = Vec::with_capacity(categories.len());
-            for name in categories {
-                let name = name.trim();
-                if name.is_empty() {
-                    continue;
-                }
-                let row = store
-                    .db()
-                    .get_taxonomy_category_by_name(&table_id, name)
-                    .await?
-                    .ok_or_else(|| {
-                        AppError::BadRequest(format!(
-                            "'{name}' is not a category in this table's taxonomy — \
-                             define it first"
-                        ))
-                    })?;
-                category_ids.push(row.id);
-            }
-            category_ids.sort_unstable();
-            category_ids.dedup();
-
-            let previous: Vec<(i64, String, i64)> = store
-                .db()
-                .get_label_rows_for_row(&table_id, row_id)
-                .await?
-                .into_iter()
-                .map(|l| (l.category_id, l.source, l.created_at))
-                .collect();
-
-            let written = store
-                .db()
-                .set_document_labels(
-                    &table_id,
-                    row_id,
-                    &category_ids,
-                    "human",
-                    chrono::Utc::now().timestamp(),
-                )
-                .await?;
-            Ok((
-                json!({ "rowId": row_id, "categories": categories, "count": written.len() }),
-                Some(UndoOp::RestoreDocumentLabels {
-                    table_id,
-                    row_id: row_id.clone(),
-                    labels: previous,
-                }),
-            ))
-        },
+        } => taxonomy::execute_label_document(state, source_id, table, row_id, categories).await,
     }
 }
 
-/// Fetch a category, verifying it belongs to `table_id`.
-///
-/// The ownership check is the authorization boundary: `category_id` arrives
-/// from the client while the table scope comes from the URL, so without this a
-/// caller could rename or delete another table's categories by guessing ids.
-async fn owned_category(
-    store: &StoreHandle,
-    table_id: &str,
-    category_id: i64,
-) -> AppResult<brightflow_store::TaxonomyCategoryRow> {
-    let row = store
-        .db()
-        .get_taxonomy_category(category_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("category {category_id} not found")))?;
-    if row.table_id != table_id {
-        return Err(AppError::NotFound(format!(
-            "category {category_id} not found"
-        )));
-    }
-    Ok(row)
-}
-
-/// Apply an inverse operation.
+/// Apply an inverse operation. Same shape as `execute_action`: one line per
+/// arm, bodies in `exec::*` next to the executes they invert.
 pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
-    let store = state.require_store()?;
-    let store = std::sync::Arc::clone(store);
+    use crate::actions::exec::{clusters, insights, semantics, taxonomy};
     match op {
         UndoOp::RestoreClusterEdit {
             table_id,
@@ -996,143 +651,79 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             delete_row,
             refresh_labels,
         } => {
-            if *delete_row {
-                let edits = store.db().get_cluster_edits(table_id).await?;
-                if let Some(row) = edits
-                    .iter()
-                    .find(|e| e.centroid_fingerprint == *centroid_fingerprint)
-                {
-                    store.db().delete_cluster_edit(row.id).await?;
-                }
-            } else {
-                store
-                    .db()
-                    .upsert_cluster_edit(
-                        table_id,
-                        centroid_fingerprint,
-                        centroid_json,
-                        *cluster_id,
-                        Some(custom_name.as_deref()),
-                        Some(label.as_deref()),
-                        Some(*is_noise),
-                        Some(*merged_into),
-                        chrono::Utc::now().timestamp(),
-                    )
-                    .await?;
-            }
-            if *refresh_labels {
-                // Best-effort: label artifact refresh needs source/table which
-                // we can recover from the table id via the tables catalog.
-                if let Err(e) = refresh_label_artifact_by_table_id(state, table_id).await {
-                    tracing::warn!("label artifact refresh after undo failed: {e}");
-                }
-            }
-            Ok(())
+            clusters::undo_restore_cluster_edit(
+                state,
+                &clusters::RestoreClusterEditArgs {
+                    table_id,
+                    centroid_fingerprint,
+                    centroid_json,
+                    cluster_id: *cluster_id,
+                    custom_name,
+                    label,
+                    is_noise: *is_noise,
+                    merged_into: *merged_into,
+                    delete_row: *delete_row,
+                    refresh_labels: *refresh_labels,
+                },
+            )
+            .await
         },
         UndoOp::RemoveExcludedTerm { table_id, term } => {
-            store.db().remove_excluded_term(table_id, term).await?;
-            Ok(())
+            clusters::undo_remove_excluded_term(state, table_id, term).await
         },
         UndoOp::DeleteInsightState {
             table_id,
             fingerprint,
-        } => {
-            store
-                .db()
-                .delete_insight_state(table_id, fingerprint)
-                .await?;
-            Ok(())
-        },
+        } => insights::undo_delete_insight_state(state, table_id, fingerprint).await,
         UndoOp::RestoreInsightState {
             table_id,
             fingerprint,
-            state: st,
+            state: insight_state,
             reason,
             annotation,
         } => {
-            store
-                .db()
-                .upsert_insight_state(
-                    table_id,
-                    fingerprint,
-                    st,
-                    reason.as_deref(),
-                    annotation.as_deref(),
-                    chrono::Utc::now().timestamp(),
-                )
-                .await?;
-            Ok(())
+            insights::undo_restore_insight_state(
+                state,
+                table_id,
+                fingerprint,
+                insight_state,
+                reason.as_deref(),
+                annotation.as_deref(),
+            )
+            .await
         },
         UndoOp::DeleteSuppression {
             table_id,
             kind,
             target,
-        } => {
-            let rows = store.db().get_insight_suppressions(table_id).await?;
-            if let Some(row) = rows.iter().find(|r| r.kind == *kind && r.target == *target) {
-                store.db().delete_insight_suppression(row.id).await?;
-            }
-            Ok(())
-        },
+        } => insights::undo_delete_suppression(state, table_id, kind, target).await,
         UndoOp::RestoreKpi {
             source_id,
             table,
             column,
             role,
             is_kpi,
-        } => {
-            upsert_semantic_preserving(state, source_id, table, column, |s| {
-                s.role.clone_from(role);
-                s.is_kpi = *is_kpi;
-            })
-            .await?;
-            Ok(())
-        },
+        } => semantics::undo_restore_kpi(state, source_id, table, column, role, *is_kpi).await,
         UndoOp::RestorePolarity {
             source_id,
             table,
             column,
             polarity,
-        } => {
-            upsert_semantic_preserving(state, source_id, table, column, |s| {
-                s.polarity.clone_from(polarity);
-            })
-            .await?;
-            Ok(())
-        },
+        } => semantics::undo_restore_polarity(state, source_id, table, column, polarity).await,
         UndoOp::RestoreTaxonomyCategory {
             category_id,
             delete_row,
             name,
             description,
         } => {
-            if *delete_row {
-                // Undoing a *define* deletes the category, and document_labels
-                // cascade off it. Between the define and the undo, rows may have
-                // been labelled — the labels are curated human work, and the
-                // undo op was captured before they existed, so it has no
-                // snapshot to restore them from. Refuse rather than silently
-                // destroy them; `delete_taxonomy_category` is the deliberate
-                // path, and it DOES snapshot.
-                let labels = store
-                    .db()
-                    .get_document_labels_for_category(*category_id)
-                    .await?;
-                if !labels.is_empty() {
-                    return Err(AppError::BadRequest(format!(
-                        "cannot undo: {} row label(s) now use this category. Delete the \
-                         category explicitly instead — that path preserves the labels for undo.",
-                        labels.len()
-                    )));
-                }
-                store.db().delete_taxonomy_category(*category_id).await?;
-            } else if let Some(name) = name {
-                store
-                    .db()
-                    .update_taxonomy_category(*category_id, name, description.as_deref())
-                    .await?;
-            }
-            Ok(())
+            taxonomy::undo_restore_taxonomy_category(
+                state,
+                *category_id,
+                *delete_row,
+                name.as_deref(),
+                description.as_deref(),
+            )
+            .await
         },
         UndoOp::RecreateTaxonomyCategory {
             table_id,
@@ -1142,392 +733,30 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             created_at,
             labels,
         } => {
-            store
-                .db()
-                .recreate_taxonomy_category(
-                    *category_id,
+            taxonomy::undo_recreate_taxonomy_category(
+                state,
+                &taxonomy::RecreateTaxonomyCategoryArgs {
                     table_id,
+                    category_id: *category_id,
                     name,
-                    description.as_deref(),
-                    *created_at,
+                    description: description.as_deref(),
+                    created_at: *created_at,
                     labels,
-                )
-                .await?;
-            Ok(())
+                },
+            )
+            .await
         },
         UndoOp::RestoreDocumentLabels {
             table_id,
             row_id,
             labels,
-        } => {
-            store
-                .db()
-                .restore_document_labels(table_id, row_id, labels)
-                .await?;
-            Ok(())
-        },
+        } => taxonomy::undo_restore_document_labels(state, table_id, row_id, labels).await,
     }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-type StoreHandle = std::sync::Arc<brightflow_store::ParquetStore>;
-
-async fn table_ctx(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-) -> AppResult<(StoreHandle, String)> {
-    let store = state.require_store()?;
-    let store = std::sync::Arc::clone(store);
-    let row = store
-        .db()
-        .get_table(source_id, table)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Table '{table}' not found")))?;
-    Ok((store, row.id))
-}
-
-/// One column's full semantic tuple — what `upsert_semantic_preserving`
-/// snapshots and mutates.
-#[derive(Debug, Clone)]
-struct SemanticSnapshot {
-    role: String,
-    is_kpi: bool,
-    polarity: String,
-    label: Option<String>,
-    description: Option<String>,
-}
-
-impl Default for SemanticSnapshot {
-    fn default() -> Self {
-        Self {
-            role: "measure".to_string(),
-            is_kpi: false,
-            polarity: "neutral".to_string(),
-            label: None,
-            description: None,
-        }
-    }
-}
-
-/// Mutate one column's semantics while PRESERVING every field the mutation
-/// does not touch, then refresh the in-memory schema overrides + cache so the
-/// next analysis run sees the change without a restart.
-///
-/// This is the fix for the old `SetKpi` path, which wrote `label = NULL,
-/// description = NULL` and never touched `state.schema_overrides` — the KPI
-/// flag looked applied but the running engine kept the stale schema. Both
-/// `set_kpi` and `set_column_polarity` (and their undos) come through here.
-///
-/// Returns the PREVIOUS snapshot for undo capture.
-async fn upsert_semantic_preserving(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-    column: &str,
-    mutate: impl FnOnce(&mut SemanticSnapshot),
-) -> AppResult<SemanticSnapshot> {
-    let (store, table_id) = table_ctx(state, source_id, table).await?;
-    let semantics = store.db().get_column_semantics(&table_id).await?;
-    let previous = semantics
-        .iter()
-        .find(|r| r.column_name == column)
-        .map_or_else(SemanticSnapshot::default, |r| SemanticSnapshot {
-            role: r.role.clone(),
-            is_kpi: r.is_kpi,
-            polarity: r.polarity.clone(),
-            label: r.label.clone(),
-            description: r.description.clone(),
-        });
-    let mut next = previous.clone();
-    mutate(&mut next);
-    store
-        .db()
-        .upsert_column_semantic(
-            &table_id,
-            column,
-            &next.role,
-            next.is_kpi,
-            &next.polarity,
-            next.label.as_deref(),
-            next.description.as_deref(),
-        )
-        .await?;
-
-    // Keep the running engine honest: update the in-memory override for this
-    // column and drop the cached schema.
-    let key = cache_key(source_id, table);
-    state.invalidate_schema_cache(&key);
-    if let Some(role) = brightflow_engine::data::config::ColumnRole::parse(&next.role) {
-        let mut overrides = state
-            .schema_overrides
-            .get(&key)
-            .map(|v| v.value().clone())
-            .unwrap_or_default();
-        overrides.retain(|o| o.column_name != column);
-        overrides.push(brightflow_engine::data::merge::ColumnOverride {
-            column_name: column.to_string(),
-            role,
-            is_kpi: next.is_kpi,
-            polarity: brightflow_engine::data::config::Polarity::parse(&next.polarity)
-                .unwrap_or_default(),
-            label: next.label.clone(),
-            description: next.description.clone(),
-        });
-        state.schema_overrides.insert(key, overrides);
-    }
-    Ok(previous)
-}
-
-/// Previous insight_state (state, reason, annotation) for undo capture.
-async fn existing_state(
-    store: &StoreHandle,
-    table_id: &str,
-    fingerprint: &str,
-) -> AppResult<Option<(String, Option<String>, Option<String>)>> {
-    let rows = store.db().get_insight_states(table_id).await?;
-    Ok(rows
-        .into_iter()
-        .find(|r| r.fingerprint == fingerprint)
-        .map(|r| (r.state, r.reason, r.annotation)))
-}
-
-fn undo_for_state(
-    table_id: &str,
-    fingerprint: &str,
-    previous: Option<(String, Option<String>, Option<String>)>,
-) -> UndoOp {
-    match previous {
-        Some((state, reason, annotation)) => UndoOp::RestoreInsightState {
-            table_id: table_id.to_string(),
-            fingerprint: fingerprint.to_string(),
-            state,
-            reason,
-            annotation,
-        },
-        None => UndoOp::DeleteInsightState {
-            table_id: table_id.to_string(),
-            fingerprint: fingerprint.to_string(),
-        },
-    }
-}
-
-/// Core cluster-edit executor: attaches the edit to the cluster's centroid
-/// snapshot and captures the previous row for undo.
-///
-/// `Option<Option<T>>` fields are deliberate tri-states: outer None = leave
-/// unchanged, `Some(None)` = clear, `Some(Some(v))` = set.
-#[allow(clippy::too_many_arguments, clippy::option_option)]
-async fn edit_cluster(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-    cluster_id: i64,
-    custom_name: Option<Option<&str>>,
-    label: Option<Option<&str>>,
-    is_noise: Option<bool>,
-    merged_into: Option<Option<i64>>,
-    refresh_labels: bool,
-) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    let (store, table_id) = table_ctx(state, source_id, table).await?;
-    let clustering = load_clustering(state, source_id, table)?;
-    let idx = usize::try_from(cluster_id)
-        .ok()
-        .filter(|i| *i < clustering.centroids.len())
-        .ok_or_else(|| AppError::BadRequest(format!("cluster {cluster_id} out of range")))?;
-    let centroid = &clustering.centroids[idx];
-    let fp = centroid_fingerprint(centroid);
-    let centroid_json = serde_json::to_string(centroid)
-        .map_err(|e| AppError::Internal(format!("centroid serialize: {e}")))?;
-
-    // Capture the previous row for undo
-    let previous = store
-        .db()
-        .get_cluster_edits(&table_id)
-        .await?
-        .into_iter()
-        .find(|e| e.centroid_fingerprint == fp);
-    let undo = match &previous {
-        Some(p) => UndoOp::RestoreClusterEdit {
-            table_id: table_id.clone(),
-            centroid_fingerprint: fp.clone(),
-            centroid_json: p.centroid_json.clone(),
-            cluster_id: p.cluster_id,
-            custom_name: p.custom_name.clone(),
-            label: p.label.clone(),
-            is_noise: p.is_noise,
-            merged_into: p.merged_into,
-            delete_row: false,
-            refresh_labels,
-        },
-        None => UndoOp::RestoreClusterEdit {
-            table_id: table_id.clone(),
-            centroid_fingerprint: fp.clone(),
-            centroid_json: centroid_json.clone(),
-            cluster_id: Some(cluster_id),
-            custom_name: None,
-            label: None,
-            is_noise: false,
-            merged_into: None,
-            delete_row: true,
-            refresh_labels,
-        },
-    };
-
-    let row = store
-        .db()
-        .upsert_cluster_edit(
-            &table_id,
-            &fp,
-            &centroid_json,
-            Some(cluster_id),
-            custom_name,
-            label,
-            is_noise,
-            merged_into,
-            chrono::Utc::now().timestamp(),
-        )
-        .await?;
-
-    if refresh_labels {
-        refresh_label_artifact(state, source_id, table, &table_id).await?;
-    }
-
-    Ok((
-        json!({
-            "editId": row.id,
-            "clusterId": cluster_id,
-            "customName": row.custom_name,
-            "label": row.label,
-            "isNoise": row.is_noise,
-            "mergedInto": row.merged_into,
-        }),
-        Some(undo),
-    ))
-}
-
-fn load_clustering(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-) -> AppResult<ClusteringArtifact> {
-    let root = state
-        .paths
-        .as_ref()
-        .map(brightflow_core::WorkspacePaths::root)
-        .ok_or_else(|| AppError::Internal("workspace paths unavailable".to_string()))?;
-    let dir = brightflow_engine::embedding::topics_artifact_dir(&root, source_id, table);
-    ClusteringArtifact::load(&dir)
-        .ok()
-        .filter(|c| c.artifact_version == ARTIFACT_VERSION)
-        .ok_or_else(|| {
-            AppError::BadRequest("no current cluster fit — run recluster first".to_string())
-        })
-}
-
-/// Rebuild `labels.bin` from SQLite (source of truth): every cluster edit
-/// with a label contributes its centroid; duplicate labels average.
-async fn refresh_label_artifact(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-    table_id: &str,
-) -> AppResult<()> {
-    let store = state.require_store()?;
-    let clustering = load_clustering(state, source_id, table)?;
-    let edits = store.db().get_cluster_edits(table_id).await?;
-
-    let entries: Vec<(&str, &[f32])> = edits
-        .iter()
-        .filter_map(|edit| {
-            let (Some(label), Some(cid), false) = (&edit.label, edit.cluster_id, edit.orphaned)
-            else {
-                return None;
-            };
-            if label.is_empty() {
-                return None;
-            }
-            let centroid = usize::try_from(cid)
-                .ok()
-                .and_then(|i| clustering.centroids.get(i))?;
-            Some((label.as_str(), centroid.as_slice()))
-        })
-        .collect();
-    let centroids = average_label_centroids(entries);
-
-    let root = state
-        .paths
-        .as_ref()
-        .map(brightflow_core::WorkspacePaths::root)
-        .ok_or_else(|| AppError::Internal("workspace paths unavailable".to_string()))?;
-    let dir = brightflow_engine::embedding::topics_artifact_dir(&root, source_id, table);
-    let artifact = LabelCentroidsArtifact {
-        centroids,
-        embedding_model_id: clustering.embedding_model_id.clone(),
-    };
-    artifact
-        .save(&dir)
-        .map_err(|e| AppError::Internal(format!("label artifact save: {e}")))?;
-    Ok(())
-}
-
-/// One L2-normalized centroid per label. Duplicate labels (several clusters
-/// assigned the same label) average their centroids before normalizing, so a
-/// label's centroid stays comparable to row embeddings via cosine.
-fn average_label_centroids<'a>(
-    entries: impl IntoIterator<Item = (&'a str, &'a [f32])>,
-) -> std::collections::HashMap<String, Vec<f32>> {
-    let mut accum: std::collections::HashMap<String, (Vec<f32>, u32)> =
-        std::collections::HashMap::new();
-    for (label, centroid) in entries {
-        let entry = accum
-            .entry(label.to_string())
-            .or_insert_with(|| (vec![0.0; centroid.len()], 0));
-        for (a, v) in entry.0.iter_mut().zip(centroid.iter()) {
-            *a += v;
-        }
-        entry.1 += 1;
-    }
-    accum
-        .into_iter()
-        .map(|(label, (mut sum, count))| {
-            let mut norm = 0.0f32;
-            #[allow(clippy::cast_precision_loss)]
-            let count_f = count as f32;
-            for v in &mut sum {
-                *v /= count_f;
-                norm = v.mul_add(*v, norm);
-            }
-            let norm = norm.sqrt().max(1e-12);
-            for v in &mut sum {
-                *v /= norm;
-            }
-            (label, sum)
-        })
-        .collect()
-}
-
-/// Undo path helper: recover (source_id, table) from a table id.
-async fn refresh_label_artifact_by_table_id(state: &AppState, table_id: &str) -> AppResult<()> {
-    let store = state.require_store()?;
-    let tables = store
-        .list_tables()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    for t in tables {
-        if let Ok(Some(row)) = store.db().get_table(&t.source_id, &t.name).await {
-            if row.id == table_id {
-                return refresh_label_artifact(state, &t.source_id, &t.name, table_id).await;
-            }
-        }
-    }
-    Err(AppError::NotFound(format!("table id {table_id} not found")))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{average_label_centroids, initial_status, Actor};
+    use super::{initial_status, Actor};
 
     /// The reversibility tier, pinned over all four combinations.
     #[test]
@@ -1575,33 +804,5 @@ mod tests {
             ),
             "proposed"
         );
-    }
-
-    #[test]
-    fn duplicate_labels_average_then_normalize() {
-        let a = [1.0_f32, 0.0];
-        let b = [0.0_f32, 1.0];
-        let out = average_label_centroids([("payments", &a[..]), ("payments", &b[..])]);
-        let c = &out["payments"];
-        // avg = [0.5, 0.5] → normalized = [1/√2, 1/√2]
-        let expected = 1.0 / 2.0_f32.sqrt();
-        assert!((c[0] - expected).abs() < 1e-6);
-        assert!((c[1] - expected).abs() < 1e-6);
-    }
-
-    #[test]
-    fn single_label_is_normalized() {
-        let long = [3.0_f32, 4.0];
-        let out = average_label_centroids([("bugs", &long[..])]);
-        let c = &out["bugs"];
-        assert!((c[0] - 0.6).abs() < 1e-6);
-        assert!((c[1] - 0.8).abs() < 1e-6);
-        let norm: f32 = c.iter().map(|v| v * v).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn empty_input_yields_empty_map() {
-        assert!(average_label_centroids(std::iter::empty::<(&str, &[f32])>()).is_empty());
     }
 }
