@@ -299,3 +299,164 @@ pub fn prediction_interval(
 
     Some((y_pred, lower, upper, p_value))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tolerance-based asserts throughout: these pin numeric behavior without
+    // exact float equality.
+
+    #[test]
+    fn p_value_from_z_known_values() {
+        assert!((p_value_from_z(0.0) - 1.0).abs() < 1e-12);
+        assert!((p_value_from_z(1.96) - 0.05).abs() < 1e-3);
+    }
+
+    #[test]
+    fn p_value_from_z_is_symmetric() {
+        assert!((p_value_from_z(2.5) - p_value_from_z(-2.5)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn p_value_for_correlation_degenerate_policies() {
+        // Too few points → not significant, by policy.
+        assert!((p_value_for_correlation(0.9, 2) - 1.0).abs() < 1e-12);
+        // Perfect correlation → 0 without panicking statrs.
+        assert!(p_value_for_correlation(1.0, 10).abs() < 1e-12);
+        assert!(p_value_for_correlation(-1.0, 10).abs() < 1e-12);
+    }
+
+    #[test]
+    fn p_value_for_correlation_known_value() {
+        // r = 0.5, n = 30 → t ≈ 3.06 on 28 df → p ≈ 0.0049
+        let p = p_value_for_correlation(0.5, 30);
+        assert!((p - 0.0049).abs() < 5e-4, "p = {p}");
+    }
+
+    #[test]
+    fn welch_t_test_policies() {
+        // Under 2 samples per group → not significant, by policy.
+        assert!((p_value_welch_t_test(0.0, 1.0, 1, 5.0, 1.0, 30) - 1.0).abs() < 1e-12);
+        // Zero variance on both sides → se = 0 → not significant, by policy.
+        assert!((p_value_welch_t_test(1.0, 0.0, 10, 2.0, 0.0, 10) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn welch_t_test_separates_distant_groups() {
+        let p = p_value_welch_t_test(0.0, 1.0, 30, 5.0, 1.0, 30);
+        assert!(p < 1e-3, "clearly separated groups, p = {p}");
+        let same = p_value_welch_t_test(3.0, 1.0, 30, 3.0, 1.0, 30);
+        assert!((same - 1.0).abs() < 1e-9, "identical groups, p = {same}");
+    }
+
+    #[test]
+    fn z_score_known_and_zero_sd() {
+        assert!((z_score(12.0, 10.0, 2.0) - 1.0).abs() < 1e-12);
+        assert!(z_score(12.0, 10.0, 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mean_and_std_dev_known_and_degenerate() {
+        assert!(mean(&[]).abs() < 1e-12);
+        assert!((mean(&[1.0, 2.0, 3.0]) - 2.0).abs() < 1e-12);
+        assert!(std_dev(&[]).abs() < 1e-12);
+        assert!(std_dev(&[5.0]).abs() < 1e-12);
+        // Sample std dev of [1,2,3,4]: sqrt(5/3)
+        assert!((std_dev(&[1.0, 2.0, 3.0, 4.0]) - (5.0f64 / 3.0).sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pearson_correlation_perfect_and_degenerate() {
+        let x = [1.0, 2.0, 3.0, 4.0];
+        let up: Vec<f64> = x.iter().map(|v| 2.0 * v).collect();
+        let down: Vec<f64> = x.iter().map(|v| -v).collect();
+        assert!((pearson_correlation(&x, &up).unwrap() - 1.0).abs() < 1e-9);
+        assert!((pearson_correlation(&x, &down).unwrap() + 1.0).abs() < 1e-9);
+        // Constant series → zero variance → None, not a fake correlation.
+        assert!(pearson_correlation(&x, &[7.0, 7.0, 7.0, 7.0]).is_none());
+        assert!(
+            pearson_correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(),
+            "too short"
+        );
+        assert!(
+            pearson_correlation(&x, &[1.0, 2.0, 3.0]).is_none(),
+            "mismatched"
+        );
+    }
+
+    #[test]
+    fn linear_regression_exact_line() {
+        let x = [1.0, 2.0, 3.0, 4.0];
+        let y: Vec<f64> = x.iter().map(|v| 2.0f64.mul_add(*v, 1.0)).collect();
+        let (slope, intercept, r2) = linear_regression(&x, &y).unwrap();
+        assert!((slope - 2.0).abs() < 1e-9);
+        assert!((intercept - 1.0).abs() < 1e-9);
+        assert!((r2 - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn linear_regression_degenerate_inputs() {
+        // Constant x → vertical line → None.
+        assert!(linear_regression(&[2.0, 2.0, 2.0], &[1.0, 2.0, 3.0]).is_none());
+        // Constant y → flat line with r² pinned to 0 by policy.
+        let (slope, _, r2) = linear_regression(&[1.0, 2.0, 3.0], &[5.0, 5.0, 5.0]).unwrap();
+        assert!(slope.abs() < 1e-12);
+        assert!(r2.abs() < 1e-12);
+    }
+
+    #[test]
+    fn autocorrelation_short_series_and_periodic_signal() {
+        assert!(autocorrelation(&[1.0, 2.0, 3.0], 1).is_none(), "too short");
+        // Period-4 signal correlates ~perfectly with itself at lag 4.
+        let signal: Vec<f64> = (0..24).map(|i| [0.0, 1.0, 0.0, -1.0][i % 4]).collect();
+        let r = autocorrelation(&signal, 4).unwrap();
+        assert!(r > 0.99, "lag-4 autocorrelation of period-4 signal: {r}");
+    }
+
+    #[test]
+    fn p_value_for_autocorrelation_branch_pins() {
+        // These pin current behavior; they are not endorsements of it.
+        // Effective n ≤ 3 → not significant, by policy.
+        assert!((p_value_for_autocorrelation(0.9, 5, 2) - 1.0).abs() < 1e-12);
+        // |r| ≥ 1 short-circuits to 0 (the >0.99 sub-branch is always taken).
+        assert!(p_value_for_autocorrelation(1.0, 30, 1).abs() < 1e-12);
+        assert!(p_value_for_autocorrelation(-1.0, 30, 1).abs() < 1e-12);
+        // Fisher-z path: r = 0.5, n = 30, lag 0 → p ≈ 0.0043.
+        let p = p_value_for_autocorrelation(0.5, 30, 0);
+        assert!((p - 0.0043).abs() < 5e-4, "p = {p}");
+    }
+
+    #[test]
+    fn prediction_interval_needs_four_points() {
+        assert!(prediction_interval(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0], 4.0, 4.0, 0.95).is_none());
+    }
+
+    #[test]
+    fn prediction_interval_perfect_fit_cases() {
+        let x = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let y: Vec<f64> = x.iter().map(|v| 2.0 * v).collect();
+        // Actual exactly on the line → degenerate interval, p = 1.
+        let (pred, lo, hi, p) = prediction_interval(&x, &y, 6.0, 12.0, 0.95).unwrap();
+        assert!((pred - 12.0).abs() < 1e-9);
+        assert!((lo - pred).abs() < 1e-9 && (hi - pred).abs() < 1e-9);
+        assert!((p - 1.0).abs() < 1e-12);
+        // Any deviation from a perfect fit → p = 0.
+        let (_, _, _, p_off) = prediction_interval(&x, &y, 6.0, 13.0, 0.95).unwrap();
+        assert!(p_off.abs() < 1e-12);
+    }
+
+    #[test]
+    fn prediction_interval_noisy_line_contains_on_trend_actual() {
+        let x: Vec<f64> = (1..=8).map(f64::from).collect();
+        let y = [2.1, 3.9, 6.1, 7.9, 10.1, 11.9, 14.1, 15.9];
+        let (pred, lo, hi, p) = prediction_interval(&x, &y, 9.0, 18.0, 0.95).unwrap();
+        assert!(
+            (pred - 18.0).abs() < 0.5,
+            "prediction near the trend: {pred}"
+        );
+        assert!(lo < pred && pred < hi, "interval brackets the prediction");
+        assert!(lo < 18.0 && 18.0 < hi, "on-trend actual falls inside");
+        assert!(p > 0.5, "on-trend actual is unsurprising, p = {p}");
+    }
+}
