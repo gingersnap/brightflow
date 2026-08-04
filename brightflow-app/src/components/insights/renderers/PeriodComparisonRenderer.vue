@@ -8,11 +8,13 @@
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/types/generated';
-import { formatCompact, formatNumber, humanizeColumn, humanizePeriod } from '@/utils/format';
+import { humanizeColumn, humanizePeriod } from '@/utils/format';
 
 import { measureOf } from '../nodeMeta';
+import { periodSeriesOption } from './periodSeriesOption';
 import '@/services/echarts';
 
 const props = defineProps<{ node: AnalysisNode }>();
@@ -23,8 +25,9 @@ const chartOption = computed(() => {
   if (!data || data.type !== 'PairedBars') {
     return null;
   }
-  return {
-    grid: { bottom: 30, containLabel: true, left: 8, right: 8, top: 24 },
+  return periodSeriesOption({
+    gridBottom: 30,
+    labels: data.labels.map((l) => humanizePeriod(l)),
     series: [
       {
         data: [data.previous[0] ?? 0, data.current[0] ?? 0],
@@ -32,28 +35,14 @@ const chartOption = computed(() => {
         type: 'bar',
       },
     ],
-    tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatNumber(v) },
-    xAxis: {
-      axisLabel: { fontSize: 10 },
-      data: data.labels.map((l) => humanizePeriod(l)),
-      type: 'category',
-    },
-    yAxis: {
-      axisLabel: { fontSize: 10, formatter: (v: number) => formatCompact(v) },
-      name: data.y_label ?? humanizeColumn(measureOf(props.node)),
-      nameGap: 12,
-      nameTextStyle: { fontSize: 10 },
-      type: 'value',
-    },
-  };
+    yName: data.y_label ?? humanizeColumn(measureOf(props.node)),
+  });
 });
 </script>
 
 <template>
   <div class="h-40 w-full">
     <VChart v-if="chartOption" :option="chartOption" autoresize class="h-full w-full" />
-    <div v-else class="flex h-full items-center justify-center text-sm text-muted">
-      No chart data available
-    </div>
+    <EmptyState v-else class="h-full" message="No chart data available" />
   </div>
 </template>

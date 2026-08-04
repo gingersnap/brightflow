@@ -9,11 +9,13 @@
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/types/generated';
-import { formatCompact, formatNumber, humanizeColumn, humanizePeriodShort } from '@/utils/format';
+import { formatCompact, humanizeColumn, humanizePeriodShort } from '@/utils/format';
 
 import { measureOf } from '../nodeMeta';
+import { periodSeriesOption } from './periodSeriesOption';
 import '@/services/echarts';
 
 const props = defineProps<{ node: AnalysisNode }>();
@@ -32,39 +34,22 @@ const chartOption = computed(() => {
     smooth: false,
     type: 'line',
   }));
-  return {
-    grid: { bottom: 36, containLabel: true, left: 8, right: 8, top: 24 },
-    legend: {
-      bottom: 0,
-      itemGap: 8,
-      itemHeight: 6,
-      itemWidth: 12,
-      textStyle: { fontSize: 10 },
-    },
+  return periodSeriesOption({
+    boundaryGap: false,
+    gridBottom: 36,
+    labels: data.labels,
+    legend: true,
     series,
-    tooltip: { trigger: 'axis', valueFormatter: (v: number) => formatNumber(v) },
-    xAxis: {
-      axisLabel: { fontSize: 9, formatter: (l: string) => humanizePeriodShort(l) },
-      boundaryGap: false,
-      data: data.labels,
-      type: 'category',
-    },
-    yAxis: {
-      axisLabel: { fontSize: 9, formatter: (v: number) => formatCompact(v) },
-      name: data.y_label ?? humanizeColumn(measureOf(props.node)),
-      nameGap: 12,
-      nameTextStyle: { fontSize: 10 },
-      type: 'value',
-    },
-  };
+    xAxis: { axisLabel: { fontSize: 9, formatter: (l: string) => humanizePeriodShort(l) } },
+    yAxis: { axisLabel: { fontSize: 9, formatter: (v: number) => formatCompact(v) } },
+    yName: data.y_label ?? humanizeColumn(measureOf(props.node)),
+  });
 });
 </script>
 
 <template>
   <div class="h-44 w-full">
     <VChart v-if="chartOption" :option="chartOption" autoresize class="h-full w-full" />
-    <div v-else class="flex h-full items-center justify-center text-sm text-muted">
-      No cluster data available
-    </div>
+    <EmptyState v-else class="h-full" message="No cluster data available" />
   </div>
 </template>

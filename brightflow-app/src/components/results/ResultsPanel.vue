@@ -11,6 +11,7 @@ import { BarChart3, Download, Hash, Split, Table, TableProperties } from '@lucid
 import { type Component, computed } from 'vue';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
+import EmptyState from '@/components/common/EmptyState.vue';
 import { usePivotStore } from '@/stores/pivot';
 import { type ResultType, useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
@@ -196,35 +197,25 @@ function exportCsv(type: ResultType): void {
     <!-- Table view -->
     <template v-else-if="uiStore.viewMode === 'table'">
       <DataTable v-if="resultsStore.hasTableResults" class="h-full" />
-      <div v-else class="flex h-full items-center justify-center">
-        <div class="p-8 text-center">
-          <Table class="mx-auto mb-4 h-12 w-12 text-muted/50" />
-          <div class="text-muted">No data loaded</div>
-          <div class="text-sm text-muted/70">Upload a file to see data</div>
-        </div>
-      </div>
+      <EmptyState
+        v-else
+        class="h-full"
+        detail="Upload a file to see data"
+        icon="i-lucide-table"
+        message="No data loaded"
+      />
     </template>
 
     <!-- Number view (BigNumber) -->
     <template v-else-if="uiStore.viewMode === 'number'">
       <BigNumber v-if="resultsStore.hasResults" class="h-full" />
-      <div v-else class="flex h-full items-center justify-center">
-        <div class="p-8 text-center">
-          <Hash class="mx-auto mb-4 h-12 w-12 text-muted/50" />
-          <div class="text-muted">No data for display</div>
-        </div>
-      </div>
+      <EmptyState v-else class="h-full" icon="i-lucide-hash" message="No data for display" />
     </template>
 
     <!-- Chart view -->
     <template v-else-if="uiStore.viewMode === 'chart'">
       <ChartView v-if="resultsStore.hasTableResults" class="h-full" />
-      <div v-else class="flex h-full items-center justify-center">
-        <div class="p-8 text-center">
-          <BarChart3 class="mx-auto mb-4 h-12 w-12 text-muted/50" />
-          <div class="text-muted">No data for chart</div>
-        </div>
-      </div>
+      <EmptyState v-else class="h-full" icon="i-lucide-bar-chart-3" message="No data for chart" />
     </template>
 
     <!-- Split view -->
@@ -233,12 +224,7 @@ function exportCsv(type: ResultType): void {
         <DataTable class="w-1/2 border-r border-default" />
         <ChartView class="w-1/2" />
       </div>
-      <div v-else class="flex h-full items-center justify-center">
-        <div class="p-8 text-center">
-          <Split class="mx-auto mb-4 h-12 w-12 text-muted/50" />
-          <div class="text-muted">No data loaded</div>
-        </div>
-      </div>
+      <EmptyState v-else class="h-full" icon="i-lucide-split" message="No data loaded" />
     </template>
   </CollapsibleSection>
 </template>

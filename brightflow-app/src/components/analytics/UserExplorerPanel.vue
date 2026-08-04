@@ -8,6 +8,7 @@
 import { useQuery } from '@pinia/colada';
 import { ref, computed } from 'vue';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { productAnalyticsApi } from '@/services/api';
 import type { UserProfile, UserTimelineEvent } from '@/types';
 
@@ -87,9 +88,7 @@ function parseTraits(traitsJson: string): Record<string, unknown> {
           <div class="font-medium text-highlighted">{{ user.userId }}</div>
           <div class="text-sm text-muted">Last seen {{ user.updatedAt.slice(0, 10) }}</div>
         </button>
-        <p v-if="userList.length === 0" class="py-4 text-center text-sm text-muted">
-          No users found
-        </p>
+        <EmptyState v-if="userList.length === 0" class="py-4" message="No users found" />
       </div>
     </div>
 

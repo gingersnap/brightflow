@@ -11,6 +11,7 @@ import { Trash2 } from '@lucide/vue';
 import { useScroll } from '@vueuse/core';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { useSystemStore } from '@/stores/system';
 
 const systemStore = useSystemStore();
@@ -193,12 +194,11 @@ watch(
 
       <!-- Log feed -->
       <div ref="logContainer" class="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
-        <div
+        <EmptyState
           v-if="systemStore.logs.length === 0"
-          class="flex h-full items-center justify-center text-muted"
-        >
-          Waiting for log entries...
-        </div>
+          class="h-full"
+          message="Waiting for log entries..."
+        />
 
         <div
           v-for="(entry, i) in systemStore.logs"

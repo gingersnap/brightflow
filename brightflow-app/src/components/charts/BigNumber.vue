@@ -9,9 +9,11 @@
 
 import { computed } from 'vue';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
+import { formatCompact, formatDecimal } from '@/utils/format';
 
 const resultsStore = useResultsStore();
 const pivotStore = usePivotStore();
@@ -119,7 +121,7 @@ const displayData = computed((): DisplayData => {
   };
 });
 
-// Format number for display
+// Format number for display (en-US pinned via the shared helpers)
 function formatNumber(value: unknown, dtype: string, compact = false): string {
   if (value === null || value === undefined) {
     return '—';
@@ -127,27 +129,10 @@ function formatNumber(value: unknown, dtype: string, compact = false): string {
   if (typeof value !== 'number') {
     return String(value);
   }
-
-  const isFloat = isFloatDtype(dtype);
-
-  if (compact && Math.abs(value) >= 1_000_000) {
-    return new Intl.NumberFormat(undefined, {
-      maximumFractionDigits: 1,
-      notation: 'compact',
-    }).format(value);
-  }
-
   if (compact && Math.abs(value) >= 1000) {
-    return new Intl.NumberFormat(undefined, {
-      maximumFractionDigits: 1,
-      notation: 'compact',
-    }).format(value);
+    return formatCompact(value);
   }
-
-  return value.toLocaleString(undefined, {
-    maximumFractionDigits: isFloat ? 2 : 0,
-    minimumFractionDigits: 0,
-  });
+  return formatDecimal(value, isFloatDtype(dtype) ? 2 : 0);
 }
 
 // Format large primary number
@@ -177,10 +162,11 @@ const aggregationLabel = computed((): string | null => {
 <template>
   <div class="flex h-full items-center justify-center p-8">
     <!-- No data state -->
-    <div v-if="!displayData" class="text-center text-muted">
-      <div class="mb-2 text-lg">No numeric data</div>
-      <div class="text-sm text-muted/70">Add a value field to see metrics</div>
-    </div>
+    <EmptyState
+      v-if="!displayData"
+      detail="Add a value field to see metrics"
+      message="No numeric data"
+    />
 
     <!-- Single value display -->
     <div v-else-if="displayData.type === 'single'" class="text-center">

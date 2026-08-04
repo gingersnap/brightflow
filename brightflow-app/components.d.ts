@@ -33,6 +33,7 @@ declare module 'vue' {
     DataTable: typeof import('./src/components/results/DataTable.vue')['default']
     DistributionShiftRenderer: typeof import('./src/components/insights/renderers/DistributionShiftRenderer.vue')['default']
     DocDrawer: typeof import('./src/components/topics/DocDrawer.vue')['default']
+    EmptyState: typeof import('./src/components/common/EmptyState.vue')['default']
     EnrichmentSettingsPanel: typeof import('./src/components/topics/EnrichmentSettingsPanel.vue')['default']
     EnrichTool: typeof import('./src/components/enrich/EnrichTool.vue')['default']
     EventListPanel: typeof import('./src/components/analytics/EventListPanel.vue')['default']

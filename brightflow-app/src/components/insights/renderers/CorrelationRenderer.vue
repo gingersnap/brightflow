@@ -10,6 +10,7 @@
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/types/generated';
 import { formatCompact, formatNumber, humanizeColumn } from '@/utils/format';
@@ -85,9 +86,7 @@ const chartOption = computed(() => {
 <template>
   <div class="relative h-40 w-full">
     <VChart v-if="chartOption" :option="chartOption" autoresize class="h-full w-full" />
-    <div v-else class="flex h-full items-center justify-center text-sm text-muted">
-      No correlation data available
-    </div>
+    <EmptyState v-else class="h-full" message="No correlation data available" />
     <div
       v-if="r !== null"
       class="absolute top-2 right-2 rounded bg-elevated/80 px-1.5 py-0.5 font-mono-data text-xs text-muted"

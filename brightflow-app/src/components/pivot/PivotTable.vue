@@ -10,9 +10,11 @@
 import { ChevronDown, ChevronRight } from '@lucide/vue';
 import { computed } from 'vue';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
+import { formatDecimal } from '@/utils/format';
 
 const pivotStore = usePivotStore();
 const resultsStore = useResultsStore();
@@ -274,40 +276,27 @@ function getCellStyle(value: unknown, colIdx: number): Record<string, string> {
   // Calculate position in range (0 to 1)
   const position = (value - stats.min) / stats.range;
 
-  // Color scale: light blue (low) to dark blue (high)
-  // Using HSL for smooth gradients
-  const hue = 210; // Blue
-  const saturation = 70;
-  const lightness = 95 - position * 40; // 95% (light) to 55% (darker)
-
+  /*
+   * Theme-aware scale: mix the accented background over the base background,
+   * so the heatmap tracks light/dark mode instead of hardcoding a blue ramp.
+   */
+  const pct = Math.round(position * 100);
   return {
-    backgroundColor: `hsl(${hue}, ${saturation}%, ${lightness}%)`,
+    backgroundColor: `color-mix(in oklab, var(--ui-bg-accented) ${pct}%, var(--ui-bg))`,
   };
 }
 
-// Format cell value
+// Format cell value (en-US pinned via formatDecimal, like every other surface)
 function formatValue(value: unknown, dtype: string | undefined): string {
   if (value === null || value === undefined) {
     return '—';
   }
   if (typeof value === 'number') {
-    const decimals = pivotStore.decimalPlaces;
-    // Format based on dtype
-    if (isFloatDtype(dtype)) {
-      return value.toLocaleString(undefined, {
-        maximumFractionDigits: decimals,
-        minimumFractionDigits: 0,
-      });
+    // Integers print bare unless the column is float-typed.
+    if (!isFloatDtype(dtype) && Number.isInteger(value)) {
+      return formatDecimal(value, 0);
     }
-    // Integers - no decimals unless value has them
-    if (Number.isInteger(value)) {
-      return value.toLocaleString();
-    }
-    // Non-integer without explicit float type
-    return value.toLocaleString(undefined, {
-      maximumFractionDigits: decimals,
-      minimumFractionDigits: 0,
-    });
+    return formatDecimal(value, pivotStore.decimalPlaces);
   }
   return String(value);
 }
@@ -324,12 +313,12 @@ function isNumeric(dtype: string | undefined): boolean {
 <template>
   <div class="flex h-full flex-col">
     <!-- Empty state if no data -->
-    <div v-if="!pivotData" class="flex h-full items-center justify-center text-muted">
-      <div class="text-center">
-        <p class="text-sm">No pivot data</p>
-        <p class="mt-1 text-sm text-muted/70">Configure your pivot and run the query</p>
-      </div>
-    </div>
+    <EmptyState
+      v-if="!pivotData"
+      class="h-full"
+      detail="Configure your pivot and run the query"
+      message="No pivot data"
+    />
 
     <!-- Grouping toolbar -->
     <div

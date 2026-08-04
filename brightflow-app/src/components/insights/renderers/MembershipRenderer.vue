@@ -8,6 +8,7 @@
 import { Minus, Plus } from '@lucide/vue';
 import { computed } from 'vue';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import type { AnalysisNode } from '@/types/generated';
 import { displaySegmentValue } from '@/utils/format';
 
@@ -59,7 +60,5 @@ const MAX_DISPLAY = 8;
       </ul>
     </div>
   </div>
-  <div v-else class="flex h-32 items-center justify-center text-sm text-muted">
-    No membership data available
-  </div>
+  <EmptyState v-else class="h-32" message="No membership data available" />
 </template>

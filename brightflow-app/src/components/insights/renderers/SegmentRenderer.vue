@@ -11,6 +11,7 @@
 import { computed } from 'vue';
 import VChart from 'vue-echarts';
 
+import EmptyState from '@/components/common/EmptyState.vue';
 import { useChartColors } from '@/composables/useChartColors';
 import type { AnalysisNode } from '@/types/generated';
 import {
@@ -121,8 +122,6 @@ const chartOption = computed(() => {
 <template>
   <div class="w-full" :class="segmentBars ? 'h-40' : 'h-32'">
     <VChart v-if="chartOption" :option="chartOption" autoresize class="h-full w-full" />
-    <div v-else class="flex h-full items-center justify-center text-sm text-muted">
-      No segment data available
-    </div>
+    <EmptyState v-else class="h-full" message="No segment data available" />
   </div>
 </template>
