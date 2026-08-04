@@ -22,12 +22,18 @@ use std::path::{Path, PathBuf};
 
 /// Resolved workspace paths — single source of truth for all data locations.
 ///
-/// Each accessor checks an env var override first, then falls back to
-/// `{base}/workspaces/{workspace}/{sub}`.
+/// Each accessor resolves explicit builder override → env var →
+/// `{base}/workspaces/{workspace}/{sub}` default.
 #[derive(Debug, Clone)]
 pub struct WorkspacePaths {
     base: PathBuf,
     workspace: String,
+    /// Explicit overrides (builder methods) that beat both env vars and
+    /// defaults — value-passing for CLI flags, so nothing needs to mutate
+    /// process env inside a running runtime.
+    store_override: Option<PathBuf>,
+    connector_configs_override: Option<PathBuf>,
+    auth_url_override: Option<String>,
 }
 
 impl WorkspacePaths {
@@ -40,7 +46,7 @@ impl WorkspacePaths {
         let base = std::env::var("BRIGHTFLOW_DATA_DIR")
             .map_or_else(|_| PathBuf::from("./data"), PathBuf::from);
         let workspace = std::env::var("BRIGHTFLOW_WORKSPACE").unwrap_or_else(|_| "default".into());
-        Self { base, workspace }
+        Self::new(base, workspace)
     }
 
     /// Create with explicit base path and workspace name.
@@ -49,7 +55,33 @@ impl WorkspacePaths {
         Self {
             base: base.into(),
             workspace: workspace.into(),
+            store_override: None,
+            connector_configs_override: None,
+            auth_url_override: None,
         }
+    }
+
+    /// Explicitly override the store directory (beats `BRIGHTFLOW_STORE`).
+    #[must_use]
+    pub fn with_store(mut self, store: impl Into<PathBuf>) -> Self {
+        self.store_override = Some(store.into());
+        self
+    }
+
+    /// Explicitly override the connector-config directory (beats
+    /// `BRIGHTFLOW_CONNECTOR_CONFIGS`).
+    #[must_use]
+    pub fn with_connector_configs(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.connector_configs_override = Some(dir.into());
+        self
+    }
+
+    /// Explicitly override the auth SQLite URL (beats
+    /// `BRIGHTFLOW_DATABASE_URL`).
+    #[must_use]
+    pub fn with_auth_url(mut self, url: impl Into<String>) -> Self {
+        self.auth_url_override = Some(url.into());
+        self
     }
 
     /// Workspace root: `{base}/workspaces/{workspace}`
@@ -58,10 +90,12 @@ impl WorkspacePaths {
         self.base.join("workspaces").join(&self.workspace)
     }
 
-    /// Parquet store directory.
+    /// Parquet store directory. Precedence: builder override → env → default.
     #[must_use]
     pub fn store(&self) -> PathBuf {
-        env_path_or("BRIGHTFLOW_STORE", || self.root().join("store"))
+        self.store_override
+            .clone()
+            .unwrap_or_else(|| env_path_or("BRIGHTFLOW_STORE", || self.root().join("store")))
     }
 
     /// Litehouse (store metadata) SQLite URL.
@@ -72,10 +106,12 @@ impl WorkspacePaths {
         })
     }
 
-    /// Auth SQLite URL.
+    /// Auth SQLite URL. Precedence: builder override → env → default.
     #[must_use]
     pub fn auth_url(&self) -> String {
-        env_url_or("BRIGHTFLOW_DATABASE_URL", || self.root().join("auth.db"))
+        self.auth_url_override.clone().unwrap_or_else(|| {
+            env_url_or("BRIGHTFLOW_DATABASE_URL", || self.root().join("auth.db"))
+        })
     }
 
     /// Scheduler SQLite URL.
@@ -93,11 +129,14 @@ impl WorkspacePaths {
         self.root().join("connector-output").join(preset_id)
     }
 
-    /// Connector config directory.
+    /// Connector config directory. Precedence: builder override → env →
+    /// default.
     #[must_use]
     pub fn connector_configs(&self) -> PathBuf {
-        env_path_or("BRIGHTFLOW_CONNECTOR_CONFIGS", || {
-            self.root().join("connector-configs")
+        self.connector_configs_override.clone().unwrap_or_else(|| {
+            env_path_or("BRIGHTFLOW_CONNECTOR_CONFIGS", || {
+                self.root().join("connector-configs")
+            })
         })
     }
 
@@ -159,4 +198,47 @@ fn env_path_or(var: &str, default: impl FnOnce() -> PathBuf) -> PathBuf {
 /// Check env var for a SQLite URL override, otherwise build one from a path.
 fn env_url_or(var: &str, default_path: impl FnOnce() -> PathBuf) -> String {
     std::env::var(var).unwrap_or_else(|_| format!("sqlite:{}?mode=rwc", default_path().display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builder_overrides_beat_env_and_defaults() {
+        let defaulted = WorkspacePaths::new("/base", "ws");
+        assert_eq!(defaulted.store(), Path::new("/base/workspaces/ws/store"));
+
+        // Override beats the default...
+        let overridden = defaulted.with_store("/elsewhere/store");
+        assert_eq!(overridden.store(), Path::new("/elsewhere/store"));
+
+        // ...and beats the env var (this test owns BRIGHTFLOW_STORE; no other
+        // test reads it, so the process-global write cannot race a reader).
+        std::env::set_var("BRIGHTFLOW_STORE", "/from-env/store");
+        assert_eq!(overridden.store(), Path::new("/elsewhere/store"));
+        let plain = WorkspacePaths::new("/base", "ws");
+        assert_eq!(
+            plain.store(),
+            Path::new("/from-env/store"),
+            "env beats the default when no override is set"
+        );
+        std::env::remove_var("BRIGHTFLOW_STORE");
+    }
+
+    #[test]
+    fn auth_url_and_connector_config_overrides() {
+        let wp = WorkspacePaths::new("/base", "ws")
+            .with_auth_url("sqlite:/tmp/x.db?mode=rwc")
+            .with_connector_configs("/cfg");
+        assert_eq!(wp.auth_url(), "sqlite:/tmp/x.db?mode=rwc");
+        assert_eq!(wp.connector_configs(), Path::new("/cfg"));
+
+        let plain = WorkspacePaths::new("/base", "ws");
+        assert!(plain.auth_url().starts_with("sqlite:"));
+        assert_eq!(
+            plain.connector_configs(),
+            Path::new("/base/workspaces/ws/connector-configs")
+        );
+    }
 }
