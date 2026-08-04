@@ -1,18 +1,15 @@
 /**
  * Query-builder state for the Explore tool.
  *
- * Holds one section of state per builder panel (filter, select, groupBy,
- * pivot, sort, limit) and derives two views of it: `operations`, the wire
- * format the backend executes, and `previewTexts`, the collapsed-panel
- * summaries. The two differ deliberately — `operations` honours each section's
- * `enabled` flag, while `previewTexts` reflects raw state so a collapsed or
- * disabled panel still shows what it holds.
+ * Holds one section of state per builder panel (filter, sort, limit) and
+ * derives `operations`, the wire format the backend executes, honouring each
+ * section's `enabled` flag. Pivot state lives in `stores/pivot.ts`.
  */
 
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import type { Aggregation, Filter, PivotState, QuerySections } from '@/types';
+import type { Filter, QuerySections } from '@/types';
 import type { Operation } from '@/types/generated';
 
 type SectionKey = keyof QuerySections;
@@ -41,30 +38,12 @@ export const useQueryStore = defineStore('query', () => {
   // Section states
   const sections = ref<QuerySections>({
     filter: { enabled: true, collapsed: false },
-    groupBy: { enabled: false, collapsed: true },
     limit: { enabled: true, collapsed: false },
-    pivot: { enabled: false, collapsed: true },
-    select: { enabled: false, collapsed: true },
     sort: { enabled: false, collapsed: true },
   });
 
   // Filter state
   const filters = ref<Filter[]>([]);
-
-  // Select state
-  const selectedColumns = ref<string[]>([]);
-
-  // Group by state
-  const groupByColumns = ref<string[]>([]);
-  const aggregations = ref<Aggregation[]>([]);
-
-  // Pivot state
-  const pivot = ref<PivotState>({
-    agg: 'count',
-    columns: null,
-    index: [],
-    values: null,
-  });
 
   // Sort state
   const sortBy = ref<string | null>(null);
@@ -80,38 +59,6 @@ export const useQueryStore = defineStore('query', () => {
     // Add filters
     if (sections.value.filter.enabled) {
       ops.push(...filterOperations(filters.value));
-    }
-
-    // Add group by
-    if (sections.value.groupBy.enabled && groupByColumns.value.length > 0) {
-      ops.push({
-        aggs: aggregations.value.map((agg) => ({
-          column: agg.column,
-          function: agg.function,
-          alias: agg.alias || `${agg.function}_${agg.column}`,
-        })),
-        by: groupByColumns.value,
-        type: 'groupBy',
-      });
-    }
-
-    // Add pivot
-    if (sections.value.pivot.enabled && pivot.value.values != null && pivot.value.columns != null) {
-      ops.push({
-        agg: pivot.value.agg,
-        columns: pivot.value.columns,
-        index: pivot.value.index,
-        type: 'pivot',
-        values: pivot.value.values,
-      });
-    }
-
-    // Add select
-    if (sections.value.select.enabled && selectedColumns.value.length > 0) {
-      ops.push({
-        columns: selectedColumns.value,
-        type: 'select',
-      });
     }
 
     // Add sort
@@ -133,29 +80,6 @@ export const useQueryStore = defineStore('query', () => {
 
     return ops;
   });
-
-  // Computed: Preview texts for each section
-  const previewTexts = computed(() => ({
-    filter:
-      filters.value.length > 0
-        ? `${filters.value.length} filter${filters.value.length > 1 ? 's' : ''}`
-        : 'No filters',
-    groupBy:
-      groupByColumns.value.length > 0 ? `By: ${groupByColumns.value.join(', ')}` : 'Not grouped',
-    limit: `${limit.value.toLocaleString()} rows`,
-    pivot:
-      pivot.value.values == null
-        ? 'Not configured'
-        : `${pivot.value.index.length} rows, ${pivot.value.columns ?? 'no'} columns`,
-    select:
-      selectedColumns.value.length > 0 ? `${selectedColumns.value.length} columns` : 'All columns',
-    sort:
-      sortBy.value == null
-        ? 'Not sorted'
-        : `${sortBy.value} ${sortDescending.value ? 'DESC' : 'ASC'}`,
-  }));
-
-  const isValid = computed(() => true);
 
   // Actions
   function toggleSection(section: SectionKey): void {
@@ -184,10 +108,6 @@ export const useQueryStore = defineStore('query', () => {
 
   function reset(): void {
     filters.value = [];
-    selectedColumns.value = [];
-    groupByColumns.value = [];
-    aggregations.value = [];
-    pivot.value = { agg: 'count', columns: null, index: [], values: null };
     sortBy.value = null;
     sortDescending.value = false;
     limit.value = 100;
@@ -195,10 +115,7 @@ export const useQueryStore = defineStore('query', () => {
     // Reset section states
     sections.value = {
       filter: { enabled: true, collapsed: false },
-      groupBy: { enabled: false, collapsed: true },
       limit: { enabled: true, collapsed: false },
-      pivot: { enabled: false, collapsed: true },
-      select: { enabled: false, collapsed: true },
       sort: { enabled: false, collapsed: true },
     };
   }
@@ -207,17 +124,11 @@ export const useQueryStore = defineStore('query', () => {
     // State
     sections,
     filters,
-    selectedColumns,
-    groupByColumns,
-    aggregations,
-    pivot,
     sortBy,
     sortDescending,
     limit,
     // Computed
     operations,
-    previewTexts,
-    isValid,
     // Actions
     toggleSection,
     addFilter,

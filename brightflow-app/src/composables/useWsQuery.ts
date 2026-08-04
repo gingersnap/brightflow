@@ -210,15 +210,7 @@ export function useWsQuery() {
    * Check if query can be executed
    */
   function canExecute(): boolean {
-    if (!connectionStore.isConnected || !datasetStore.hasData) {
-      return false;
-    }
-
-    if (pivotStore.isConfigured) {
-      return true;
-    }
-
-    return queryStore.isValid;
+    return connectionStore.isConnected && datasetStore.hasData;
   }
 
   return {

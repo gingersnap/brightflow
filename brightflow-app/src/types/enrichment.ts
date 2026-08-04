@@ -43,8 +43,6 @@ export interface TopicModelConfig {
   algorithm: string | null;
 }
 
-export type FunctionConfig = LlmPromptConfig | TopicModelConfig | Record<string, never>;
-
 export interface EnrichFunction {
   id: string;
   name: string;

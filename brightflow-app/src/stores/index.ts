@@ -1,9 +1,10 @@
 /**
- * Store barrel and the cross-store reset.
+ * Cross-store reset.
  *
- * `resetAllStores` deliberately spares auth and source: those outlive a dataset
- * switch, while everything else is keyed to the previous table's columns and
- * would surface stale state under a new dataset's name.
+ * `resetAllStores` deliberately spares the source store: sources outlive a
+ * dataset switch, while everything else is keyed to the previous table's
+ * columns and would surface stale state under a new dataset's name. (Auth is
+ * not a store — session state lives with `useAuth` and the backend cookie.)
  */
 
 import router from '@/router';
@@ -19,7 +20,7 @@ import { useUiStore } from './ui';
 /**
  * Reset all stores to initial state.
  * Used when switching datasets to ensure clean slate.
- * Note: Auth store and Source store are NOT reset here — they persist across dataset switches.
+ * Note: the source store is NOT reset here — it persists across dataset switches.
  */
 export function resetAllStores(): void {
   const queryStore = useQueryStore();
@@ -46,13 +47,3 @@ export function resetOnLogout(): void {
   sourceStore.reset();
   void router.push('/');
 }
-
-// Re-export stores for convenience
-export { useQueryStore } from './query';
-export { useResultsStore } from './results';
-export { usePivotStore } from './pivot';
-export { useDatasetStore } from './dataset';
-export { useUiStore } from './ui';
-export { useConnectionStore } from './connection';
-export { useInsightsStore } from './insights';
-export { useSourceStore } from './source';

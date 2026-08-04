@@ -144,7 +144,6 @@ export const tableApi = {
 };
 
 // Connector types
-export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 // Connector API
 export const connectApi = {

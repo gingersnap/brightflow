@@ -24,7 +24,6 @@ import draggable from 'vuedraggable';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useWsQuery } from '@/composables/useWsQuery';
-import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
@@ -44,7 +43,6 @@ interface ColumnItem {
 const pivotStore = usePivotStore();
 const queryStore = useQueryStore();
 const datasetStore = useDatasetStore();
-const connectionStore = useConnectionStore();
 const uiStore = useUiStore();
 const { executePivot, canExecute } = useWsQuery();
 
@@ -137,7 +135,7 @@ watchDebounced(
     queryStore.sections.sort.enabled,
   ],
   () => {
-    if (canExecute() && connectionStore.isConnected && datasetStore.hasData) {
+    if (canExecute()) {
       executePivot();
     }
   },

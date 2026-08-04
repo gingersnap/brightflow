@@ -85,14 +85,6 @@ export interface Filter {
   value: unknown;
 }
 
-// Aggregation state (frontend-only)
-export interface Aggregation {
-  id: string;
-  column: string;
-  function: AggFn;
-  alias: string;
-}
-
 // Query section state (frontend-only)
 export interface SectionState {
   enabled: boolean;
@@ -101,19 +93,8 @@ export interface SectionState {
 
 export interface QuerySections {
   filter: SectionState;
-  select: SectionState;
-  groupBy: SectionState;
-  pivot: SectionState;
   sort: SectionState;
   limit: SectionState;
-}
-
-// Pivot state (frontend-only)
-export interface PivotState {
-  index: string[];
-  columns: string | null;
-  values: string | null;
-  agg: AggFn;
 }
 
 // Pivot field (frontend-only)
@@ -145,14 +126,6 @@ export interface Operator {
   label: string;
   noValue: boolean;
   isArray: boolean;
-}
-
-// Aggregation definition (frontend-only)
-export interface AggregationDef {
-  label: string;
-  description: string;
-  types: string[];
-  usesStar?: boolean;
 }
 
 export interface AggregationOption {

@@ -1,10 +1,10 @@
 /**
- * Unit tests for the query store's derived state (`operations`, `previewTexts`).
+ * Unit tests for the query store's derived state (`operations`).
  *
  * Scope is the pure computed layer: state goes in via direct ref assignment,
  * operations come out. Deliberately out of scope — the WebSocket round-trip
- * (`useWsQuery`), the components that render these previews, and whether the
- * backend accepts the emitted operation shapes. Those are integration concerns.
+ * (`useWsQuery`) and whether the backend accepts the emitted operation
+ * shapes. Those are integration concerns.
  */
 
 import { createPinia, setActivePinia } from 'pinia';
@@ -47,19 +47,9 @@ describe('operations', () => {
     store.limit = 50;
     store.sortBy = 'amount';
     store.sections.sort.enabled = true;
-    store.selectedColumns = ['a'];
-    store.sections.select.enabled = true;
-    store.groupByColumns = ['region'];
-    store.sections.groupBy.enabled = true;
     store.filters.push(filter({ id: 'f1' }));
 
-    expect(store.operations.map((op) => op.type)).toEqual([
-      'filter',
-      'groupBy',
-      'select',
-      'sort',
-      'limit',
-    ]);
+    expect(store.operations.map((op) => op.type)).toEqual(['filter', 'sort', 'limit']);
   });
 
   test('drops filters with no column or no operator', () => {
@@ -88,34 +78,6 @@ describe('operations', () => {
     ]);
   });
 
-  test('groupBy is skipped when no columns are grouped, even if enabled', () => {
-    const store = useQueryStore();
-    store.sections.limit.enabled = false;
-    store.sections.groupBy.enabled = true;
-
-    expect(store.operations).toEqual([]);
-  });
-
-  test('pivot emits only when both values and columns are set', () => {
-    const store = useQueryStore();
-    store.sections.limit.enabled = false;
-    store.sections.pivot.enabled = true;
-    store.pivot.index = ['region'];
-    store.pivot.values = 'amount';
-    expect(store.operations).toEqual([]);
-
-    store.pivot.columns = 'month';
-    expect(store.operations).toEqual([
-      {
-        agg: 'count',
-        columns: 'month',
-        index: ['region'],
-        type: 'pivot',
-        values: 'amount',
-      },
-    ]);
-  });
-
   test('sort emits only when a sort column is chosen', () => {
     const store = useQueryStore();
     store.sections.limit.enabled = false;
@@ -135,71 +97,16 @@ describe('operations', () => {
     store.limit = 25;
     expect(store.operations).toEqual([{ n: 25, type: 'limit' }]);
   });
-
-  test('select emits only when columns are chosen', () => {
-    const store = useQueryStore();
-    store.sections.limit.enabled = false;
-    store.sections.select.enabled = true;
-    expect(store.operations).toEqual([]);
-
-    store.selectedColumns = ['a', 'b'];
-    expect(store.operations).toEqual([{ columns: ['a', 'b'], type: 'select' }]);
-  });
 });
 
-describe('previewTexts', () => {
-  test('pluralizes the filter count', () => {
-    const store = useQueryStore();
-    expect(store.previewTexts.filter).toBe('No filters');
-
-    store.filters.push(filter({ id: 'f1' }));
-    expect(store.previewTexts.filter).toBe('1 filter');
-
-    store.filters.push(filter({ id: 'f2' }));
-    expect(store.previewTexts.filter).toBe('2 filters');
-  });
-
-  test('pivot reads as unconfigured until values is set', () => {
-    const store = useQueryStore();
-    expect(store.previewTexts.pivot).toBe('Not configured');
-
-    store.pivot.index = ['region'];
-    store.pivot.values = 'amount';
-    expect(store.previewTexts.pivot).toBe('1 rows, no columns');
-
-    store.pivot.columns = 'month';
-    expect(store.previewTexts.pivot).toBe('1 rows, month columns');
-  });
-
-  test('reflects raw state and ignores whether the section is enabled', () => {
-    /*
-     * Previews intentionally describe what a section *would* do, so a disabled
-     * section still shows its configured state.
-     */
+describe('disabled sections', () => {
+  test('a disabled section keeps its raw state but emits nothing', () => {
     const store = useQueryStore();
     store.sections.filter.enabled = false;
     store.filters.push(filter({ id: 'f1' }));
 
-    expect(store.previewTexts.filter).toBe('1 filter');
+    expect(store.filters).toHaveLength(1);
     expect(store.operations).toEqual([{ n: 100, type: 'limit' }]);
-  });
-
-  test('describes the remaining sections from raw state', () => {
-    const store = useQueryStore();
-    expect(store.previewTexts.groupBy).toBe('Not grouped');
-    expect(store.previewTexts.select).toBe('All columns');
-    expect(store.previewTexts.sort).toBe('Not sorted');
-    expect(store.previewTexts.limit).toBe('100 rows');
-
-    store.groupByColumns = ['region', 'month'];
-    store.selectedColumns = ['a'];
-    store.sortBy = 'amount';
-    store.limit = 1000;
-
-    expect(store.previewTexts.groupBy).toBe('By: region, month');
-    expect(store.previewTexts.select).toBe('1 columns');
-    expect(store.previewTexts.sort).toBe('amount ASC');
-    expect(store.previewTexts.limit).toBe('1,000 rows');
   });
 });
 
