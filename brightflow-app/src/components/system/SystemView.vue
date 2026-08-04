@@ -8,6 +8,7 @@
  */
 
 import { Trash2 } from '@lucide/vue';
+import { useScroll } from '@vueuse/core';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { useSystemStore } from '@/stores/system';
@@ -96,15 +97,14 @@ watch(
   },
 );
 
-// Detect manual scroll to disable auto-scroll
-function handleScroll(): void {
-  if (!logContainer.value) {
-    return;
-  }
-  const el = logContainer.value;
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-  autoScroll.value = atBottom;
-}
+// Detect manual scroll: auto-scroll stays pinned only while at the bottom.
+const { arrivedState } = useScroll(logContainer, { offset: { bottom: 40 } });
+watch(
+  () => arrivedState.bottom,
+  (atBottom) => {
+    autoScroll.value = atBottom;
+  },
+);
 </script>
 
 <template>
@@ -192,11 +192,7 @@ function handleScroll(): void {
       </div>
 
       <!-- Log feed -->
-      <div
-        ref="logContainer"
-        class="min-h-0 flex-1 overflow-y-auto font-mono text-xs"
-        @scroll="handleScroll"
-      >
+      <div ref="logContainer" class="min-h-0 flex-1 overflow-y-auto font-mono text-xs">
         <div
           v-if="systemStore.logs.length === 0"
           class="flex h-full items-center justify-center text-muted"

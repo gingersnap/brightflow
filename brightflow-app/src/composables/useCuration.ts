@@ -11,7 +11,7 @@
  */
 
 import { useQuery } from '@pinia/colada';
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 
 import { actionsApi } from '@/services/api';
 import { FEED_LIMIT, useCurationStore } from '@/stores/curation';
@@ -26,27 +26,29 @@ export function useCuration() {
 
   // REST snapshots — refetched whenever the store signals a resync
   // (reconnect, truncated batch, offline mutation).
-  const feedQuery = useQuery({
+  /*
+   * Store writes happen inside the query functions, not via watches on the
+   * data ref: Colada serves cached data on remount without refetching, so a
+   * watch bridge never fired then and the store stayed empty until the next
+   * resync (the cached-remount seeding bug).
+   */
+  useQuery({
     key: () => ['action-feed', store.resyncTick],
-    query: async () => (await actionsApi.feed(FEED_LIMIT)) ?? [],
-  });
-  watch(feedQuery.data, (entries) => {
-    if (entries) {
+    query: async () => {
+      const entries = (await actionsApi.feed(FEED_LIMIT)) ?? [];
       store.setFeed(entries);
-    }
+      return entries;
+    },
   });
 
-  const pendingQuery = useQuery({
+  useQuery({
     key: () => ['action-pending-count', store.resyncTick],
     query: async () => {
       const response = await actionsApi.pendingCount();
-      return response?.count ?? 0;
-    },
-  });
-  watch(pendingQuery.data, (count) => {
-    if (count != null) {
+      const count = response?.count ?? 0;
       store.setPendingCount(count);
-    }
+      return count;
+    },
   });
 
   async function dispatch(action: Action): Promise<ActionResponse | null> {

@@ -8,7 +8,12 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
-import { createWebSocketClient, type WebSocketClient } from '@/services/websocket';
+import {
+  bindSocketStatus,
+  createWebSocketClient,
+  type WebSocketClient,
+} from '@/services/websocket';
+import type { ConnectionStatus } from '@/types';
 
 export interface SystemMetrics {
   processRssBytes: number;
@@ -26,14 +31,12 @@ export interface LogEntry {
   message: string;
 }
 
-type SystemStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
-
 const MAX_LOG_ENTRIES = 500;
 
 export const useSystemStore = defineStore('system', () => {
   const metrics = ref<SystemMetrics | null>(null);
   const logs = ref<LogEntry[]>([]);
-  const status = ref<SystemStatus>('disconnected');
+  const status = ref<ConnectionStatus>('disconnected');
 
   const isConnected = computed(() => status.value === 'connected');
 
@@ -70,15 +73,7 @@ export const useSystemStore = defineStore('system', () => {
   function connect(): void {
     if (client == null) {
       client = createWebSocketClient('/api/system/ws');
-      client.on('open', () => {
-        status.value = 'connected';
-      });
-      client.on('close', () => {
-        status.value = 'disconnected';
-      });
-      client.on('error', () => {
-        status.value = 'error';
-      });
+      bindSocketStatus(client, status);
       client.on('message', handleMessage);
     }
     status.value = 'connecting';

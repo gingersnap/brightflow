@@ -7,7 +7,10 @@
  * on the same instance re-enables auto-reconnect.
  */
 
+import type { Ref } from 'vue';
+
 import { createLogger } from '@/services/logger';
+import type { ConnectionStatus } from '@/types';
 
 const log = createLogger('WebSocket');
 
@@ -189,6 +192,34 @@ export class WebSocketClient {
       }
     });
   }
+}
+
+/** The lifecycle-event surface `bindSocketStatus` consumes. */
+export interface SocketStatusSource {
+  on: (event: 'open' | 'close' | 'error', handler: () => void) => () => void;
+}
+
+/**
+ * Wire a socket's lifecycle events into a ConnectionStatus ref — the one
+ * mapping both stores (query WS, system WS) share. `openStatus` lets the
+ * query socket stay 'connecting' on open until the server's hello frame.
+ * Extra concerns (reset counters, capture errors) are the caller's own
+ * additional handlers.
+ */
+export function bindSocketStatus(
+  client: SocketStatusSource,
+  status: Ref<ConnectionStatus>,
+  openStatus: ConnectionStatus = 'connected',
+): void {
+  client.on('open', () => {
+    status.value = openStatus;
+  });
+  client.on('close', () => {
+    status.value = 'disconnected';
+  });
+  client.on('error', () => {
+    status.value = 'error';
+  });
 }
 
 /**

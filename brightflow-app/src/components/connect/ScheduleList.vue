@@ -7,6 +7,7 @@
  */
 
 import { Trash2 } from '@lucide/vue';
+import { formatTimeAgo, useNow } from '@vueuse/core';
 import { computed } from 'vue';
 
 import type { UnifiedConnector } from '@/types';
@@ -38,34 +39,10 @@ function isRunning(c: UnifiedConnector): boolean {
   return c.lastRun != null && (c.lastRun.status === 'running' || c.lastRun.status === 'pending');
 }
 
-function relativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 60_000) {
-    return 'just now';
-  }
-  if (diff < 3_600_000) {
-    return `${Math.round(diff / 60_000)}m ago`;
-  }
-  if (diff < 86_400_000) {
-    return `${Math.round(diff / 3_600_000)}h ago`;
-  }
-  return `${Math.round(diff / 86_400_000)}d ago`;
-}
+const now = useNow({ interval: 30_000 });
 
-function relativeTimeUntil(ms: number): string {
-  if (ms <= 0) {
-    return 'soon';
-  }
-  if (ms < 60_000) {
-    return 'in <1m';
-  }
-  if (ms < 3_600_000) {
-    return `in ${Math.round(ms / 60_000)}m`;
-  }
-  if (ms < 86_400_000) {
-    return `in ${Math.round(ms / 3_600_000)}h`;
-  }
-  return `in ${Math.round(ms / 86_400_000)}d`;
+function relativeTime(dateStr: string): string {
+  return formatTimeAgo(new Date(dateStr), {}, now.value);
 }
 
 function nextRunLabel(c: UnifiedConnector): string {
@@ -77,8 +54,10 @@ function nextRunLabel(c: UnifiedConnector): string {
   }
   const lastStart = new Date(c.lastRun.startedAt).getTime();
   const nextAt = lastStart + c.job.intervalSecs * 1000;
-  const remaining = nextAt - Date.now();
-  return relativeTimeUntil(remaining);
+  if (nextAt <= now.value.getTime()) {
+    return 'soon';
+  }
+  return formatTimeAgo(new Date(nextAt), {}, now.value);
 }
 
 function lastCompletedLabel(c: UnifiedConnector): string | null {

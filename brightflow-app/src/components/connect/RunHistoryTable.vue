@@ -7,7 +7,7 @@
  */
 
 import type { TableColumn, TableRow, ContextMenuItem } from '@nuxt/ui';
-import { useClipboard } from '@vueuse/core';
+import { formatTimeAgo, useClipboard, useNow } from '@vueuse/core';
 import { computed, h, ref } from 'vue';
 
 const { copy } = useClipboard();
@@ -24,18 +24,12 @@ const emit = defineEmits<{
   run: [connectorName: string];
 }>();
 
+const now = useNow({ interval: 30_000 });
+
+/** Rows are render functions, so per-row useTimeAgo can't be used; reading
+ * `now` here makes the cells re-derive as time passes. */
 function relativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  if (diff < 60_000) {
-    return 'just now';
-  }
-  if (diff < 3_600_000) {
-    return `${Math.round(diff / 60_000)}m ago`;
-  }
-  if (diff < 86_400_000) {
-    return `${Math.round(diff / 3_600_000)}h ago`;
-  }
-  return `${Math.round(diff / 86_400_000)}d ago`;
+  return formatTimeAgo(new Date(dateStr), {}, now.value);
 }
 
 function duration(startedAt: string, finishedAt: string): string {

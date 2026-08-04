@@ -8,8 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { ref } from 'vue';
 
-import { WebSocketClient } from './websocket';
+import type { ConnectionStatus } from '@/types';
+
+import { type SocketStatusSource, WebSocketClient, bindSocketStatus } from './websocket';
 
 /** Minimal WebSocket stand-in the client can drive. */
 class FakeWebSocket {
@@ -158,5 +161,50 @@ describe('disconnect/reconnect contract', () => {
     FakeWebSocket.instances.at(-1)?.dropped();
     vi.advanceTimersByTime(10);
     expect(FakeWebSocket.instances).toHaveLength(3);
+  });
+});
+
+/** Unsubscribe is irrelevant for the stub. */
+function noopUnsubscribe(): void {
+  /* Intentionally empty. */
+}
+
+function stubClient(): {
+  client: SocketStatusSource;
+  fire: (event: string) => void;
+} {
+  const handlers = new Map<string, () => void>();
+  return {
+    client: {
+      on: (event, handler) => {
+        handlers.set(event, handler);
+        return noopUnsubscribe;
+      },
+    },
+    fire: (event) => handlers.get(event)?.(),
+  };
+}
+
+describe('bindSocketStatus', () => {
+  test('maps lifecycle events onto the status ref', () => {
+    const { client, fire } = stubClient();
+    const status = ref<ConnectionStatus>('disconnected');
+    bindSocketStatus(client, status);
+
+    fire('open');
+    expect(status.value).toBe('connected');
+    fire('close');
+    expect(status.value).toBe('disconnected');
+    fire('error');
+    expect(status.value).toBe('error');
+  });
+
+  test('openStatus lets the query socket wait for the server hello', () => {
+    const { client, fire } = stubClient();
+    const status = ref<ConnectionStatus>('disconnected');
+    bindSocketStatus(client, status, 'connecting');
+
+    fire('open');
+    expect(status.value).toBe('connecting');
   });
 });

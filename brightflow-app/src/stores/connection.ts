@@ -11,7 +11,11 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import { createLogger } from '@/services/logger';
-import { type WebSocketClient, createWebSocketClient } from '@/services/websocket';
+import {
+  type WebSocketClient,
+  bindSocketStatus,
+  createWebSocketClient,
+} from '@/services/websocket';
 import type { ConnectionStatus } from '@/types';
 
 const log = createLogger('WS');
@@ -96,17 +100,12 @@ export const useConnectionStore = defineStore('connection', () => {
     // Create fresh client instance to avoid stale state
     client = createWebSocketClient();
 
+    // Stay 'connecting' on open until the server's hello frame flips it.
+    bindSocketStatus(client, status, 'connecting');
     client.on('open', () => {
-      status.value = 'connecting'; // Wait for 'connected' message
       reconnectCount.value = 0;
     });
-
-    client.on('close', () => {
-      status.value = 'disconnected';
-    });
-
     client.on('error', (error: unknown) => {
-      status.value = 'error';
       lastError.value = error;
       reconnectCount.value++;
     });
