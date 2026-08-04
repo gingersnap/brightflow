@@ -452,6 +452,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let err = WsServerMessage::Error {
                                 code: "SERIALIZATION_ERROR".into(),
                                 message: format!("Failed to serialize response: {e}"),
+                                request_id: None,
                             };
                             serde_json::to_string(&err).unwrap_or_default()
                         },
@@ -500,6 +501,7 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
             return WsServerMessage::Error {
                 code: "PARSE_ERROR".into(),
                 message: format!("Invalid JSON: {e}"),
+                request_id: None,
             };
         },
     };
@@ -514,23 +516,30 @@ async fn handle_ws_message(state: &AppState, text: &str) -> WsServerMessage {
 #[instrument(skip(state, query))]
 async fn execute_ws_query(state: &AppState, query: Query) -> WsServerMessage {
     let dataset_id = query.dataset_id.clone();
+    let request_id = query.request_id.clone();
 
     let Some(data) = state.datasets.get_data(&dataset_id) else {
         return WsServerMessage::Error {
             code: "NOT_FOUND".into(),
             message: format!("Dataset '{dataset_id}' not found"),
+            request_id,
         };
     };
 
     match tokio::task::spawn_blocking(move || executor::execute_query(&data, query)).await {
-        Ok(Ok(response)) => WsServerMessage::QueryResult(response),
+        Ok(Ok(mut response)) => {
+            response.request_id = request_id;
+            WsServerMessage::QueryResult(response)
+        },
         Ok(Err(e)) => WsServerMessage::Error {
             code: e.error_code().into(),
             message: e.to_string(),
+            request_id,
         },
         Err(e) => WsServerMessage::Error {
             code: "TASK_ERROR".into(),
             message: format!("Task execution failed: {e}"),
+            request_id,
         },
     }
 }

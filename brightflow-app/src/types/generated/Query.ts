@@ -12,4 +12,9 @@ datasetId: string,
 /**
  * Chain of operations to apply
  */
-operations: Array<Operation>, };
+operations: Array<Operation>, 
+/**
+ * Client-chosen correlation id, echoed back on the response so a client
+ * with two in-flight queries can match answers to questions.
+ */
+requestId?: string, };

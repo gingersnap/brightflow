@@ -8,4 +8,9 @@ import type { QueryResponse } from "./QueryResponse";
 /**
  * WebSocket message to client
  */
-export type WsServerMessage = { "type": "queryResult" } & QueryResponse | { "type": "error", code: string, message: string, } | { "type": "pong" } | { "type": "connected", serverVersion: string, } | { "type": "actionEvent" } & ActionEventPayload | { "type": "actionBatch" } & ActionBatchPayload | { "type": "agentRun" } & AgentRunEventPayload | { "type": "actionResync" } | { "type": "insightsComputed" } & InsightsComputedPayload;
+export type WsServerMessage = { "type": "queryResult" } & QueryResponse | { "type": "error", code: string, message: string, 
+/**
+ * Correlation id when the failing query carried one; parse errors
+ * never do — the client accepts uncorrelated errors.
+ */
+request_id?: string, } | { "type": "pong" } | { "type": "connected", serverVersion: string, } | { "type": "actionEvent" } & ActionEventPayload | { "type": "actionBatch" } & ActionBatchPayload | { "type": "agentRun" } & AgentRunEventPayload | { "type": "actionResync" } | { "type": "insightsComputed" } & InsightsComputedPayload;

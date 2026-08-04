@@ -4,4 +4,8 @@ import type { ColumnInfo } from "./ColumnInfo";
 /**
  * Query execution response
  */
-export type QueryResponse = { columns: Array<ColumnInfo>, rows: unknown[][], rowCount: number, totalRows: number, executionTimeMs: number, };
+export type QueryResponse = { columns: Array<ColumnInfo>, rows: unknown[][], rowCount: number, totalRows: number, executionTimeMs: number, 
+/**
+ * Echo of the query's correlation id; absent on the REST path.
+ */
+requestId?: string, };

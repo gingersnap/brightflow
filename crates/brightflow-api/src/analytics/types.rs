@@ -19,6 +19,12 @@ pub struct Query {
 
     /// Chain of operations to apply
     pub operations: Vec<Operation>,
+
+    /// Client-chosen correlation id, echoed back on the response so a client
+    /// with two in-flight queries can match answers to questions.
+    #[serde(default)]
+    #[ts(optional)]
+    pub request_id: Option<String>,
 }
 
 fn default_dataset_id() -> String {
@@ -122,6 +128,10 @@ pub struct QueryResponse {
     pub row_count: usize,
     pub total_rows: usize,
     pub execution_time_ms: f64,
+    /// Echo of the query's correlation id; absent on the REST path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub request_id: Option<String>,
 }
 
 // ============================================================================
@@ -149,7 +159,15 @@ pub enum WsServerMessage {
     QueryResult(QueryResponse),
 
     /// Error response
-    Error { code: String, message: String },
+    Error {
+        code: String,
+        message: String,
+        /// Correlation id when the failing query carried one; parse errors
+        /// never do — the client accepts uncorrelated errors.
+        #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        request_id: Option<String>,
+    },
 
     /// Heartbeat response
     Pong,
@@ -226,4 +244,44 @@ pub struct LoadTableResponse {
     pub row_count: Option<usize>,
     pub column_count: Option<usize>,
     pub columns: Vec<ColumnInfo>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_request_id_defaults_to_none_and_parses_when_sent() {
+        let bare: Query = serde_json::from_str(r#"{"operations":[]}"#).expect("parse");
+        assert_eq!(bare.request_id, None);
+        let tagged: Query =
+            serde_json::from_str(r#"{"operations":[],"requestId":"r-1"}"#).expect("parse");
+        assert_eq!(tagged.request_id.as_deref(), Some("r-1"));
+    }
+
+    #[test]
+    fn request_id_serializes_only_when_present() {
+        let mut resp = QueryResponse {
+            columns: vec![],
+            rows: vec![],
+            row_count: 0,
+            total_rows: 0,
+            execution_time_ms: 1.0,
+            request_id: None,
+        };
+        let bare = serde_json::to_string(&resp).expect("serialize");
+        assert!(!bare.contains("requestId"), "absent id must not serialize");
+
+        resp.request_id = Some("r-1".to_string());
+        let tagged = serde_json::to_string(&WsServerMessage::QueryResult(resp)).expect("serialize");
+        assert!(tagged.contains(r#""requestId":"r-1""#));
+
+        let err = WsServerMessage::Error {
+            code: "X".to_string(),
+            message: "m".to_string(),
+            request_id: None,
+        };
+        let err_json = serde_json::to_string(&err).expect("serialize");
+        assert!(!err_json.contains("requestId"));
+    }
 }

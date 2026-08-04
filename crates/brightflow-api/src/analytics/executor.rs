@@ -65,12 +65,14 @@ pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryRespons
     let rows = df_to_json_rows(&result_df)?;
     let row_count = result_df.height();
 
+    // request_id is echoed by the WS layer; the REST path leaves it absent.
     Ok(QueryResponse {
         columns,
         rows,
         row_count,
         total_rows,
         execution_time_ms: start.elapsed().as_secs_f64() * 1000.0,
+        request_id: None,
     })
 }
 

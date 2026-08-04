@@ -1,8 +1,12 @@
 /**
  * Builds and executes queries over the WebSocket connection.
  *
- * Assembles the operation chain from the query, pivot, and UI stores so callers
- * do not each reimplement that translation.
+ * Assembles the operation chain from the query, pivot, and UI stores so
+ * callers do not each reimplement that translation. Every query carries a
+ * crypto.randomUUID() correlation id and only the matching queryResult
+ * resolves it, so two in-flight queries can no longer swap answers.
+ * Uncorrelated errors (parse failures carry no id) reject whatever is
+ * pending — better a spurious error than a hang.
  */
 
 import { useConnectionStore } from '@/stores/connection';
@@ -43,41 +47,64 @@ export function useWsQuery() {
   }
 
   /**
+   * Send one query and resolve with its correlated result frame.
+   */
+  function sendQuery(operations: Operation[]): Promise<Record<string, unknown>> {
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const unsubscribeResult = connectionStore.onMessage(
+        'queryResult',
+        (message: Record<string, unknown>) => {
+          if (message['requestId'] !== requestId) {
+            return; // Another (stale) query's answer.
+          }
+          cleanup();
+          resolve(message);
+        },
+      );
+
+      const unsubscribeError = connectionStore.onMessage(
+        'error',
+        (message: Record<string, unknown>) => {
+          if (message['requestId'] !== undefined && message['requestId'] !== requestId) {
+            return; // Another query's failure.
+          }
+          cleanup();
+          const msg = message['message'];
+          reject(new Error(typeof msg === 'string' ? msg : 'Query failed'));
+        },
+      );
+
+      function cleanup(): void {
+        unsubscribeResult();
+        unsubscribeError();
+      }
+
+      connectionStore.send({
+        datasetId: datasetStore.id,
+        operations,
+        requestId,
+        type: 'query',
+      });
+    });
+  }
+
+  /**
    * Load table data with current filters and limit
    */
   function loadTableData(): void {
-    if (!connectionStore.isConnected || !datasetStore.hasData) {
+    if (!canExecute()) {
       return;
     }
 
-    const operations = buildTableOperations();
-
     resultsStore.setLoading(true);
-
-    const unsubscribeResult = connectionStore.onMessage(
-      'queryResult',
-      (message: Record<string, unknown>) => {
+    sendQuery(buildTableOperations())
+      .then((message) => {
         resultsStore.setResults('table', message);
-        unsubscribeResult();
-        unsubscribeError();
-      },
-    );
-
-    const unsubscribeError = connectionStore.onMessage(
-      'error',
-      (message: Record<string, unknown>) => {
-        const msg = message['message'];
-        resultsStore.setError(typeof msg === 'string' ? msg : 'Query failed');
-        unsubscribeResult();
-        unsubscribeError();
-      },
-    );
-
-    connectionStore.send({
-      datasetId: datasetStore.id,
-      operations,
-      type: 'query',
-    });
+      })
+      .catch((error: unknown) => {
+        resultsStore.setError(error instanceof Error ? error.message : 'Query failed');
+      });
   }
 
   /**
@@ -175,35 +202,15 @@ export function useWsQuery() {
       return;
     }
 
-    const operations = buildOperations();
-
     resultsStore.setLoading(true);
-
-    const unsubscribeResult = connectionStore.onMessage(
-      'queryResult',
-      (message: Record<string, unknown>) => {
+    sendQuery(buildOperations())
+      .then((message) => {
         resultsStore.setResults('pivot', message);
         uiStore.onPivotResults();
-        unsubscribeResult();
-        unsubscribeError();
-      },
-    );
-
-    const unsubscribeError = connectionStore.onMessage(
-      'error',
-      (message: Record<string, unknown>) => {
-        const msg = message['message'];
-        resultsStore.setError(typeof msg === 'string' ? msg : 'Query failed');
-        unsubscribeResult();
-        unsubscribeError();
-      },
-    );
-
-    connectionStore.send({
-      datasetId: datasetStore.id,
-      operations,
-      type: 'query',
-    });
+      })
+      .catch((error: unknown) => {
+        resultsStore.setError(error instanceof Error ? error.message : 'Query failed');
+      });
   }
 
   /**
