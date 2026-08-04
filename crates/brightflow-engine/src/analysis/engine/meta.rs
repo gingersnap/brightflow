@@ -15,7 +15,48 @@
 //! `tests/drivers_report.rs`).
 
 use crate::analysis::candidates::{Aggregation, FilterSpec, MeasureRef, Provenance};
-use crate::analysis::tree::{AnalysisTree, NodeId};
+use crate::analysis::scoring::{self, ScoringContext};
+use crate::analysis::tree::{AnalysisTree, AnalysisType, NodeData, NodeId};
+
+/// Metadata for one legacy detector root (the `set_legacy_meta` slots).
+pub(super) struct RootMeta<'a> {
+    pub detector: &'a str,
+    pub measure: MeasureRef,
+    pub agg: Aggregation,
+    pub dimension: Option<&'a str>,
+    pub granularity: &'a str,
+    pub why: String,
+}
+
+/// Score → floor-check → add root → attach legacy meta: the tail every
+/// legacy detector arm shares. `None` = the finding scored below the floor
+/// and no node was added (callers use this to skip follow-up drill tasks).
+pub(super) fn add_scored_root(
+    tree: &mut AnalysisTree,
+    ctx: &ScoringContext,
+    analysis: AnalysisType,
+    description: String,
+    data: Option<NodeData>,
+    meta: RootMeta<'_>,
+) -> Option<NodeId> {
+    let breakdown = scoring::score(&analysis, ctx);
+    if !scoring::passes_floor(&breakdown, ctx) {
+        return None;
+    }
+    let score = scoring::total(&breakdown);
+    let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
+    set_legacy_meta(
+        tree,
+        node_id,
+        meta.detector,
+        meta.measure,
+        meta.agg,
+        meta.dimension,
+        meta.granularity,
+        meta.why,
+    );
+    Some(node_id)
+}
 
 /// Attach why/provenance/depth/fingerprint to a legacy detector's root.
 pub(super) fn set_legacy_meta(
@@ -59,5 +100,63 @@ pub(super) fn measure_ref(column: &str) -> MeasureRef {
         MeasureRef::RowCount
     } else {
         MeasureRef::Column(column.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::tree::TrendDirection;
+
+    fn trend(p_value: f64, r_squared: f64) -> AnalysisType {
+        AnalysisType::Trend {
+            column: "revenue".to_string(),
+            direction: TrendDirection::Increasing,
+            slope: 1.0,
+            r_squared,
+            p_value,
+        }
+    }
+
+    #[test]
+    fn add_scored_root_adds_passing_and_floors_weak_findings() {
+        let ctx = ScoringContext {
+            kpi_columns: std::collections::HashSet::new(),
+            min_effect_size: None,
+        };
+        let mut tree = AnalysisTree::new();
+
+        let meta = |why: &str| RootMeta {
+            detector: "trend_legacy",
+            measure: MeasureRef::Column("revenue".to_string()),
+            agg: Aggregation::Mean,
+            dimension: None,
+            granularity: "day",
+            why: why.to_string(),
+        };
+
+        let strong = add_scored_root(
+            &mut tree,
+            &ctx,
+            trend(0.001, 0.9),
+            "strong trend".to_string(),
+            None,
+            meta("clean line"),
+        );
+        let id = strong.expect("a clean, significant trend must pass the floor");
+        let node = &tree.nodes[id.0];
+        assert_eq!(node.why, "clean line", "legacy meta must be attached");
+        assert!(!node.fingerprint.is_empty(), "fingerprint must be attached");
+
+        let weak = add_scored_root(
+            &mut tree,
+            &ctx,
+            trend(0.95, 0.001),
+            "noise".to_string(),
+            None,
+            meta("noise"),
+        );
+        assert!(weak.is_none(), "a floored finding must not add a node");
+        assert_eq!(tree.nodes.len(), 1, "tree unchanged by the floored finding");
     }
 }

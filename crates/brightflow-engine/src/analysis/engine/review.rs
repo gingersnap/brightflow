@@ -11,11 +11,12 @@ use crate::analysis::dedup;
 use crate::analysis::period::{aggregate_by_period_cached, get_period_labels};
 use crate::analysis::scoring;
 use crate::analysis::segment::{attribute_period_segments_cached, attribute_segment};
-use crate::analysis::tree::{AnalysisResult, AnalysisTree, AnalysisType, ReviewCadence};
+use crate::analysis::tree::{AnalysisResult, AnalysisTree, AnalysisType, NodeId, ReviewCadence};
+use crate::data::config::TimeGranularity;
 use crate::data::schema::DataSchema;
 
 use super::cache::ColumnCache;
-use super::meta::{measure_ref, set_legacy_meta};
+use super::meta::{add_scored_root, measure_ref, RootMeta};
 use super::payloads::{
     build_anomaly_period_series, build_anomaly_series, build_period_comparison_data,
     build_scatter_data,
@@ -23,6 +24,32 @@ use super::payloads::{
 use super::pipeline::granularity_name;
 use super::{add_child_scored, AnalysisEngine, AnalysisTask};
 use crate::analysis::candidates::Aggregation;
+
+/// Loop-invariant context for the cadence review arms.
+struct CadenceCtx<'a> {
+    cache: &'a ColumnCache,
+    period_labels: &'a [Option<String>],
+    granularity: TimeGranularity,
+    current_period: &'a str,
+    previous_period: &'a str,
+}
+
+/// Loop-invariant context for the timeless-review arms.
+struct ReviewCtx<'a> {
+    df: &'a DataFrame,
+    schema: &'a DataSchema,
+    cache: &'a ColumnCache,
+}
+
+/// One queued attribution: which parent to explain, over which (target,
+/// segment) pair, at what drill depth.
+#[derive(Clone, Copy)]
+struct AttributionTask<'a> {
+    parent_id: NodeId,
+    target_col: &'a str,
+    segment_col: &'a str,
+    depth: usize,
+}
 
 impl AnalysisEngine {
     /// Review report with cadence awareness
@@ -81,9 +108,69 @@ impl AnalysisEngine {
             });
         };
 
-        // Compare each KPI between current and previous period
+        let ctx = CadenceCtx {
+            cache: &cache,
+            period_labels: &period_labels,
+            granularity,
+            current_period: &current_period,
+            previous_period: &previous_period,
+        };
+
+        first_level_count += self.period_comparison_pass(schema, &ctx, &mut tree, &mut queue);
+        first_level_count += self.history_anomaly_pass(schema, &ctx, &mut tree, &mut queue);
+
+        // Process attribution queue
+        while let Some(task) = queue.pop_front() {
+            if let AnalysisTask::AttributePeriodSegment {
+                parent_id,
+                target_col,
+                segment_col,
+                period,
+                depth,
+            } = task
+            {
+                if depth >= self.max_depth {
+                    continue;
+                }
+
+                deeper_count += 1;
+
+                self.attribute_period_segment_arm(
+                    &ctx,
+                    parent_id,
+                    &target_col,
+                    &segment_col,
+                    &period,
+                    &mut tree,
+                );
+            }
+        }
+
+        // Dedup, then diversity-select the top roots
+        dedup::dedup(&mut tree);
+        crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
+        crate::analysis::select::select_top(&mut tree, self.select_top);
+
+        Ok(AnalysisResult {
+            tree,
+            first_level_count,
+            deeper_count,
+        })
+    }
+
+    /// Compare each measure between the current and previous period; queue
+    /// segment attribution for the movers. Returns the number of comparisons
+    /// actually made (the first-level count contribution).
+    fn period_comparison_pass(
+        &self,
+        schema: &DataSchema,
+        ctx: &CadenceCtx<'_>,
+        tree: &mut AnalysisTree,
+        queue: &mut VecDeque<AnalysisTask>,
+    ) -> usize {
+        let mut first_level_count = 0;
         for col in &schema.measure_columns {
-            let Some(metric_values) = cache.numeric.get(col) else {
+            let Some(metric_values) = ctx.cache.numeric.get(col) else {
                 continue;
             };
 
@@ -91,11 +178,11 @@ impl AnalysisEngine {
             let mut current_values: Vec<f64> = Vec::new();
             let mut previous_values: Vec<f64> = Vec::new();
 
-            for (val, period_opt) in metric_values.iter().zip(period_labels.iter()) {
+            for (val, period_opt) in metric_values.iter().zip(ctx.period_labels.iter()) {
                 if let Some(period) = period_opt {
-                    if period == &current_period {
+                    if period.as_str() == ctx.current_period {
                         current_values.push(*val);
-                    } else if period == &previous_period {
+                    } else if period.as_str() == ctx.previous_period {
                         previous_values.push(*val);
                     }
                 }
@@ -129,76 +216,89 @@ impl AnalysisEngine {
             let is_significant = p_value < self.p_threshold && change_percent.abs() > 10.0;
             let is_large_change = change_percent.abs() > 50.0;
 
-            if is_significant || is_large_change {
-                let direction = if change_percent > 0.0 { "up" } else { "down" };
-                let description = format!(
-                    "'{}' is {} {:.1}% in {} vs {} (p={:.4})",
-                    col,
-                    direction,
-                    change_percent.abs(),
-                    current_period,
-                    previous_period,
-                    p_value
-                );
+            if !(is_significant || is_large_change) {
+                continue;
+            }
+            let direction = if change_percent > 0.0 { "up" } else { "down" };
+            let description = format!(
+                "'{}' is {} {:.1}% in {} vs {} (p={:.4})",
+                col,
+                direction,
+                change_percent.abs(),
+                ctx.current_period,
+                ctx.previous_period,
+                p_value
+            );
 
-                let analysis = AnalysisType::PeriodComparison {
-                    column: col.clone(),
-                    current_period: current_period.clone(),
-                    previous_period: previous_period.clone(),
-                    current_value: current_mean,
-                    previous_value: previous_mean,
-                    change_percent,
-                    p_value,
-                };
-                let data = build_period_comparison_data(
-                    metric_values,
-                    &period_labels,
-                    &current_period,
-                    &previous_period,
-                );
-                let breakdown = scoring::score(&analysis, &self.scoring_ctx);
-                if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
-                    continue;
-                }
-                let score = scoring::total(&breakdown);
-                let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
-                set_legacy_meta(
-                    &mut tree,
-                    node_id,
-                    "period_comparison",
-                    measure_ref(col),
-                    Aggregation::Mean,
-                    None,
-                    granularity_name(granularity),
-                    format!(
+            let analysis = AnalysisType::PeriodComparison {
+                column: col.clone(),
+                current_period: ctx.current_period.to_string(),
+                previous_period: ctx.previous_period.to_string(),
+                current_value: current_mean,
+                previous_value: previous_mean,
+                change_percent,
+                p_value,
+            };
+            let data = build_period_comparison_data(
+                metric_values,
+                ctx.period_labels,
+                ctx.current_period,
+                ctx.previous_period,
+            );
+            let Some(node_id) = add_scored_root(
+                tree,
+                &self.scoring_ctx,
+                analysis,
+                description,
+                data,
+                RootMeta {
+                    detector: "period_comparison",
+                    measure: measure_ref(col),
+                    agg: Aggregation::Mean,
+                    dimension: None,
+                    granularity: granularity_name(ctx.granularity),
+                    why: format!(
                         "covers the whole table; two identical periods would differ this much only {:.1}% of the time",
                         (p_value * 100.0).min(100.0)
                     ),
-                );
-
-                // Attribute to segments
-                for seg_col in &schema.dimension_columns {
-                    queue.push_back(AnalysisTask::AttributePeriodSegment {
-                        parent_id: node_id,
-                        target_col: col.clone(),
-                        segment_col: seg_col.clone(),
-                        period: current_period.clone(),
-                        depth: 1,
-                    });
-                }
-            }
-        }
-
-        // Test the latest period against the full period history (the pairwise
-        // comparison above only sees the previous period — a gradual drift or
-        // a spike vs a long stable baseline shows up here). Row volume gets
-        // the same test: "post count spiked today" is a review-grade story.
-        let mut history_series: Vec<(String, Vec<String>, Vec<f64>)> = Vec::new();
-        for col in &schema.measure_columns {
-            let Some(metric_values) = cache.numeric.get(col) else {
+                },
+            ) else {
                 continue;
             };
-            let stats = aggregate_by_period_cached(metric_values, &period_labels);
+
+            // Attribute to segments
+            for seg_col in &schema.dimension_columns {
+                queue.push_back(AnalysisTask::AttributePeriodSegment {
+                    parent_id: node_id,
+                    target_col: col.clone(),
+                    segment_col: seg_col.clone(),
+                    period: ctx.current_period.to_string(),
+                    depth: 1,
+                });
+            }
+        }
+        first_level_count
+    }
+
+    /// Test the latest period against the full period history (the pairwise
+    /// comparison only sees the previous period — a gradual drift or a spike
+    /// vs a long stable baseline shows up here). Row volume gets the same
+    /// test: "post count spiked today" is a review-grade story. Returns the
+    /// first-level count contribution.
+    fn history_anomaly_pass(
+        &self,
+        schema: &DataSchema,
+        ctx: &CadenceCtx<'_>,
+        tree: &mut AnalysisTree,
+        queue: &mut VecDeque<AnalysisTask>,
+    ) -> usize {
+        let mut first_level_count = 0;
+        let mut history_series: Vec<(String, Vec<String>, Vec<f64>)> = Vec::new();
+        for col in &schema.measure_columns {
+            let Some(metric_values) = ctx.cache.numeric.get(col) else {
+                continue;
+            };
+            let stats = aggregate_by_period_cached(metric_values, ctx.period_labels);
             history_series.push((
                 col.clone(),
                 stats.iter().map(|s| s.period_label.clone()).collect(),
@@ -209,7 +309,7 @@ impl AnalysisEngine {
             // Per-period row counts as a synthetic "rows" measure
             let mut counts: std::collections::HashMap<String, f64> =
                 std::collections::HashMap::new();
-            for p in period_labels.iter().flatten() {
+            for p in ctx.period_labels.iter().flatten() {
                 *counts.entry(p.clone()).or_insert(0.0) += 1.0;
             }
             let mut sorted: Vec<(String, f64)> = counts.into_iter().collect();
@@ -235,7 +335,7 @@ impl AnalysisEngine {
             let description = format!(
                 "'{}' in {} is {:.1} std devs {} its historical period mean ({:.2} vs {:.2})",
                 col,
-                current_period,
+                ctx.current_period,
                 anomaly.z_score.abs(),
                 if anomaly.z_score > 0.0 {
                     "above"
@@ -258,127 +358,111 @@ impl AnalysisEngine {
                 anomaly.mean,
                 anomaly.std_dev,
             ));
-            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
-            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
-                continue;
-            }
-            let score = scoring::total(&breakdown);
-            let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
-            set_legacy_meta(
-                &mut tree,
-                node_id,
-                "history_anomaly",
-                measure_ref(col),
-                if col == "rows" {
-                    Aggregation::Count
-                } else {
-                    Aggregation::Mean
+            let Some(node_id) = add_scored_root(
+                tree,
+                &self.scoring_ctx,
+                analysis,
+                description,
+                data,
+                RootMeta {
+                    detector: "history_anomaly",
+                    measure: measure_ref(col),
+                    agg: if col == "rows" {
+                        Aggregation::Count
+                    } else {
+                        Aggregation::Mean
+                    },
+                    dimension: None,
+                    granularity: granularity_name(ctx.granularity),
+                    why: format!(
+                        "covers the whole table; a typical period sits within 2 standard deviations of history — this one is {:.1} away",
+                        anomaly.z_score.abs()
+                    ),
                 },
-                None,
-                granularity_name(granularity),
-                format!(
-                    "covers the whole table; a typical period sits within 2 standard deviations of history — this one is {:.1} away",
-                    anomaly.z_score.abs()
-                ),
-            );
+            ) else {
+                continue;
+            };
             if col != "rows" {
                 for seg_col in &schema.dimension_columns {
                     queue.push_back(AnalysisTask::AttributePeriodSegment {
                         parent_id: node_id,
                         target_col: col.to_string(),
                         segment_col: seg_col.clone(),
-                        period: current_period.clone(),
+                        period: ctx.current_period.to_string(),
                         depth: 1,
                     });
                 }
             }
         }
+        first_level_count
+    }
 
-        // Process attribution queue
-        while let Some(task) = queue.pop_front() {
-            if let AnalysisTask::AttributePeriodSegment {
-                parent_id,
-                target_col,
-                segment_col,
-                period,
-                depth,
-            } = task
-            {
-                if depth >= self.max_depth {
-                    continue;
-                }
+    /// Attribute one parent finding's movement to the values of a dimension
+    /// within the current period.
+    fn attribute_period_segment_arm(
+        &self,
+        ctx: &CadenceCtx<'_>,
+        parent_id: NodeId,
+        target_col: &str,
+        segment_col: &str,
+        period: &str,
+        tree: &mut AnalysisTree,
+    ) {
+        let Some(target_values) = ctx.cache.numeric.get(target_col) else {
+            return;
+        };
+        let Some(segment_values) = ctx.cache.dimension.get(segment_col) else {
+            return;
+        };
 
-                deeper_count += 1;
+        let segments = attribute_period_segments_cached(
+            target_col,
+            segment_col,
+            target_values,
+            segment_values,
+            period,
+            ctx.period_labels,
+        );
 
-                let Some(target_values) = cache.numeric.get(&target_col) else {
-                    continue;
-                };
-                let Some(segment_values) = cache.dimension.get(&segment_col) else {
-                    continue;
-                };
-
-                let segments = attribute_period_segments_cached(
-                    &target_col,
-                    &segment_col,
-                    target_values,
-                    segment_values,
-                    &period,
-                    &period_labels,
+        for attr in segments {
+            if attr.p_value < self.p_threshold || attr.contribution.abs() > 0.0 {
+                let description = format!(
+                    "In {}: '{}' = '{}' was {:.0}% {}, contributing {:.0}% of total change",
+                    period,
+                    segment_col,
+                    attr.segment_value,
+                    attr.change_percent.abs(),
+                    if attr.change_percent > 0.0 {
+                        "higher"
+                    } else {
+                        "lower"
+                    },
+                    attr.contribution_pct.abs()
                 );
-
-                for attr in segments {
-                    if attr.p_value < self.p_threshold || attr.contribution.abs() > 0.0 {
-                        let description =
-                            format!(
-                            "In {}: '{}' = '{}' was {:.0}% {}, contributing {:.0}% of total change",
-                            period,
-                            segment_col,
-                            attr.segment_value,
-                            attr.change_percent.abs(),
-                            if attr.change_percent > 0.0 { "higher" } else { "lower" },
-                            attr.contribution_pct.abs()
-                        );
-                        let analysis = AnalysisType::Segment {
-                            target_column: attr.target_column.clone(),
-                            segment_column: attr.segment_column.clone(),
-                            segment_value: attr.segment_value.clone(),
-                            contribution: attr.contribution,
-                            change_percent: attr.change_percent,
-                            contribution_pct: attr.contribution_pct,
-                            p_value: attr.p_value,
-                        };
-                        if let Some(child_id) = add_child_scored(
-                            &mut tree,
-                            parent_id,
-                            analysis,
-                            description,
-                            &self.scoring_ctx,
-                        ) {
-                            // Extend the filter chain for this segment finding
-                            let parent_chain = tree.nodes[parent_id.0].filter_chain.clone();
-                            let mut chain = parent_chain;
-                            chain.push(crate::analysis::tree::FilterStep {
-                                column: attr.segment_column.clone(),
-                                op: "eq".to_string(),
-                                value: attr.segment_value.clone(),
-                            });
-                            tree.set_filter_chain(child_id, chain);
-                        }
-                    }
+                let analysis = AnalysisType::Segment {
+                    target_column: attr.target_column.clone(),
+                    segment_column: attr.segment_column.clone(),
+                    segment_value: attr.segment_value.clone(),
+                    contribution: attr.contribution,
+                    change_percent: attr.change_percent,
+                    contribution_pct: attr.contribution_pct,
+                    p_value: attr.p_value,
+                };
+                if let Some(child_id) =
+                    add_child_scored(tree, parent_id, analysis, description, &self.scoring_ctx)
+                {
+                    // Extend the filter chain for this segment finding
+                    let parent_chain = tree.nodes[parent_id.0].filter_chain.clone();
+                    let mut chain = parent_chain;
+                    chain.push(crate::analysis::tree::FilterStep {
+                        column: attr.segment_column.clone(),
+                        op: "eq".to_string(),
+                        value: attr.segment_value.clone(),
+                    });
+                    tree.set_filter_chain(child_id, chain);
                 }
             }
         }
-
-        // Dedup, then diversity-select the top roots
-        dedup::dedup(&mut tree);
-        crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
-        crate::analysis::select::select_top(&mut tree, self.select_top);
-
-        Ok(AnalysisResult {
-            tree,
-            first_level_count,
-            deeper_count,
-        })
     }
 
     /// Review report: anomaly detection with attribution (How are we doing? What happened? Why?)
@@ -394,6 +478,11 @@ impl AnalysisEngine {
         let mut deeper_count: usize = 0;
 
         let cache = ColumnCache::new(df, schema)?;
+        let ctx = ReviewCtx {
+            df,
+            schema,
+            cache: &cache,
+        };
 
         // Queue anomaly detection for KPIs and metrics
         for col in &schema.measure_columns {
@@ -406,61 +495,7 @@ impl AnalysisEngine {
             match task {
                 AnalysisTask::DetectAnomalies { column } => {
                     first_level_count += 1;
-                    if let Some(anomaly) = detect_anomaly(df, &column)? {
-                        if anomaly.z_score.abs() > self.z_threshold {
-                            let description = format!(
-                                "Anomaly detected in '{}': latest value {:.2} is {:.1} std devs {} the mean ({:.2})",
-                                column, anomaly.value, anomaly.z_score.abs(),
-                                if anomaly.z_score > 0.0 { "above" } else { "below" }, anomaly.mean
-                            );
-
-                            let analysis = AnalysisType::Anomaly {
-                                column: anomaly.column.clone(),
-                                value: anomaly.value,
-                                mean: anomaly.mean,
-                                std_dev: anomaly.std_dev,
-                                z_score: anomaly.z_score,
-                            };
-                            let series_data = cache.numeric.get(&column).map(|values| {
-                                build_anomaly_series(values, anomaly.mean, anomaly.std_dev)
-                            });
-                            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
-                            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
-                                continue;
-                            }
-                            let score = scoring::total(&breakdown);
-                            let node_id = tree.add_root_full(
-                                analysis,
-                                score,
-                                breakdown,
-                                description,
-                                series_data,
-                            );
-                            set_legacy_meta(
-                                &mut tree,
-                                node_id,
-                                "raw_anomaly",
-                                measure_ref(&column),
-                                Aggregation::Mean,
-                                None,
-                                "row",
-                                format!(
-                                    "covers the whole table; typical values sit within 2 standard deviations of the mean — the latest is {:.1} away",
-                                    anomaly.z_score.abs()
-                                ),
-                            );
-
-                            // Spawn attribution tasks
-                            for cat_col in &schema.dimension_columns {
-                                queue.push_back(AnalysisTask::AttributeSegment {
-                                    parent_id: node_id,
-                                    target_col: column.clone(),
-                                    segment_col: cat_col.clone(),
-                                    depth: 1,
-                                });
-                            }
-                        }
-                    }
+                    self.detect_anomalies_arm(&ctx, &column, &mut tree, &mut queue)?;
                 },
                 AnalysisTask::AttributeSegment {
                     parent_id,
@@ -472,48 +507,17 @@ impl AnalysisEngine {
                         continue;
                     }
                     deeper_count += 1;
-                    if let Some(attr) = attribute_segment(df, &target_col, &segment_col)? {
-                        if attr.p_value < self.p_threshold {
-                            let description = format!(
-                                "Segment '{}' = '{}' contributes {:.2} to '{}' (p={:.4})",
-                                segment_col,
-                                attr.segment_value,
-                                attr.contribution,
-                                target_col,
-                                attr.p_value
-                            );
-                            let analysis = AnalysisType::Segment {
-                                target_column: attr.target_column.clone(),
-                                segment_column: attr.segment_column.clone(),
-                                segment_value: attr.segment_value.clone(),
-                                contribution: attr.contribution,
-                                change_percent: attr.change_percent,
-                                contribution_pct: attr.contribution_pct,
-                                p_value: attr.p_value,
-                            };
-                            if let Some(node_id) = add_child_scored(
-                                &mut tree,
-                                parent_id,
-                                analysis,
-                                description,
-                                &self.scoring_ctx,
-                            ) {
-                                let parent_chain = tree.nodes[parent_id.0].filter_chain.clone();
-                                let mut chain = parent_chain;
-                                chain.push(crate::analysis::tree::FilterStep {
-                                    column: attr.segment_column.clone(),
-                                    op: "eq".to_string(),
-                                    value: attr.segment_value.clone(),
-                                });
-                                tree.set_filter_chain(node_id, chain);
-                                queue.push_back(AnalysisTask::SearchCorrelations {
-                                    parent_id: node_id,
-                                    target_col: target_col.clone(),
-                                    depth: depth + 1,
-                                });
-                            }
-                        }
-                    }
+                    self.attribute_segment_arm(
+                        &ctx,
+                        AttributionTask {
+                            parent_id,
+                            target_col: &target_col,
+                            segment_col: &segment_col,
+                            depth,
+                        },
+                        &mut tree,
+                        &mut queue,
+                    )?;
                 },
                 AnalysisTask::SearchCorrelations {
                     parent_id,
@@ -524,49 +528,7 @@ impl AnalysisEngine {
                         continue;
                     }
                     deeper_count += 1;
-                    for other_col in &schema.analyzable_columns() {
-                        if other_col != &target_col {
-                            if let Some(corr) = correlate(df, &target_col, other_col)? {
-                                if corr.p_value < self.p_threshold && corr.r_value.abs() > 0.5 {
-                                    let description = format!(
-                                        "Correlation between '{}' and '{}': r={:.3} (p={:.4})",
-                                        target_col, other_col, corr.r_value, corr.p_value
-                                    );
-                                    let xs = cache.numeric.get(&target_col).cloned();
-                                    let ys = cache.numeric.get(other_col).cloned();
-                                    let scatter_data = match (xs, ys) {
-                                        (Some(x), Some(y)) => Some(build_scatter_data(
-                                            &x,
-                                            &y,
-                                            &target_col,
-                                            other_col,
-                                            corr.r_value,
-                                        )),
-                                        _ => None,
-                                    };
-                                    let analysis = AnalysisType::Correlation {
-                                        column_a: corr.column_a,
-                                        column_b: corr.column_b,
-                                        r_value: corr.r_value,
-                                        p_value: corr.p_value,
-                                    };
-                                    let breakdown = scoring::score(&analysis, &self.scoring_ctx);
-                                    if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
-                                        continue;
-                                    }
-                                    let score = scoring::total(&breakdown);
-                                    tree.add_child_full(
-                                        parent_id,
-                                        analysis,
-                                        score,
-                                        breakdown,
-                                        description,
-                                        scatter_data,
-                                    );
-                                }
-                            }
-                        }
-                    }
+                    self.search_correlations_arm(&ctx, parent_id, &target_col, &mut tree)?;
                 },
                 _ => {}, // Ignore other task types in review
             }
@@ -577,12 +539,193 @@ impl AnalysisEngine {
         crate::analysis::history::apply_novelty(&mut tree, &self.history, self.now_epoch);
         crate::analysis::select::select_top(&mut tree, self.select_top);
 
-        // Suppress unused variable warning
-
         Ok(AnalysisResult {
             tree,
             first_level_count,
             deeper_count,
         })
+    }
+
+    /// Latest-value anomaly on a raw (row-ordered) measure; queues segment
+    /// attribution when one is found.
+    fn detect_anomalies_arm(
+        &self,
+        ctx: &ReviewCtx<'_>,
+        column: &str,
+        tree: &mut AnalysisTree,
+        queue: &mut VecDeque<AnalysisTask>,
+    ) -> Result<()> {
+        let Some(anomaly) = detect_anomaly(ctx.df, column)? else {
+            return Ok(());
+        };
+        if anomaly.z_score.abs() <= self.z_threshold {
+            return Ok(());
+        }
+        let description = format!(
+            "Anomaly detected in '{}': latest value {:.2} is {:.1} std devs {} the mean ({:.2})",
+            column,
+            anomaly.value,
+            anomaly.z_score.abs(),
+            if anomaly.z_score > 0.0 {
+                "above"
+            } else {
+                "below"
+            },
+            anomaly.mean
+        );
+
+        let analysis = AnalysisType::Anomaly {
+            column: anomaly.column.clone(),
+            value: anomaly.value,
+            mean: anomaly.mean,
+            std_dev: anomaly.std_dev,
+            z_score: anomaly.z_score,
+        };
+        let series_data = ctx
+            .cache
+            .numeric
+            .get(column)
+            .map(|values| build_anomaly_series(values, anomaly.mean, anomaly.std_dev));
+        let Some(node_id) = add_scored_root(
+            tree,
+            &self.scoring_ctx,
+            analysis,
+            description,
+            series_data,
+            RootMeta {
+                detector: "raw_anomaly",
+                measure: measure_ref(column),
+                agg: Aggregation::Mean,
+                dimension: None,
+                granularity: "row",
+                why: format!(
+                    "covers the whole table; typical values sit within 2 standard deviations of the mean — the latest is {:.1} away",
+                    anomaly.z_score.abs()
+                ),
+            },
+        ) else {
+            return Ok(());
+        };
+
+        // Spawn attribution tasks
+        for cat_col in &ctx.schema.dimension_columns {
+            queue.push_back(AnalysisTask::AttributeSegment {
+                parent_id: node_id,
+                target_col: column.to_string(),
+                segment_col: cat_col.clone(),
+                depth: 1,
+            });
+        }
+        Ok(())
+    }
+
+    /// Attribute a parent anomaly to one segment value; queues a correlation
+    /// search under the new child.
+    fn attribute_segment_arm(
+        &self,
+        ctx: &ReviewCtx<'_>,
+        task: AttributionTask<'_>,
+        tree: &mut AnalysisTree,
+        queue: &mut VecDeque<AnalysisTask>,
+    ) -> Result<()> {
+        let Some(attr) = attribute_segment(ctx.df, task.target_col, task.segment_col)? else {
+            return Ok(());
+        };
+        if attr.p_value >= self.p_threshold {
+            return Ok(());
+        }
+        let description = format!(
+            "Segment '{}' = '{}' contributes {:.2} to '{}' (p={:.4})",
+            task.segment_col, attr.segment_value, attr.contribution, task.target_col, attr.p_value
+        );
+        let analysis = AnalysisType::Segment {
+            target_column: attr.target_column.clone(),
+            segment_column: attr.segment_column.clone(),
+            segment_value: attr.segment_value.clone(),
+            contribution: attr.contribution,
+            change_percent: attr.change_percent,
+            contribution_pct: attr.contribution_pct,
+            p_value: attr.p_value,
+        };
+        if let Some(node_id) = add_child_scored(
+            tree,
+            task.parent_id,
+            analysis,
+            description,
+            &self.scoring_ctx,
+        ) {
+            let parent_chain = tree.nodes[task.parent_id.0].filter_chain.clone();
+            let mut chain = parent_chain;
+            chain.push(crate::analysis::tree::FilterStep {
+                column: attr.segment_column.clone(),
+                op: "eq".to_string(),
+                value: attr.segment_value,
+            });
+            tree.set_filter_chain(node_id, chain);
+            queue.push_back(AnalysisTask::SearchCorrelations {
+                parent_id: node_id,
+                target_col: task.target_col.to_string(),
+                depth: task.depth + 1,
+            });
+        }
+        Ok(())
+    }
+
+    /// Correlate the target against every other analyzable column, attaching
+    /// strong pairs as children.
+    fn search_correlations_arm(
+        &self,
+        ctx: &ReviewCtx<'_>,
+        parent_id: NodeId,
+        target_col: &str,
+        tree: &mut AnalysisTree,
+    ) -> Result<()> {
+        for other_col in &ctx.schema.analyzable_columns() {
+            if other_col.as_str() == target_col {
+                continue;
+            }
+            let Some(corr) = correlate(ctx.df, target_col, other_col)? else {
+                continue;
+            };
+            if !(corr.p_value < self.p_threshold && corr.r_value.abs() > 0.5) {
+                continue;
+            }
+            let description = format!(
+                "Correlation between '{}' and '{}': r={:.3} (p={:.4})",
+                target_col, other_col, corr.r_value, corr.p_value
+            );
+            let xs = ctx.cache.numeric.get(target_col).cloned();
+            let ys = ctx.cache.numeric.get(other_col).cloned();
+            let scatter_data = match (xs, ys) {
+                (Some(x), Some(y)) => Some(build_scatter_data(
+                    &x,
+                    &y,
+                    target_col,
+                    other_col,
+                    corr.r_value,
+                )),
+                _ => None,
+            };
+            let analysis = AnalysisType::Correlation {
+                column_a: corr.column_a,
+                column_b: corr.column_b,
+                r_value: corr.r_value,
+                p_value: corr.p_value,
+            };
+            let breakdown = scoring::score(&analysis, &self.scoring_ctx);
+            if !scoring::passes_floor(&breakdown, &self.scoring_ctx) {
+                continue;
+            }
+            let score = scoring::total(&breakdown);
+            tree.add_child_full(
+                parent_id,
+                analysis,
+                score,
+                breakdown,
+                description,
+                scatter_data,
+            );
+        }
+        Ok(())
     }
 }
