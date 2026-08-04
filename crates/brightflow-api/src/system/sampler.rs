@@ -13,7 +13,7 @@ use tokio::time;
 use super::proc;
 
 /// Snapshot of system metrics at a point in time.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SystemSnapshot {
     /// VmRSS: total resident memory (the number that matters for capacity)
     pub process_rss_bytes: u64,
@@ -23,19 +23,6 @@ pub struct SystemSnapshot {
     pub system_total_bytes: u64,
     pub cpu_percent: f64,
     pub uptime_secs: u64,
-}
-
-impl Default for SystemSnapshot {
-    fn default() -> Self {
-        Self {
-            process_rss_bytes: 0,
-            process_anon_bytes: 0,
-            system_used_bytes: 0,
-            system_total_bytes: 0,
-            cpu_percent: 0.0,
-            uptime_secs: 0,
-        }
-    }
 }
 
 /// Run the background sampler that reads /proc every 2 seconds.

@@ -39,11 +39,20 @@ impl AnalyticsParams {
 
 /// Resolve a period preset (or explicit bounds) to (start, end) datetime strings.
 pub fn resolve_dates(period: &str, start: Option<&str>, end: Option<&str>) -> (String, String) {
+    resolve_dates_at(chrono::Utc::now(), period, start, end)
+}
+
+/// Pure core of `resolve_dates`, parameterized on "now" so presets are testable.
+fn resolve_dates_at(
+    now: chrono::DateTime<chrono::Utc>,
+    period: &str,
+    start: Option<&str>,
+    end: Option<&str>,
+) -> (String, String) {
     if let (Some(s), Some(e)) = (start, end) {
         return (s.to_string(), e.to_string());
     }
 
-    let now = chrono::Utc::now();
     let end_str = now.format("%Y-%m-%dT23:59:59").to_string();
 
     let start_str = match period {
@@ -51,7 +60,10 @@ pub fn resolve_dates(period: &str, start: Option<&str>, end: Option<&str>) -> (S
         "7d" => (now - chrono::Duration::days(7))
             .format("%Y-%m-%dT00:00:00")
             .to_string(),
-        "month" => now.format("%Y-%m-01T00:00:00").to_string(),
+        "month" => chrono::Datelike::with_day(&now, 1)
+            .unwrap_or(now)
+            .format("%Y-%m-%dT00:00:00")
+            .to_string(),
         "12m" => (now - chrono::Duration::days(365))
             .format("%Y-%m-%dT00:00:00")
             .to_string(),
@@ -65,8 +77,8 @@ pub fn resolve_dates(period: &str, start: Option<&str>, end: Option<&str>) -> (S
 
 /// Build scan filters for a date range query.
 fn date_filters(start: &str, end: &str) -> Vec<ScanFilter> {
-    let date_start = &start[..10.min(start.len())];
-    let date_end = &end[..10.min(end.len())];
+    let date_start = start.get(..10).unwrap_or(start);
+    let date_end = end.get(..10).unwrap_or(end);
     vec![
         ScanFilter::PartitionRange {
             key: "date".into(),
@@ -161,5 +173,44 @@ mod tests {
         // produce a different format.
         let (s, _) = resolve_dates("bogus", None, None);
         assert!(s.ends_with("T00:00:00"));
+    }
+
+    fn fixed_now() -> chrono::DateTime<chrono::Utc> {
+        "2026-04-15T10:30:00Z".parse().unwrap()
+    }
+
+    #[test]
+    fn month_preset_starts_on_the_first() {
+        let (s, e) = resolve_dates_at(fixed_now(), "month", None, None);
+        assert_eq!(s, "2026-04-01T00:00:00");
+        assert_eq!(e, "2026-04-15T23:59:59");
+    }
+
+    #[test]
+    fn today_and_7d_presets_at_fixed_now() {
+        let (today_start, _) = resolve_dates_at(fixed_now(), "today", None, None);
+        assert_eq!(today_start, "2026-04-15T00:00:00");
+        let (week_start, _) = resolve_dates_at(fixed_now(), "7d", None, None);
+        assert_eq!(week_start, "2026-04-08T00:00:00");
+    }
+
+    #[test]
+    fn date_filters_take_the_date_prefix() {
+        let filters = date_filters("2026-04-01T00:00:00", "2026-04-15T23:59:59");
+        let ScanFilter::PartitionRange { min, max, .. } = &filters[0] else {
+            panic!("expected a partition range first");
+        };
+        assert_eq!(min.as_deref(), Some("2026-04-01"));
+        assert_eq!(max.as_deref(), Some("2026-04-15"));
+    }
+
+    #[test]
+    fn date_filters_pass_short_strings_through() {
+        let filters = date_filters("2026", "2026-04");
+        let ScanFilter::PartitionRange { min, max, .. } = &filters[0] else {
+            panic!("expected a partition range first");
+        };
+        assert_eq!(min.as_deref(), Some("2026"));
+        assert_eq!(max.as_deref(), Some("2026-04"));
     }
 }

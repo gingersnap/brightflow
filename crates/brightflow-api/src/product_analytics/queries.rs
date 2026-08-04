@@ -417,9 +417,9 @@ pub fn query_user_timeline(lf: LazyFrame, user_id: &str) -> IngestResult<Vec<Use
 /// Convert a timestamp string to a period key (e.g. "2026-W14" or "2026-04").
 fn ts_to_period_key(ts: &str, period_type: &str) -> String {
     let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) else {
-        // Fall back to date string prefix
-        let date_str = &ts[..10.min(ts.len())];
-        return date_str.to_string();
+        // Fall back to date string prefix (whole string if too short or the
+        // boundary is mid-codepoint)
+        return ts.get(..10).unwrap_or(ts).to_string();
     };
     let date = dt.date_naive();
     match period_type {
@@ -431,40 +431,96 @@ fn ts_to_period_key(ts: &str, period_type: &str) -> String {
     }
 }
 
-/// Offset a period key by N periods.
-#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+/// Offset a period key by N periods. Keys that don't parse as "YYYY-Www" /
+/// "YYYY-MM" (including out-of-range months like "2026-99") are returned
+/// unchanged, matching the malformed-shape policy of the week arm.
 fn offset_period_key(base_key: &str, offset: usize, period_type: &str) -> String {
+    let Ok(offset) = u32::try_from(offset) else {
+        return base_key.to_string();
+    };
     if period_type == "week" {
-        // Parse "YYYY-Www"
-        let parts: Vec<&str> = base_key.split("-W").collect();
-        if parts.len() != 2 {
+        let Some((year, week)) = base_key.split_once("-W") else {
             return base_key.to_string();
-        }
-        let year: i32 = parts[0].parse().unwrap_or(2026);
-        let week: u32 = parts[1].parse().unwrap_or(1);
+        };
+        let (Ok(year), Ok(week)) = (year.parse::<i32>(), week.parse::<u32>()) else {
+            return base_key.to_string();
+        };
         let Some(date) = chrono::NaiveDate::from_isoywd_opt(year, week, chrono::Weekday::Mon)
         else {
             return base_key.to_string();
         };
-        let target = date + chrono::Duration::weeks(offset as i64);
+        let target = date + chrono::Duration::weeks(i64::from(offset));
         let iso = target.iso_week();
         format!("{}-W{:02}", iso.year(), iso.week())
     } else {
-        // Parse "YYYY-MM"
-        let parts: Vec<&str> = base_key.split('-').collect();
-        if parts.len() != 2 {
+        let Some((year, month)) = base_key.split_once('-') else {
             return base_key.to_string();
-        }
-        let year: i32 = parts[0].parse().unwrap_or(2026);
-        let month: u32 = parts[1].parse().unwrap_or(1);
-        let total_months = (year * 12 + month as i32 - 1) + offset as i32;
-        let target_year = total_months / 12;
-        let target_month = (total_months % 12) + 1;
-        format!("{target_year}-{target_month:02}")
+        };
+        let (Ok(year), Ok(month)) = (year.parse::<i32>(), month.parse::<u32>()) else {
+            return base_key.to_string();
+        };
+        let Some(target) = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+            .and_then(|d| d.checked_add_months(chrono::Months::new(offset)))
+        else {
+            return base_key.to_string();
+        };
+        format!("{}-{:02}", target.year(), target.month())
     }
 }
 
 /// Generate a sequence of period keys for column headers.
 fn generate_period_keys(count: usize) -> Vec<String> {
     (0..count).map(|i| format!("P{i}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ts_to_period_key_month_and_week() {
+        assert_eq!(ts_to_period_key("2026-04-15T12:00:00Z", "month"), "2026-04");
+        assert_eq!(ts_to_period_key("2026-04-15T12:00:00Z", "week"), "2026-W16");
+        // ISO week-year boundary: 2025-12-29 belongs to 2026-W01
+        assert_eq!(ts_to_period_key("2025-12-29T00:00:00Z", "week"), "2026-W01");
+    }
+
+    #[test]
+    fn ts_to_period_key_non_rfc3339_falls_back_to_prefix() {
+        assert_eq!(
+            ts_to_period_key("2026-04-15 12:00:00", "month"),
+            "2026-04-15"
+        );
+        assert_eq!(ts_to_period_key("2026-04", "month"), "2026-04");
+        assert_eq!(ts_to_period_key("", "month"), "");
+    }
+
+    #[test]
+    fn offset_period_key_months() {
+        assert_eq!(offset_period_key("2026-04", 2, "month"), "2026-06");
+        assert_eq!(offset_period_key("2026-11", 3, "month"), "2027-02");
+        assert_eq!(offset_period_key("2026-04", 0, "month"), "2026-04");
+    }
+
+    #[test]
+    fn offset_period_key_weeks() {
+        assert_eq!(offset_period_key("2026-W16", 2, "week"), "2026-W18");
+        // Crosses into the next ISO week-year
+        assert_eq!(offset_period_key("2026-W52", 2, "week"), "2027-W01");
+    }
+
+    #[test]
+    fn offset_period_key_malformed_passthrough() {
+        assert_eq!(offset_period_key("garbage", 3, "month"), "garbage");
+        assert_eq!(offset_period_key("garbage", 3, "week"), "garbage");
+        // Out-of-range month is passed through, not silently remapped
+        assert_eq!(offset_period_key("2026-99", 1, "month"), "2026-99");
+        assert_eq!(offset_period_key("20xx-04", 1, "month"), "20xx-04");
+    }
+
+    #[test]
+    fn generate_period_keys_shape() {
+        assert_eq!(generate_period_keys(3), vec!["P0", "P1", "P2"]);
+        assert!(generate_period_keys(0).is_empty());
+    }
 }

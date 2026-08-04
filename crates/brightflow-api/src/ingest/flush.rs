@@ -51,8 +51,16 @@ impl FlushTask {
             "Event flush task started (interval: {}s)",
             self.flush_interval.as_secs()
         );
+        // interval_at keeps the wait-one-period-first startup behavior of the
+        // old sleep loop; Delay keeps ticks spaced a full period after a slow
+        // flush instead of bursting to catch up.
+        let mut interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + self.flush_interval,
+            self.flush_interval,
+        );
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            tokio::time::sleep(self.flush_interval).await;
+            interval.tick().await;
             if let Err(e) = self.tick().await {
                 tracing::error!("Flush tick error: {e}");
             }

@@ -75,8 +75,14 @@ impl Scheduler {
             error!("Failed to clean up stale runs: {e}");
         }
         info!("Scheduler started");
+        // interval_at keeps the wait-one-period-first startup behavior of the
+        // old sleep loop; Delay keeps ticks spaced a full period after a slow
+        // tick instead of bursting to catch up.
+        let period = tokio::time::Duration::from_secs(30);
+        let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            interval.tick().await;
             if let Err(e) = self.tick().await {
                 error!("Scheduler tick error: {e}");
             }
