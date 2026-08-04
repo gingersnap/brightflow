@@ -200,9 +200,7 @@ pub async fn get_or_build(
     source_id: &str,
     table: &str,
 ) -> AppResult<Arc<TextIndex>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let table_row = store
         .db()
         .get_table(source_id, table)

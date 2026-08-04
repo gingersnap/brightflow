@@ -80,9 +80,7 @@ pub async fn dispatch_action(
     request_id: &str,
     actor: Actor,
 ) -> AppResult<ActionResponse> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     let params_json = serde_json::to_string(&action)
         .map_err(|e| AppError::Internal(format!("action serialize: {e}")))?;
@@ -157,9 +155,7 @@ async fn execute_and_record_quiet(
     mut row: brightflow_store::ActionLogRow,
     action: Action,
 ) -> AppResult<(ActionResponse, ActionLogEntry)> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     let log_id = row.id;
     let now = chrono::Utc::now().timestamp();
@@ -235,9 +231,7 @@ pub async fn feed(
     State(state): State<AppState>,
     Query(q): Query<FeedQuery>,
 ) -> AppResult<Json<Vec<ActionLogEntry>>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let rows = store
         .db()
         .list_actions(q.limit.unwrap_or(100).clamp(1, 500))
@@ -286,9 +280,7 @@ pub async fn approve(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<ActionResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     let row = store
         .db()
@@ -315,9 +307,7 @@ pub(crate) const MAX_REPORTED_FAILURES: usize = 20;
 /// a `label_documents` run can propose a thousand. Counting the visible page
 /// would put a wrong number on the "approve all" button.
 pub async fn pending_count(State(state): State<AppState>) -> AppResult<Json<PendingCount>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let count = store.db().count_proposed_actions().await?;
     Ok(Json(PendingCount {
         count: usize::try_from(count).unwrap_or(0),
@@ -332,9 +322,7 @@ pub async fn pending_count(State(state): State<AppState>) -> AppResult<Json<Pend
 /// records and failure handling are identical. Nothing here is a shortcut around
 /// the normal path; it is the normal path in a loop.
 pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkApproveResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     let rows = store.db().list_proposed_actions().await?;
 
@@ -425,9 +413,7 @@ pub async fn reject(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<ActionResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let row = store
         .db()
         .get_action(id)
@@ -461,9 +447,7 @@ pub(crate) async fn undo_action_row(
     state: &AppState,
     row: &brightflow_store::ActionLogRow,
 ) -> AppResult<()> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     if row.status != "applied" {
         return Err(AppError::BadRequest(format!(
@@ -492,9 +476,7 @@ pub async fn undo(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<ActionResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     let row = store
         .db()
@@ -999,9 +981,7 @@ async fn owned_category(
 
 /// Apply an inverse operation.
 pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     match op {
         UndoOp::RestoreClusterEdit {
@@ -1198,9 +1178,7 @@ async fn table_ctx(
     source_id: &str,
     table: &str,
 ) -> AppResult<(StoreHandle, String)> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let store = std::sync::Arc::clone(store);
     let row = store
         .db()
@@ -1456,9 +1434,7 @@ async fn refresh_label_artifact(
     table: &str,
     table_id: &str,
 ) -> AppResult<()> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
+    let store = state.require_store()?;
     let clustering = load_clustering(state, source_id, table)?;
     let edits = store.db().get_cluster_edits(table_id).await?;
 
@@ -1534,9 +1510,7 @@ fn average_label_centroids<'a>(
 
 /// Undo path helper: recover (source_id, table) from a table id.
 async fn refresh_label_artifact_by_table_id(state: &AppState, table_id: &str) -> AppResult<()> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".into()))?;
+    let store = state.require_store()?;
     let tables = store
         .list_tables()
         .await

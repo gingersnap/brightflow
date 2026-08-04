@@ -247,9 +247,7 @@ pub async fn delete_source(
     // Persistent CSV uploads live in the store's source registry, not the
     // ingest DB: drop tables + parquet dir + registry row and we're done.
     if id.starts_with("upload:") {
-        let store = state
-            .store()
-            .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+        let store = state.require_store()?;
         if store.db().get_registered_source(&id).await?.is_none() {
             return Err(AppError::NotFound(format!("source '{id}' not found")));
         }

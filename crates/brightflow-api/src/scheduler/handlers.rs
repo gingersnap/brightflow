@@ -76,15 +76,12 @@ impl From<brightflow_scheduler::ConnectorConfig> for ConnectorConfigResponse {
 // Connector Config CRUD
 // =====================================================
 
-/// POST /api/connectors — create connector config
+/// POST /api/connector-configs — create connector config
 pub async fn create_connector_config(
     State(state): State<AppState>,
     Json(body): Json<CreateConnectorConfigRequest>,
 ) -> AppResult<Json<brightflow_scheduler::ConnectorConfig>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let config_json = serde_json::to_string(&body.config_json)
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -102,14 +99,11 @@ pub async fn create_connector_config(
     Ok(Json(config))
 }
 
-/// GET /api/connectors — list connector configs (from DB)
+/// GET /api/connector-configs — list connector configs (from DB)
 pub async fn list_connector_configs(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<brightflow_scheduler::ConnectorConfig>>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let configs = db
         .list_connector_configs()
@@ -119,15 +113,12 @@ pub async fn list_connector_configs(
     Ok(Json(configs))
 }
 
-/// GET /api/connectors/:id — get connector config (without raw token)
+/// GET /api/connector-configs/:id — get connector config (without raw token)
 pub async fn get_connector_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> AppResult<Json<ConnectorConfigResponse>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let config = db
         .get_connector_config(&id)
@@ -138,16 +129,13 @@ pub async fn get_connector_config(
     Ok(Json(ConnectorConfigResponse::from(config)))
 }
 
-/// PUT /api/connectors/:id — update connector config (partial updates supported)
+/// PUT /api/connector-configs/:id — update connector config (partial updates supported)
 pub async fn update_connector_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateConnectorConfigRequest>,
 ) -> AppResult<Json<ConnectorConfigResponse>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let existing = db
         .get_connector_config(&id)
@@ -177,15 +165,12 @@ pub async fn update_connector_config(
     Ok(Json(ConnectorConfigResponse::from(config)))
 }
 
-/// DELETE /api/connectors/:id — delete connector config
+/// DELETE /api/connector-configs/:id — delete connector config
 pub async fn delete_connector_config(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let deleted = db
         .delete_connector_config(&id)
@@ -233,10 +218,7 @@ pub async fn update_job(
     Path(id): Path<String>,
     Json(body): Json<UpdateJobRequest>,
 ) -> AppResult<Json<brightflow_scheduler::SchedulerJob>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let job = db
         .update_scheduler_job(&id, body.interval_secs, body.enabled)
@@ -252,10 +234,7 @@ pub async fn delete_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let db = state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))?;
+    let db = state.require_scheduler_db()?;
 
     let deleted = db
         .delete_scheduler_job(&id)

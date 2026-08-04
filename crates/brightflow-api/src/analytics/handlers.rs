@@ -210,9 +210,7 @@ async fn ingest_csv_as_source(
     filename: &str,
     table_override: Option<&str>,
 ) -> AppResult<(String, String, usize, Vec<String>)> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let paths = state
         .paths
         .as_ref()

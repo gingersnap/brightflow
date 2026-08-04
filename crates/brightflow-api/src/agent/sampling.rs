@@ -100,9 +100,7 @@ pub async fn stratified_sample(
     table: &str,
     n: usize,
 ) -> AppResult<Vec<SampleDoc>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let df = store.read_table(source_id, table).await?;
     let display = DocDisplay::for_table(table);
 

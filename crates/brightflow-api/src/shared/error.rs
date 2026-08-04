@@ -33,6 +33,12 @@ pub enum AppError {
     #[error("Too many requests: {0}")]
     TooManyRequests(String),
 
+    /// The server is running without a data store. The message text is a
+    /// contract: the frontend matches on "No data store configured" to show
+    /// its guided explanation.
+    #[error("No data store configured")]
+    StoreUnavailable,
+
     #[error("Internal error: {0}")]
     Internal(String),
 
@@ -78,6 +84,11 @@ impl AppError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "INVALID_QUERY",
                 msg.clone(),
+            ),
+            Self::StoreUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "STORE_UNAVAILABLE",
+                "No data store configured".to_string(),
             ),
             Self::Internal(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -186,6 +197,11 @@ mod tests {
                 "TOO_MANY_REQUESTS",
             ),
             (
+                AppError::StoreUnavailable,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "STORE_UNAVAILABLE",
+            ),
+            (
                 AppError::Internal("x".into()),
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
@@ -202,5 +218,13 @@ mod tests {
             assert_eq!(c, code);
             assert_eq!(err.error_code(), code);
         }
+    }
+
+    #[test]
+    fn store_unavailable_message_is_the_frontend_contract() {
+        // The frontend matches startsWith('No data store configured') to show
+        // its guided explanation; changing this text breaks that match.
+        let (_, _, msg) = AppError::StoreUnavailable.parts();
+        assert_eq!(msg, "No data store configured");
     }
 }

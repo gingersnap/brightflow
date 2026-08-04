@@ -58,9 +58,7 @@ fn workspace_root(state: &AppState) -> AppResult<PathBuf> {
 }
 
 async fn load_table(state: &AppState, source_id: &str, table: &str) -> AppResult<DataFrame> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     store
         .read_table(source_id, table)
         .await
@@ -878,9 +876,7 @@ pub async fn put_enrichment_settings(
         }
     }
 
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let table_row = store
         .db()
         .get_table(&source_id, &table)

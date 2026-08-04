@@ -27,9 +27,7 @@ const DEFAULT_SAMPLE_ROWS: usize = 10;
 const HEURISTIC_COMPLETION_TOKENS_PER_OUTPUT: i64 = 150;
 
 fn store(state: &AppState) -> AppResult<&std::sync::Arc<ParquetStore>> {
-    state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))
+    state.require_store()
 }
 
 /// A legal derived-column / function name.
@@ -735,9 +733,7 @@ async fn start_run_internal_scoped(
     row: &EnrichmentFunctionRow,
     scope: &str,
 ) -> AppResult<String> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     if row.kind != "llm_prompt" {
         return Err(AppError::BadRequest(
             "runs are only available for llm_prompt functions (topics run via recluster)"

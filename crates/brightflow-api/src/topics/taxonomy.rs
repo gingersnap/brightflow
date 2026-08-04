@@ -27,9 +27,7 @@ const MAX_QUEUE_LIMIT: usize = 500;
 
 /// Resolve (store, table_id) or 404.
 async fn table_id(state: &AppState, source_id: &str, table: &str) -> AppResult<String> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let row = store
         .db()
         .get_table(source_id, table)
@@ -43,9 +41,7 @@ async fn categories_with_support(
     state: &AppState,
     table_id: &str,
 ) -> AppResult<Vec<TaxonomyCategory>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let rows = store.db().get_taxonomy_categories(table_id).await?;
     let counts: HashMap<i64, i64> = store
         .db()
@@ -81,9 +77,7 @@ pub async fn get_taxonomy(
     Path((source_id, table)): Path<(String, String)>,
 ) -> AppResult<Json<TaxonomyOverview>> {
     let tid = table_id(&state, &source_id, &table).await?;
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
 
     let categories = categories_with_support(&state, &tid).await?;
     let labelled = store.db().count_labelled_rows(&tid).await?;
@@ -123,9 +117,7 @@ pub async fn get_curation_queue(
     Query(query): Query<CurationQueueQuery>,
 ) -> AppResult<Json<CurationQueue>> {
     let tid = table_id(&state, &source_id, &table).await?;
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
 
     let limit = query
         .limit

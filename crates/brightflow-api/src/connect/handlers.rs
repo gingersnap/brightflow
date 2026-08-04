@@ -14,15 +14,6 @@ use super::types::{
     ScheduleResponse, UnifiedConnector, UnifiedJob, UnifiedSyncRun, UpdateTokenRequest,
 };
 
-fn get_scheduler_db(
-    state: &AppState,
-) -> Result<&std::sync::Arc<brightflow_scheduler::SchedulerDb>, AppError> {
-    state
-        .scheduler_db
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("No scheduler database configured".to_string()))
-}
-
 /// GET /api/connectors/available — discover all available connectors + their presets
 pub async fn list_available_connectors(
     State(state): State<AppState>,
@@ -80,7 +71,7 @@ pub async fn list_unified_connectors(
         .map(brightflow_core::WorkspacePaths::connector_configs);
     let discovered = brightflow_connect::discover_connectors(custom_dir.as_deref());
 
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let configs = db
         .list_connector_configs()
@@ -192,7 +183,7 @@ pub async fn list_connector_runs(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> AppResult<Json<Vec<brightflow_scheduler::SyncRun>>> {
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let config = db
         .get_connector_config_by_name(&name)
@@ -213,7 +204,7 @@ pub async fn run_connector(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> AppResult<Json<RunTriggerResponse>> {
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let scheduler = state
         .scheduler
@@ -245,7 +236,7 @@ pub async fn schedule_connector(
     Path(name): Path<String>,
     Json(body): Json<ScheduleRequest>,
 ) -> AppResult<Json<ScheduleResponse>> {
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let connector_config = db
         .get_connector_config_by_name(&name)
@@ -293,7 +284,7 @@ pub async fn update_connector_token(
     Path(name): Path<String>,
     Json(body): Json<UpdateTokenRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let connector_config = db
         .get_connector_config_by_name(&name)
@@ -322,7 +313,7 @@ pub async fn update_connector_token(
 pub async fn list_enriched_runs(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<EnrichedSyncRun>>> {
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let runs = db
         .list_sync_runs(50)
@@ -361,7 +352,7 @@ pub async fn delete_schedule(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let db = get_scheduler_db(&state)?;
+    let db = state.require_scheduler_db()?;
 
     let deleted = db
         .delete_scheduler_job(&id)

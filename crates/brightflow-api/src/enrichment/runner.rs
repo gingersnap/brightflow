@@ -597,9 +597,7 @@ async fn drive_run(
     table_name: &str,
     spec: &LlmPromptSpec,
 ) -> AppResult<()> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let client = crate::llm::client_for(state, &spec.provider_id, spec.model.as_deref()).await?;
     let df = store.read_table(source_id, table_name).await?;
     let inputs = prepare_inputs(&df, spec)?;

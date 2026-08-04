@@ -317,9 +317,7 @@ async fn existing_taxonomy(
     source_id: &str,
     table: &str,
 ) -> AppResult<Vec<serde_json::Value>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::Internal("store unavailable".to_string()))?;
+    let store = state.require_store()?;
     let Some(table_row) = store.db().get_table(source_id, table).await? else {
         return Ok(Vec::new());
     };

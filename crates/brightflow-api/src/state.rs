@@ -189,6 +189,22 @@ impl AppState {
         self.store.as_ref()
     }
 
+    /// The store, or the canonical 503 for handlers that cannot work without
+    /// one. Use `store()` instead where degrading gracefully is intended.
+    pub fn require_store(&self) -> AppResult<&Arc<ParquetStore>> {
+        self.store
+            .as_ref()
+            .ok_or(crate::shared::AppError::StoreUnavailable)
+    }
+
+    /// The scheduler database, or the canonical error for handlers that
+    /// cannot work without one.
+    pub fn require_scheduler_db(&self) -> AppResult<&Arc<brightflow_scheduler::SchedulerDb>> {
+        self.scheduler_db.as_ref().ok_or_else(|| {
+            crate::shared::AppError::Internal("No scheduler database configured".to_string())
+        })
+    }
+
     /// Re-read table metadata from the store and update the index
     pub async fn refresh_table_index(&self) {
         if let Some(store) = &self.store {
@@ -312,9 +328,7 @@ impl AppState {
     /// — so keeping several resident costs a path vector each, and evicting them broke
     /// any other tab still holding the evicted id.
     pub async fn load_table(&self, source_id: &str, table_name: &str) -> AppResult<String> {
-        let store = self.store.as_ref().ok_or_else(|| {
-            crate::shared::AppError::BadRequest("No store configured".to_string())
-        })?;
+        let store = self.require_store()?;
 
         let source = DatasetSource::StoreTable {
             source_id: source_id.to_string(),

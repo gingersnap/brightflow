@@ -521,9 +521,7 @@ async fn resolve_dataset(
         source_id
     };
 
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
 
     let files = store
         .get_table_parquet_paths(source_id, &table_name)
@@ -577,9 +575,7 @@ pub async fn get_history(
     State(state): State<AppState>,
     Path((source_id, table)): Path<(String, String)>,
 ) -> AppResult<Json<Vec<brightflow_store::InsightHistoryRow>>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let table_row = store
         .db()
         .get_table(&source_id, &table)
@@ -594,9 +590,7 @@ pub async fn reset_history(
     State(state): State<AppState>,
     Path((source_id, table)): Path<(String, String)>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let table_row = store
         .db()
         .get_table(&source_id, &table)
@@ -617,9 +611,7 @@ pub async fn get_runs(
     Path((source_id, table)): Path<(String, String)>,
     Query(query): Query<RunsQuery>,
 ) -> AppResult<Json<Vec<InsightRunResponse>>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let table_row = store
         .db()
         .get_table(&source_id, &table)
@@ -638,9 +630,7 @@ pub async fn get_latest_runs(
     State(state): State<AppState>,
     Path(source_id): Path<String>,
 ) -> AppResult<Json<Vec<InsightRunResponse>>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let rows = store
         .db()
         .latest_insight_runs_for_source(&source_id)

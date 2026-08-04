@@ -24,9 +24,7 @@ pub async fn list_semantics(
     State(state): State<AppState>,
     Path((source_id, name)): Path<(String, String)>,
 ) -> AppResult<Json<ColumnSemanticsResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
+    let store = state.require_store()?;
 
     let rows = store.get_column_semantics(&source_id, &name).await?;
 
@@ -52,9 +50,7 @@ pub async fn get_table_settings(
     State(state): State<AppState>,
     Path((source_id, name)): Path<(String, String)>,
 ) -> AppResult<Json<TableSettingsResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
+    let store = state.require_store()?;
 
     let row = store.get_table_settings(&source_id, &name).await?;
 
@@ -85,9 +81,7 @@ pub async fn upsert_table_settings(
     Path((source_id, name)): Path<(String, String)>,
     Json(req): Json<TableSettings>,
 ) -> AppResult<Json<TableSettingsResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No store configured".into()))?;
+    let store = state.require_store()?;
 
     // Validate time_granularity if provided
     if let Some(ref g) = req.time_granularity {

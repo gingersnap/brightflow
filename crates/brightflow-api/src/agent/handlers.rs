@@ -62,9 +62,7 @@ pub async fn start_run(
     // Fail fast when no provider is configured.
     crate::llm::default_client(&state).await?;
 
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let scope = format!("{}:{}:{}", req.kind, req.source_id, req.table);
     if let Some(active) = store.db().active_agent_run_for_scope(&scope).await? {
         return Err(AppError::Conflict(format!(
@@ -102,9 +100,7 @@ pub async fn list_runs(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Vec<AgentRunResponse>>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let rows = store
         .db()
         .list_agent_runs(q.limit.unwrap_or(50).clamp(1, 200))
@@ -121,9 +117,7 @@ pub async fn get_run(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<AgentRunResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let row = store
         .db()
         .get_agent_run(id)
@@ -155,9 +149,7 @@ pub async fn undo_all(
     use crate::actions::handlers::{push_failure, undo_action_row};
     use crate::actions::types::ActionLogEntry;
 
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     store
         .db()
         .get_agent_run(id)
@@ -205,9 +197,7 @@ pub async fn cancel_run(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<AgentRunResponse>> {
-    let store = state
-        .store()
-        .ok_or_else(|| AppError::BadRequest("No data store configured".to_string()))?;
+    let store = state.require_store()?;
     let row = store
         .db()
         .get_agent_run(id)
