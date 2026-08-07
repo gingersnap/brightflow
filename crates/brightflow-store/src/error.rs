@@ -26,11 +26,20 @@ pub enum StoreError {
 
     /// Database error
     #[error("Database error: {0}")]
-    Db(#[from] sqlx::Error),
+    Db(#[from] crate::pool::SqliteError),
 
     /// Migration error
     #[error("Migration error: {0}")]
-    Migration(#[from] sqlx::migrate::MigrateError),
+    Migration(#[from] crate::migrate::MigrateError),
+
+    /// Legacy sqlx database error — carried only until the remaining crates
+    /// leave sqlx; new store code must not construct it.
+    #[error("Database error: {0}")]
+    Sqlx(#[from] sqlx::Error),
+
+    /// Legacy sqlx migration error, same transition status as `Sqlx`.
+    #[error("Migration error: {0}")]
+    SqlxMigration(#[from] sqlx::migrate::MigrateError),
 
     /// Polars error
     #[error("Polars error: {0}")]
@@ -52,4 +61,18 @@ pub enum StoreError {
     /// Other error
     #[error("{0}")]
     Other(String),
+}
+
+impl StoreError {
+    /// True when the underlying failure is a UNIQUE / PRIMARY KEY constraint
+    /// violation — the store's stable signal for "this name already exists".
+    /// Callers must use this instead of matching the driver error inside
+    /// `Db`, so the driver stays a store-internal choice.
+    #[must_use]
+    pub fn is_unique_violation(&self) -> bool {
+        match self {
+            Self::Db(e) => e.is_unique_violation(),
+            _ => false,
+        }
+    }
 }

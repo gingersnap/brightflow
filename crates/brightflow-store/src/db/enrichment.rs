@@ -8,6 +8,8 @@ use crate::models::{
     EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow, EnrichmentRunRow,
     TableEnrichmentSettingsRow,
 };
+use crate::row::{execute, fetch_all, fetch_one, fetch_optional};
+use rusqlite::params;
 
 impl StoreDb {
     // Table Enrichment Settings CRUD
@@ -24,8 +26,18 @@ impl StoreDb {
         min_cluster_size: Option<i64>,
         algorithm: Option<&str>,
     ) -> StoreResult<TableEnrichmentSettingsRow> {
-        let row = sqlx::query_as::<_, TableEnrichmentSettingsRow>(
-            r"INSERT INTO table_enrichment_settings
+        let table_id = table_id.to_owned();
+        let text_columns = text_columns.map(str::to_owned);
+        let cleaning_profile = cleaning_profile.map(str::to_owned);
+        let language_column = language_column.map(str::to_owned);
+        let embedder = embedder.map(str::to_owned);
+        let algorithm = algorithm.map(str::to_owned);
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<TableEnrichmentSettingsRow, _>(
+                    conn,
+                    r"INSERT INTO table_enrichment_settings
                 (table_id, text_columns, cleaning_profile, language_column, embedder, min_cluster_size, algorithm)
               VALUES (?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT (table_id) DO UPDATE SET
@@ -37,16 +49,18 @@ impl StoreDb {
                 algorithm = excluded.algorithm,
                 updated_at = datetime('now')
               RETURNING *",
-        )
-        .bind(table_id)
-        .bind(text_columns)
-        .bind(cleaning_profile)
-        .bind(language_column)
-        .bind(embedder)
-        .bind(min_cluster_size)
-        .bind(algorithm)
-        .fetch_one(&self.pool)
-        .await?;
+                    params![
+                        table_id,
+                        text_columns,
+                        cleaning_profile,
+                        language_column,
+                        embedder,
+                        min_cluster_size,
+                        algorithm
+                    ],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -64,28 +78,30 @@ impl StoreDb {
         config_json: &str,
     ) -> StoreResult<EnrichmentFunctionRow> {
         let id = uuid::Uuid::now_v7().to_string();
-        let mut tx = self.pool.begin().await?;
-        let row = sqlx::query_as::<_, EnrichmentFunctionRow>(
-            r"INSERT INTO enrichment_functions (id, table_id, name, kind, status, current_version)
+        let table_id = table_id.to_owned();
+        let name = name.to_owned();
+        let kind = kind.to_owned();
+        let status = status.to_owned();
+        let config_json = config_json.to_owned();
+        let row = self
+            .pool
+            .transaction(move |tx| {
+                let row: EnrichmentFunctionRow = fetch_one(
+                    tx,
+                    r"INSERT INTO enrichment_functions (id, table_id, name, kind, status, current_version)
               VALUES (?, ?, ?, ?, ?, 1)
               RETURNING *",
-        )
-        .bind(&id)
-        .bind(table_id)
-        .bind(name)
-        .bind(kind)
-        .bind(status)
-        .fetch_one(&mut *tx)
-        .await?;
-        sqlx::query(
-            r"INSERT INTO enrichment_function_versions (function_id, version, config_json)
+                    params![id, table_id, name, kind, status],
+                )?;
+                execute(
+                    tx,
+                    r"INSERT INTO enrichment_function_versions (function_id, version, config_json)
               VALUES (?, 1, ?)",
-        )
-        .bind(&id)
-        .bind(config_json)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+                    params![id, config_json],
+                )?;
+                Ok(row)
+            })
+            .await?;
         Ok(row)
     }
 
@@ -93,12 +109,17 @@ impl StoreDb {
         &self,
         id: &str,
     ) -> StoreResult<Option<EnrichmentFunctionRow>> {
-        let row = sqlx::query_as::<_, EnrichmentFunctionRow>(
-            "SELECT * FROM enrichment_functions WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let id = id.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<EnrichmentFunctionRow, _>(
+                    conn,
+                    "SELECT * FROM enrichment_functions WHERE id = ?",
+                    params![id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -106,12 +127,17 @@ impl StoreDb {
         &self,
         table_id: &str,
     ) -> StoreResult<Vec<EnrichmentFunctionRow>> {
-        let rows = sqlx::query_as::<_, EnrichmentFunctionRow>(
-            "SELECT * FROM enrichment_functions WHERE table_id = ? ORDER BY created_at",
-        )
-        .bind(table_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<EnrichmentFunctionRow, _>(
+                    conn,
+                    "SELECT * FROM enrichment_functions WHERE table_id = ? ORDER BY created_at",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -121,15 +147,20 @@ impl StoreDb {
         table_id: &str,
         kind: &str,
     ) -> StoreResult<Vec<EnrichmentFunctionRow>> {
-        let rows = sqlx::query_as::<_, EnrichmentFunctionRow>(
-            r"SELECT * FROM enrichment_functions
+        let table_id = table_id.to_owned();
+        let kind = kind.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<EnrichmentFunctionRow, _>(
+                    conn,
+                    r"SELECT * FROM enrichment_functions
               WHERE table_id = ? AND kind = ? AND status = 'promoted'
               ORDER BY created_at",
-        )
-        .bind(table_id)
-        .bind(kind)
-        .fetch_all(&self.pool)
-        .await?;
+                    params![table_id, kind],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -146,19 +177,24 @@ impl StoreDb {
         table_id: &str,
         kind: &str,
     ) -> StoreResult<Option<String>> {
-        let row: Option<(String,)> = sqlx::query_as(
-            r"SELECT v.config_json
+        let table_id = table_id.to_owned();
+        let kind = kind.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<(String,), _>(
+                    conn,
+                    r"SELECT v.config_json
               FROM enrichment_functions f
               JOIN enrichment_function_versions v
                 ON v.function_id = f.id AND v.version = f.current_version
               WHERE f.table_id = ? AND f.kind = ? AND f.status = 'promoted'
               ORDER BY f.created_at
               LIMIT 1",
-        )
-        .bind(table_id)
-        .bind(kind)
-        .fetch_optional(&self.pool)
-        .await?;
+                    params![table_id, kind],
+                )
+            })
+            .await?;
         Ok(row.map(|(json,)| json))
     }
 
@@ -167,30 +203,34 @@ impl StoreDb {
         id: &str,
         config_json: &str,
     ) -> StoreResult<i64> {
-        let mut tx = self.pool.begin().await?;
-        let (next,): (i64,) =
-            sqlx::query_as("SELECT current_version + 1 FROM enrichment_functions WHERE id = ?")
-                .bind(id)
-                .fetch_one(&mut *tx)
-                .await?;
-        sqlx::query(
-            r"INSERT INTO enrichment_function_versions (function_id, version, config_json)
+        let id = id.to_owned();
+        let config_json = config_json.to_owned();
+        let next = self
+            .pool
+            .transaction(move |tx| {
+                // The version read must stay inside the transaction: two
+                // concurrent updates would otherwise compute the same `next`
+                // and collide on the versions primary key.
+                let (next,): (i64,) = fetch_one(
+                    tx,
+                    "SELECT current_version + 1 FROM enrichment_functions WHERE id = ?",
+                    params![id],
+                )?;
+                execute(
+                    tx,
+                    r"INSERT INTO enrichment_function_versions (function_id, version, config_json)
               VALUES (?, ?, ?)",
-        )
-        .bind(id)
-        .bind(next)
-        .bind(config_json)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            r"UPDATE enrichment_functions
+                    params![id, next, config_json],
+                )?;
+                execute(
+                    tx,
+                    r"UPDATE enrichment_functions
               SET current_version = ?, updated_at = datetime('now') WHERE id = ?",
-        )
-        .bind(next)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+                    params![next, id],
+                )?;
+                Ok(next)
+            })
+            .await?;
         Ok(next)
     }
 
@@ -199,37 +239,54 @@ impl StoreDb {
         id: &str,
         status: &str,
     ) -> StoreResult<bool> {
-        let result = sqlx::query(
-            r"UPDATE enrichment_functions
+        let id = id.to_owned();
+        let status = status.to_owned();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"UPDATE enrichment_functions
               SET status = ?, updated_at = datetime('now') WHERE id = ?",
-        )
-        .bind(status)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-        Ok(result.rows_affected() > 0)
+                    params![status, id],
+                )
+            })
+            .await?;
+        Ok(affected > 0)
     }
 
     /// Delete a function; versions, runs and cache cascade away.
     pub async fn delete_enrichment_function(&self, id: &str) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM enrichment_functions WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
+        let id = id.to_owned();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "DELETE FROM enrichment_functions WHERE id = ?",
+                    params![id],
+                )
+            })
             .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(affected > 0)
     }
 
     pub async fn list_enrichment_function_versions(
         &self,
         function_id: &str,
     ) -> StoreResult<Vec<EnrichmentFunctionVersionRow>> {
-        let rows = sqlx::query_as::<_, EnrichmentFunctionVersionRow>(
-            r"SELECT * FROM enrichment_function_versions
+        let function_id = function_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<EnrichmentFunctionVersionRow, _>(
+                    conn,
+                    r"SELECT * FROM enrichment_function_versions
               WHERE function_id = ? ORDER BY version DESC",
-        )
-        .bind(function_id)
-        .fetch_all(&self.pool)
-        .await?;
+                    params![function_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -238,13 +295,17 @@ impl StoreDb {
         function_id: &str,
         version: i64,
     ) -> StoreResult<Option<EnrichmentFunctionVersionRow>> {
-        let row = sqlx::query_as::<_, EnrichmentFunctionVersionRow>(
-            "SELECT * FROM enrichment_function_versions WHERE function_id = ? AND version = ?",
-        )
-        .bind(function_id)
-        .bind(version)
-        .fetch_optional(&self.pool)
-        .await?;
+        let function_id = function_id.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<EnrichmentFunctionVersionRow, _>(
+                    conn,
+                    "SELECT * FROM enrichment_function_versions WHERE function_id = ? AND version = ?",
+                    params![function_id, version],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -260,18 +321,20 @@ impl StoreDb {
         rows_total: i64,
     ) -> StoreResult<EnrichmentRunRow> {
         let id = uuid::Uuid::now_v7().to_string();
-        let row = sqlx::query_as::<_, EnrichmentRunRow>(
-            r"INSERT INTO enrichment_runs (id, function_id, version, mode, rows_total)
+        let function_id = function_id.to_owned();
+        let mode = mode.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<EnrichmentRunRow, _>(
+                    conn,
+                    r"INSERT INTO enrichment_runs (id, function_id, version, mode, rows_total)
               VALUES (?, ?, ?, ?, ?)
               RETURNING *",
-        )
-        .bind(&id)
-        .bind(function_id)
-        .bind(version)
-        .bind(mode)
-        .bind(rows_total)
-        .fetch_one(&self.pool)
-        .await?;
+                    params![id, function_id, version, mode, rows_total],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -284,23 +347,30 @@ impl StoreDb {
         prompt_tokens: i64,
         completion_tokens: i64,
     ) -> StoreResult<()> {
-        sqlx::query(
-            r"UPDATE enrichment_runs
+        let id = id.to_owned();
+        self.pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"UPDATE enrichment_runs
               SET rows_done = ?, rows_failed = ?, rows_cached = ?,
                   prompt_tokens = ?, completion_tokens = ?,
                   total_tokens = ? + ?
               WHERE id = ?",
-        )
-        .bind(rows_done)
-        .bind(rows_failed)
-        .bind(rows_cached)
-        .bind(prompt_tokens)
-        .bind(completion_tokens)
-        .bind(prompt_tokens)
-        .bind(completion_tokens)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+                    params![
+                        rows_done,
+                        rows_failed,
+                        rows_cached,
+                        prompt_tokens,
+                        completion_tokens,
+                        prompt_tokens,
+                        completion_tokens,
+                        id
+                    ],
+                )
+                .map(|_| ())
+            })
+            .await?;
         Ok(())
     }
 
@@ -310,24 +380,35 @@ impl StoreDb {
         status: &str,
         error: Option<&str>,
     ) -> StoreResult<()> {
-        sqlx::query(
-            r"UPDATE enrichment_runs
+        let id = id.to_owned();
+        let status = status.to_owned();
+        let error = error.map(str::to_owned);
+        self.pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"UPDATE enrichment_runs
               SET status = ?, error = ?, finished_at = datetime('now') WHERE id = ?",
-        )
-        .bind(status)
-        .bind(error)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+                    params![status, error, id],
+                )
+                .map(|_| ())
+            })
+            .await?;
         Ok(())
     }
 
     pub async fn get_enrichment_run(&self, id: &str) -> StoreResult<Option<EnrichmentRunRow>> {
-        let row =
-            sqlx::query_as::<_, EnrichmentRunRow>("SELECT * FROM enrichment_runs WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await?;
+        let id = id.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<EnrichmentRunRow, _>(
+                    conn,
+                    "SELECT * FROM enrichment_runs WHERE id = ?",
+                    params![id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -335,28 +416,38 @@ impl StoreDb {
         &self,
         function_id: &str,
     ) -> StoreResult<Option<EnrichmentRunRow>> {
-        let row = sqlx::query_as::<_, EnrichmentRunRow>(
-            r"SELECT * FROM enrichment_runs
+        let function_id = function_id.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<EnrichmentRunRow, _>(
+                    conn,
+                    r"SELECT * FROM enrichment_runs
               WHERE function_id = ? AND status = 'running'
               ORDER BY created_at DESC LIMIT 1",
-        )
-        .bind(function_id)
-        .fetch_optional(&self.pool)
-        .await?;
+                    params![function_id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
     /// Boot cleanup: runs still 'running' from a previous process crashed.
     pub async fn fail_stuck_enrichment_runs(&self) -> StoreResult<u64> {
-        let result = sqlx::query(
-            r"UPDATE enrichment_runs
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"UPDATE enrichment_runs
               SET status = 'failed', error = 'process restarted mid-run',
                   finished_at = datetime('now')
               WHERE status = 'running'",
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(result.rows_affected())
+                    params![],
+                )
+            })
+            .await?;
+        Ok(affected)
     }
 
     // =====================================================
@@ -371,21 +462,31 @@ impl StoreDb {
         input_hashes: &[String],
     ) -> StoreResult<Vec<EnrichmentCacheRow>> {
         const CHUNK: usize = 500;
-        let mut out = Vec::new();
-        for chunk in input_hashes.chunks(CHUNK) {
-            let placeholders = vec!["?"; chunk.len()].join(", ");
-            let sql = format!(
-                "SELECT * FROM enrichment_cache
+        let function_id = function_id.to_owned();
+        let spec_hash = spec_hash.to_owned();
+        let input_hashes = input_hashes.to_vec();
+        // All chunks run on one pooled connection: same behavior per chunk,
+        // fewer pool round-trips than checking out a connection per chunk.
+        let out = self
+            .pool
+            .call(move |conn| {
+                let mut out = Vec::new();
+                for chunk in input_hashes.chunks(CHUNK) {
+                    let placeholders = vec!["?"; chunk.len()].join(", ");
+                    let sql = format!(
+                        "SELECT * FROM enrichment_cache
                  WHERE function_id = ? AND spec_hash = ? AND input_hash IN ({placeholders})"
-            );
-            let mut query = sqlx::query_as::<_, EnrichmentCacheRow>(&sql)
-                .bind(function_id)
-                .bind(spec_hash);
-            for hash in chunk {
-                query = query.bind(hash);
-            }
-            out.extend(query.fetch_all(&self.pool).await?);
-        }
+                    );
+                    let binds = rusqlite::params_from_iter(
+                        std::iter::once(function_id.clone())
+                            .chain(std::iter::once(spec_hash.clone()))
+                            .chain(chunk.iter().cloned()),
+                    );
+                    out.extend(fetch_all::<EnrichmentCacheRow, _>(conn, &sql, binds)?);
+                }
+                Ok(out)
+            })
+            .await?;
         Ok(out)
     }
 
@@ -402,8 +503,17 @@ impl StoreDb {
         completion_tokens: Option<i64>,
         version: i64,
     ) -> StoreResult<()> {
-        sqlx::query(
-            r"INSERT INTO enrichment_cache
+        let function_id = function_id.to_owned();
+        let spec_hash = spec_hash.to_owned();
+        let input_hash = input_hash.to_owned();
+        let status = status.to_owned();
+        let value_json = value_json.map(str::to_owned);
+        let error = error.map(str::to_owned);
+        self.pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"INSERT INTO enrichment_cache
                 (function_id, spec_hash, input_hash, status, value_json, error,
                  prompt_tokens, completion_tokens, version)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -415,18 +525,21 @@ impl StoreDb {
                 completion_tokens = excluded.completion_tokens,
                 version = excluded.version,
                 created_at = datetime('now')",
-        )
-        .bind(function_id)
-        .bind(spec_hash)
-        .bind(input_hash)
-        .bind(status)
-        .bind(value_json)
-        .bind(error)
-        .bind(prompt_tokens)
-        .bind(completion_tokens)
-        .bind(version)
-        .execute(&self.pool)
-        .await?;
+                    params![
+                        function_id,
+                        spec_hash,
+                        input_hash,
+                        status,
+                        value_json,
+                        error,
+                        prompt_tokens,
+                        completion_tokens,
+                        version
+                    ],
+                )
+                .map(|_| ())
+            })
+            .await?;
         Ok(())
     }
 
@@ -436,41 +549,49 @@ impl StoreDb {
         function_id: &str,
         spec_hash: &str,
     ) -> StoreResult<(i64, i64)> {
-        let (total, errors): (i64, i64) = sqlx::query_as(
-            r"SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0)
+        let function_id = function_id.to_owned();
+        let spec_hash = spec_hash.to_owned();
+        let (total, errors) = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<(i64, i64), _>(
+                    conn,
+                    r"SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0)
               FROM enrichment_cache WHERE function_id = ? AND spec_hash = ?",
-        )
-        .bind(function_id)
-        .bind(spec_hash)
-        .fetch_one(&self.pool)
-        .await?;
+                    params![function_id, spec_hash],
+                )
+            })
+            .await?;
         Ok((total, errors))
     }
 
     /// p75 of per-cell total tokens across the function's cache history —
     /// the basis for run cost estimates. None when no token data exists.
     pub async fn cache_stats_p75_tokens(&self, function_id: &str) -> StoreResult<Option<i64>> {
-        let (n,): (i64,) = sqlx::query_as(
-            r"SELECT COUNT(*) FROM enrichment_cache
+        let function_id = function_id.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                let (n,): (i64,) = fetch_one(
+                    conn,
+                    r"SELECT COUNT(*) FROM enrichment_cache
               WHERE function_id = ? AND prompt_tokens IS NOT NULL",
-        )
-        .bind(function_id)
-        .fetch_one(&self.pool)
-        .await?;
-        if n == 0 {
-            return Ok(None);
-        }
-        let offset = n * 3 / 4;
-        let row: Option<(i64,)> = sqlx::query_as(
-            r"SELECT COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0) AS t
+                    params![function_id],
+                )?;
+                if n == 0 {
+                    return Ok(None);
+                }
+                let offset = n * 3 / 4;
+                fetch_optional::<(i64,), _>(
+                    conn,
+                    r"SELECT COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0) AS t
               FROM enrichment_cache
               WHERE function_id = ? AND prompt_tokens IS NOT NULL
               ORDER BY t LIMIT 1 OFFSET ?",
-        )
-        .bind(function_id)
-        .bind(offset)
-        .fetch_optional(&self.pool)
-        .await?;
+                    params![function_id, offset],
+                )
+            })
+            .await?;
         Ok(row.map(|(t,)| t))
     }
 
@@ -480,13 +601,19 @@ impl StoreDb {
         function_id: &str,
         spec_hash: &str,
     ) -> StoreResult<u64> {
-        let result =
-            sqlx::query("DELETE FROM enrichment_cache WHERE function_id = ? AND spec_hash = ?")
-                .bind(function_id)
-                .bind(spec_hash)
-                .execute(&self.pool)
-                .await?;
-        Ok(result.rows_affected())
+        let function_id = function_id.to_owned();
+        let spec_hash = spec_hash.to_owned();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "DELETE FROM enrichment_cache WHERE function_id = ? AND spec_hash = ?",
+                    params![function_id, spec_hash],
+                )
+            })
+            .await?;
+        Ok(affected)
     }
 
     /// Clear only error rows for one spec (scope=failed pre-processing).
@@ -495,15 +622,20 @@ impl StoreDb {
         function_id: &str,
         spec_hash: &str,
     ) -> StoreResult<u64> {
-        let result = sqlx::query(
-            r"DELETE FROM enrichment_cache
+        let function_id = function_id.to_owned();
+        let spec_hash = spec_hash.to_owned();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"DELETE FROM enrichment_cache
               WHERE function_id = ? AND spec_hash = ? AND status = 'error'",
-        )
-        .bind(function_id)
-        .bind(spec_hash)
-        .execute(&self.pool)
-        .await?;
-        Ok(result.rows_affected())
+                    params![function_id, spec_hash],
+                )
+            })
+            .await?;
+        Ok(affected)
     }
 
     /// Housekeeping on version bump: keep only rows for the given spec hashes
@@ -513,20 +645,26 @@ impl StoreDb {
         function_id: &str,
         keep_spec_hashes: &[String],
     ) -> StoreResult<u64> {
-        let placeholders = vec!["?"; keep_spec_hashes.len()].join(", ");
-        let sql = if keep_spec_hashes.is_empty() {
-            "DELETE FROM enrichment_cache WHERE function_id = ?".to_string()
-        } else {
-            format!(
-                "DELETE FROM enrichment_cache
+        let function_id = function_id.to_owned();
+        let keep_spec_hashes = keep_spec_hashes.to_vec();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                let placeholders = vec!["?"; keep_spec_hashes.len()].join(", ");
+                let sql = if keep_spec_hashes.is_empty() {
+                    "DELETE FROM enrichment_cache WHERE function_id = ?".to_string()
+                } else {
+                    format!(
+                        "DELETE FROM enrichment_cache
                  WHERE function_id = ? AND spec_hash NOT IN ({placeholders})"
-            )
-        };
-        let mut query = sqlx::query(&sql).bind(function_id);
-        for hash in keep_spec_hashes {
-            query = query.bind(hash);
-        }
-        let result = query.execute(&self.pool).await?;
-        Ok(result.rows_affected())
+                    )
+                };
+                let binds = rusqlite::params_from_iter(
+                    std::iter::once(function_id).chain(keep_spec_hashes),
+                );
+                execute(conn, &sql, binds)
+            })
+            .await?;
+        Ok(affected)
     }
 }

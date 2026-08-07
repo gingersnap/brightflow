@@ -35,6 +35,22 @@ impl<A: FromSql, B: FromSql, C: FromSql> FromRow for (A, B, C) {
     }
 }
 
+/// Implement `FromRow` for a struct whose field names mirror its column names
+/// 1:1 (the models-file convention).
+///
+/// Fields are listed once and read by name, so column order never matters and
+/// a rename fails loudly at query time.
+#[macro_export]
+macro_rules! impl_from_row {
+    ($ty:ty { $($field:ident),+ $(,)? }) => {
+        impl $crate::FromRow for $ty {
+            fn from_row(row: &$crate::rusqlite::Row<'_>) -> $crate::rusqlite::Result<Self> {
+                Ok(Self { $($field: row.get(stringify!($field))?),+ })
+            }
+        }
+    };
+}
+
 /// All matching rows, mapped through `FromRow`.
 pub fn fetch_all<T: FromRow, P: Params>(
     conn: &Connection,

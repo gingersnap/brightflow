@@ -5,15 +5,14 @@
     clippy::expect_used,
     clippy::shadow_unrelated,
     clippy::too_many_lines,
+    clippy::cognitive_complexity,
     reason = "integration tests panic on failure by design"
 )]
 
+use brightflow_store::rusqlite::Connection;
 use brightflow_store::{IngestMode, IngestOptions, ParquetStore, StoreError};
 use polars::prelude::*;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::SqlitePool;
 use std::path::Path;
-use std::str::FromStr;
 use tempfile::TempDir;
 
 fn migration_files() -> Vec<(String, String)> {
@@ -32,28 +31,20 @@ fn migration_files() -> Vec<(String, String)> {
     files
 }
 
-async fn file_backed_pool(tmp: &TempDir) -> SqlitePool {
-    let options = SqliteConnectOptions::from_str(&format!(
-        "sqlite:{}?mode=rwc",
-        tmp.path().join("mig.db").display()
-    ))
-    .expect("options")
-    .create_if_missing(true)
-    .foreign_keys(true);
-    SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect_with(options)
-        .await
-        .expect("pool")
+fn file_backed_conn(tmp: &TempDir) -> Connection {
+    let conn = Connection::open(tmp.path().join("mig.db")).expect("open db");
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .expect("fk pragma");
+    conn
 }
 
 /// Apply migrations up to (and including) 015, insert a customized
 /// table_enrichment_settings fixture, then apply 016 and assert the settings
 /// row became a promoted topic_model function with a matching config_json.
-#[tokio::test]
-async fn migration_016_converts_settings_to_promoted_functions() {
+#[test]
+fn migration_016_converts_settings_to_promoted_functions() {
     let tmp = TempDir::new().expect("tmp");
-    let pool = file_backed_pool(&tmp).await;
+    let conn = file_backed_conn(&tmp);
 
     let files = migration_files();
     let migration_016 = files
@@ -66,11 +57,11 @@ async fn migration_016_converts_settings_to_promoted_functions() {
         if name.starts_with("016") {
             break;
         }
-        sqlx::raw_sql(sql).execute(&pool).await.expect(name);
+        conn.execute_batch(sql).expect(name);
     }
 
     // Fixture: one table with customized enrichment settings, one without any.
-    sqlx::raw_sql(
+    conn.execute_batch(
         r#"
         INSERT INTO tables (id, name, source_id) VALUES ('t-issues', 'issues', 'connector:x');
         INSERT INTO tables (id, name, source_id) VALUES ('t-users', 'users', 'connector:x');
@@ -80,38 +71,37 @@ async fn migration_016_converts_settings_to_promoted_functions() {
             ('t-issues', '["title","body"]', 'plain', NULL, 'potion-base-32M', 25, 'hdbscan');
         "#,
     )
-    .execute(&pool)
-    .await
     .expect("fixture");
 
-    sqlx::raw_sql(&migration_016.1)
-        .execute(&pool)
-        .await
-        .expect("016 applies");
+    conn.execute_batch(&migration_016.1).expect("016 applies");
 
-    let (id, name, kind, status, current_version): (String, String, String, String, i64) =
-        sqlx::query_as("SELECT id, name, kind, status, current_version FROM enrichment_functions")
-            .fetch_one(&pool)
-            .await
-            .expect("one migrated function");
+    let (id, name, kind, status, current_version): (String, String, String, String, i64) = conn
+        .query_row(
+            "SELECT id, name, kind, status, current_version FROM enrichment_functions",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .expect("one migrated function");
     assert_eq!(id, "topic-t-issues");
     assert_eq!(name, "topics");
     assert_eq!(kind, "topic_model");
     assert_eq!(status, "promoted");
     assert_eq!(current_version, 1);
 
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM enrichment_functions")
-        .fetch_one(&pool)
-        .await
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM enrichment_functions", [], |r| {
+            r.get(0)
+        })
         .expect("count");
     assert_eq!(count, 1, "tables without settings must not get a function");
 
-    let (config_json,): (String,) = sqlx::query_as(
-        "SELECT config_json FROM enrichment_function_versions WHERE function_id = 'topic-t-issues' AND version = 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("version 1 snapshot");
+    let config_json: String = conn
+        .query_row(
+            "SELECT config_json FROM enrichment_function_versions WHERE function_id = 'topic-t-issues' AND version = 1",
+            [],
+            |r| r.get(0),
+        )
+        .expect("version 1 snapshot");
     let config: serde_json::Value = serde_json::from_str(&config_json).expect("valid json");
     assert_eq!(config["kind"], "topic_model");
     assert_eq!(config["text_columns"], serde_json::json!(["title", "body"]));

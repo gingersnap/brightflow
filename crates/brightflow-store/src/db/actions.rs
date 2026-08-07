@@ -1,9 +1,12 @@
 //! The action log: every curation action with its undo payload and
 //! lifecycle status — the audit trail the activity feed renders.
 
+use rusqlite::params;
+
 use super::StoreDb;
 use crate::error::StoreResult;
 use crate::models::ActionLogRow;
+use crate::row::{execute, fetch_all, fetch_one, fetch_optional};
 
 impl StoreDb {
     // Action log
@@ -22,22 +25,33 @@ impl StoreDb {
         status: &str,
         now_epoch: i64,
     ) -> StoreResult<Option<ActionLogRow>> {
-        let row = sqlx::query_as::<_, ActionLogRow>(
-            r"INSERT INTO action_log
-                (request_id, actor_type, agent_run_id, action_kind, params_json, status, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT (request_id) DO NOTHING
-              RETURNING *",
-        )
-        .bind(request_id)
-        .bind(actor_type)
-        .bind(agent_run_id)
-        .bind(action_kind)
-        .bind(params_json)
-        .bind(status)
-        .bind(now_epoch)
-        .fetch_optional(&self.pool)
-        .await?;
+        let request_id = request_id.to_owned();
+        let actor_type = actor_type.to_owned();
+        let action_kind = action_kind.to_owned();
+        let params_json = params_json.to_owned();
+        let status = status.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<ActionLogRow, _>(
+                    conn,
+                    r"INSERT INTO action_log
+                        (request_id, actor_type, agent_run_id, action_kind, params_json, status, created_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT (request_id) DO NOTHING
+                      RETURNING *",
+                    params![
+                        request_id,
+                        actor_type,
+                        agent_run_id,
+                        action_kind,
+                        params_json,
+                        status,
+                        now_epoch
+                    ],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -45,29 +59,45 @@ impl StoreDb {
         &self,
         request_id: &str,
     ) -> StoreResult<Option<ActionLogRow>> {
-        let row =
-            sqlx::query_as::<_, ActionLogRow>("SELECT * FROM action_log WHERE request_id = ?")
-                .bind(request_id)
-                .fetch_optional(&self.pool)
-                .await?;
+        let request_id = request_id.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<ActionLogRow, _>(
+                    conn,
+                    "SELECT * FROM action_log WHERE request_id = ?",
+                    params![request_id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
     pub async fn get_action(&self, id: i64) -> StoreResult<Option<ActionLogRow>> {
-        let row = sqlx::query_as::<_, ActionLogRow>("SELECT * FROM action_log WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<ActionLogRow, _>(
+                    conn,
+                    "SELECT * FROM action_log WHERE id = ?",
+                    params![id],
+                )
+            })
             .await?;
         Ok(row)
     }
 
     pub async fn list_actions(&self, limit: i64) -> StoreResult<Vec<ActionLogRow>> {
-        let rows = sqlx::query_as::<_, ActionLogRow>(
-            "SELECT * FROM action_log ORDER BY created_at DESC, id DESC LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<ActionLogRow, _>(
+                    conn,
+                    "SELECT * FROM action_log ORDER BY created_at DESC, id DESC LIMIT ?",
+                    params![limit],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -79,30 +109,45 @@ impl StoreDb {
     /// exists fails with "not a category in this table's taxonomy". Creation
     /// order is the order they were meant to apply in.
     pub async fn list_proposed_actions(&self) -> StoreResult<Vec<ActionLogRow>> {
-        let rows = sqlx::query_as::<_, ActionLogRow>(
-            "SELECT * FROM action_log WHERE status = 'proposed' ORDER BY id ASC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<ActionLogRow, _>(
+                    conn,
+                    "SELECT * FROM action_log WHERE status = 'proposed' ORDER BY id ASC",
+                    params![],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
     /// Count of actions awaiting approval. Cheap enough to poll for a badge.
     pub async fn count_proposed_actions(&self) -> StoreResult<i64> {
-        let (n,): (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM action_log WHERE status = 'proposed'")
-                .fetch_one(&self.pool)
-                .await?;
+        let (n,) = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<(i64,), _>(
+                    conn,
+                    "SELECT COUNT(*) FROM action_log WHERE status = 'proposed'",
+                    params![],
+                )
+            })
+            .await?;
         Ok(n)
     }
 
     pub async fn list_actions_for_agent_run(&self, run_id: i64) -> StoreResult<Vec<ActionLogRow>> {
-        let rows = sqlx::query_as::<_, ActionLogRow>(
-            "SELECT * FROM action_log WHERE agent_run_id = ? ORDER BY id",
-        )
-        .bind(run_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<ActionLogRow, _>(
+                    conn,
+                    "SELECT * FROM action_log WHERE agent_run_id = ? ORDER BY id",
+                    params![run_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -114,18 +159,21 @@ impl StoreDb {
         undo_json: Option<&str>,
         resolved_at: i64,
     ) -> StoreResult<()> {
-        sqlx::query(
-            r"UPDATE action_log
-              SET status = ?, result_json = ?, undo_json = ?, resolved_at = ?
-              WHERE id = ?",
-        )
-        .bind(status)
-        .bind(result_json)
-        .bind(undo_json)
-        .bind(resolved_at)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        let status = status.to_owned();
+        let result_json = result_json.map(str::to_owned);
+        let undo_json = undo_json.map(str::to_owned);
+        self.pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"UPDATE action_log
+                      SET status = ?, result_json = ?, undo_json = ?, resolved_at = ?
+                      WHERE id = ?",
+                    params![status, result_json, undo_json, resolved_at, id],
+                )
+                .map(|_| ())
+            })
+            .await?;
         Ok(())
     }
 
@@ -135,11 +183,16 @@ impl StoreDb {
         status: &str,
         resolved_at: i64,
     ) -> StoreResult<()> {
-        sqlx::query("UPDATE action_log SET status = ?, resolved_at = ? WHERE id = ?")
-            .bind(status)
-            .bind(resolved_at)
-            .bind(id)
-            .execute(&self.pool)
+        let status = status.to_owned();
+        self.pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "UPDATE action_log SET status = ?, resolved_at = ? WHERE id = ?",
+                    params![status, resolved_at, id],
+                )
+                .map(|_| ())
+            })
             .await?;
         Ok(())
     }

@@ -23,7 +23,8 @@ pub enum ScanFilter {
 
 /// Build a pruning SQL query + bind values from a table_id and list of filters.
 ///
-/// Returns `(sql_string, bind_values)` ready for `sqlx::query_as`.
+/// Returns `(sql_string, bind_values)` ready to bind positionally
+/// (`params_from_iter`) — the values line up with the `?` placeholders.
 pub fn build_pruning_query(table_id: &str, filters: &[ScanFilter]) -> (String, Vec<String>) {
     let mut bind_values: Vec<String> = Vec::new();
 

@@ -1,14 +1,16 @@
 //! One Rust struct per SQLite table, deliberately mirroring column names 1:1.
 //!
-//! These are sqlx row mappings, not domain types: they stay stringly-typed
+//! These are rusqlite row mappings, not domain types: they stay stringly-typed
 //! (status/role/polarity as TEXT) so the schema in migrations is the single
 //! source of truth and a migration cannot silently disagree with an enum here.
-//! Parsing into richer types happens at the call sites that need it.
+//! Parsing into richer types happens at the call sites that need it. The
+//! `impl_from_row!` blocks at the bottom are what make the 1:1 mirroring
+//! load-bearing: each field is read from the column of the same name.
 
 use serde::{Deserialize, Serialize};
 
 /// A table row from the `tables` SQLite table
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableRow {
     pub id: String,
     pub name: String,
@@ -23,7 +25,7 @@ pub struct TableRow {
 }
 
 /// A file entry row from the `table_files` SQLite table
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableFileRow {
     pub id: String,
     pub table_id: String,
@@ -34,7 +36,7 @@ pub struct TableFileRow {
 }
 
 /// Column-level statistics from the `table_column_stats` SQLite table
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnStatRow {
     pub table_id: String,
     pub column_name: String,
@@ -44,7 +46,7 @@ pub struct ColumnStatRow {
 }
 
 /// Per-file column statistics for file-level pruning
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileColumnStatRow {
     pub file_id: String,
     pub column_name: String,
@@ -54,7 +56,7 @@ pub struct FileColumnStatRow {
 }
 
 /// Column-level semantic override (user-defined role for insights analysis)
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnSemanticRow {
     pub table_id: String,
     pub column_name: String,
@@ -68,7 +70,7 @@ pub struct ColumnSemanticRow {
 }
 
 /// Table-level analysis settings override
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableAnalysisSettingsRow {
     pub table_id: String,
     pub display_name: Option<String>,
@@ -79,7 +81,7 @@ pub struct TableAnalysisSettingsRow {
 }
 
 /// Table-level text-enrichment settings override
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableEnrichmentSettingsRow {
     pub table_id: String,
     /// JSON array of text column names to embed
@@ -94,7 +96,7 @@ pub struct TableEnrichmentSettingsRow {
 }
 
 /// One shown-insight history record (novelty decay input)
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsightHistoryRow {
     pub table_id: String,
     pub fingerprint: String,
@@ -109,7 +111,7 @@ pub struct InsightHistoryRow {
 }
 
 /// User curation state for one insight (dismissed / pinned)
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsightStateRow {
     pub table_id: String,
     pub fingerprint: String,
@@ -121,7 +123,7 @@ pub struct InsightStateRow {
 }
 
 /// Broad suppression: never surface insights about a segment or column
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsightSuppressionRow {
     pub id: i64,
     pub table_id: String,
@@ -132,7 +134,7 @@ pub struct InsightSuppressionRow {
 }
 
 /// One insights computation (manual or post-sync) — badge + history input.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsightRunRow {
     pub id: i64,
     pub table_id: String,
@@ -151,7 +153,7 @@ pub struct InsightRunRow {
 }
 
 /// One entry in the first-class action log.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionLogRow {
     pub id: i64,
     pub request_id: String,
@@ -170,7 +172,7 @@ pub struct ActionLogRow {
 }
 
 /// One background agent-run record.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRunRow {
     pub id: i64,
     pub kind: String,
@@ -183,7 +185,7 @@ pub struct AgentRunRow {
 }
 
 /// One durable cluster edit (curation overlay).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterEditRow {
     pub id: i64,
     pub table_id: String,
@@ -200,7 +202,7 @@ pub struct ClusterEditRow {
 }
 
 /// One excluded naming term.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExcludedTermRow {
     pub id: i64,
     pub table_id: String,
@@ -209,7 +211,7 @@ pub struct ExcludedTermRow {
 }
 
 /// One intent category — an entry in the supervised taxonomy vocabulary.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaxonomyCategoryRow {
     pub id: i64,
     pub table_id: String,
@@ -222,7 +224,7 @@ pub struct TaxonomyCategoryRow {
 ///
 /// Row-level (not cluster-level) on purpose: cluster labels would re-teach the
 /// format bias the classifier exists to defeat.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentLabelRow {
     pub id: i64,
     pub table_id: String,
@@ -235,7 +237,7 @@ pub struct DocumentLabelRow {
 
 /// A document label joined to its category name — what training and the
 /// curation UI actually need.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentLabelWithName {
     pub row_id: String,
     pub category_id: i64,
@@ -244,7 +246,7 @@ pub struct DocumentLabelWithName {
 }
 
 /// One registered connector-less source.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceRow {
     pub source_id: String,
     /// CHECK-constrained; the allowed set lives in the `sources` migration.
@@ -256,7 +258,7 @@ pub struct SourceRow {
 
 /// One enrichment function header (the versioned config lives in
 /// `enrichment_function_versions`).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrichmentFunctionRow {
     pub id: String,
     pub table_id: String,
@@ -271,7 +273,7 @@ pub struct EnrichmentFunctionRow {
 }
 
 /// One immutable config snapshot of an enrichment function.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrichmentFunctionVersionRow {
     pub function_id: String,
     pub version: i64,
@@ -282,7 +284,7 @@ pub struct EnrichmentFunctionVersionRow {
 
 /// One enrichment run (sample runs are not recorded here; only full and
 /// incremental runs).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrichmentRunRow {
     pub id: String,
     pub function_id: String,
@@ -306,7 +308,7 @@ pub struct EnrichmentRunRow {
 /// One cached per-cell enrichment result. Errors are cached too so a full
 /// re-run doesn't hammer the provider with known-bad rows; `scope=failed`
 /// clears them first.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnrichmentCacheRow {
     pub function_id: String,
     pub spec_hash: String,
@@ -321,3 +323,220 @@ pub struct EnrichmentCacheRow {
     pub version: i64,
     pub created_at: String,
 }
+
+// Row mappings, one per struct above, fields matching columns by name.
+crate::impl_from_row!(TableRow {
+    id,
+    name,
+    version,
+    schema_json,
+    primary_keys,
+    total_rows,
+    created_at,
+    updated_at,
+    partition_columns,
+    source_id,
+});
+crate::impl_from_row!(TableFileRow {
+    id,
+    table_id,
+    path,
+    num_rows,
+    size_bytes,
+    added_at
+});
+crate::impl_from_row!(ColumnStatRow {
+    table_id,
+    column_name,
+    min_value,
+    max_value,
+    null_count
+});
+crate::impl_from_row!(FileColumnStatRow {
+    file_id,
+    column_name,
+    min_value,
+    max_value,
+    null_count
+});
+crate::impl_from_row!(ColumnSemanticRow {
+    table_id,
+    column_name,
+    role,
+    is_kpi,
+    polarity,
+    label,
+    description,
+    updated_at,
+});
+crate::impl_from_row!(TableAnalysisSettingsRow {
+    table_id,
+    display_name,
+    description,
+    time_granularity,
+    comparison_periods,
+    updated_at,
+});
+crate::impl_from_row!(TableEnrichmentSettingsRow {
+    table_id,
+    text_columns,
+    cleaning_profile,
+    language_column,
+    embedder,
+    min_cluster_size,
+    algorithm,
+    updated_at,
+});
+crate::impl_from_row!(InsightHistoryRow {
+    table_id,
+    fingerprint,
+    identity,
+    insight_type,
+    last_value_sig,
+    shown_count,
+    first_shown_at,
+    last_shown_at,
+});
+crate::impl_from_row!(InsightStateRow {
+    table_id,
+    fingerprint,
+    state,
+    reason,
+    annotation,
+    created_at
+});
+crate::impl_from_row!(InsightSuppressionRow {
+    id,
+    table_id,
+    kind,
+    target,
+    created_at
+});
+crate::impl_from_row!(InsightRunRow {
+    id,
+    table_id,
+    source_id,
+    table_name,
+    report_type,
+    triggered_by,
+    finding_count,
+    new_finding_count,
+    top_summary,
+    execution_time_ms,
+    computed_at,
+});
+crate::impl_from_row!(ActionLogRow {
+    id,
+    request_id,
+    actor_type,
+    agent_run_id,
+    action_kind,
+    params_json,
+    result_json,
+    undo_json,
+    status,
+    created_at,
+    resolved_at,
+});
+crate::impl_from_row!(AgentRunRow {
+    id,
+    kind,
+    mode,
+    scope,
+    status,
+    detail,
+    created_at,
+    finished_at
+});
+crate::impl_from_row!(ClusterEditRow {
+    id,
+    table_id,
+    centroid_fingerprint,
+    centroid_json,
+    cluster_id,
+    custom_name,
+    label,
+    is_noise,
+    merged_into,
+    orphaned,
+    updated_at,
+});
+crate::impl_from_row!(ExcludedTermRow {
+    id,
+    table_id,
+    term,
+    created_at
+});
+crate::impl_from_row!(TaxonomyCategoryRow {
+    id,
+    table_id,
+    name,
+    description,
+    created_at
+});
+crate::impl_from_row!(DocumentLabelRow {
+    id,
+    table_id,
+    row_id,
+    category_id,
+    source,
+    created_at
+});
+crate::impl_from_row!(DocumentLabelWithName {
+    row_id,
+    category_id,
+    name,
+    source
+});
+crate::impl_from_row!(SourceRow {
+    source_id,
+    kind,
+    name,
+    meta_json,
+    created_at
+});
+crate::impl_from_row!(EnrichmentFunctionRow {
+    id,
+    table_id,
+    name,
+    kind,
+    status,
+    current_version,
+    created_at,
+    updated_at,
+});
+crate::impl_from_row!(EnrichmentFunctionVersionRow {
+    function_id,
+    version,
+    config_json,
+    created_at
+});
+crate::impl_from_row!(EnrichmentRunRow {
+    id,
+    function_id,
+    version,
+    mode,
+    status,
+    rows_total,
+    rows_done,
+    rows_failed,
+    rows_cached,
+    prompt_tokens,
+    completion_tokens,
+    total_tokens,
+    error,
+    created_at,
+    finished_at,
+});
+crate::impl_from_row!(EnrichmentCacheRow {
+    function_id,
+    spec_hash,
+    input_hash,
+    status,
+    value_json,
+    error,
+    prompt_tokens,
+    completion_tokens,
+    version,
+    created_at,
+});

@@ -163,16 +163,15 @@ pub async fn create_function(
         .db()
         .create_enrichment_function(&table_row.id, &req.name, &req.kind, "draft", &config_json)
         .await
-        .map_err(|e| match e {
-            brightflow_store::StoreError::Db(sqlx::Error::Database(ref db))
-                if db.is_unique_violation() =>
-            {
+        .map_err(|e| {
+            if e.is_unique_violation() {
                 AppError::Conflict(format!(
                     "a function named '{}' (or a topic model) already exists on this table",
                     req.name
                 ))
-            },
-            other => AppError::Store(other),
+            } else {
+                AppError::Store(e)
+            }
         })?;
     Ok(Json(to_response(store, &created).await?))
 }

@@ -1,22 +1,31 @@
 //! Topic-curation overlay: cluster edits, excluded terms, the intent
 //! taxonomy, and row-level document labels.
 
+use rusqlite::params;
+
 use super::StoreDb;
 use crate::error::{StoreError, StoreResult};
 use crate::models::{
     ClusterEditRow, DocumentLabelRow, DocumentLabelWithName, ExcludedTermRow, TaxonomyCategoryRow,
 };
+use crate::row::{execute, fetch_all, fetch_one, fetch_optional};
 
 impl StoreDb {
     // Cluster edits (curation overlay)
     // =====================================================
 
     pub async fn get_cluster_edits(&self, table_id: &str) -> StoreResult<Vec<ClusterEditRow>> {
-        let rows =
-            sqlx::query_as::<_, ClusterEditRow>("SELECT * FROM cluster_edits WHERE table_id = ?")
-                .bind(table_id)
-                .fetch_all(&self.pool)
-                .await?;
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<ClusterEditRow, _>(
+                    conn,
+                    "SELECT * FROM cluster_edits WHERE table_id = ?",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -35,47 +44,69 @@ impl StoreDb {
         merged_into: Option<Option<i64>>,
         now_epoch: i64,
     ) -> StoreResult<ClusterEditRow> {
-        sqlx::query(
-            r"INSERT INTO cluster_edits (table_id, centroid_fingerprint, centroid_json, cluster_id, updated_at)
-              VALUES (?, ?, ?, ?, ?)
-              ON CONFLICT (table_id, centroid_fingerprint) DO UPDATE SET
-                centroid_json = excluded.centroid_json,
-                cluster_id = excluded.cluster_id,
-                orphaned = 0,
-                updated_at = excluded.updated_at",
-        )
-        .bind(table_id)
-        .bind(centroid_fingerprint)
-        .bind(centroid_json)
-        .bind(cluster_id)
-        .bind(now_epoch)
-        .execute(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let centroid_fingerprint = centroid_fingerprint.to_owned();
+        let centroid_json = centroid_json.to_owned();
+        let custom_name = custom_name.map(|v| v.map(ToOwned::to_owned));
+        let label = label.map(|v| v.map(ToOwned::to_owned));
 
-        if let Some(v) = custom_name {
-            sqlx::query("UPDATE cluster_edits SET custom_name = ? WHERE table_id = ? AND centroid_fingerprint = ?")
-                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
-        }
-        if let Some(v) = label {
-            sqlx::query("UPDATE cluster_edits SET label = ? WHERE table_id = ? AND centroid_fingerprint = ?")
-                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
-        }
-        if let Some(v) = is_noise {
-            sqlx::query("UPDATE cluster_edits SET is_noise = ? WHERE table_id = ? AND centroid_fingerprint = ?")
-                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
-        }
-        if let Some(v) = merged_into {
-            sqlx::query("UPDATE cluster_edits SET merged_into = ? WHERE table_id = ? AND centroid_fingerprint = ?")
-                .bind(v).bind(table_id).bind(centroid_fingerprint).execute(&self.pool).await?;
-        }
+        let row = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    r"INSERT INTO cluster_edits (table_id, centroid_fingerprint, centroid_json, cluster_id, updated_at)
+                      VALUES (?, ?, ?, ?, ?)
+                      ON CONFLICT (table_id, centroid_fingerprint) DO UPDATE SET
+                        centroid_json = excluded.centroid_json,
+                        cluster_id = excluded.cluster_id,
+                        orphaned = 0,
+                        updated_at = excluded.updated_at",
+                    params![
+                        table_id,
+                        centroid_fingerprint,
+                        centroid_json,
+                        cluster_id,
+                        now_epoch
+                    ],
+                )?;
 
-        let row = sqlx::query_as::<_, ClusterEditRow>(
-            "SELECT * FROM cluster_edits WHERE table_id = ? AND centroid_fingerprint = ?",
-        )
-        .bind(table_id)
-        .bind(centroid_fingerprint)
-        .fetch_one(&self.pool)
-        .await?;
+                if let Some(v) = custom_name {
+                    execute(
+                        conn,
+                        "UPDATE cluster_edits SET custom_name = ? WHERE table_id = ? AND centroid_fingerprint = ?",
+                        params![v, table_id, centroid_fingerprint],
+                    )?;
+                }
+                if let Some(v) = label {
+                    execute(
+                        conn,
+                        "UPDATE cluster_edits SET label = ? WHERE table_id = ? AND centroid_fingerprint = ?",
+                        params![v, table_id, centroid_fingerprint],
+                    )?;
+                }
+                if let Some(v) = is_noise {
+                    execute(
+                        conn,
+                        "UPDATE cluster_edits SET is_noise = ? WHERE table_id = ? AND centroid_fingerprint = ?",
+                        params![v, table_id, centroid_fingerprint],
+                    )?;
+                }
+                if let Some(v) = merged_into {
+                    execute(
+                        conn,
+                        "UPDATE cluster_edits SET merged_into = ? WHERE table_id = ? AND centroid_fingerprint = ?",
+                        params![v, table_id, centroid_fingerprint],
+                    )?;
+                }
+
+                fetch_one::<ClusterEditRow, _>(
+                    conn,
+                    "SELECT * FROM cluster_edits WHERE table_id = ? AND centroid_fingerprint = ?",
+                    params![table_id, centroid_fingerprint],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -88,38 +119,45 @@ impl StoreDb {
         centroid_json: Option<&str>,
         now_epoch: i64,
     ) -> StoreResult<()> {
-        if let Some(json) = centroid_json {
-            sqlx::query(
-                r"UPDATE cluster_edits
-                  SET cluster_id = ?, centroid_json = ?, orphaned = 0, updated_at = ?
-                  WHERE id = ?",
-            )
-            .bind(cluster_id)
-            .bind(json)
-            .bind(now_epoch)
-            .bind(edit_id)
-            .execute(&self.pool)
+        let centroid_json = centroid_json.map(ToOwned::to_owned);
+        self.pool
+            .call(move |conn| {
+                if let Some(json) = centroid_json {
+                    execute(
+                        conn,
+                        r"UPDATE cluster_edits
+                          SET cluster_id = ?, centroid_json = ?, orphaned = 0, updated_at = ?
+                          WHERE id = ?",
+                        params![cluster_id, json, now_epoch, edit_id],
+                    )
+                    .map(|_| ())
+                } else {
+                    execute(
+                        conn,
+                        r"UPDATE cluster_edits
+                          SET cluster_id = NULL, orphaned = 1, updated_at = ?
+                          WHERE id = ?",
+                        params![now_epoch, edit_id],
+                    )
+                    .map(|_| ())
+                }
+            })
             .await?;
-        } else {
-            sqlx::query(
-                r"UPDATE cluster_edits
-                  SET cluster_id = NULL, orphaned = 1, updated_at = ?
-                  WHERE id = ?",
-            )
-            .bind(now_epoch)
-            .bind(edit_id)
-            .execute(&self.pool)
-            .await?;
-        }
         Ok(())
     }
 
     pub async fn delete_cluster_edit(&self, edit_id: i64) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM cluster_edits WHERE id = ?")
-            .bind(edit_id)
-            .execute(&self.pool)
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "DELETE FROM cluster_edits WHERE id = ?",
+                    params![edit_id],
+                )
+            })
             .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(affected > 0)
     }
 
     // =====================================================
@@ -127,12 +165,17 @@ impl StoreDb {
     // =====================================================
 
     pub async fn get_excluded_terms(&self, table_id: &str) -> StoreResult<Vec<ExcludedTermRow>> {
-        let rows = sqlx::query_as::<_, ExcludedTermRow>(
-            "SELECT * FROM excluded_terms WHERE table_id = ? ORDER BY term",
-        )
-        .bind(table_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<ExcludedTermRow, _>(
+                    conn,
+                    "SELECT * FROM excluded_terms WHERE table_id = ? ORDER BY term",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -142,27 +185,38 @@ impl StoreDb {
         term: &str,
         now_epoch: i64,
     ) -> StoreResult<ExcludedTermRow> {
-        let row = sqlx::query_as::<_, ExcludedTermRow>(
-            r"INSERT INTO excluded_terms (table_id, term, created_at)
-              VALUES (?, ?, ?)
-              ON CONFLICT (table_id, term) DO UPDATE SET created_at = excluded.created_at
-              RETURNING *",
-        )
-        .bind(table_id)
-        .bind(term)
-        .bind(now_epoch)
-        .fetch_one(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let term = term.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<ExcludedTermRow, _>(
+                    conn,
+                    r"INSERT INTO excluded_terms (table_id, term, created_at)
+                      VALUES (?, ?, ?)
+                      ON CONFLICT (table_id, term) DO UPDATE SET created_at = excluded.created_at
+                      RETURNING *",
+                    params![table_id, term, now_epoch],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
     pub async fn remove_excluded_term(&self, table_id: &str, term: &str) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM excluded_terms WHERE table_id = ? AND term = ?")
-            .bind(table_id)
-            .bind(term)
-            .execute(&self.pool)
+        let table_id = table_id.to_owned();
+        let term = term.to_owned();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "DELETE FROM excluded_terms WHERE table_id = ? AND term = ?",
+                    params![table_id, term],
+                )
+            })
             .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(affected > 0)
     }
 
     // =====================================================
@@ -173,12 +227,17 @@ impl StoreDb {
         &self,
         table_id: &str,
     ) -> StoreResult<Vec<TaxonomyCategoryRow>> {
-        let rows = sqlx::query_as::<_, TaxonomyCategoryRow>(
-            "SELECT * FROM taxonomy_categories WHERE table_id = ? ORDER BY name",
-        )
-        .bind(table_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<TaxonomyCategoryRow, _>(
+                    conn,
+                    "SELECT * FROM taxonomy_categories WHERE table_id = ? ORDER BY name",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -190,19 +249,23 @@ impl StoreDb {
         description: Option<&str>,
         now_epoch: i64,
     ) -> StoreResult<TaxonomyCategoryRow> {
-        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
-            r"INSERT INTO taxonomy_categories (table_id, name, description, created_at)
-              VALUES (?, ?, ?, ?)
-              ON CONFLICT (table_id, name) DO UPDATE SET
-                description = COALESCE(excluded.description, taxonomy_categories.description)
-              RETURNING *",
-        )
-        .bind(table_id)
-        .bind(name)
-        .bind(description)
-        .bind(now_epoch)
-        .fetch_one(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let name = name.to_owned();
+        let description = description.map(ToOwned::to_owned);
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<TaxonomyCategoryRow, _>(
+                    conn,
+                    r"INSERT INTO taxonomy_categories (table_id, name, description, created_at)
+                      VALUES (?, ?, ?, ?)
+                      ON CONFLICT (table_id, name) DO UPDATE SET
+                        description = COALESCE(excluded.description, taxonomy_categories.description)
+                      RETURNING *",
+                    params![table_id, name, description, now_epoch],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -210,12 +273,16 @@ impl StoreDb {
         &self,
         category_id: i64,
     ) -> StoreResult<Option<TaxonomyCategoryRow>> {
-        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
-            "SELECT * FROM taxonomy_categories WHERE id = ?",
-        )
-        .bind(category_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<TaxonomyCategoryRow, _>(
+                    conn,
+                    "SELECT * FROM taxonomy_categories WHERE id = ?",
+                    params![category_id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -224,13 +291,18 @@ impl StoreDb {
         table_id: &str,
         name: &str,
     ) -> StoreResult<Option<TaxonomyCategoryRow>> {
-        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
-            "SELECT * FROM taxonomy_categories WHERE table_id = ? AND name = ?",
-        )
-        .bind(table_id)
-        .bind(name)
-        .fetch_optional(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let name = name.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<TaxonomyCategoryRow, _>(
+                    conn,
+                    "SELECT * FROM taxonomy_categories WHERE table_id = ? AND name = ?",
+                    params![table_id, name],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -240,13 +312,17 @@ impl StoreDb {
         category_id: i64,
         name: &str,
     ) -> StoreResult<Option<TaxonomyCategoryRow>> {
-        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
-            "UPDATE taxonomy_categories SET name = ? WHERE id = ? RETURNING *",
-        )
-        .bind(name)
-        .bind(category_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let name = name.to_owned();
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<TaxonomyCategoryRow, _>(
+                    conn,
+                    "UPDATE taxonomy_categories SET name = ? WHERE id = ? RETURNING *",
+                    params![name, category_id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
@@ -257,25 +333,35 @@ impl StoreDb {
         name: &str,
         description: Option<&str>,
     ) -> StoreResult<Option<TaxonomyCategoryRow>> {
-        let row = sqlx::query_as::<_, TaxonomyCategoryRow>(
-            "UPDATE taxonomy_categories SET name = ?, description = ? WHERE id = ? RETURNING *",
-        )
-        .bind(name)
-        .bind(description)
-        .bind(category_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let name = name.to_owned();
+        let description = description.map(ToOwned::to_owned);
+        let row = self
+            .pool
+            .call(move |conn| {
+                fetch_optional::<TaxonomyCategoryRow, _>(
+                    conn,
+                    "UPDATE taxonomy_categories SET name = ?, description = ? WHERE id = ? RETURNING *",
+                    params![name, description, category_id],
+                )
+            })
+            .await?;
         Ok(row)
     }
 
     /// Delete a category. `document_labels` cascade via the FK
     /// (`foreign_keys(true)` is set on the pool, so the cascade really fires).
     pub async fn delete_taxonomy_category(&self, category_id: i64) -> StoreResult<bool> {
-        let result = sqlx::query("DELETE FROM taxonomy_categories WHERE id = ?")
-            .bind(category_id)
-            .execute(&self.pool)
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "DELETE FROM taxonomy_categories WHERE id = ?",
+                    params![category_id],
+                )
+            })
             .await?;
-        Ok(result.rows_affected() > 0)
+        Ok(affected > 0)
     }
 
     /// Recreate a deleted category under its ORIGINAL id, along with the row
@@ -309,39 +395,39 @@ impl StoreDb {
             }
         }
 
-        let mut tx = self.pool.begin().await?;
+        let table_id = table_id.to_owned();
+        let name = name.to_owned();
+        let description = description.map(ToOwned::to_owned);
+        let labels = labels.to_vec();
+        self.pool
+            .transaction(move |tx| {
+                execute(
+                    tx,
+                    r"INSERT INTO taxonomy_categories (id, table_id, name, description, created_at)
+                      VALUES (?, ?, ?, ?, ?)
+                      ON CONFLICT (id) DO UPDATE SET
+                        name = excluded.name,
+                        description = excluded.description",
+                    params![category_id, table_id, name, description, created_at],
+                )?;
 
-        sqlx::query(
-            r"INSERT INTO taxonomy_categories (id, table_id, name, description, created_at)
-              VALUES (?, ?, ?, ?, ?)
-              ON CONFLICT (id) DO UPDATE SET
-                name = excluded.name,
-                description = excluded.description",
-        )
-        .bind(category_id)
-        .bind(table_id)
-        .bind(name)
-        .bind(description)
-        .bind(created_at)
-        .execute(&mut *tx)
-        .await?;
-
-        for (row_id, source, label_created_at) in labels {
-            sqlx::query(
-                r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
-                  VALUES (?, ?, ?, ?, ?)
-                  ON CONFLICT (table_id, row_id, category_id) DO NOTHING",
-            )
-            .bind(table_id)
-            .bind(row_id)
-            .bind(category_id)
-            .bind(source)
-            .bind(label_created_at)
-            .execute(&mut *tx)
+                let mut stmt = tx.prepare(
+                    r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
+                      VALUES (?, ?, ?, ?, ?)
+                      ON CONFLICT (table_id, row_id, category_id) DO NOTHING",
+                )?;
+                for (row_id, source, label_created_at) in labels {
+                    stmt.execute(params![
+                        table_id,
+                        row_id,
+                        category_id,
+                        source,
+                        label_created_at
+                    ])?;
+                }
+                Ok(())
+            })
             .await?;
-        }
-
-        tx.commit().await?;
         Ok(())
     }
 
@@ -354,16 +440,21 @@ impl StoreDb {
         &self,
         table_id: &str,
     ) -> StoreResult<Vec<DocumentLabelWithName>> {
-        let rows = sqlx::query_as::<_, DocumentLabelWithName>(
-            r"SELECT dl.row_id, dl.category_id, tc.name, dl.source
-              FROM document_labels dl
-              JOIN taxonomy_categories tc ON tc.id = dl.category_id
-              WHERE dl.table_id = ?
-              ORDER BY dl.row_id, tc.name",
-        )
-        .bind(table_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<DocumentLabelWithName, _>(
+                    conn,
+                    r"SELECT dl.row_id, dl.category_id, tc.name, dl.source
+                      FROM document_labels dl
+                      JOIN taxonomy_categories tc ON tc.id = dl.category_id
+                      WHERE dl.table_id = ?
+                      ORDER BY dl.row_id, tc.name",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -373,17 +464,22 @@ impl StoreDb {
         table_id: &str,
         row_id: &str,
     ) -> StoreResult<Vec<DocumentLabelWithName>> {
-        let rows = sqlx::query_as::<_, DocumentLabelWithName>(
-            r"SELECT dl.row_id, dl.category_id, tc.name, dl.source
-              FROM document_labels dl
-              JOIN taxonomy_categories tc ON tc.id = dl.category_id
-              WHERE dl.table_id = ? AND dl.row_id = ?
-              ORDER BY tc.name",
-        )
-        .bind(table_id)
-        .bind(row_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let row_id = row_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<DocumentLabelWithName, _>(
+                    conn,
+                    r"SELECT dl.row_id, dl.category_id, tc.name, dl.source
+                      FROM document_labels dl
+                      JOIN taxonomy_categories tc ON tc.id = dl.category_id
+                      WHERE dl.table_id = ? AND dl.row_id = ?
+                      ORDER BY tc.name",
+                    params![table_id, row_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -401,40 +497,47 @@ impl StoreDb {
         source: &str,
         now_epoch: i64,
     ) -> StoreResult<Vec<DocumentLabelRow>> {
-        let mut tx = self.pool.begin().await?;
+        {
+            let table_id = table_id.to_owned();
+            let row_id = row_id.to_owned();
+            let category_ids = category_ids.to_vec();
+            let source = source.to_owned();
+            self.pool
+                .transaction(move |tx| {
+                    execute(
+                        tx,
+                        "DELETE FROM document_labels WHERE table_id = ? AND row_id = ?",
+                        params![table_id, row_id],
+                    )?;
 
-        sqlx::query("DELETE FROM document_labels WHERE table_id = ? AND row_id = ?")
-            .bind(table_id)
-            .bind(row_id)
-            .execute(&mut *tx)
-            .await?;
-
-        for category_id in category_ids {
-            sqlx::query(
-                r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
-                  VALUES (?, ?, ?, ?, ?)
-                  ON CONFLICT (table_id, row_id, category_id) DO UPDATE SET
-                    source = excluded.source,
-                    created_at = excluded.created_at",
-            )
-            .bind(table_id)
-            .bind(row_id)
-            .bind(category_id)
-            .bind(source)
-            .bind(now_epoch)
-            .execute(&mut *tx)
-            .await?;
+                    let mut stmt = tx.prepare(
+                        r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
+                          VALUES (?, ?, ?, ?, ?)
+                          ON CONFLICT (table_id, row_id, category_id) DO UPDATE SET
+                            source = excluded.source,
+                            created_at = excluded.created_at",
+                    )?;
+                    for category_id in category_ids {
+                        stmt.execute(params![table_id, row_id, category_id, source, now_epoch])?;
+                    }
+                    Ok(())
+                })
+                .await?;
         }
 
-        tx.commit().await?;
-
-        let rows = sqlx::query_as::<_, DocumentLabelRow>(
-            "SELECT * FROM document_labels WHERE table_id = ? AND row_id = ? ORDER BY category_id",
-        )
-        .bind(table_id)
-        .bind(row_id)
-        .fetch_all(&self.pool)
-        .await?;
+        // Re-read after commit so callers get the rows as stored.
+        let table_id = table_id.to_owned();
+        let row_id = row_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<DocumentLabelRow, _>(
+                    conn,
+                    "SELECT * FROM document_labels WHERE table_id = ? AND row_id = ? ORDER BY category_id",
+                    params![table_id, row_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -445,13 +548,18 @@ impl StoreDb {
         table_id: &str,
         row_id: &str,
     ) -> StoreResult<Vec<DocumentLabelRow>> {
-        let rows = sqlx::query_as::<_, DocumentLabelRow>(
-            "SELECT * FROM document_labels WHERE table_id = ? AND row_id = ? ORDER BY category_id",
-        )
-        .bind(table_id)
-        .bind(row_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let row_id = row_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<DocumentLabelRow, _>(
+                    conn,
+                    "SELECT * FROM document_labels WHERE table_id = ? AND row_id = ? ORDER BY category_id",
+                    params![table_id, row_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -461,12 +569,16 @@ impl StoreDb {
         &self,
         category_id: i64,
     ) -> StoreResult<Vec<DocumentLabelRow>> {
-        let rows = sqlx::query_as::<_, DocumentLabelRow>(
-            "SELECT * FROM document_labels WHERE category_id = ? ORDER BY row_id",
-        )
-        .bind(category_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<DocumentLabelRow, _>(
+                    conn,
+                    "SELECT * FROM document_labels WHERE category_id = ? ORDER BY row_id",
+                    params![category_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
@@ -481,56 +593,65 @@ impl StoreDb {
         row_id: &str,
         labels: &[(i64, String, i64)],
     ) -> StoreResult<()> {
-        let mut tx = self.pool.begin().await?;
+        let table_id = table_id.to_owned();
+        let row_id = row_id.to_owned();
+        let labels = labels.to_vec();
+        self.pool
+            .transaction(move |tx| {
+                execute(
+                    tx,
+                    "DELETE FROM document_labels WHERE table_id = ? AND row_id = ?",
+                    params![table_id, row_id],
+                )?;
 
-        sqlx::query("DELETE FROM document_labels WHERE table_id = ? AND row_id = ?")
-            .bind(table_id)
-            .bind(row_id)
-            .execute(&mut *tx)
+                let mut stmt = tx.prepare(
+                    r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
+                      VALUES (?, ?, ?, ?, ?)
+                      ON CONFLICT (table_id, row_id, category_id) DO UPDATE SET
+                        source = excluded.source,
+                        created_at = excluded.created_at",
+                )?;
+                for (category_id, source, created_at) in labels {
+                    stmt.execute(params![table_id, row_id, category_id, source, created_at])?;
+                }
+                Ok(())
+            })
             .await?;
-
-        for (category_id, source, created_at) in labels {
-            sqlx::query(
-                r"INSERT INTO document_labels (table_id, row_id, category_id, source, created_at)
-                  VALUES (?, ?, ?, ?, ?)
-                  ON CONFLICT (table_id, row_id, category_id) DO UPDATE SET
-                    source = excluded.source,
-                    created_at = excluded.created_at",
-            )
-            .bind(table_id)
-            .bind(row_id)
-            .bind(category_id)
-            .bind(source)
-            .bind(created_at)
-            .execute(&mut *tx)
-            .await?;
-        }
-
-        tx.commit().await?;
         Ok(())
     }
 
     /// Per-category labelled-row counts — drives `MIN_LABEL_SUPPORT` feedback in
     /// the curation UI ("this category has too few examples to train on").
     pub async fn count_labels_per_category(&self, table_id: &str) -> StoreResult<Vec<(i64, i64)>> {
-        let rows: Vec<(i64, i64)> = sqlx::query_as(
-            r"SELECT category_id, COUNT(*) as n
-              FROM document_labels WHERE table_id = ?
-              GROUP BY category_id",
-        )
-        .bind(table_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<(i64, i64), _>(
+                    conn,
+                    r"SELECT category_id, COUNT(*) as n
+                      FROM document_labels WHERE table_id = ?
+                      GROUP BY category_id",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(rows)
     }
 
     /// Distinct rows carrying at least one label.
     pub async fn count_labelled_rows(&self, table_id: &str) -> StoreResult<i64> {
-        let (n,): (i64,) =
-            sqlx::query_as("SELECT COUNT(DISTINCT row_id) FROM document_labels WHERE table_id = ?")
-                .bind(table_id)
-                .fetch_one(&self.pool)
-                .await?;
+        let table_id = table_id.to_owned();
+        let (n,) = self
+            .pool
+            .call(move |conn| {
+                fetch_one::<(i64,), _>(
+                    conn,
+                    "SELECT COUNT(DISTINCT row_id) FROM document_labels WHERE table_id = ?",
+                    params![table_id],
+                )
+            })
+            .await?;
         Ok(n)
     }
 
