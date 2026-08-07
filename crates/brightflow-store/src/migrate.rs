@@ -93,6 +93,25 @@ pub async fn migrate(
 pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result<(), MigrateError> {
     validate_list(migrations)?;
 
+    // A database migrated by the pre-rusqlite sqlx stack has schema but no
+    // schema_migrations rows, so re-applying from version 1 would fail on the
+    // first non-idempotent statement with something baffling ("duplicate
+    // column name"). Refuse with the actual explanation instead: these
+    // databases are disposable by decision, not adoptable.
+    let sqlx_era: i64 = conn.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE name = '_sqlx_migrations'",
+        [],
+        |r| r.get(0),
+    )?;
+    if sqlx_era > 0 {
+        return Err(MigrateError::Invalid(
+            "this database was created before the move off sqlx (it has a _sqlx_migrations \
+             table) and cannot be migrated in place — delete the .db/.db-wal/.db-shm files \
+             and restart to recreate it"
+                .to_owned(),
+        ));
+    }
+
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
@@ -249,6 +268,20 @@ mod tests {
 
         let err = run_migrations(&mut c, &[M1]).expect_err("db newer than code");
         assert!(matches!(err, MigrateError::Invalid(_)));
+    }
+
+    #[test]
+    fn sqlx_era_database_is_refused_with_explanation() {
+        let mut c = conn();
+        c.execute_batch(
+            "CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY);
+             CREATE TABLE users (id TEXT PRIMARY KEY);",
+        )
+        .expect("old-stack schema");
+        let err = run_migrations(&mut c, &[M1]).expect_err("must refuse");
+        let msg = err.to_string();
+        assert!(msg.contains("_sqlx_migrations"), "got: {msg}");
+        assert!(msg.contains("delete"), "got: {msg}");
     }
 
     #[test]
