@@ -37,7 +37,6 @@ mod models;
 pub mod pool;
 pub mod row;
 pub mod scan;
-pub mod sqlite;
 mod stats;
 mod table;
 
@@ -54,10 +53,9 @@ pub use models::{
     InsightStateRow, InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow,
     TableEnrichmentSettingsRow, TableRow, TaxonomyCategoryRow,
 };
-pub use pool::{open_pool, SqliteError, SqlitePool};
+pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};
 pub use scan::ScanFilter;
-pub use sqlite::{open_sqlite_pool, SqlitePoolProfile};
 pub use stats::extract_file_column_stats;
 pub use table::{TableInfo, TableRef};
 

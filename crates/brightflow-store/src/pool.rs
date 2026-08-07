@@ -13,7 +13,32 @@ use std::time::Duration;
 use deadpool_sqlite::{Config, Hook, HookError, Runtime};
 use rusqlite::Connection;
 
-use crate::sqlite::SqlitePoolProfile;
+/// Sizing knobs that differ between database roles.
+#[derive(Debug, Clone, Copy)]
+pub struct SqlitePoolProfile {
+    pub max_connections: u32,
+    /// `cache_size` pragma value (negative = KiB).
+    pub cache_size: &'static str,
+    /// `mmap_size` pragma value in bytes.
+    pub mmap_size: &'static str,
+}
+
+impl SqlitePoolProfile {
+    /// Long-lived metadata catalogs: store, auth, ingest sources, scheduler.
+    pub const METADATA: Self = Self {
+        max_connections: 5,
+        cache_size: "-64000",
+        mmap_size: "268435456",
+    };
+
+    /// Per-source event buffers: many pools can be alive at once, so each
+    /// gets fewer connections and a smaller cache/mmap footprint.
+    pub const BUFFER: Self = Self {
+        max_connections: 3,
+        cache_size: "-16000",
+        mmap_size: "67108864",
+    };
+}
 
 /// Errors from opening a pool or running work on one of its connections.
 #[derive(Debug, thiserror::Error)]

@@ -32,15 +32,6 @@ pub enum StoreError {
     #[error("Migration error: {0}")]
     Migration(#[from] crate::migrate::MigrateError),
 
-    /// Legacy sqlx database error — carried only until the remaining crates
-    /// leave sqlx; new store code must not construct it.
-    #[error("Database error: {0}")]
-    Sqlx(#[from] sqlx::Error),
-
-    /// Legacy sqlx migration error, same transition status as `Sqlx`.
-    #[error("Migration error: {0}")]
-    SqlxMigration(#[from] sqlx::migrate::MigrateError),
-
     /// Polars error
     #[error("Polars error: {0}")]
     Polars(#[from] polars::prelude::PolarsError),

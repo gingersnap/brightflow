@@ -51,8 +51,8 @@ pub struct StoreDb {
 
 impl StoreDb {
     pub async fn new(database_url: &str) -> StoreResult<Self> {
-        let pool = crate::pool::open_pool(database_url, crate::sqlite::SqlitePoolProfile::METADATA)
-            .await?;
+        let pool =
+            crate::pool::open_pool(database_url, crate::pool::SqlitePoolProfile::METADATA).await?;
 
         crate::migrate(&pool, MIGRATIONS).await?;
 
