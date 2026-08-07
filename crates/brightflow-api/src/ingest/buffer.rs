@@ -10,8 +10,9 @@
 
 use std::path::PathBuf;
 
+use brightflow_store::rusqlite::{params, Connection};
+use brightflow_store::SqlitePool;
 use dashmap::DashMap;
-use sqlx::SqlitePool;
 
 use super::error::IngestResult;
 use super::models::Event;
@@ -81,11 +82,12 @@ impl EventBuffer {
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
 
         let pool =
-            brightflow_store::open_sqlite_pool(&url, brightflow_store::SqlitePoolProfile::BUFFER)
-                .await?;
+            brightflow_store::open_pool(&url, brightflow_store::SqlitePoolProfile::BUFFER).await?;
 
-        // Create buffer table if it doesn't exist
-        sqlx::query(BUFFER_TABLE_SQL).execute(&pool).await?;
+        // Create buffer table if it doesn't exist. execute_batch, not execute:
+        // the constant is one CREATE TABLE plus three CREATE INDEX statements.
+        pool.call(|conn| conn.execute_batch(BUFFER_TABLE_SQL))
+            .await?;
 
         self.pools.insert(source_id.to_string(), pool.clone());
         Ok(pool)
@@ -95,57 +97,65 @@ impl EventBuffer {
     pub async fn insert(&self, event: &mut Event) -> IngestResult<()> {
         let pool = self.get_pool(&event.source_id).await?;
 
-        // Derive session ID (use user_id for session continuity when available)
-        event.session_id =
-            derive_session_id(&pool, &event.visitor_id, &event.user_id, &event.timestamp).await?;
+        // One closure for the session lookup + insert: both statements run
+        // back-to-back on the same connection, halving the request path's
+        // pool round-trips versus separate calls.
+        let row = event.clone();
+        let session_id = pool
+            .call(move |conn| {
+                let session_id =
+                    derive_session_id(conn, &row.visitor_id, &row.user_id, &row.timestamp)?;
+                conn.execute(
+                    "INSERT INTO events (
+                        id, timestamp, source_id, event_name, visitor_id, session_id, user_id,
+                        hostname, pathname, page_url,
+                        referrer, referrer_source,
+                        utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+                        browser, browser_version, os, os_version, device_type, screen_size,
+                        country, region, city, properties
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?
+                    )",
+                    params![
+                        row.id,
+                        row.timestamp,
+                        row.source_id,
+                        row.event_name,
+                        row.visitor_id,
+                        session_id,
+                        row.user_id,
+                        row.hostname,
+                        row.pathname,
+                        row.page_url,
+                        row.referrer,
+                        row.referrer_source,
+                        row.utm_source,
+                        row.utm_medium,
+                        row.utm_campaign,
+                        row.utm_content,
+                        row.utm_term,
+                        row.browser,
+                        row.browser_version,
+                        row.os,
+                        row.os_version,
+                        row.device_type,
+                        row.screen_size,
+                        row.country,
+                        row.region,
+                        row.city,
+                        row.properties,
+                    ],
+                )?;
+                Ok(session_id)
+            })
+            .await?;
 
-        sqlx::query(
-            "INSERT INTO events (
-                id, timestamp, source_id, event_name, visitor_id, session_id, user_id,
-                hostname, pathname, page_url,
-                referrer, referrer_source,
-                utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-                browser, browser_version, os, os_version, device_type, screen_size,
-                country, region, city, properties
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?,
-                ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?
-            )",
-        )
-        .bind(&event.id)
-        .bind(&event.timestamp)
-        .bind(&event.source_id)
-        .bind(&event.event_name)
-        .bind(&event.visitor_id)
-        .bind(&event.session_id)
-        .bind(&event.user_id)
-        .bind(&event.hostname)
-        .bind(&event.pathname)
-        .bind(&event.page_url)
-        .bind(&event.referrer)
-        .bind(&event.referrer_source)
-        .bind(&event.utm_source)
-        .bind(&event.utm_medium)
-        .bind(&event.utm_campaign)
-        .bind(&event.utm_content)
-        .bind(&event.utm_term)
-        .bind(&event.browser)
-        .bind(&event.browser_version)
-        .bind(&event.os)
-        .bind(&event.os_version)
-        .bind(&event.device_type)
-        .bind(&event.screen_size)
-        .bind(&event.country)
-        .bind(&event.region)
-        .bind(&event.city)
-        .bind(&event.properties)
-        .execute(&pool)
-        .await?;
-
+        event.session_id = session_id;
         Ok(())
     }
 
@@ -154,10 +164,17 @@ impl EventBuffer {
         self.pools.iter().map(|e| e.key().clone()).collect()
     }
 
-    /// Delete the buffer database for a source.
-    pub async fn delete_source(&self, source_id: &str) -> IngestResult<()> {
+    /// Delete the buffer database for a source. Sync: closing the pool does
+    /// not block, and the file removals are small enough not to warrant a
+    /// blocking-thread hop.
+    pub fn delete_source(&self, source_id: &str) -> IngestResult<()> {
         if let Some((_, pool)) = self.pools.remove(source_id) {
-            pool.close().await;
+            // close() does not wait for in-flight closures (sqlx's close did).
+            // Safe on Unix: unlinking below leaves any straggler writing to the
+            // detached inode, whose contents deletion discards anyway. On
+            // Windows an in-flight writer could make the remove_file fail —
+            // acceptable for a dev-machine platform, the next delete retries.
+            pool.close();
         }
         let db_path = self.buffer_dir.join(format!("{source_id}.db"));
         if db_path.exists() {
@@ -179,29 +196,27 @@ impl EventBuffer {
 ///
 /// If the last event from this identity was less than 30 minutes ago,
 /// reuse the same session. Otherwise, start a new session.
-async fn derive_session_id(
-    pool: &SqlitePool,
+fn derive_session_id(
+    conn: &Connection,
     visitor_id: &str,
     user_id: &str,
     current_timestamp: &str,
-) -> IngestResult<String> {
+) -> brightflow_store::rusqlite::Result<String> {
     // When user_id is known, look up by user_id for cross-day session continuity
     let last = if user_id.is_empty() {
-        sqlx::query_as::<_, (String, String)>(
+        brightflow_store::fetch_optional::<(String, String), _>(
+            conn,
             "SELECT session_id, timestamp FROM events
              WHERE visitor_id = ? ORDER BY timestamp DESC LIMIT 1",
-        )
-        .bind(visitor_id)
-        .fetch_optional(pool)
-        .await?
+            params![visitor_id],
+        )?
     } else {
-        sqlx::query_as::<_, (String, String)>(
+        brightflow_store::fetch_optional::<(String, String), _>(
+            conn,
             "SELECT session_id, timestamp FROM events
              WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1",
-        )
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?
+            params![user_id],
+        )?
     };
 
     if let Some((last_session_id, last_ts)) = last {
@@ -218,4 +233,62 @@ async fn derive_session_id(
 
     // New session
     Ok(uuid::Uuid::now_v7().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seeded_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(BUFFER_TABLE_SQL).expect("schema");
+        conn
+    }
+
+    fn insert_event(conn: &Connection, session: &str, visitor: &str, user: &str, ts: &str) {
+        conn.execute(
+            "INSERT INTO events (id, timestamp, event_name, visitor_id, session_id, user_id)
+             VALUES (?, ?, 'pageview', ?, ?, ?)",
+            params![uuid::Uuid::now_v7().to_string(), ts, visitor, session, user],
+        )
+        .expect("seed event");
+    }
+
+    #[test]
+    fn reuses_session_within_timeout_and_rotates_after() {
+        let conn = seeded_conn();
+        insert_event(&conn, "s-1", "v-1", "", "2026-08-07T10:00:00+00:00");
+
+        let same =
+            derive_session_id(&conn, "v-1", "", "2026-08-07T10:29:00+00:00").expect("derive");
+        assert_eq!(same, "s-1", "within 30 minutes keeps the session");
+
+        let rotated =
+            derive_session_id(&conn, "v-1", "", "2026-08-07T10:31:00+00:00").expect("derive");
+        assert_ne!(rotated, "s-1", "after the timeout a new session starts");
+    }
+
+    #[test]
+    fn user_id_lookup_survives_visitor_rotation() {
+        let conn = seeded_conn();
+        // Same user, but the daily visitor hash has rotated.
+        insert_event(&conn, "s-1", "v-old", "u-1", "2026-08-07T10:00:00+00:00");
+
+        let session =
+            derive_session_id(&conn, "v-new", "u-1", "2026-08-07T10:10:00+00:00").expect("derive");
+        assert_eq!(session, "s-1", "user_id lookup bridges the rotation");
+
+        let anon =
+            derive_session_id(&conn, "v-new", "", "2026-08-07T10:10:00+00:00").expect("derive");
+        assert_ne!(anon, "s-1", "anonymous lookup only sees the new visitor id");
+    }
+
+    #[test]
+    fn unparseable_timestamps_start_a_new_session() {
+        let conn = seeded_conn();
+        insert_event(&conn, "s-1", "v-1", "", "not-a-timestamp");
+        let session =
+            derive_session_id(&conn, "v-1", "", "2026-08-07T10:00:00+00:00").expect("derive");
+        assert_ne!(session, "s-1");
+    }
 }

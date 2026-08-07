@@ -86,11 +86,16 @@ impl FlushTask {
         let pool = self.buffer.get_pool(source_id).await?;
 
         // Fetch buffered events
-        let rows: Vec<Event> =
-            sqlx::query_as::<_, Event>("SELECT * FROM events ORDER BY timestamp LIMIT ?")
-                .bind(self.batch_size)
-                .fetch_all(&pool)
-                .await?;
+        let batch_size = self.batch_size;
+        let rows: Vec<Event> = pool
+            .call(move |conn| {
+                brightflow_store::fetch_all::<Event, _>(
+                    conn,
+                    "SELECT * FROM events ORDER BY timestamp LIMIT ?",
+                    brightflow_store::rusqlite::params![batch_size],
+                )
+            })
+            .await?;
 
         if rows.is_empty() {
             return Ok(());
@@ -147,16 +152,21 @@ impl FlushTask {
             }
         }
 
-        // Delete flushed rows in batches (SQLite variable limit is 999)
-        for chunk in ids.chunks(999) {
-            let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            let query = format!("DELETE FROM events WHERE id IN ({placeholders})");
-            let mut q = sqlx::query(&query);
-            for id in chunk {
-                q = q.bind(id);
+        // Delete flushed rows in batches (SQLite variable limit is 999), all
+        // chunks in one transaction so a crash mid-delete cannot leave some
+        // flushed rows behind for the next tick while others are gone.
+        pool.transaction(move |tx| {
+            for chunk in ids.chunks(999) {
+                let placeholders: String = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let query = format!("DELETE FROM events WHERE id IN ({placeholders})");
+                tx.execute(
+                    &query,
+                    brightflow_store::rusqlite::params_from_iter(chunk.iter()),
+                )?;
             }
-            q.execute(&pool).await?;
-        }
+            Ok(())
+        })
+        .await?;
 
         tracing::info!(
             "Flushed {count} events for source {source_id} to {}",

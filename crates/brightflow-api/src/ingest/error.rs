@@ -9,10 +9,10 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum IngestError {
     #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Database(#[from] brightflow_store::SqliteError),
 
     #[error("Migration error: {0}")]
-    Migration(#[from] sqlx::migrate::MigrateError),
+    Migration(#[from] brightflow_store::MigrateError),
 
     #[error("Polars error: {0}")]
     Polars(#[from] polars::error::PolarsError),

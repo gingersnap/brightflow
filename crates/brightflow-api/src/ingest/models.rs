@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// A registered website/domain that sends analytics events.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
@@ -53,7 +53,7 @@ pub struct RawEvent {
 }
 
 /// Enriched event (after processing). All fields are strings for flat Parquet columns.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Event {
     // Envelope
     pub id: String,
@@ -187,7 +187,7 @@ pub struct RawIdentifyEvent {
 }
 
 /// User profile stored in the ingest database.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfile {
@@ -317,3 +317,49 @@ fn default_retention_period_type() -> String {
 fn default_retention_periods() -> usize {
     8
 }
+
+// Row mappings, fields matching columns by name.
+brightflow_store::impl_from_row!(Source {
+    id,
+    domain,
+    name,
+    timezone,
+    created_at,
+    updated_at
+});
+brightflow_store::impl_from_row!(Event {
+    id,
+    timestamp,
+    source_id,
+    event_name,
+    visitor_id,
+    session_id,
+    user_id,
+    hostname,
+    pathname,
+    page_url,
+    referrer,
+    referrer_source,
+    utm_source,
+    utm_medium,
+    utm_campaign,
+    utm_content,
+    utm_term,
+    browser,
+    browser_version,
+    os,
+    os_version,
+    device_type,
+    screen_size,
+    country,
+    region,
+    city,
+    properties,
+});
+brightflow_store::impl_from_row!(UserProfile {
+    user_id,
+    source_id,
+    traits,
+    created_at,
+    updated_at
+});

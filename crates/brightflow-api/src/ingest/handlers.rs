@@ -280,7 +280,6 @@ pub async fn delete_source(
     ingest
         .buffer
         .delete_source(&id)
-        .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Purge the source's tables + parquet files from the catalog
