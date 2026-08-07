@@ -14,6 +14,12 @@ chrono = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+# deadpool-sqlite 0.9 / rusqlite 0.32 are the newest generation whose
+# libsqlite3-sys (0.30) matches sqlx 0.8's pin — both crates link the native
+# sqlite3 library, so their -sys versions must be identical for as long as the
+# two stacks coexist. Bump both to latest when the sqlx removal lands.
+deadpool-sqlite = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { workspace = true }
 
 [dev-dependencies]

@@ -32,14 +32,21 @@
 pub mod db;
 mod error;
 mod ingest;
+pub mod migrate;
 mod models;
+pub mod pool;
+pub mod row;
 pub mod scan;
 pub mod sqlite;
 mod stats;
 mod table;
 
 pub use error::{StoreError, StoreResult};
+// Downstream crates use SQLite through these re-exports (including `rusqlite`
+// itself) so the whole workspace shares one driver version by construction.
+pub use deadpool_sqlite::rusqlite;
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
+pub use migrate::{migrate, MigrateError, Migration};
 pub use models::{
     ActionLogRow, AgentRunRow, ClusterEditRow, ColumnSemanticRow, DocumentLabelRow,
     DocumentLabelWithName, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow,
@@ -47,6 +54,8 @@ pub use models::{
     InsightStateRow, InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow,
     TableEnrichmentSettingsRow, TableRow, TaxonomyCategoryRow,
 };
+pub use pool::{open_pool, SqliteError, SqlitePool};
+pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};
 pub use scan::ScanFilter;
 pub use sqlite::{open_sqlite_pool, SqlitePoolProfile};
 pub use stats::extract_file_column_stats;
