@@ -12,14 +12,13 @@ use std::time::Duration;
 use axum::http::{self, HeaderValue};
 use tower_http::cors::CorsLayer;
 use tower_sessions::{cookie::SameSite, ExpiredDeletion, Expiry, SessionManagerLayer};
-use tower_sessions_sqlx_store::SqliteStore;
 
-use crate::auth::{AuthBackend, AuthDb};
+use crate::auth::{AuthBackend, AuthDb, RusqliteSessionStore};
 use crate::state::AppState;
 use crate::ServeConfig;
 
 /// The composed session + auth middleware stack.
-pub(crate) type AuthLayer = axum_login::AuthManagerLayer<AuthBackend, SqliteStore>;
+pub(crate) type AuthLayer = axum_login::AuthManagerLayer<AuthBackend, RusqliteSessionStore>;
 
 /// Handle of the expired-session sweeper, aborted on shutdown.
 pub(crate) type SessionSweeper =
@@ -225,12 +224,13 @@ pub(crate) async fn start_ingest(state: &mut AppState, paths: &brightflow_core::
 }
 
 /// Session store (SQLite) + auth middleware, plus the expired-session
-/// deletion task whose handle the caller aborts on shutdown.
-pub(crate) async fn build_session_auth_layers(
-    auth_db: AuthDb,
-) -> anyhow::Result<(AuthLayer, SessionSweeper)> {
-    let session_store = SqliteStore::new(auth_db.pool().clone());
-    session_store.migrate().await?;
+/// deletion task whose handle the caller aborts on shutdown. Infallible and
+/// sync since the session schema moved into the auth migrations: there is
+/// nothing left here that can fail or wait.
+pub(crate) fn build_session_auth_layers(auth_db: AuthDb) -> (AuthLayer, SessionSweeper) {
+    // The tower_sessions schema is auth migration 006, applied when AuthDb
+    // opened the database — the store itself never migrates anything.
+    let session_store = RusqliteSessionStore::new(auth_db.pool().clone());
 
     let deletion_task = tokio::task::spawn(
         session_store
@@ -246,7 +246,7 @@ pub(crate) async fn build_session_auth_layers(
 
     let auth_backend = AuthBackend::new(auth_db);
     let auth_layer = axum_login::AuthManagerLayerBuilder::new(auth_backend, session_layer).build();
-    Ok((auth_layer, deletion_task))
+    (auth_layer, deletion_task)
 }
 
 /// CORS policy from the configured origin and `APP_ENV`, as a pure decision.

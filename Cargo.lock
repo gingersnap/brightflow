@@ -654,6 +654,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
+ "async-trait",
  "axum",
  "axum-login",
  "blake3",
@@ -668,6 +669,7 @@ dependencies = [
  "futures",
  "maxminddb",
  "polars",
+ "rmp-serde",
  "schemars",
  "serde",
  "serde_json",
@@ -679,7 +681,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tower-sessions",
- "tower-sessions-sqlx-store",
+ "tower-sessions-core",
  "tracing",
  "tracing-subscriber",
  "ts-rs",
@@ -4982,7 +4984,6 @@ dependencies = [
  "sha2",
  "smallvec",
  "thiserror 2.0.19",
- "time",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -5065,7 +5066,6 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 2.0.19",
- "time",
  "tracing",
  "whoami",
 ]
@@ -5103,7 +5103,6 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror 2.0.19",
- "time",
  "tracing",
  "whoami",
 ]
@@ -5128,7 +5127,6 @@ dependencies = [
  "serde_urlencoded",
  "sqlx-core",
  "thiserror 2.0.19",
- "time",
  "tracing",
  "url",
 ]
@@ -5767,20 +5765,6 @@ dependencies = [
  "async-trait",
  "time",
  "tokio",
- "tower-sessions-core",
-]
-
-[[package]]
-name = "tower-sessions-sqlx-store"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e054622079f57fc1a7d6a6089c9334f963d62028fe21dc9eddd58af9a78480b3"
-dependencies = [
- "async-trait",
- "rmp-serde",
- "sqlx",
- "thiserror 1.0.69",
- "time",
  "tower-sessions-core",
 ]
 

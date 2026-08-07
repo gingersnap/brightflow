@@ -156,7 +156,7 @@ pub async fn serve(
         std::env::var("APP_ENV").ok().as_deref(),
     )?;
 
-    let (app, session_sweeper) = build_app(state, auth_db, cors).await?;
+    let (app, session_sweeper) = build_app(state, auth_db, cors);
 
     // Bind and serve
     let addr = SocketAddr::from((config.host, config.port));
@@ -182,16 +182,16 @@ pub async fn serve(
 ///
 /// Also returns the abort handle for the background expired-session sweeper;
 /// `serve` aborts it on shutdown, tests can drop it.
-pub async fn build_app(
+pub fn build_app(
     state: state::AppState,
     auth_db: auth::AuthDb,
     cors: tower_http::cors::CorsLayer,
-) -> anyhow::Result<(axum::Router, tokio::task::AbortHandle)> {
-    let (auth_layer, deletion_task) = bootstrap::build_session_auth_layers(auth_db).await?;
+) -> (axum::Router, tokio::task::AbortHandle) {
+    let (auth_layer, deletion_task) = bootstrap::build_session_auth_layers(auth_db);
     let app = routes::create_router()
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .layer(auth_layer)
         .with_state(state);
-    Ok((app, deletion_task.abort_handle()))
+    (app, deletion_task.abort_handle())
 }

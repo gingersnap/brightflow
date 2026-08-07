@@ -24,7 +24,11 @@ time = "0.3"
 # Auth framework
 axum-login = "0.18"
 tower-sessions = "0.14"
-tower-sessions-sqlx-store = { version = "0.15", features = ["sqlite"] }
+# deletion-task lives on -core and is not forwarded by tower-sessions; this
+# line only turns the feature on (continuously_delete_expired for the sweeper).
+tower-sessions-core = { version = "0.14", features = ["deletion-task"] }
+async-trait = "0.1"
+rmp-serde = "1"
 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }

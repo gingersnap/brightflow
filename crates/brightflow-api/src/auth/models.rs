@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
@@ -33,3 +33,13 @@ impl axum_login::AuthUser for User {
         self.password_hash.as_bytes()
     }
 }
+
+// Row mapping, fields matching columns by name.
+brightflow_store::impl_from_row!(User {
+    id,
+    email,
+    display_name,
+    password_hash,
+    created_at,
+    updated_at,
+});

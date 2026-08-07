@@ -3,7 +3,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use brightflow_llm::ChatClient;
-use sqlx::Row;
+use brightflow_store::rusqlite::params;
 
 use crate::auth::AuthDb;
 use crate::llm::types::{LlmProviderResponse, LlmTestResponse, UpsertLlmProviderRequest};
@@ -22,23 +22,25 @@ pub struct ProviderRow {
 }
 
 pub async fn list_provider_rows(db: &AuthDb) -> AppResult<Vec<ProviderRow>> {
-    let rows = sqlx::query(
-        "SELECT id, name, base_url, api_key, model, is_default FROM llm_providers ORDER BY id",
-    )
-    .fetch_all(db.pool())
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(rows
-        .into_iter()
-        .map(|r| ProviderRow {
-            id: r.get(0),
-            name: r.get(1),
-            base_url: r.get(2),
-            api_key: r.get(3),
-            model: r.get(4),
-            is_default: r.get::<i64, _>(5) != 0,
+    db.pool()
+        .call(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, base_url, api_key, model, is_default FROM llm_providers ORDER BY id",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok(ProviderRow {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    base_url: r.get(2)?,
+                    api_key: r.get(3)?,
+                    model: r.get(4)?,
+                    is_default: r.get::<_, i64>(5)? != 0,
+                })
+            })?;
+            rows.collect()
         })
-        .collect())
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))
 }
 
 pub async fn insert_provider_row(
@@ -49,30 +51,30 @@ pub async fn insert_provider_row(
     model: &str,
     is_default: bool,
 ) -> AppResult<i64> {
-    if is_default {
-        sqlx::query("UPDATE llm_providers SET is_default = 0")
-            .execute(db.pool())
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-    }
-    let result = sqlx::query(
-        r"INSERT INTO llm_providers (name, base_url, api_key, model, is_default)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT (name) DO UPDATE SET
-            base_url = excluded.base_url,
-            api_key = COALESCE(excluded.api_key, llm_providers.api_key),
-            model = excluded.model,
-            is_default = excluded.is_default",
-    )
-    .bind(name)
-    .bind(base_url)
-    .bind(api_key)
-    .bind(model)
-    .bind(is_default)
-    .execute(db.pool())
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(result.last_insert_rowid())
+    let name = name.to_owned();
+    let base_url = base_url.to_owned();
+    let api_key = api_key.map(str::to_owned);
+    let model = model.to_owned();
+    db.pool()
+        .call(move |conn| {
+            if is_default {
+                conn.execute("UPDATE llm_providers SET is_default = 0", [])?;
+            }
+            conn.execute(
+                r"INSERT INTO llm_providers (name, base_url, api_key, model, is_default)
+                  VALUES (?, ?, ?, ?, ?)
+                  ON CONFLICT (name) DO UPDATE SET
+                    base_url = excluded.base_url,
+                    api_key = COALESCE(excluded.api_key, llm_providers.api_key),
+                    model = excluded.model,
+                    is_default = excluded.is_default",
+                params![name, base_url, api_key, model, is_default],
+            )?;
+            // Same connection as the insert, so the rowid is the one above.
+            Ok(conn.last_insert_rowid())
+        })
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))
 }
 
 fn auth_db(state: &AppState) -> AppResult<&AuthDb> {
@@ -131,9 +133,11 @@ pub async fn delete_provider(
     Path(id): Path<i64>,
 ) -> AppResult<Json<Vec<LlmProviderResponse>>> {
     let db = auth_db(&state)?;
-    sqlx::query("DELETE FROM llm_providers WHERE id = ?")
-        .bind(id)
-        .execute(db.pool())
+    db.pool()
+        .call(move |conn| {
+            conn.execute("DELETE FROM llm_providers WHERE id = ?", params![id])
+                .map(|_| ())
+        })
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     let rows = list_provider_rows(db).await?;

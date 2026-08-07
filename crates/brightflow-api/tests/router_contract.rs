@@ -30,9 +30,7 @@ async fn app(dir: &std::path::Path) -> axum::Router {
     let auth_db = AuthDb::new(&auth_url).await.unwrap();
 
     let (app, _sweeper) =
-        brightflow_api::build_app(state, auth_db, tower_http::cors::CorsLayer::new())
-            .await
-            .unwrap();
+        brightflow_api::build_app(state, auth_db, tower_http::cors::CorsLayer::new());
     app
 }
 
@@ -113,9 +111,7 @@ async fn path_traversal_in_a_route_param_is_rejected_as_mounted() {
         .unwrap();
     let state = AppState::with_store(store).await;
     let (app, _sweeper) =
-        brightflow_api::build_app(state, auth_db, tower_http::cors::CorsLayer::new())
-            .await
-            .unwrap();
+        brightflow_api::build_app(state, auth_db, tower_http::cors::CorsLayer::new());
 
     let login = app
         .clone()

@@ -11,7 +11,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error("Database error: {0}")]
-    Db(#[from] sqlx::Error),
+    Db(#[from] brightflow_store::SqliteError),
 
     #[error("Password hashing error: {0}")]
     Password(String),
@@ -20,7 +20,7 @@ pub enum AuthError {
     InvalidCredentials,
 
     #[error("Migration error: {0}")]
-    Migration(#[from] sqlx::migrate::MigrateError),
+    Migration(#[from] brightflow_store::MigrateError),
 }
 
 pub type AuthResult<T> = Result<T, AuthError>;
