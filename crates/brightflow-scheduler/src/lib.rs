@@ -11,9 +11,12 @@
 //! hook. Failures of a sync are recorded on its `SyncRun` row, not
 //! propagated — the loop must survive any single job.
 
+// shadow_reuse: rebinding a borrowed parameter to its owned copy before a
+// `move` closure (`let id = id.to_owned();`) is the crate-wide db idiom.
 #![allow(
     clippy::cognitive_complexity,
     clippy::too_many_lines,
+    clippy::shadow_reuse,
     clippy::wildcard_imports
 )]
 

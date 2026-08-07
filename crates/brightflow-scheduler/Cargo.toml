@@ -10,9 +10,6 @@ brightflow-engine = { path = "../brightflow-engine" }
 brightflow-store = { path = "../brightflow-store" }
 polars = { workspace = true }
 
-# Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
-
 tokio = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
@@ -21,6 +18,9 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 thiserror = { workspace = true }
 ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

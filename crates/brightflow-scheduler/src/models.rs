@@ -12,7 +12,7 @@ use ts_rs::TS;
 
 // --- Connector Config ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorConfig {
@@ -27,7 +27,7 @@ pub struct ConnectorConfig {
 
 // --- Scheduler Job ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SchedulerJob {
@@ -45,7 +45,7 @@ pub struct SchedulerJob {
 
 // --- Sync State ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncState {
@@ -60,7 +60,7 @@ pub struct SyncState {
 
 // --- Sync Run ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncRun {
@@ -74,3 +74,43 @@ pub struct SyncRun {
     pub rows_synced: i64,
     pub error: Option<String>,
 }
+
+// Row mappings, fields matching columns by name.
+brightflow_store::impl_from_row!(ConnectorConfig {
+    id,
+    name,
+    connector_path,
+    config_json,
+    token,
+    created_at,
+    updated_at,
+});
+brightflow_store::impl_from_row!(SchedulerJob {
+    id,
+    name,
+    connector_id,
+    interval_secs,
+    enabled,
+    created_at,
+    updated_at,
+});
+brightflow_store::impl_from_row!(SyncState {
+    connector_id,
+    endpoint,
+    cursor_field,
+    cursor_value,
+    last_sync_at,
+    last_sync_status,
+    rows_synced,
+});
+brightflow_store::impl_from_row!(SyncRun {
+    id,
+    job_id,
+    connector_id,
+    started_at,
+    finished_at,
+    status,
+    endpoints_synced,
+    rows_synced,
+    error,
+});
