@@ -11,7 +11,8 @@
     "check": "vp check && vue-tsc --noEmit",
     "check:fix": "vp check --fix",
     "fmt": "vp fmt",
-    "test": "vp test"
+    "test": "vp test",
+    "test:integration": "TEST_INTEGRATION=1 vp test --project integration"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

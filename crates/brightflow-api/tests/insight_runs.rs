@@ -22,6 +22,7 @@ use brightflow_api::insights::handlers::run_trends;
 use brightflow_api::insights::types::TrendsRequest;
 use brightflow_api::state::AppState;
 use brightflow_store::ParquetStore;
+use brightflow_test_support::{copy_template, TestWorkspace};
 
 const SOURCE: &str = "test-source";
 const TABLE: &str = "sales";
@@ -59,13 +60,17 @@ fn sales_dataframe() -> DataFrame {
     .unwrap()
 }
 
-async fn state_with_planted_table(dir: &std::path::Path) -> AppState {
-    let db_path = dir.join("meta.db");
-    let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
-    let store = ParquetStore::new(dir.join("store"), &db_url).await.unwrap();
+/// Boot the store from a copy of the committed test workspace, then plant the
+/// purpose-built `sales` fixture (6 weeks of trends data) on top of it. The
+/// store still boots against a genuinely migrated Litehouse and a real copy of
+/// the committed Parquet tree before this test's own writes land.
+async fn state_with_planted_table(ws: &TestWorkspace) -> AppState {
+    let store = ParquetStore::new(ws.paths.store(), &ws.paths.litehouse_url())
+        .await
+        .unwrap();
 
     // Write the fixture parquet and ingest it.
-    let parquet_path = dir.join("sales.parquet");
+    let parquet_path = ws.root().join("sales.parquet");
     let mut df = sales_dataframe();
     let file = std::fs::File::create(&parquet_path).unwrap();
     ParquetWriter::new(file).finish(&mut df).unwrap();
@@ -99,8 +104,8 @@ async fn wait_for_runs(state: &AppState, want: usize) -> Vec<brightflow_store::I
 
 #[tokio::test(flavor = "multi_thread")]
 async fn post_sync_records_run_but_not_history() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = state_with_planted_table(dir.path()).await;
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
     let store = Arc::clone(state.store().unwrap());
     let table = store
         .db()

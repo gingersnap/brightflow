@@ -22,16 +22,22 @@ use brightflow_api::actions::types::{Action, ActionStatus, Scope};
 use brightflow_api::actions::{dispatch_action, Actor};
 use brightflow_api::state::AppState;
 use brightflow_store::ParquetStore;
+use brightflow_test_support::{copy_template, TestWorkspace};
 
 const SOURCE: &str = "test-source";
 const TABLE: &str = "issues";
 
-async fn state_with_planted_table(dir: &std::path::Path) -> AppState {
-    let db_path = dir.join("meta.db");
-    let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
-    let store = ParquetStore::new(dir.join("store"), &db_url).await.unwrap();
+/// Boot the store from a copy of the committed test workspace, then plant the
+/// fixture `issues` table on top of it (a separate source from the template's
+/// committed table). The store still resolves against a genuinely migrated
+/// Litehouse and a real copy of the committed Parquet tree — the same genuine
+/// read path production boots — before this test's own writes land.
+async fn state_with_planted_table(ws: &TestWorkspace) -> AppState {
+    let store = ParquetStore::new(ws.paths.store(), &ws.paths.litehouse_url())
+        .await
+        .unwrap();
 
-    let parquet_path = dir.join("issues.parquet");
+    let parquet_path = ws.root().join("issues.parquet");
     let mut df = df!(
         "id" => &[1_i64, 2, 3],
         "title" => &["a", "b", "c"],
@@ -50,8 +56,8 @@ async fn state_with_planted_table(dir: &std::path::Path) -> AppState {
 
 #[tokio::test]
 async fn dispatching_recluster_writes_an_action_log_row() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = state_with_planted_table(dir.path()).await;
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
 
     let response = dispatch_action(
         &state,
@@ -90,8 +96,8 @@ async fn dispatching_recluster_writes_an_action_log_row() {
 
 #[tokio::test]
 async fn exclude_term_round_trips_through_undo() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = state_with_planted_table(dir.path()).await;
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
 
     let response = dispatch_action(
         &state,

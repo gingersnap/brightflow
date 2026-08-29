@@ -7,6 +7,15 @@ target/
 crates/brightflow-api/data/
 brightflow-app/data/
 
+# SQLite WAL/shm sidecars are transient — a committed DB must be cleanly
+# checkpointed, so a stray sidecar (e.g. in the committed test template under
+# testdata/) must never be stageable. Makes the "clean shutdown ⇒ sidecar-free
+# folder" contract (§3.1 of the test-workspace plan) mechanical.
+**/*.db-wal
+**/*.db-shm
+**/*.wal
+**/*.shm
+
 # Frontend
 node_modules/
 dist/

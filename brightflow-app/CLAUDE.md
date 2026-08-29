@@ -56,20 +56,29 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run check:fi
 
 ## Testing
 
-- **Runner:** `npm run test` — the built-in `vp test` command (Vitest 4.x
-  under the hood). No separate Vitest install; it rides on the existing
-  `vite-plus` toolchain.
-- **Config:** the `test:` block inside `vite.config.ts`. Do **not** add a
-  `vitest.config.ts` (Vite+ explicitly recommends against a separate file).
-- **Location:** tests are co-located with the module they cover as `*.test.ts`
-  (e.g. `src/utils/format.test.ts` next to `src/utils/format.ts`).
-- **Imports:** import Vitest primitives explicitly
-  (`import { describe, test, expect } from 'vitest'`); globals are not injected.
-- **Environment:** `node` for pure utilities; switch to a DOM env only when a
-  component test lands.
-- **Unit only:** no Playwright or other E2E/browser runner. Pinia stores are
-  tested in isolation via `setActivePinia(createPinia())` (see
-  `src/stores/query.test.ts`), not by mounting the app.
+`vp test` (Vitest 4.x via Vite+), no extra runner/dep and no
+`vitest.config.ts` — config lives in the `test:` block of `vite.config.ts`;
+split tiers there with Vitest `projects`. Imports: Vitest primitives explicitly
+(globals not injected). Environments: `node` for utilities and integration; DOM
+only for component tests. No Vitest `browser` mode — that's the E2E path we
+avoid.
+
+Two tiers, one runner:
+
+- **Unit (default):** co-located `*.test.ts` next to the module; stores via
+  `setActivePinia(createPinia())` (`src/stores/query.test.ts`), never mounting
+  the app.
+- **Integration (below the UI, not E2E):** the data layer — the `services/api`
+  client + Pinia Colada (the server-data Pinia store) queries/mutations —
+  against a real backend over HTTP: real `build_app` on an ephemeral port, a
+  fresh `testdata/workspaces/test` copy, real session + storage round-trip.
+  Asserted on data; no browser/Playwright/DOM/mounted components.
+
+Integration plumbing: runtime API-base override (default `VITE_API_BASE`);
+server booted in `globalSetup` on a throwaway workspace + ephemeral port, torn
+down after; minimal server (no scheduler/WS unless targeted); session via
+replayed `Set-Cookie` (Node `fetch` doesn't persist cookies); prove one
+read+write+session round-trip before breadth.
 
 ## Architecture
 

@@ -1,0 +1,18 @@
+[package]
+name = "brightflow-test-support"
+version = "0.1.0"
+edition = "2021"
+
+# Dev-only helper crate: the public test workspace template is copied into a
+# throwaway TempDir once per suite run so storage-backed integration tests can
+# boot against genuine migrated data. It is a [dev-dependency] of the crates
+# whose tests need it, never a runtime dependency. Kept dependency-free except
+# for tempfile and brightflow-core (for WorkspacePaths), so adding it can never
+# drag unrelated machinery into a compile.
+
+[dependencies]
+brightflow-core = { path = "../brightflow-core" }
+tempfile = "3"
+
+[lints]
+workspace = true

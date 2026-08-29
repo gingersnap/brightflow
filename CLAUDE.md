@@ -114,11 +114,13 @@ repo-wide expectations:
   globals are not injected.
 - Use `environment: 'node'` for pure utilities; switch to a DOM env
   (`happy-dom`/`jsdom`) only when a component test lands.
-- Tests are **unit only** — no Playwright or other E2E/browser runner, and no
-  new test-runner dependency. A Pinia store is tested in isolation by calling
-  `setActivePinia(createPinia())` in a `beforeEach` and reading its computeds
-  (`brightflow-app/src/stores/query.test.ts` is the canonical example), never
-  by mounting the app.
+- Two tiers, one runner (`vp test`, Vitest; config in the `test:` block of
+  `vite.config.ts`, tiers split via Vitest `projects`):
+  - **Unit** (default): stores via `setActivePinia(createPinia())`
+    (`brightflow-app/src/stores/query.test.ts`), never mounting the app.
+  - **Integration** (below the UI, not E2E): the `services/api` client + Pinia
+    Colada (server-data store) against a real backend over HTTP on a fresh
+    `testdata/workspaces/test` copy. `node` env; no browser/Playwright/DOM.
 
 ### Carve-outs (no unit test required)
 

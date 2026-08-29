@@ -5,6 +5,12 @@
 //! actually attached to the router `serve` runs. That distinction is the
 //! whole value: a predicate that passes its unit tests but is mounted on the
 //! wrong sub-router would pass everything except this file.
+//!
+//! These are storage-backed and boot from a copy of the committed test
+//! workspace (via `brightflow_test_support`), so the router mounts against a
+//! genuinely migrated Litehouse/auth pair rather than a bare temp dir — the
+//! same data-less scaffolding production would boot, but with a real schema
+//! and committed fixture to resolve through.
 
 #![expect(
     clippy::unwrap_used,
@@ -18,16 +24,17 @@ use tower::ServiceExt;
 use brightflow_api::auth::AuthDb;
 use brightflow_api::state::AppState;
 use brightflow_store::ParquetStore;
+use brightflow_test_support::{copy_template, TestWorkspace};
 
-/// The served app over a bare temp workspace: empty store, empty auth DB,
-/// permissive CORS (CORS policy is env-dependent and not under test here).
-async fn app(dir: &std::path::Path) -> axum::Router {
-    let db_url = format!("sqlite://{}?mode=rwc", dir.join("meta.db").display());
-    let store = ParquetStore::new(dir.join("store"), &db_url).await.unwrap();
+/// The served app over a copy of the committed test workspace, with permissive
+/// CORS (CORS policy is env-dependent and not under test here).
+async fn app(ws: &TestWorkspace) -> axum::Router {
+    let store = ParquetStore::new(ws.paths.store(), &ws.paths.litehouse_url())
+        .await
+        .unwrap();
     let state = AppState::with_store(store).await;
 
-    let auth_url = format!("sqlite://{}?mode=rwc", dir.join("auth.db").display());
-    let auth_db = AuthDb::new(&auth_url).await.unwrap();
+    let auth_db = AuthDb::new(&ws.paths.auth_url()).await.unwrap();
 
     let (app, _sweeper) =
         brightflow_api::build_app(state, auth_db, tower_http::cors::CorsLayer::new());
@@ -36,8 +43,8 @@ async fn app(dir: &std::path::Path) -> axum::Router {
 
 #[tokio::test]
 async fn protected_routes_reject_unauthenticated_requests() {
-    let dir = tempfile::tempdir().unwrap();
-    let app = app(dir.path()).await;
+    let ws = copy_template().unwrap();
+    let app = app(&ws).await;
 
     for uri in [
         "/api/sources",
@@ -59,8 +66,8 @@ async fn protected_routes_reject_unauthenticated_requests() {
 
 #[tokio::test]
 async fn public_routes_do_not_require_a_session() {
-    let dir = tempfile::tempdir().unwrap();
-    let app = app(dir.path()).await;
+    let ws = copy_template().unwrap();
+    let app = app(&ws).await;
 
     // /api/auth/me is public by design (the frontend probes it to decide
     // whether to show the login screen): it must answer without a session,
@@ -91,22 +98,21 @@ async fn public_routes_do_not_require_a_session() {
 
 #[tokio::test]
 async fn path_traversal_in_a_route_param_is_rejected_as_mounted() {
-    let dir = tempfile::tempdir().unwrap();
+    let ws = copy_template().unwrap();
 
     // Seed a user directly, then log in through the mounted route: on
     // protected routes the auth wall runs before the path guard, so an
     // unauthenticated traversal probe would only ever see 401 and prove
-    // nothing about the guard.
-    let auth_url = format!("sqlite://{}?mode=rwc", dir.path().join("auth.db").display());
-    let auth_db = AuthDb::new(&auth_url).await.unwrap();
+    // nothing about the guard. (The committed template's own demo user is a
+    // separate account; create_user adds this one alongside it.)
+    let auth_db = AuthDb::new(&ws.paths.auth_url()).await.unwrap();
     let hash = brightflow_api::auth::hash_password("hunter2!").unwrap();
     auth_db
         .create_user("t@example.com", "T", &hash)
         .await
         .unwrap();
 
-    let db_url = format!("sqlite://{}?mode=rwc", dir.path().join("meta.db").display());
-    let store = ParquetStore::new(dir.path().join("store"), &db_url)
+    let store = ParquetStore::new(ws.paths.store(), &ws.paths.litehouse_url())
         .await
         .unwrap();
     let state = AppState::with_store(store).await;

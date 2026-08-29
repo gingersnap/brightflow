@@ -19,6 +19,7 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+brightflow-test-support = { path = "../brightflow-test-support" }
 
 [lints]
 workspace = true

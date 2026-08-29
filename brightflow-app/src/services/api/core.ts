@@ -7,7 +7,19 @@
 
 import type { User } from '@/types/generated';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+let apiBase = import.meta.env.VITE_API_BASE ?? '';
+
+/**
+ * Override the API base at runtime, read at request time.
+ *
+ * The build default is `VITE_API_BASE` (empty → same-origin). Integration tests
+ * point this at the ephemeral test server's port so the client can target a
+ * dynamically-assigned socket without build-time reconfiguration; unset, the
+ * module keeps today's behavior exactly.
+ */
+export function setApiBase(base: string): void {
+  apiBase = base;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -26,7 +38,7 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
-  const url = `${API_BASE}${endpoint}`;
+  const url = `${apiBase}${endpoint}`;
 
   const { body, ...restOptions } = options;
   // FormData sets its own multipart Content-Type (with boundary); forcing

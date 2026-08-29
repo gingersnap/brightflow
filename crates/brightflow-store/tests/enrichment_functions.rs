@@ -1,5 +1,12 @@
 //! Phase-1 store tests: migration 016 data-migration, function/version CRUD,
 //! cache round-trips, and `replace_table_data`.
+//!
+//! The store-backed tests boot from a copy of the committed test workspace
+//! (via `brightflow_test_support`), so they run against a genuinely migrated
+//! Litehouse with the committed catalog/Parquet tree present, not a bare empty
+//! DB. Each test seeds its own tables/functions on top of that copy. The
+//! migration-016 test is pure SQL (no workspace) and stays on a scratch
+//! connection.
 
 #![expect(
     clippy::expect_used,
@@ -11,6 +18,7 @@
 
 use brightflow_store::rusqlite::Connection;
 use brightflow_store::{IngestMode, IngestOptions, ParquetStore, StoreError};
+use brightflow_test_support::{copy_template, TestWorkspace};
 use polars::prelude::*;
 use std::path::Path;
 use tempfile::TempDir;
@@ -112,12 +120,13 @@ fn migration_016_converts_settings_to_promoted_functions() {
     assert_eq!(config["algorithm"], "hdbscan");
 }
 
-async fn temp_store(tmp: &TempDir) -> ParquetStore {
-    let db_url = format!(
-        "sqlite:{}?mode=rwc",
-        tmp.path().join("litehouse.db").display()
-    );
-    ParquetStore::new(tmp.path(), &db_url).await.expect("store")
+/// Open the store against a copy's genuinely migrated Litehouse + committed
+/// Parquet tree (root = the copy's `store/` dir, which the copied catalog is
+/// relative to).
+async fn temp_store(ws: &TestWorkspace) -> ParquetStore {
+    ParquetStore::new(ws.paths.store(), &ws.paths.litehouse_url())
+        .await
+        .expect("store")
 }
 
 async fn seed_table(store: &ParquetStore, source_id: &str, name: &str) -> String {
@@ -131,8 +140,8 @@ async fn seed_table(store: &ParquetStore, source_id: &str, name: &str) -> String
 
 #[tokio::test]
 async fn function_crud_and_version_bump() {
-    let tmp = TempDir::new().expect("tmp");
-    let store = temp_store(&tmp).await;
+    let ws = copy_template().unwrap();
+    let store = temp_store(&ws).await;
     let db = store.db();
     let table_id = seed_table(&store, "upload:a", "leads").await;
 
@@ -207,8 +216,8 @@ async fn function_crud_and_version_bump() {
 
 #[tokio::test]
 async fn cache_round_trip_and_housekeeping() {
-    let tmp = TempDir::new().expect("tmp");
-    let store = temp_store(&tmp).await;
+    let ws = copy_template().unwrap();
+    let store = temp_store(&ws).await;
     let db = store.db();
     let table_id = seed_table(&store, "upload:a", "leads").await;
     let f = db
@@ -323,8 +332,8 @@ async fn cache_round_trip_and_housekeeping() {
 
 #[tokio::test]
 async fn run_lifecycle() {
-    let tmp = TempDir::new().expect("tmp");
-    let store = temp_store(&tmp).await;
+    let ws = copy_template().unwrap();
+    let store = temp_store(&ws).await;
     let db = store.db();
     let table_id = seed_table(&store, "upload:a", "leads").await;
     let f = db
@@ -375,12 +384,13 @@ fn write_test_parquet(dir: &Path, name: &str, ids: &[i64]) -> std::path::PathBuf
 
 #[tokio::test]
 async fn replace_table_data_consolidates_multi_file_tables() {
-    let tmp = TempDir::new().expect("tmp");
-    let store = temp_store(&tmp).await;
+    let ws = copy_template().unwrap();
+    let store = temp_store(&ws).await;
 
-    // Two appends → two files.
-    let p1 = write_test_parquet(tmp.path(), "a.parquet", &[1, 2, 3]);
-    let p2 = write_test_parquet(tmp.path(), "b.parquet", &[4, 5]);
+    // Two appends → two files. Fixture parquet is written beside the workspace
+    // root (not into the store) and ingested through the genuine path.
+    let p1 = write_test_parquet(ws.root(), "a.parquet", &[1, 2, 3]);
+    let p2 = write_test_parquet(ws.root(), "b.parquet", &[4, 5]);
     let opts = IngestOptions {
         mode: IngestMode::Append,
         ..Default::default()
@@ -429,8 +439,8 @@ async fn replace_table_data_consolidates_multi_file_tables() {
 
 #[tokio::test]
 async fn source_registry_round_trip() {
-    let tmp = TempDir::new().expect("tmp");
-    let store = temp_store(&tmp).await;
+    let ws = copy_template().unwrap();
+    let store = temp_store(&ws).await;
     let db = store.db();
 
     db.register_source(
@@ -465,8 +475,8 @@ async fn source_registry_round_trip() {
 /// version config and None when nothing is promoted.
 #[tokio::test]
 async fn promoted_function_config_returns_current_version_only() {
-    let tmp = TempDir::new().expect("tmp");
-    let store = temp_store(&tmp).await;
+    let ws = copy_template().unwrap();
+    let store = temp_store(&ws).await;
     let table_id = seed_table(&store, "src", "issues").await;
     let db = store.db();
 

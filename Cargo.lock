@@ -664,6 +664,7 @@ dependencies = [
  "brightflow-llm",
  "brightflow-scheduler",
  "brightflow-store",
+ "brightflow-test-support",
  "chrono",
  "dashmap",
  "futures",
@@ -791,6 +792,7 @@ name = "brightflow-store"
 version = "0.1.0"
 dependencies = [
  "brightflow-core",
+ "brightflow-test-support",
  "chrono",
  "deadpool-sqlite",
  "polars",
@@ -803,6 +805,14 @@ dependencies = [
  "tracing",
  "ts-rs",
  "uuid",
+]
+
+[[package]]
+name = "brightflow-test-support"
+version = "0.1.0"
+dependencies = [
+ "brightflow-core",
+ "tempfile",
 ]
 
 [[package]]
