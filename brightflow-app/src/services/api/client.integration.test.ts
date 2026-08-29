@@ -9,23 +9,18 @@
  * plans/2026-08-29_frontend-backend-integration-tests.md.
  */
 
-import { beforeAll, describe, expect, inject, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 
-import { installCookieFetch } from '@/testing/cookieFetch';
+import { DEMO_EMAIL, DEMO_PASSWORD, useIntegrationBackend } from '@/testing/withBackend';
 
-import { authApi, setApiBase } from './core';
+import { authApi } from './core';
 import { sourceApi } from './sources';
 
-// The committed template's demo account (see testdata/workspaces/test/auth.db).
-const DEMO_EMAIL = 'test@brightflow.local';
-const DEMO_PASSWORD = 'brightflow-test-pass!';
-
 describe('frontend data layer ↔ real backend', () => {
-  beforeAll(() => {
-    // Point the real client at the ephemeral test server the harness booted.
-    // Also give Node's cookie-less fetch a jar so the session survives.
-    setApiBase(inject('apiBase'));
-    installCookieFetch();
+  // Activate the seam once: point the client at the ephemeral backend, install
+  // The cookie jar, and open a real session as the committed demo user.
+  beforeAll(async () => {
+    await useIntegrationBackend();
   });
 
   test('logs in through the real client and holds a session', async () => {
