@@ -439,6 +439,13 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    // Every subcommand opens a workspace database, and SQLite will not create
+    // one under a directory that does not exist — a fresh `BRIGHTFLOW_DATA_DIR`
+    // otherwise fails with a bare "unable to open database file". `serve` has
+    // always done this inside the API; doing it here covers the other
+    // subcommands (`store`, `topics`, `create-admin`, …) too.
+    brightflow_core::WorkspacePaths::from_env().ensure_dirs()?;
+
     match cli.command.unwrap_or(Commands::RunAll {
         host: None,
         port: None,
