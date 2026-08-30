@@ -13,13 +13,18 @@
 # self-migrate-on-open machinery, so `setup`/`reset` are about content, not schema.
 #
 # Usage:
-#   test-env.sh setup     copy template → data/workspaces/test (first / rebuild)
+#   test-env.sh setup     copy template → data/workspaces/test (first run only)
 #   test-env.sh reset     rm the runtime copy, re-copy from template (discard state)
 #   test-env.sh status    show where template and runtime live + schema drift
 
 set -euo pipefail
 
 # This script's parent dir is scripts/; one hop up is the repo root.
+command -v sqlite3 >/dev/null 2>&1 || {
+    echo "error: sqlite3 is required (schema-version reporting)" >&2
+    exit 1
+}
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$ROOT/testdata/workspaces/test"
 RUNTIME="$ROOT/data/workspaces/test"
@@ -31,7 +36,7 @@ usage() {
 copy_template() {
     if [[ ! -d "$TEMPLATE" ]]; then
         echo "error: template not found at $TEMPLATE" >&2
-        echo "  Rebuild it per the plan §4, or set BRIGHTFLOW_TESTDATA_DIR." >&2
+        echo "  Rebuild it with scripts/build-test-template.sh." >&2
         exit 1
     fi
     rm -rf "$RUNTIME"
@@ -72,7 +77,9 @@ status() {
         local tv rv
         tv="$(schema_version "$TEMPLATE/litehouse.db")"
         rv="$(schema_version "$RUNTIME/litehouse.db")"
-        if [[ -n "$tv" && "$tv" != "?" && "$tv" -ne "$rv" ]]; then
+        # Both sides must be numeric: `[[ "?" -ne 5 ]]` is an arithmetic
+        # comparison on a non-number, which evaluates to 0 and silently lies.
+        if [[ "$tv" =~ ^[0-9]+$ && "$rv" =~ ^[0-9]+$ && "$tv" -ne "$rv" ]]; then
             echo "  schema DIFFERS (template $tv vs runtime $rv) — the runtime copy will self-migrate on open, or run 'reset' for a clean baseline."
         else
             echo "  schema matches"
@@ -81,7 +88,18 @@ status() {
 }
 
 case "${1:-}" in
-    setup) copy_template ;;
+    # `setup` is the first-run path and refuses to destroy an existing env:
+    # both words used to run the same destructive copy, so a second `setup`
+    # silently discarded whatever the persistent env had accumulated. `reset`
+    # is the one that throws work away, and it says so.
+    setup)
+        if [[ -d "$RUNTIME" ]]; then
+            echo "error: $RUNTIME already exists — 'setup' will not overwrite it." >&2
+            echo "  Use 'test-env.sh reset' to discard it and re-copy the template." >&2
+            exit 1
+        fi
+        copy_template
+        ;;
     reset) copy_template ;;
     status) status ;;
     -h|--help|help) usage ;;

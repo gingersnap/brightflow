@@ -23,8 +23,14 @@ declare module 'vitest' {
   interface ProvidedContext {
     /** Base URL of the ephemeral test backend, e.g. `http://127.0.0.1:37453`. */
     apiBase: string;
+    /** `Set-Cookie` value for the one session this run logs in with. */
+    sessionCookie: string;
   }
 }
+
+/** The committed template's demo account (scripts/build-test-template.sh). */
+const DEMO_EMAIL = 'test@brightflow.local';
+const DEMO_PASSWORD = 'brightflow-test-pass!';
 
 let server: ChildProcess | null = null;
 let wsDir: string | null = null;
@@ -81,6 +87,28 @@ export async function setup(project: TestProject): Promise<void> {
   });
 
   project.provide('apiBase', apiBase);
+
+  /* One login for the whole run. The login endpoint is rate limited (a burst of
+     five, then one per twelve seconds), so a login per spec file would start
+     failing as soon as the tier grew past a handful of specs — the limiter
+     working correctly is not a reason to cap how many tests can exist. Specs
+     replay this session instead; the one spec that exercises logging in does
+     its own, which stays well inside the burst. */
+  const login = await fetch(`${apiBase}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }),
+  });
+  if (!login.ok) {
+    throw new Error(
+      `harness login failed (${login.status}); the template must ship the ${DEMO_EMAIL} account`,
+    );
+  }
+  const cookie = login.headers.get('set-cookie');
+  if (cookie == null) {
+    throw new Error('harness login returned no Set-Cookie; sessions are not being issued');
+  }
+  project.provide('sessionCookie', cookie);
 }
 
 export function teardown(): void {

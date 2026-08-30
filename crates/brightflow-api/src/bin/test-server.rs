@@ -24,6 +24,14 @@ use brightflow_store::ParquetStore;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let paths = WorkspacePaths::from_env();
+    // Same first step production takes (`brightflow_api::serve`). Git stores no
+    // empty directories, so a freshly cloned template arrives without the ones
+    // that happen to be empty, and SQLite will not create a database under a
+    // directory that does not exist. A harness that skipped this would fail
+    // only on someone else's machine.
+    paths
+        .ensure_dirs()
+        .context("create workspace directories")?;
 
     // Storage first: sources/auth both read/write the store, and source CRUD
     // lives behind the ingest engine.
@@ -68,7 +76,11 @@ async fn main() -> anyhow::Result<()> {
     writeln!(out, "TEST_SERVER_LISTENING {addr}")?;
     out.flush()?;
 
+    // The sweeper is aborted by dropping its handle when the process exits:
+    // `axum::serve` runs until the process is killed, so there is no path back
+    // here to abort it explicitly. The harness kills this server; it has no
+    // graceful-shutdown path and needs none.
+    drop(sweeper);
     axum::serve(listener, app).await.context("serve")?;
-    sweeper.abort();
     Ok(())
 }

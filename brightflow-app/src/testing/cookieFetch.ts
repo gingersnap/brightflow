@@ -9,17 +9,46 @@
  * end (see the philosophy in CLAUDE.md and
  * plans/2026-08-29_frontend-backend-integration-tests.md).
  *
+ * Installing is idempotent by construction: the wrapper carries a marker, so a
+ * second call adopts the jar already in place instead of wrapping the wrapper.
+ * Nesting would leave two jars racing to set the same `Cookie` header, with the
+ * innermost silently winning — a bug that only shows once two specs share a
+ * worker, which is far too late to find it.
+ *
  * Only the integration tier installs this; unit tests never touch it.
  */
 
-/** Install the cookie-aware fetch, returning a `restore()` to undo it. */
+/** Marker carried by an installed wrapper, holding the jar it writes into. */
+const JAR = Symbol.for('brightflow.cookieFetch.jar');
+
+type CookieJar = Map<string, string>;
+type MarkedFetch = typeof fetch & { [JAR]?: CookieJar };
+
+/** The jar of an already-installed wrapper, or `null` if none is installed. */
+function installedJar(): CookieJar | null {
+  return (globalThis.fetch as MarkedFetch)[JAR] ?? null;
+}
+
+/**
+ * Install the cookie-aware fetch, returning a `restore()` to undo it.
+ *
+ * Calling this when a wrapper is already installed is a no-op that returns the
+ * existing jar's `restore()`; the caller cannot tell the difference, which is
+ * the point.
+ */
 export function installCookieFetch(): () => void {
+  const existing = installedJar();
+  if (existing != null) {
+    return () => {
+      // The first installer owns teardown; a later caller unwinding its own
+      // (non-)installation must not rip the wrapper out from under it.
+    };
+  }
+
   const original = globalThis.fetch;
+  const jar: CookieJar = new Map();
 
-  // Jar maps cookie name → value for the single host under test.
-  const jar = new Map<string, string>();
-
-  const wrapped: typeof fetch = async (input, init) => {
+  const wrapped: MarkedFetch = async (input, init) => {
     let href = '';
     if (typeof input === 'string') {
       href = input;
@@ -52,9 +81,43 @@ export function installCookieFetch(): () => void {
 
     return response;
   };
+  wrapped[JAR] = jar;
 
   globalThis.fetch = wrapped;
   return () => {
     globalThis.fetch = original;
   };
+}
+
+/**
+ * Forget every stored cookie, so the next request goes out unauthenticated.
+ *
+ * Lets a spec drop a session deliberately without uninstalling the wrapper.
+ * No-op when nothing is installed.
+ */
+export function resetCookieJar(): void {
+  installedJar()?.clear();
+}
+
+/**
+ * Put an already-issued cookie into the jar, as if a response had set it.
+ *
+ * The harness logs in once per run and hands every spec the resulting session
+ * this way. Logging in per spec file would be simpler but trips the login rate
+ * limiter once there are more than a handful of specs — and a limiter doing its
+ * job should not be what caps how many tests the tier can hold.
+ *
+ * `header` is a raw `Set-Cookie` value; only the name=value pair is kept, which
+ * is all the jar replays.
+ */
+export function seedCookie(header: string): void {
+  const jar = installedJar();
+  if (jar == null) {
+    return;
+  }
+  const [pair] = header.split(';');
+  const eq = pair?.indexOf('=') ?? -1;
+  if (pair != null && eq > 0) {
+    jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+  }
 }
