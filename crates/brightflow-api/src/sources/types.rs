@@ -36,9 +36,10 @@ pub enum SourceTool {
     Users,
     Explore,
     Insights,
-    Topics,
     Textexplore,
-    Enrich,
+    /// Ticket classification + mention extraction over an LLM: setup,
+    /// results and approvals in one tool.
+    Textanalytics,
 }
 
 /// A table belonging to a source

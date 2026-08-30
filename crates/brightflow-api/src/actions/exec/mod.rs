@@ -6,7 +6,6 @@
 //! matches — no wildcard, so adding an `Action` or `UndoOp` variant fails to
 //! compile until both sides exist.
 
-pub(crate) mod clusters;
 pub(crate) mod insights;
 pub(crate) mod semantics;
 pub(crate) mod taxonomy;

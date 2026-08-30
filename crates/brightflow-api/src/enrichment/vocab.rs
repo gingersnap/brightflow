@@ -132,8 +132,6 @@ pub async fn inject(
             te.competitors = snap.competitors;
             te.feedback_categories = snap.feedback_categories;
         },
-        FunctionSpec::LlmPrompt(_) | FunctionSpec::TopicModel(_) | FunctionSpec::Classifier(_) => {
-        },
     }
     Ok(())
 }
@@ -146,7 +144,6 @@ pub async fn run_spec_for(
     spec: FunctionSpec,
 ) -> AppResult<RunSpec> {
     match spec {
-        FunctionSpec::LlmPrompt(llm) => Ok(RunSpec::LlmPrompt(llm)),
         FunctionSpec::TicketClassify(tc) => {
             let snap = load(store, table_id).await?;
             Ok(RunSpec::TicketClassify {
@@ -162,11 +159,6 @@ pub async fn run_spec_for(
                 resolver: Arc::new(snap.resolver),
             })
         },
-        FunctionSpec::TopicModel(_) | FunctionSpec::Classifier(_) => Err(AppError::BadRequest(
-            "runs are only available for llm_prompt, ticket_classify and ticket_extract \
-             functions (topics run via recluster)"
-                .to_string(),
-        )),
     }
 }
 

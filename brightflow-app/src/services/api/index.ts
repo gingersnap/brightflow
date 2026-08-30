@@ -10,5 +10,11 @@ export { enrichFnApi, llmApi } from './enrich';
 export { insightHistoryApi, insightRunsApi, insightsApi } from './insights';
 export { productAnalyticsApi } from './productAnalytics';
 export { datasetApi, sourceApi, tableApi } from './sources';
-export { taxonomyApi, textExploreApi, topicsApi } from './topics';
+export {
+  mentionsApi,
+  taxonomyApi,
+  textExploreApi,
+  ticketsApi,
+  vocabularyApi,
+} from './textanalytics';
 export { analyticsApi } from './webAnalytics';

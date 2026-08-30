@@ -139,10 +139,7 @@ pub async fn create_function(
     Json(req): Json<CreateFunctionRequest>,
 ) -> AppResult<Json<EnrichFunctionResponse>> {
     let store = store(&state)?;
-    if !matches!(
-        req.kind.as_str(),
-        "llm_prompt" | "topic_model" | "classifier" | "ticket_classify" | "ticket_extract"
-    ) {
+    if !matches!(req.kind.as_str(), "ticket_classify" | "ticket_extract") {
         return Err(AppError::BadRequest(format!(
             "unknown function kind '{}'",
             req.kind
@@ -173,14 +170,7 @@ pub async fn create_function(
     // materialised columns a sync could wipe, and the vocabulary snapshot is
     // the server's to write, never the client's.
     vocab::inject(store, &table_row.id, &mut spec).await?;
-    let status = if matches!(
-        spec,
-        FunctionSpec::TicketClassify(_) | FunctionSpec::TicketExtract(_)
-    ) {
-        "promoted"
-    } else {
-        "draft"
-    };
+    let status = "promoted";
     let config_json = serde_json::to_string(&spec).map_err(AppError::Json)?;
 
     let created = store
@@ -190,7 +180,7 @@ pub async fn create_function(
         .map_err(|e| {
             if e.is_unique_violation() {
                 AppError::Conflict(format!(
-                    "a function named '{}' (or a topic model) already exists on this table",
+                    "a function named '{}' already exists on this table",
                     req.name
                 ))
             } else {
@@ -384,41 +374,6 @@ pub async fn list_versions(
     ))
 }
 
-/// `POST /api/functions/{id}/promote`
-pub async fn promote_function(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> AppResult<Json<EnrichFunctionResponse>> {
-    set_status(&state, &id, "promoted").await
-}
-
-/// `POST /api/functions/{id}/demote`
-pub async fn demote_function(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> AppResult<Json<EnrichFunctionResponse>> {
-    set_status(&state, &id, "draft").await
-}
-
-async fn set_status(
-    state: &AppState,
-    id: &str,
-    status: &str,
-) -> AppResult<Json<EnrichFunctionResponse>> {
-    let store = store(state)?;
-    let (row, _) = function_context(store, id).await?;
-    store
-        .db()
-        .set_enrichment_function_status(&row.id, status)
-        .await?;
-    let updated = store
-        .db()
-        .get_enrichment_function(&row.id)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("function {id} not found")))?;
-    Ok(Json(to_response(store, &updated).await?))
-}
-
 /// `POST /api/functions/{id}/sample-run` — synchronous, capped at 100 rows.
 /// Accepts an unsaved draft config; the content-keyed cache makes draft
 /// iteration recompute only what changed.
@@ -431,8 +386,7 @@ pub async fn sample_run(
     let (row, table_row) = function_context(store, &id).await?;
     if !super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
         return Err(AppError::BadRequest(
-            "sample runs are only available for llm_prompt and ticket_classify functions"
-                .to_string(),
+            "sample runs are only available for ticket functions".to_string(),
         ));
     }
 
@@ -618,9 +572,7 @@ async fn start_run_internal_scoped(
     let store = state.require_store()?;
     if !super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
         return Err(AppError::BadRequest(
-            "runs are only available for llm_prompt and ticket_classify functions (topics run \
-             via recluster)"
-                .to_string(),
+            "runs are only available for ticket functions".to_string(),
         ));
     }
     if let Some(active) = store.db().active_enrichment_run(&row.id).await? {

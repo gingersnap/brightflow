@@ -5,4 +5,3 @@ pub mod enrich;
 pub mod insights;
 pub mod serve;
 pub mod store;
-pub mod topics;

@@ -3,4 +3,4 @@
 /**
  * Tools available for a given source
  */
-export type SourceTool = "dashboard" | "funnels" | "retention" | "users" | "explore" | "insights" | "topics" | "textexplore" | "enrich";
+export type SourceTool = "dashboard" | "funnels" | "retention" | "users" | "explore" | "insights" | "textexplore" | "textanalytics";

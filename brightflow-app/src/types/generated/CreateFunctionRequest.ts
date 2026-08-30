@@ -6,6 +6,6 @@
  */
 export type CreateFunctionRequest = { name: string, 
 /**
- * 'llm_prompt' | 'topic_model' | 'classifier'
+ * 'ticket_classify' | 'ticket_extract'
  */
 kind: string, config: unknown, };

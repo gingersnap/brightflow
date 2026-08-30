@@ -15,12 +15,12 @@ import {
   type PaletteActionContext,
   type PaletteItem,
   type PromptOptions,
-  TOPICS_KINDS,
+  VOCABULARY_KINDS,
 } from '@/components/command/paletteActions';
 import TextPromptModal from '@/components/command/TextPromptModal.vue';
 import { patchFromAction, useInsightActions } from '@/composables/useInsightActions';
 import { useSources } from '@/composables/useSources';
-import { actionsApi, taxonomyApi, topicsApi } from '@/services/api';
+import { actionsApi, taxonomyApi } from '@/services/api';
 import { useDatasetStore } from '@/stores/dataset';
 import { useInsightsStore } from '@/stores/insights';
 import { toolsForSource } from '@/types';
@@ -61,7 +61,7 @@ export function useCommandPalette(
 
   const routeTool = computed<string | null>(() => {
     const name = typeof route.name === 'string' ? route.name : '';
-    const tableRoute = /^(?<tool>insights|explore|enrich|topics|textexplore)-table$/u.exec(name);
+    const tableRoute = /^(?<tool>insights|explore|textanalytics|textexplore)-table$/u.exec(name);
     if (tableRoute) {
       return tableRoute.groups?.['tool'] ?? null;
     }
@@ -98,21 +98,14 @@ export function useCommandPalette(
     enabled: () => open.value,
   });
 
-  const isTopics = computed(() => routeTool.value === 'topics' && hasScope.value);
+  const isTextAnalytics = computed(() => routeTool.value === 'textanalytics' && hasScope.value);
   const isInsights = computed(() => routeTool.value === 'insights' && hasScope.value);
-
-  const { data: topicsOverview } = useQuery({
-    // Same key as TopicsView.vue.
-    key: () => ['topics', scopeSourceId.value ?? '', scopeTable.value ?? ''],
-    query: () => topicsApi.overview(scopeSourceId.value ?? '', scopeTable.value ?? ''),
-    enabled: () => open.value && isTopics.value,
-  });
 
   const { data: taxonomy } = useQuery({
     // Same key as VocabularyPanel.vue.
     key: () => ['taxonomy', scopeSourceId.value ?? '', scopeTable.value ?? ''],
     query: () => taxonomyApi.overview(scopeSourceId.value ?? '', scopeTable.value ?? ''),
-    enabled: () => open.value && isTopics.value,
+    enabled: () => open.value && isTextAnalytics.value,
   });
 
   // ── Helpers handed to the action flows ────────────────────────────────────
@@ -139,14 +132,11 @@ export function useCommandPalette(
     if (!applied) {
       return;
     }
-    // Topic/taxonomy views read through pinia-colada; insights views react to
+    // Vocabulary views read through pinia-colada; insights views react to
     // The overlay + the WS event stream.
-    const sourceId = action.source_id;
-    const table = action.table;
-    await Promise.all([
-      queryCache.invalidateQueries({ key: ['topics', sourceId, table] }),
-      queryCache.invalidateQueries({ key: ['taxonomy', sourceId, table] }),
-    ]);
+    await queryCache.invalidateQueries({
+      key: ['taxonomy', action.source_id, action.table],
+    });
   }
 
   // ── Groups ────────────────────────────────────────────────────────────────
@@ -161,7 +151,7 @@ export function useCommandPalette(
       for (const tool of toolsForSource(source)) {
         items.push({
           label: tool.label,
-          // The source name doubles as a fuse key: "topics gh" finds it.
+          // The source name doubles as a fuse key: "text analytics gh" finds it.
           suffix: source.name,
           icon: tool.icon,
           onSelect: () => {
@@ -191,8 +181,8 @@ export function useCommandPalette(
       return [];
     }
     let kinds: readonly string[] = [];
-    if (isTopics.value) {
-      kinds = TOPICS_KINDS;
+    if (isTextAnalytics.value) {
+      kinds = VOCABULARY_KINDS;
     } else if (isInsights.value) {
       kinds = INSIGHT_KINDS;
     }
@@ -204,7 +194,6 @@ export function useCommandPalette(
       sourceId,
       table,
       data: {
-        clusters: topicsOverview.value?.clusters ?? [],
         // Insights come from the already-loaded store tree (no fetch);
         // Unloaded views simply offer no insight-targeted items.
         categories: taxonomy.value?.categories ?? [],

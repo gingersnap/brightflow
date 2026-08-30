@@ -221,7 +221,6 @@ pub async fn run_eval(
         RunSpec::TicketClassify { names, .. } | RunSpec::TicketExtract { names, .. } => {
             (**names).clone()
         },
-        RunSpec::LlmPrompt(_) => VocabNames::new(),
     };
     let lower_names: HashMap<i64, String> =
         names.iter().map(|(k, v)| (*k, v.to_lowercase())).collect();

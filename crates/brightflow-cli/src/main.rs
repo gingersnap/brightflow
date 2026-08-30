@@ -60,7 +60,6 @@ use commands::admin::handle_create_admin;
 use commands::insights::{run_report, run_review};
 use commands::serve::build_serve_config;
 use commands::store::handle_store_command;
-use commands::topics::handle_topics;
 use logging::{init_tracing, init_tracing_simple};
 
 #[derive(Parser, Debug)]
@@ -163,12 +162,6 @@ enum Commands {
         database_url: Option<String>,
     },
 
-    /// Manage topic clusters (Model2Vec embeddings + k-means)
-    Topics {
-        #[command(subcommand)]
-        action: TopicsAction,
-    },
-
     /// Ticket enrichment (Call A classification / Call B extraction)
     Enrich {
         #[command(subcommand)]
@@ -238,95 +231,6 @@ enum CadenceArg {
 enum ConnectCommands {
     /// List available built-in connectors
     List,
-}
-
-#[derive(Subcommand, Debug)]
-enum TopicsAction {
-    /// Fit a fresh model: embed all rows, refit TF-IDF + clusters + label centroids
-    Fit {
-        /// Source id (e.g. `connector:<uuid>`)
-        #[arg(long)]
-        source: String,
-
-        /// Table name (default: issues)
-        #[arg(long, default_value = "issues")]
-        table: String,
-
-        /// Number of topic clusters (k for k-means). Defaults to engine DEFAULT_K.
-        #[arg(long)]
-        clusters: Option<usize>,
-    },
-
-    /// List existing clusters for a source/table
-    List {
-        /// Source id
-        #[arg(long)]
-        source: String,
-
-        /// Table name
-        #[arg(long, default_value = "issues")]
-        table: String,
-    },
-
-    /// A/B evaluate clustering algorithms and k on real data:
-    /// prints silhouette, Davies-Bouldin, NPMI coherence, unassigned %, wall time
-    Eval {
-        /// Source id
-        #[arg(long)]
-        source: String,
-
-        /// Table name
-        #[arg(long, default_value = "issues")]
-        table: String,
-
-        /// Comma-separated algorithms: kmeans, hdbscan
-        #[arg(long, default_value = "kmeans,hdbscan")]
-        algorithms: String,
-
-        /// k for k-means runs
-        #[arg(long, default_value_t = 12)]
-        k: usize,
-    },
-
-    /// Embed rows only (no clustering refit) - useful after model swap
-    Embed {
-        /// Source id
-        #[arg(long)]
-        source: String,
-
-        /// Table name
-        #[arg(long, default_value = "issues")]
-        table: String,
-    },
-
-    /// Report near-duplicate rows (read-only): groups rows whose text is
-    /// substantially the same. Does NOT find differently-worded reports of the
-    /// same issue.
-    NearDup {
-        /// Source id
-        #[arg(long)]
-        source: String,
-
-        /// Table name
-        #[arg(long, default_value = "issues")]
-        table: String,
-
-        /// Cosine similarity threshold. Defaults to the engine's tuned value.
-        #[arg(long)]
-        threshold: Option<f32>,
-    },
-
-    /// Compare the trained classifier head against the nearest-centroid
-    /// baseline on curated labels. Read-only — the go/no-go check.
-    EvalClassifier {
-        /// Source id
-        #[arg(long)]
-        source: String,
-
-        /// Table name
-        #[arg(long, default_value = "issues")]
-        table: String,
-    },
 }
 
 /// `enrich` subcommands.
@@ -474,7 +378,7 @@ async fn main() -> Result<()> {
     // one under a directory that does not exist — a fresh `BRIGHTFLOW_DATA_DIR`
     // otherwise fails with a bare "unable to open database file". `serve` has
     // always done this inside the API; doing it here covers the other
-    // subcommands (`store`, `topics`, `create-admin`, …) too.
+    // subcommands (`store`, `enrich`, `create-admin`, …) too.
     brightflow_core::WorkspacePaths::from_env().ensure_dirs()?;
 
     match cli.command.unwrap_or(Commands::RunAll {
@@ -560,11 +464,6 @@ async fn main() -> Result<()> {
             let database_url = database_url
                 .unwrap_or_else(|| brightflow_core::WorkspacePaths::from_env().auth_url());
             handle_create_admin(&email, &name, &database_url).await?;
-        },
-
-        Commands::Topics { action } => {
-            init_tracing_simple("brightflow=info");
-            handle_topics(action).await?;
         },
 
         Commands::Enrich { action } => {

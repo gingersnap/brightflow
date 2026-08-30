@@ -20,73 +20,13 @@ pub struct Scope {
     pub table: String,
 }
 
-/// A curation operation. Cluster actions key on the RAW cluster id of the
-/// current fit; durable storage attaches to the cluster's centroid so edits
-/// survive re-fits (see `cluster_edits` + reconciliation).
+/// A curation operation: a vocabulary edit, an insight verdict, or a column
+/// semantic. Every one is logged with its actor and, where the manifest says
+/// so, undoable.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, JsonSchema)]
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Action {
-    /// Give a topic cluster a human-curated display name.
-    RenameCluster {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        #[ts(type = "number")]
-        cluster_id: i64,
-        name: String,
-    },
-    /// Fold one cluster into another; sizes sum, terms union, applied at
-    /// read time (the fitted artifacts are untouched).
-    MergeClusters {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        #[ts(type = "number")]
-        from_cluster_id: i64,
-        #[ts(type = "number")]
-        into_cluster_id: i64,
-    },
-    /// Split an over-broad cluster by refitting with one more cluster slot.
-    SplitCluster {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        #[ts(type = "number")]
-        cluster_id: i64,
-    },
-    /// Remove a term from cluster naming and top-term lists.
-    ExcludeTerm {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        term: String,
-    },
-    /// Hide a cluster as noise (its rows count as unassigned).
-    MarkClusterNoise {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        #[ts(type = "number")]
-        cluster_id: i64,
-        is_noise: bool,
-    },
-    /// Attach a classification label to a cluster (display/curation only).
-    ///
-    /// This does NOT drive `predicted_label` any more. It used to, via a
-    /// circular path: the label's centroid was built from the CLUSTER centroid,
-    /// so `predicted_label` was just the cluster assignment wearing a nicer
-    /// name — and since clusters are format-shaped, that re-taught the format
-    /// bias. Row-level intent labels (`LabelDocument`) train the classifier
-    /// head, which supersedes this as the labeler.
-    AssignClusterLabel {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        #[ts(type = "number")]
-        cluster_id: i64,
-        label: String,
-    },
     /// Add an entry to one of the table's vocabularies. `kind` defaults to
     /// `category`; `parent_id` (0 or absent = root) places subcategories under
     /// a category and product components under an area. Idempotent on
@@ -153,31 +93,6 @@ pub enum Action {
         scope: Scope,
         #[ts(type = "number")]
         category_id: i64,
-    },
-    /// Set a row's intent labels, replacing whatever it had. Multi-label: a
-    /// ticket may have several intents, or none (pass an empty list to clear).
-    ///
-    /// Row-level on purpose — this is the supervision that breaks the
-    /// format-cluster loop.
-    LabelDocument {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        row_id: String,
-        categories: Vec<String>,
-    },
-    /// Refit topic clusters. Not undoable.
-    Recluster {
-        #[serde(flatten)]
-        #[ts(flatten)]
-        scope: Scope,
-        k: Option<u32>,
-        language: Option<String>,
-        embedder: Option<String>,
-        min_cluster_size: Option<u32>,
-        /// Clustering algorithm; honored when the pipeline supports it
-        /// (k-means today, hdbscan later).
-        algorithm: Option<String>,
     },
     /// Hide an insight permanently (keyed by its stable fingerprint).
     DismissInsight {
@@ -271,19 +186,11 @@ impl Action {
     /// Machine name matching the serde tag.
     pub fn kind(&self) -> &'static str {
         match self {
-            Self::RenameCluster { .. } => "rename_cluster",
-            Self::MergeClusters { .. } => "merge_clusters",
-            Self::SplitCluster { .. } => "split_cluster",
-            Self::ExcludeTerm { .. } => "exclude_term",
-            Self::MarkClusterNoise { .. } => "mark_cluster_noise",
-            Self::AssignClusterLabel { .. } => "assign_cluster_label",
             Self::DefineTaxonomyCategory { .. } => "define_taxonomy_category",
             Self::RenameTaxonomyCategory { .. } => "rename_taxonomy_category",
             Self::RedefineTaxonomyCategory { .. } => "redefine_taxonomy_category",
             Self::FreezeTaxonomyCategory { .. } => "freeze_taxonomy_category",
             Self::DeleteTaxonomyCategory { .. } => "delete_taxonomy_category",
-            Self::LabelDocument { .. } => "label_document",
-            Self::Recluster { .. } => "recluster",
             Self::DismissInsight { .. } => "dismiss_insight",
             Self::PinInsight { .. } => "pin_insight",
             Self::AnnotateInsight { .. } => "annotate_insight",
@@ -296,19 +203,11 @@ impl Action {
     /// (source_id, table) scope of the action.
     pub fn scope(&self) -> (&str, &str) {
         let scope = match self {
-            Self::RenameCluster { scope, .. }
-            | Self::MergeClusters { scope, .. }
-            | Self::SplitCluster { scope, .. }
-            | Self::ExcludeTerm { scope, .. }
-            | Self::MarkClusterNoise { scope, .. }
-            | Self::AssignClusterLabel { scope, .. }
-            | Self::DefineTaxonomyCategory { scope, .. }
+            Self::DefineTaxonomyCategory { scope, .. }
             | Self::RenameTaxonomyCategory { scope, .. }
             | Self::RedefineTaxonomyCategory { scope, .. }
             | Self::FreezeTaxonomyCategory { scope, .. }
             | Self::DeleteTaxonomyCategory { scope, .. }
-            | Self::LabelDocument { scope, .. }
-            | Self::Recluster { scope, .. }
             | Self::DismissInsight { scope, .. }
             | Self::PinInsight { scope, .. }
             | Self::AnnotateInsight { scope, .. }
@@ -489,25 +388,6 @@ pub fn kind_is_undoable(kind: &str) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum UndoOp {
-    /// Restore a cluster edit to a previous field snapshot.
-    RestoreClusterEdit {
-        table_id: String,
-        centroid_fingerprint: String,
-        centroid_json: String,
-        cluster_id: Option<i64>,
-        custom_name: Option<String>,
-        label: Option<String>,
-        is_noise: bool,
-        merged_into: Option<i64>,
-        /// True when the edit row did not exist before the action.
-        delete_row: bool,
-        /// Regenerate the label-centroids artifact after restoring.
-        refresh_labels: bool,
-    },
-    RemoveExcludedTerm {
-        table_id: String,
-        term: String,
-    },
     DeleteInsightState {
         table_id: String,
         fingerprint: String,
@@ -548,12 +428,8 @@ pub enum UndoOp {
         description: Option<String>,
     },
     /// Undo of freeze: put the previous frozen flag back.
-    RestoreTaxonomyFrozen {
-        category_id: i64,
-        frozen: bool,
-    },
-    /// Undo of delete: recreate the entry AND the row labels that cascaded
-    /// away with it.
+    RestoreTaxonomyFrozen { category_id: i64, frozen: bool },
+    /// Undo of delete: recreate the entry under its original id.
     ///
     /// The labels are the whole point — deleting a category silently destroys
     /// human curation effort, which is the most expensive input to this system,
@@ -565,8 +441,6 @@ pub enum UndoOp {
         name: String,
         description: Option<String>,
         created_at: i64,
-        /// (row_id, source, created_at) of every cascaded label.
-        labels: Vec<(String, String, i64)>,
         /// Defaults keep undo rows written before the hierarchy readable.
         #[serde(default = "default_kind")]
         kind: String,
@@ -576,14 +450,6 @@ pub enum UndoOp {
         frozen: bool,
         #[serde(default)]
         aliases_json: Option<String>,
-    },
-    /// Undo of label_document: restore a row's exact prior label set (empty =
-    /// the row was unlabelled).
-    RestoreDocumentLabels {
-        table_id: String,
-        row_id: String,
-        /// (category_id, source, created_at).
-        labels: Vec<(i64, String, i64)>,
     },
 }
 
@@ -599,42 +465,6 @@ fn default_kind() -> String {
 /// destructures positionally and label/description are both `&str`, so a
 /// swap compiles silently.
 pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
-    (
-        "rename_cluster",
-        "Rename cluster",
-        "Give a topic cluster a human-curated display name",
-        true,
-    ),
-    (
-        "merge_clusters",
-        "Merge clusters",
-        "Fold one cluster into another (read-time overlay)",
-        true,
-    ),
-    (
-        "split_cluster",
-        "Split cluster",
-        "Split an over-broad cluster by refitting with one more cluster",
-        false,
-    ),
-    (
-        "exclude_term",
-        "Exclude term",
-        "Remove a term from cluster naming and top-term lists",
-        true,
-    ),
-    (
-        "mark_cluster_noise",
-        "Mark cluster as noise",
-        "Hide a cluster as noise (rows count as unassigned)",
-        true,
-    ),
-    (
-        "assign_cluster_label",
-        "Assign cluster label",
-        "Attach a classification label to a cluster (display only)",
-        true,
-    ),
     (
         "define_taxonomy_category",
         "Define vocabulary entry",
@@ -671,21 +501,6 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "Delete vocabulary entry",
         "Delete a vocabulary entry and all of its row labels",
         true,
-    ),
-    (
-        "label_document",
-        "Label document",
-        "Assign intent categories to ONE ticket, replacing its current labels. \
-         Choose from the approved taxonomy only. Judge by what problem the ticket \
-         describes, not by how it is formatted. Pass an empty list if no category \
-         applies; pass several if several genuinely apply.",
-        true,
-    ),
-    (
-        "recluster",
-        "Recluster topics",
-        "Refit topic clusters",
-        false,
     ),
     (
         "dismiss_insight",
@@ -810,52 +625,6 @@ mod tests {
     #[test]
     fn manifest_registry_is_complete() {
         let samples: Vec<Action> = vec![
-            Action::RenameCluster {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                cluster_id: 0,
-                name: String::new(),
-            },
-            Action::MergeClusters {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                from_cluster_id: 0,
-                into_cluster_id: 1,
-            },
-            Action::SplitCluster {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                cluster_id: 0,
-            },
-            Action::ExcludeTerm {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                term: String::new(),
-            },
-            Action::MarkClusterNoise {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                cluster_id: 0,
-                is_noise: true,
-            },
-            Action::AssignClusterLabel {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                cluster_id: 0,
-                label: String::new(),
-            },
             Action::DefineTaxonomyCategory {
                 scope: Scope {
                     source_id: String::new(),
@@ -897,25 +666,6 @@ mod tests {
                     table: String::new(),
                 },
                 category_id: 0,
-            },
-            Action::LabelDocument {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                row_id: String::new(),
-                categories: Vec::new(),
-            },
-            Action::Recluster {
-                scope: Scope {
-                    source_id: String::new(),
-                    table: String::new(),
-                },
-                k: None,
-                language: None,
-                embedder: None,
-                min_cluster_size: None,
-                algorithm: None,
             },
             Action::DismissInsight {
                 scope: Scope {

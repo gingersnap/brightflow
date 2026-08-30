@@ -8,50 +8,13 @@
  * pre-commit regen breaks the narrowed type here — fix it to match.
  */
 
-export type FunctionKind =
-  | 'llm_prompt'
-  | 'topic_model'
-  | 'classifier'
-  | 'ticket_classify'
-  | 'ticket_extract';
+export type FunctionKind = 'ticket_classify' | 'ticket_extract';
+/** Built-in kinds are promoted from birth; the status stays for the wire shape. */
 export type FunctionStatus = 'draft' | 'promoted';
 
-export type OutputType =
-  | { type: 'string' }
-  | { type: 'number' }
-  | { type: 'bool' }
-  | { type: 'json' }
-  | { type: 'enum'; values: string[] };
-
-export interface OutputField {
-  name: string;
-  dtype: OutputType;
-  description: string;
-}
-
-/** Llm_prompt config payload (the `kind` tag is added server-side). */
-export interface LlmPromptConfig {
-  input_columns: string[];
-  prompt_template: string;
-  outputs: OutputField[];
-  provider_id: string;
-  model: string | null;
-}
-
-/** Topic_model config payload — optional overrides over builtin defaults. */
-export interface TopicModelConfig {
-  text_columns: string[] | null;
-  cleaning_profile: string | null;
-  language_column: string | null;
-  embedder: string | null;
-  min_cluster_size: number | null;
-  algorithm: string | null;
-}
-
 /**
- * Config payload shared by the two built-in ticket kinds (`ticket_classify`,
- * `ticket_extract`). The vocabulary snapshot is server-injected and never
- * sent by the client.
+ * Config payload shared by the two built-in ticket kinds. The vocabulary
+ * snapshot is server-injected and never sent by the client.
  */
 export interface TicketFunctionConfig {
   text_columns: string[];

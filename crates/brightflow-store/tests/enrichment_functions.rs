@@ -149,9 +149,9 @@ async fn function_crud_and_version_bump() {
         .create_enrichment_function(
             &table_id,
             "sentiment",
-            "llm_prompt",
+            "ticket_classify",
             "draft",
-            r#"{"kind":"llm_prompt"}"#,
+            r#"{"kind":"ticket_classify"}"#,
         )
         .await
         .expect("create");
@@ -159,7 +159,7 @@ async fn function_crud_and_version_bump() {
     assert_eq!(created.status, "draft");
 
     let next = db
-        .update_enrichment_function_config(&created.id, r#"{"kind":"llm_prompt","v":2}"#)
+        .update_enrichment_function_config(&created.id, r#"{"kind":"ticket_classify","v":2}"#)
         .await
         .expect("bump");
     assert_eq!(next, 2);
@@ -177,11 +177,11 @@ async fn function_crud_and_version_bump() {
         .expect("versions");
     assert_eq!(versions.len(), 2);
     assert_eq!(versions[0].version, 2, "newest first");
-    assert_eq!(versions[1].config_json, r#"{"kind":"llm_prompt"}"#);
+    assert_eq!(versions[1].config_json, r#"{"kind":"ticket_classify"}"#);
 
     // Promote / list gating
     assert!(db
-        .list_promoted_functions(&table_id, "llm_prompt")
+        .list_promoted_functions(&table_id, "ticket_classify")
         .await
         .expect("list")
         .is_empty());
@@ -189,7 +189,7 @@ async fn function_crud_and_version_bump() {
         .await
         .expect("promote");
     assert_eq!(
-        db.list_promoted_functions(&table_id, "llm_prompt")
+        db.list_promoted_functions(&table_id, "ticket_classify")
             .await
             .expect("list")
             .len(),
@@ -198,7 +198,7 @@ async fn function_crud_and_version_bump() {
 
     // Unique (table_id, name)
     let dup = db
-        .create_enrichment_function(&table_id, "sentiment", "llm_prompt", "draft", "{}")
+        .create_enrichment_function(&table_id, "sentiment", "ticket_classify", "draft", "{}")
         .await;
     assert!(dup.is_err(), "duplicate name must be rejected");
 
@@ -221,7 +221,7 @@ async fn cache_round_trip_and_housekeeping() {
     let db = store.db();
     let table_id = seed_table(&store, "upload:a", "leads").await;
     let f = db
-        .create_enrichment_function(&table_id, "fn1", "llm_prompt", "draft", "{}")
+        .create_enrichment_function(&table_id, "fn1", "ticket_classify", "draft", "{}")
         .await
         .expect("create");
 
@@ -342,7 +342,7 @@ async fn run_lifecycle() {
     let db = store.db();
     let table_id = seed_table(&store, "upload:a", "leads").await;
     let f = db
-        .create_enrichment_function(&table_id, "fn1", "llm_prompt", "draft", "{}")
+        .create_enrichment_function(&table_id, "fn1", "ticket_classify", "draft", "{}")
         .await
         .expect("create");
 
@@ -515,7 +515,7 @@ async fn promoted_function_config_returns_current_version_only() {
 
     // Kind is part of the key.
     assert_eq!(
-        db.get_promoted_function_config(&table_id, "llm_prompt")
+        db.get_promoted_function_config(&table_id, "ticket_classify")
             .await
             .expect("query"),
         None

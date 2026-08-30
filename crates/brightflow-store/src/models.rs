@@ -80,21 +80,6 @@ pub struct TableAnalysisSettingsRow {
     pub updated_at: String,
 }
 
-/// Table-level text-enrichment settings override
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TableEnrichmentSettingsRow {
-    pub table_id: String,
-    /// JSON array of text column names to embed
-    pub text_columns: Option<String>,
-    pub cleaning_profile: Option<String>,
-    pub language_column: Option<String>,
-    pub embedder: Option<String>,
-    pub min_cluster_size: Option<i64>,
-    /// 'kmeans' | 'hdbscan'
-    pub algorithm: Option<String>,
-    pub updated_at: String,
-}
-
 /// One shown-insight history record (novelty decay input)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsightHistoryRow {
@@ -186,32 +171,6 @@ pub struct AgentRunRow {
     pub finished_at: Option<i64>,
 }
 
-/// One durable cluster edit (curation overlay).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClusterEditRow {
-    pub id: i64,
-    pub table_id: String,
-    pub centroid_fingerprint: String,
-    /// JSON array of f32 — centroid snapshot for reconciliation
-    pub centroid_json: String,
-    pub cluster_id: Option<i64>,
-    pub custom_name: Option<String>,
-    pub label: Option<String>,
-    pub is_noise: bool,
-    pub merged_into: Option<i64>,
-    pub orphaned: bool,
-    pub updated_at: i64,
-}
-
-/// One excluded naming term.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExcludedTermRow {
-    pub id: i64,
-    pub table_id: String,
-    pub term: String,
-    pub created_at: i64,
-}
-
 /// One vocabulary entry.
 ///
 /// An induced category / subcategory / feedback_category, or an imported
@@ -246,31 +205,6 @@ pub struct UnresolvedSubjectRow {
     /// open | mapped | ignored
     pub status: String,
     pub mapped_to: Option<i64>,
-}
-
-/// One ROW-level intent label.
-///
-/// Row-level (not cluster-level) on purpose: cluster labels would re-teach the
-/// format bias the classifier exists to defeat.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentLabelRow {
-    pub id: i64,
-    pub table_id: String,
-    pub row_id: String,
-    pub category_id: i64,
-    /// "agent" (proposed) or "human" (ratified). Human wins on conflict.
-    pub source: String,
-    pub created_at: i64,
-}
-
-/// A document label joined to its category name — what training and the
-/// curation UI actually need.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentLabelWithName {
-    pub row_id: String,
-    pub category_id: i64,
-    pub name: String,
-    pub source: String,
 }
 
 /// One registered connector-less source.
@@ -409,16 +343,6 @@ crate::impl_from_row!(TableAnalysisSettingsRow {
     comparison_periods,
     updated_at,
 });
-crate::impl_from_row!(TableEnrichmentSettingsRow {
-    table_id,
-    text_columns,
-    cleaning_profile,
-    language_column,
-    embedder,
-    min_cluster_size,
-    algorithm,
-    updated_at,
-});
 crate::impl_from_row!(InsightHistoryRow {
     table_id,
     fingerprint,
@@ -481,25 +405,6 @@ crate::impl_from_row!(AgentRunRow {
     created_at,
     finished_at
 });
-crate::impl_from_row!(ClusterEditRow {
-    id,
-    table_id,
-    centroid_fingerprint,
-    centroid_json,
-    cluster_id,
-    custom_name,
-    label,
-    is_noise,
-    merged_into,
-    orphaned,
-    updated_at,
-});
-crate::impl_from_row!(ExcludedTermRow {
-    id,
-    table_id,
-    term,
-    created_at
-});
 crate::impl_from_row!(TaxonomyCategoryRow {
     id,
     table_id,
@@ -521,20 +426,6 @@ crate::impl_from_row!(UnresolvedSubjectRow {
     last_seen,
     status,
     mapped_to
-});
-crate::impl_from_row!(DocumentLabelRow {
-    id,
-    table_id,
-    row_id,
-    category_id,
-    source,
-    created_at
-});
-crate::impl_from_row!(DocumentLabelWithName {
-    row_id,
-    category_id,
-    name,
-    source
 });
 crate::impl_from_row!(SourceRow {
     source_id,

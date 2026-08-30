@@ -39,8 +39,6 @@ use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-mod text_enrichment;
-
 /// Hook invoked after each endpoint's merge, with `(source_id, table_name)`.
 ///
 /// Failures must be handled inside the hook — they never fail the sync. The
@@ -222,29 +220,6 @@ impl Scheduler {
     }
 }
 
-/// Effective topic-model config for a table at sync time.
-///
-/// A promoted `topic_model` function makes ANY table enrichable (its config
-/// resolves builtin defaults ⊕ overrides, or a plain-profile base for
-/// arbitrary tables). With no promoted function, builtin-default tables keep
-/// enriching as before; everything else skips.
-async fn resolve_topic_config(
-    store: &ParquetStore,
-    source_id: &str,
-    table_name: &str,
-) -> Option<brightflow_engine::enrichment::EnrichmentConfig> {
-    let stored = match store.db().get_table(source_id, table_name).await {
-        Ok(Some(table)) => store
-            .db()
-            .get_promoted_function_config(&table.id, "topic_model")
-            .await
-            .ok()
-            .flatten(),
-        _ => None,
-    };
-    brightflow_engine::enrichment::resolve_topic_config(table_name, stored.as_deref(), None)
-}
-
 /// Execute a full sync: load config, run connector, merge results, update state
 async fn execute_sync(
     db: &SchedulerDb,
@@ -333,20 +308,6 @@ async fn execute_sync(
         }
 
         let source_id = brightflow_core::connector_source_id(connector_id);
-
-        // Enrich with text-derived columns when a promoted topic_model
-        // function (or a builtin default) applies.
-        let workspace_root = paths.root();
-        let enrichment_config = resolve_topic_config(store, &source_id, &ep_result.name).await;
-        if let Err(e) = text_enrichment::maybe_enrich_parquet(
-            &parquet_file,
-            &ep_result.name,
-            &source_id,
-            &workspace_root,
-            enrichment_config.as_ref(),
-        ) {
-            warn!("Text enrichment skipped for {}: {e}", ep_result.name);
-        }
 
         let metrics = store
             .merge_parquet(

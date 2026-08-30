@@ -64,22 +64,12 @@ const router = createRouter({
       }),
     },
     {
-      path: '/:sourceId/enrich/:table',
-      name: 'enrich-table',
+      path: '/:sourceId/textanalytics/:table',
+      name: 'textanalytics-table',
       component: () => import('./components/layout/SourceLayout.vue'),
       props: (route) => ({
         sourceId: String(route.params['sourceId'] ?? ''),
-        tool: 'enrich' as const,
-        table: String(route.params['table'] ?? ''),
-      }),
-    },
-    {
-      path: '/:sourceId/topics/:table',
-      name: 'topics-table',
-      component: () => import('./components/layout/SourceLayout.vue'),
-      props: (route) => ({
-        sourceId: String(route.params['sourceId'] ?? ''),
-        tool: 'topics' as const,
+        tool: 'textanalytics' as const,
         table: String(route.params['table'] ?? ''),
       }),
     },

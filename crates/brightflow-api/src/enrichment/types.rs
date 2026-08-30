@@ -12,7 +12,7 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 pub struct CreateFunctionRequest {
     pub name: String,
-    /// 'llm_prompt' | 'topic_model' | 'classifier'
+    /// 'ticket_classify' | 'ticket_extract'
     pub kind: String,
     #[ts(type = "unknown")]
     pub config: serde_json::Value,
@@ -394,4 +394,65 @@ pub struct ImportVocabularyResponse {
     pub failed_line: Option<usize>,
     #[ts(optional)]
     pub error: Option<String>,
+}
+
+/// One vocabulary entry as the UI sees it.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxonomyCategory {
+    /// `number`, not ts-rs's default `bigint` for i64: the wire value is a
+    /// plain JSON number, and a real BigInt would break JSON.stringify on
+    /// the round trip.
+    #[ts(type = "number")]
+    pub id: i64,
+    /// category | subcategory | feedback_category | product | competitor
+    pub kind: String,
+    /// 0 = root.
+    #[ts(type = "number")]
+    pub parent_id: i64,
+    pub name: String,
+    #[ts(optional)]
+    pub description: Option<String>,
+    pub frozen: bool,
+}
+
+/// A table's vocabularies, every kind and level in one flat list.
+#[derive(Debug, Serialize, Deserialize, TS, Clone)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxonomyOverview {
+    pub categories: Vec<TaxonomyCategory>,
+}
+
+/// One value of a categorical column with its row count.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ValueCount {
+    pub value: String,
+    pub rows: usize,
+}
+
+/// One category with its subcategory breakdown.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryCount {
+    pub category: String,
+    pub rows: usize,
+    pub subcategories: Vec<ValueCount>,
+}
+
+/// Ticket-grain counts from the classifier's materialised columns.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketSummaryResponse {
+    pub total_rows: usize,
+    /// Rows with a non-null `category`.
+    pub classified_rows: usize,
+    pub categories: Vec<CategoryCount>,
+    pub sentiment: Vec<ValueCount>,
+    pub languages: Vec<ValueCount>,
 }

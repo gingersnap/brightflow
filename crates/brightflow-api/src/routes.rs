@@ -32,7 +32,6 @@ use crate::sources::handlers as sources_handlers;
 use crate::state::AppState;
 use crate::system::handlers as system_handlers;
 use crate::textexplore::handlers as textexplore_handlers;
-use crate::topics::handlers as topics_handlers;
 use crate::web_analytics::handlers as wa_handlers;
 
 /// Create the main application router
@@ -92,11 +91,6 @@ fn api_routes() -> Router<AppState> {
             "/sources/{source_id}/insights/latest",
             get(insights_handlers::get_latest_runs),
         )
-        .route(
-            "/sources/{source_id}/tables/{table}/enrichment",
-            get(topics_handlers::get_enrichment_settings)
-                .put(topics_handlers::put_enrichment_settings),
-        )
         // Enrichment functions (versioned derived columns)
         .route(
             "/sources/{source_id}/tables/{table}/functions",
@@ -111,14 +105,6 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/functions/{id}/versions",
             get(enrichment_handlers::list_versions),
-        )
-        .route(
-            "/functions/{id}/promote",
-            post(enrichment_handlers::promote_function),
-        )
-        .route(
-            "/functions/{id}/demote",
-            post(enrichment_handlers::demote_function),
         )
         .route(
             "/functions/{id}/sample-run",
@@ -156,6 +142,10 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/sources/{source_id}/tables/{table}/vocabulary/health",
             get(crate::enrichment::health::vocabulary_health),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/tickets/summary",
+            get(crate::enrichment::health::ticket_summary),
         )
         .route(
             "/enrichment/runs/{rid}",
@@ -209,28 +199,15 @@ fn api_routes() -> Router<AppState> {
             get(semantics_handlers::get_table_settings)
                 .put(semantics_handlers::upsert_table_settings),
         )
-        // Topics (Model2Vec embeddings + dense k-means)
-        .route(
-            "/sources/{source_id}/tables/{table}/topics",
-            get(topics_handlers::get_overview),
-        )
-        .route(
-            "/sources/{source_id}/tables/{table}/topics/clusters/{cluster_id}",
-            get(topics_handlers::get_cluster_detail),
-        )
         // Text Explorer (no-LLM text filtering + words widget)
         .route(
             "/sources/{source_id}/tables/{table}/textexplore/search",
             post(textexplore_handlers::search),
         )
-        // Intent taxonomy (read-only; writes go through POST /api/actions)
+        // Vocabularies (read-only; writes go through POST /api/actions)
         .route(
             "/sources/{source_id}/tables/{table}/taxonomy",
-            get(crate::topics::taxonomy::get_taxonomy),
-        )
-        .route(
-            "/sources/{source_id}/tables/{table}/taxonomy/queue",
-            get(crate::topics::taxonomy::get_curation_queue),
+            get(crate::enrichment::vocabulary_api::get_taxonomy),
         )
         // WebSocket
         .route("/ws", get(handlers::ws_handler))

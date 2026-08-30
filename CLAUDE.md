@@ -11,11 +11,11 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 
 ## Project Structure
 
-- `crates/brightflow-cli` - Binary (run-all, serve, insights, connect, store, topics, enrich, create-admin, migrate-events, compact)
+- `crates/brightflow-cli` - Binary (run-all, serve, insights, connect, store, enrich, create-admin, migrate-events, compact)
 - `crates/brightflow-core` - Workspace paths (`WorkspacePaths`), zero-dep
 - `crates/brightflow-connect` - Data connectors
 - `crates/brightflow-store` - SQLite-backed Parquet storage (Litehouse)
-- `crates/brightflow-engine` - Analysis engine, NLP primitives, enrichment orchestration (incl. the two built-in ticket calls: `enrichment/ticket_classify.rs`, `enrichment/mentions.rs`, and the vocabulary rules in `enrichment/vocabulary.rs`)
+- `crates/brightflow-engine` - Analysis engine, text primitives (tokenizer, language detection), and the two built-in ticket calls (`enrichment/ticket_classify.rs`, `enrichment/mentions.rs`) with their vocabulary rules (`enrichment/vocabulary.rs`)
 - `crates/brightflow-llm` - Provider-agnostic LLM client (OpenAI chat-completions dialect)
 - `crates/brightflow-scheduler` - Background job runner for connector syncs
 - `crates/brightflow-api` - HTTP API server (Axum + Polars) with integrated event ingestion
@@ -152,11 +152,6 @@ cargo clippy                      # lint
                                   # it never blocks and never proves clean — use this.
 cargo test -p <crate>             # run a single crate's unit tests
 
-# Topics / intent classification
-cargo run -- topics fit --source <s> --table issues        # refit + train the head
-cargo run -- topics eval-classifier --source <s> --table issues  # head vs baseline macro-F1
-cargo run -- topics near-dup --source <s> --table issues   # near-duplicate report
-
 # Ticket enrichment (Call A classify / Call B extract) — per-language eval,
 # costs money, needs BRIGHTFLOW_LLM_BASE_URL/_API_KEY/_MODEL; never caches
 cargo run -- enrich eval --source <s> --table issues --lang sv --call a
@@ -179,8 +174,7 @@ cargo run -- run-all              # API + WebSocket server (or just `cargo run`)
 
 # Test workspace
 ./scripts/build-test-template.sh          # rebuild testdata/workspaces/test through the
-                                          # real CLI + HTTP paths (needs the embedding
-                                          # model; see the script header)
+                                          # real CLI + HTTP paths (see the script header)
 ./scripts/build-test-template.sh --check  # report drift between the committed template
                                           # and what the script produces
 ./scripts/test-env.sh setup|reset|status  # the persistent interactive copy at

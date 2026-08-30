@@ -522,73 +522,8 @@ pub async fn execute_action(
     state: &AppState,
     action: &Action,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    use crate::actions::exec::{clusters, insights, semantics, taxonomy};
+    use crate::actions::exec::{insights, semantics, taxonomy};
     match action {
-        Action::RenameCluster {
-            scope: Scope { source_id, table },
-            cluster_id,
-            name,
-        } => clusters::execute_rename_cluster(state, source_id, table, *cluster_id, name).await,
-        Action::MergeClusters {
-            scope: Scope { source_id, table },
-            from_cluster_id,
-            into_cluster_id,
-        } => {
-            clusters::execute_merge_clusters(
-                state,
-                source_id,
-                table,
-                *from_cluster_id,
-                *into_cluster_id,
-            )
-            .await
-        },
-        Action::MarkClusterNoise {
-            scope: Scope { source_id, table },
-            cluster_id,
-            is_noise,
-        } => {
-            clusters::execute_mark_cluster_noise(state, source_id, table, *cluster_id, *is_noise)
-                .await
-        },
-        Action::AssignClusterLabel {
-            scope: Scope { source_id, table },
-            cluster_id,
-            label,
-        } => {
-            clusters::execute_assign_cluster_label(state, source_id, table, *cluster_id, label)
-                .await
-        },
-        Action::ExcludeTerm {
-            scope: Scope { source_id, table },
-            term,
-        } => clusters::execute_exclude_term(state, source_id, table, term).await,
-        Action::SplitCluster {
-            scope: Scope { source_id, table },
-            ..
-        } => clusters::execute_split_cluster(state, source_id, table).await,
-        Action::Recluster {
-            scope: Scope { source_id, table },
-            k,
-            language,
-            embedder,
-            min_cluster_size,
-            algorithm,
-        } => {
-            clusters::execute_recluster(
-                state,
-                source_id,
-                table,
-                &clusters::ReclusterArgs {
-                    k: *k,
-                    language: language.as_deref(),
-                    embedder: embedder.as_deref(),
-                    min_cluster_size: *min_cluster_size,
-                    algorithm: algorithm.as_deref(),
-                },
-            )
-            .await
-        },
         Action::DismissInsight {
             scope: Scope { source_id, table },
             fingerprint,
@@ -685,51 +620,14 @@ pub async fn execute_action(
         } => {
             taxonomy::execute_delete_taxonomy_category(state, source_id, table, *category_id).await
         },
-        Action::LabelDocument {
-            scope: Scope { source_id, table },
-            row_id,
-            categories,
-        } => taxonomy::execute_label_document(state, source_id, table, row_id, categories).await,
     }
 }
 
 /// Apply an inverse operation. Same shape as `execute_action`: one line per
 /// arm, bodies in `exec::*` next to the executes they invert.
 pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
-    use crate::actions::exec::{clusters, insights, semantics, taxonomy};
+    use crate::actions::exec::{insights, semantics, taxonomy};
     match op {
-        UndoOp::RestoreClusterEdit {
-            table_id,
-            centroid_fingerprint,
-            centroid_json,
-            cluster_id,
-            custom_name,
-            label,
-            is_noise,
-            merged_into,
-            delete_row,
-            refresh_labels,
-        } => {
-            clusters::undo_restore_cluster_edit(
-                state,
-                &clusters::RestoreClusterEditArgs {
-                    table_id,
-                    centroid_fingerprint,
-                    centroid_json,
-                    cluster_id: *cluster_id,
-                    custom_name,
-                    label,
-                    is_noise: *is_noise,
-                    merged_into: *merged_into,
-                    delete_row: *delete_row,
-                    refresh_labels: *refresh_labels,
-                },
-            )
-            .await
-        },
-        UndoOp::RemoveExcludedTerm { table_id, term } => {
-            clusters::undo_remove_excluded_term(state, table_id, term).await
-        },
         UndoOp::DeleteInsightState {
             table_id,
             fingerprint,
@@ -794,7 +692,6 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             name,
             description,
             created_at,
-            labels,
             kind,
             parent_id,
             frozen,
@@ -811,13 +708,8 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
                 aliases_json: aliases_json.clone(),
                 created_at: *created_at,
             };
-            taxonomy::undo_recreate_taxonomy_category(state, &row, labels).await
+            taxonomy::undo_recreate_taxonomy_category(state, &row).await
         },
-        UndoOp::RestoreDocumentLabels {
-            table_id,
-            row_id,
-            labels,
-        } => taxonomy::undo_restore_document_labels(state, table_id, row_id, labels).await,
     }
 }
 

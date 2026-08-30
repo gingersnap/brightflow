@@ -12,12 +12,8 @@ use crate::state::AppState;
 /// Must stay in sync with `runner::tools_for`, `runner::build_context`, and the
 /// `agent_runs.kind` CHECK constraint (migration 023).
 const VALID_KINDS: &[&str] = &[
-    "auto_label",
-    "propose_merges",
     "narrate_insights",
     "triage_insights",
-    "propose_taxonomy",
-    "label_documents",
     "propose_categories",
     "propose_subcategories",
     "propose_feedback_categories",

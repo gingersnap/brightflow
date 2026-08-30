@@ -1,13 +1,12 @@
 //! The agent loop: context → tools → propose actions → feed results back.
 
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::State;
 use axum::Json;
 use brightflow_llm::{ChatClient, ChatMessage, ToolDef};
 use serde_json::json;
 
 use crate::actions::handlers::{dispatch_action, Actor};
 use crate::actions::types::{Action, ActionStatus};
-use crate::agent::sampling::SampleDoc;
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
@@ -18,24 +17,15 @@ const MAX_TOTAL_TOKENS: u64 = 120_000;
 /// Top insight candidates fed to triage/narrate runs.
 const TRIAGE_CANDIDATES: usize = 12;
 
-/// Iteration cap for a run kind.
-///
-/// `label_documents` works through a ~1–2k row seed a batch at a time, so the
-/// cluster-sized default of 12 would stop it a few percent in. This is still
-/// the bounded cold path: cost is O(seed sample), never O(rows).
-fn max_iterations(kind: &str) -> usize {
-    match kind {
-        "label_documents" => 80,
-        _ => MAX_ITERATIONS,
-    }
+/// Iteration cap for a run kind. Induction runs define at most a cap's
+/// worth of entries, so the cluster-era default is plenty.
+fn max_iterations(_kind: &str) -> usize {
+    MAX_ITERATIONS
 }
 
 /// Token budget for a run kind.
-fn max_total_tokens(kind: &str) -> u64 {
-    match kind {
-        "label_documents" => 900_000,
-        _ => MAX_TOTAL_TOKENS,
-    }
+fn max_total_tokens(_kind: &str) -> u64 {
+    MAX_TOTAL_TOKENS
 }
 
 /// Execute one agent run to completion. Called from a spawned task; the
@@ -249,7 +239,7 @@ fn parse_action(
 /// `propose_subcategories` run cannot wander into another parent or level.
 fn vocab_defaults(kind: &str, parent_id: Option<i64>) -> Option<(&'static str, i64)> {
     match kind {
-        "propose_categories" | "propose_taxonomy" => Some(("category", 0)),
+        "propose_categories" => Some(("category", 0)),
         "propose_subcategories" => Some(("subcategory", parent_id.unwrap_or(0))),
         "propose_feedback_categories" => Some(("feedback_category", 0)),
         _ => None,
@@ -282,14 +272,10 @@ fn apply_vocab_defaults(action: Action, defaults: Option<(&'static str, i64)>) -
 /// Manifest slice + `done` tool per run kind.
 fn tools_for(kind: &str) -> Vec<ToolDef> {
     let action_kinds: &[&str] = match kind {
-        "auto_label" => &["assign_cluster_label", "rename_cluster"],
-        "propose_merges" => &["merge_clusters", "mark_cluster_noise"],
         "triage_insights" => &["dismiss_insight", "pin_insight", "annotate_insight"],
-        "propose_taxonomy"
-        | "propose_categories"
-        | "propose_subcategories"
-        | "propose_feedback_categories" => &["define_taxonomy_category"],
-        "label_documents" => &["label_document"],
+        "propose_categories" | "propose_subcategories" | "propose_feedback_categories" => {
+            &["define_taxonomy_category"]
+        },
         _ => &[], // narrate_insights: text only
     };
     let manifest = manifest_schemas();
@@ -358,14 +344,6 @@ fn manifest_schemas() -> Vec<(String, String, serde_json::Value)> {
 }
 
 /// The table's approved intent taxonomy, as prompt JSON.
-async fn existing_taxonomy(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-) -> AppResult<Vec<serde_json::Value>> {
-    existing_vocabulary(state, source_id, table, None).await
-}
-
 /// The current entries the model is shown, optionally one level only, so
 /// an induction run proposes a diff against the list rather than a fresh
 /// list.
@@ -427,47 +405,6 @@ async fn build_context(
     parent_id: Option<i64>,
 ) -> AppResult<(String, String)> {
     match kind {
-        "auto_label" | "propose_merges" => {
-            let overview = crate::topics::handlers::get_overview(
-                State(state.clone()),
-                AxumPath((source_id.to_string(), table.to_string())),
-            )
-            .await?
-            .0;
-            if !overview.ready {
-                return Err(AppError::BadRequest(
-                    "no fitted clusters — run recluster first".to_string(),
-                ));
-            }
-            let clusters: Vec<serde_json::Value> = overview
-                .clusters
-                .iter()
-                .map(|c| {
-                    json!({
-                        "clusterId": c.id,
-                        "size": c.size,
-                        "topTerms": c.top_terms,
-                        "sampleTitles": c.sample_titles,
-                    })
-                })
-                .collect();
-            let system = if kind == "auto_label" {
-                "You are a topic curator. For each cluster, propose a short, specific \
-                 label (2-4 words) via assign_cluster_label, and where the auto-generated \
-                 name is unreadable, a display name via rename_cluster. Base proposals \
-                 ONLY on the provided terms and sample titles. Call done when finished."
-            } else {
-                "You are a topic curator. Identify clusters that describe the SAME topic \
-                 and propose merge_clusters (fold the smaller into the larger). Propose \
-                 mark_cluster_noise for clusters that are clearly spam or formatting \
-                 artifacts. Be conservative — only propose merges you are confident in. \
-                 Call done when finished."
-            };
-            Ok((
-                system.to_string(),
-                serde_json::to_string_pretty(&json!({ "clusters": clusters })).unwrap_or_default(),
-            ))
-        },
         "triage_insights" | "narrate_insights" => {
             let response = crate::insights::handlers::run_trends(
                 State(state.clone()),
@@ -508,103 +445,6 @@ async fn build_context(
                 system.to_string(),
                 serde_json::to_string_pretty(&json!({ "insights": candidates }))
                     .unwrap_or_default(),
-            ))
-        },
-        "propose_taxonomy" => {
-            let docs = crate::agent::sampling::stratified_sample(
-                state,
-                source_id,
-                table,
-                crate::agent::sampling::TAXONOMY_SAMPLE,
-            )
-            .await?;
-            if docs.is_empty() {
-                return Err(AppError::BadRequest(
-                    "no documents to sample — sync the table first".to_string(),
-                ));
-            }
-            let existing = existing_taxonomy(state, source_id, table).await?;
-            let samples: Vec<serde_json::Value> = docs.iter().map(SampleDoc::to_json).collect();
-
-            // The negative instruction is the entire point of this run. Left to
-            // itself the model reliably proposes format buckets ("Automated
-            // Backport Commits") — which are *accurate* descriptions of what it
-            // was shown and *useless* as intents.
-            let system = "You are defining a problem-intent taxonomy for a support/issue \
-                 corpus. Read the sample tickets and propose 8-15 categories via \
-                 define_taxonomy_category, then call done.\n\n\
-                 Categorize by WHAT IS WRONG for the user — the symptom or failure. \
-                 Good: 'authentication failure', 'data loss on sync', 'slow query \
-                 performance', 'incorrect billing amount'.\n\n\
-                 NEVER categorize by tooling, file format, mechanism, or how the ticket \
-                 is written. Bad: 'backport commits', 'stack traces', 'issues with code \
-                 snippets', 'templated bug reports', 'force push'. Those describe the \
-                 SHAPE of the text, not the problem. If a proposed category would still \
-                 make sense after someone rewrote the ticket in different words, it is a \
-                 real intent; if it would evaporate, it is a format bucket — discard it.\n\n\
-                 Categories should be mutually distinguishable, cover the corpus, and be \
-                 specific enough to act on. Give each a short name and a one-sentence \
-                 description of the symptom.";
-
-            Ok((
-                system.to_string(),
-                serde_json::to_string_pretty(&json!({
-                    "existingCategories": existing,
-                    "sampleTickets": samples,
-                }))
-                .unwrap_or_default(),
-            ))
-        },
-        "label_documents" => {
-            let existing = existing_taxonomy(state, source_id, table).await?;
-            if existing.is_empty() {
-                return Err(AppError::BadRequest(
-                    "no taxonomy defined — run propose_taxonomy and approve categories first"
-                        .to_string(),
-                ));
-            }
-            let docs = crate::agent::sampling::stratified_sample(
-                state,
-                source_id,
-                table,
-                crate::agent::sampling::LABEL_SAMPLE,
-            )
-            .await?;
-            if docs.is_empty() {
-                return Err(AppError::BadRequest(
-                    "no documents to sample — sync the table first".to_string(),
-                ));
-            }
-
-            // Batch: one label_document call per row, but many rows per model
-            // turn. One row per turn would burn the iteration budget on protocol
-            // overhead long before the seed sample was covered.
-            let batches: Vec<serde_json::Value> = docs
-                .chunks(crate::agent::sampling::LABEL_BATCH)
-                .map(|chunk| json!(chunk.iter().map(SampleDoc::to_json).collect::<Vec<_>>()))
-                .collect();
-
-            let system = "You are labelling support tickets with problem intents. For EVERY \
-                 ticket shown, call label_document with its rowId and the categories that \
-                 apply, drawn ONLY from the approved taxonomy below. Use the exact category \
-                 names given.\n\n\
-                 Judge by WHAT PROBLEM the ticket describes, not by how it is written. \
-                 Ignore whether it contains a stack trace, a backport script, a template, \
-                 or code — formatting is not intent. Two tickets in totally different \
-                 formats can share an intent; two tickets in identical formats often do \
-                 not.\n\n\
-                 A ticket may have several intents, or none — pass an empty list rather \
-                 than forcing a bad fit. Work through the batches in order, calling \
-                 label_document once per ticket. Call done only after every ticket has \
-                 been labelled.";
-
-            Ok((
-                system.to_string(),
-                serde_json::to_string_pretty(&json!({
-                    "approvedTaxonomy": existing,
-                    "batches": batches,
-                }))
-                .unwrap_or_default(),
             ))
         },
         "propose_categories" => {
@@ -725,24 +565,24 @@ mod tests {
     #[test]
     fn parse_action_injects_scope() {
         let action = parse_action(
-            "rename_cluster",
-            r#"{"cluster_id": 3, "name": "Payments"}"#,
+            "rename_taxonomy_category",
+            r#"{"category_id": 3, "name": "Payments"}"#,
             "src-1",
             "issues",
         )
         .unwrap();
-        assert_eq!(action.kind(), "rename_cluster");
+        assert_eq!(action.kind(), "rename_taxonomy_category");
         assert_eq!(action.scope(), ("src-1", "issues"));
     }
 
     #[test]
     fn parse_action_rejects_malformed_arguments() {
         // Not JSON
-        assert!(parse_action("rename_cluster", "not json", "s", "t").is_err());
+        assert!(parse_action("rename_taxonomy_category", "not json", "s", "t").is_err());
         // Wrong types
         assert!(parse_action(
-            "rename_cluster",
-            r#"{"cluster_id": "three", "name": 5}"#,
+            "rename_taxonomy_category",
+            r#"{"category_id": "three", "name": 5}"#,
             "s",
             "t"
         )
@@ -773,12 +613,11 @@ mod tests {
     #[test]
     fn every_agent_tool_maps_to_an_undoable_kind() {
         let run_kinds = [
-            "auto_label",
-            "propose_merges",
             "narrate_insights",
             "triage_insights",
-            "propose_taxonomy",
-            "label_documents",
+            "propose_categories",
+            "propose_subcategories",
+            "propose_feedback_categories",
         ];
         for run_kind in run_kinds {
             for tool in tools_for(run_kind) {
@@ -821,7 +660,7 @@ mod tests {
             vocab_defaults("propose_feedback_categories", None),
             Some(("feedback_category", 0))
         );
-        assert_eq!(vocab_defaults("auto_label", None), None);
+        assert_eq!(vocab_defaults("triage_insights", None), None);
         for kind in [
             "propose_categories",
             "propose_subcategories",
@@ -834,15 +673,15 @@ mod tests {
 
     #[test]
     fn tools_include_done_and_strip_scope_fields() {
-        let tools = tools_for("auto_label");
+        let tools = tools_for("propose_categories");
         assert!(tools.iter().any(|t| t.name == "done"));
-        let label_tool = tools
+        let define_tool = tools
             .iter()
-            .find(|t| t.name == "assign_cluster_label")
-            .expect("assign_cluster_label tool");
-        let props = label_tool.parameters.pointer("/properties").unwrap();
+            .find(|t| t.name == "define_taxonomy_category")
+            .expect("define_taxonomy_category tool");
+        let props = define_tool.parameters.pointer("/properties").unwrap();
         assert!(props.get("source_id").is_none(), "scope is server-injected");
         assert!(props.get("kind").is_none());
-        assert!(props.get("label").is_some());
+        assert!(props.get("name").is_some());
     }
 }

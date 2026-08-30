@@ -104,7 +104,6 @@ pub(crate) async fn build_state(config: &ServeConfig) -> anyhow::Result<AppState
 pub(crate) async fn seed_and_recover(state: &AppState) {
     if let Some(store) = state.store() {
         crate::state::seed_column_semantics(store).await;
-        crate::state::hydrate_enrichment_overrides(state, store).await;
         crate::llm::seed_from_env(state).await;
         // Any 'running' agent run from a previous process crashed mid-flight
         let now = std::time::SystemTime::now()

@@ -1,69 +1,15 @@
-//! Enrichment persistence: functions with immutable versions, runs, the
-//! LLM output cache, and the deprecated `table_enrichment_settings`
-//! dual-write kept for one release (reads have moved to functions).
+//! Enrichment persistence: functions with immutable versions, runs, and the
+//! LLM output cache.
 
 use super::StoreDb;
 use crate::error::StoreResult;
 use crate::models::{
     EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow, EnrichmentRunRow,
-    TableEnrichmentSettingsRow,
 };
 use crate::row::{execute, fetch_all, fetch_one, fetch_optional};
 use rusqlite::params;
 
 impl StoreDb {
-    // Table Enrichment Settings CRUD
-    // =====================================================
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn upsert_enrichment_settings(
-        &self,
-        table_id: &str,
-        text_columns: Option<&str>,
-        cleaning_profile: Option<&str>,
-        language_column: Option<&str>,
-        embedder: Option<&str>,
-        min_cluster_size: Option<i64>,
-        algorithm: Option<&str>,
-    ) -> StoreResult<TableEnrichmentSettingsRow> {
-        let table_id = table_id.to_owned();
-        let text_columns = text_columns.map(str::to_owned);
-        let cleaning_profile = cleaning_profile.map(str::to_owned);
-        let language_column = language_column.map(str::to_owned);
-        let embedder = embedder.map(str::to_owned);
-        let algorithm = algorithm.map(str::to_owned);
-        let row = self
-            .pool
-            .call(move |conn| {
-                fetch_one::<TableEnrichmentSettingsRow, _>(
-                    conn,
-                    r"INSERT INTO table_enrichment_settings
-                (table_id, text_columns, cleaning_profile, language_column, embedder, min_cluster_size, algorithm)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT (table_id) DO UPDATE SET
-                text_columns = excluded.text_columns,
-                cleaning_profile = excluded.cleaning_profile,
-                language_column = excluded.language_column,
-                embedder = excluded.embedder,
-                min_cluster_size = excluded.min_cluster_size,
-                algorithm = excluded.algorithm,
-                updated_at = datetime('now')
-              RETURNING *",
-                    params![
-                        table_id,
-                        text_columns,
-                        cleaning_profile,
-                        language_column,
-                        embedder,
-                        min_cluster_size,
-                        algorithm
-                    ],
-                )
-            })
-            .await?;
-        Ok(row)
-    }
-
     // =====================================================
     // Enrichment functions (header + immutable versions)
     // =====================================================

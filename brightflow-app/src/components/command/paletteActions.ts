@@ -8,7 +8,6 @@
 import type {
   Action,
   AnalysisNode,
-  ClusterSummary,
   ColumnInfo,
   DismissReason,
   TaxonomyCategory,
@@ -24,9 +23,9 @@ import type {
  * — a new backend action degrades to "not in the palette yet", never to a
  * broken item.
  *
- * v1 exclusions (deliberate): `label_document` needs document context and
- * multi-select (DocDrawer owns it); `recluster` has five tuning params and
- * no undo (TopicModelForm owns it).
+ * v1 exclusions (deliberate): `redefine_taxonomy_category` and
+ * `freeze_taxonomy_category` need the entry's current definition in view
+ * (VocabularyPanel owns them).
  */
 
 /** One palette item — a structural subset of Nuxt UI's CommandPaletteItem. */
@@ -41,7 +40,6 @@ export interface PaletteItem {
 
 /** Entity data the flows pick from — fetched/held by useCommandPalette. */
 export interface PaletteData {
-  clusters: ClusterSummary[];
   categories: TaxonomyCategory[];
   insights: AnalysisNode[];
   columns: ColumnInfo[];
@@ -92,14 +90,8 @@ export interface PaletteActionConfig {
   build: (ctx: PaletteActionContext) => Pick<PaletteItem, 'children' | 'onSelect' | 'placeholder'>;
 }
 
-/** Action kinds offered on the topics route. */
-export const TOPICS_KINDS: readonly string[] = [
-  'rename_cluster',
-  'merge_clusters',
-  'split_cluster',
-  'exclude_term',
-  'mark_cluster_noise',
-  'assign_cluster_label',
+/** Action kinds offered on the text-analytics route. */
+export const VOCABULARY_KINDS: readonly string[] = [
   'define_taxonomy_category',
   'rename_taxonomy_category',
   'delete_taxonomy_category',
@@ -117,32 +109,13 @@ export const INSIGHT_KINDS: readonly string[] = [
 
 // ── Shared pickers ──────────────────────────────────────────────────────────
 
-/** Same headline rule as ClusterCard: curated name, else c-TF-IDF terms. */
-function clusterLabel(cluster: ClusterSummary): string {
-  return cluster.curated ? cluster.name : cluster.topTerms.slice(0, 4).join(', ') || cluster.name;
-}
-
-function clusterChildren(
-  ctx: PaletteActionContext,
-  onPick: (cluster: ClusterSummary) => void,
-): PaletteItem[] {
-  return ctx.data.clusters.map((cluster) => ({
-    label: clusterLabel(cluster),
-    suffix: `${cluster.size} docs`,
-    icon: 'i-lucide-shapes',
-    onSelect: () => {
-      onPick(cluster);
-    },
-  }));
-}
-
 function categoryChildren(
   ctx: PaletteActionContext,
   onPick: (category: TaxonomyCategory) => void,
 ): PaletteItem[] {
   return ctx.data.categories.map((category) => ({
     label: category.name,
-    suffix: `${category.labelledRows} rows`,
+    suffix: category.kind,
     icon: 'i-lucide-tag',
     onSelect: () => {
       onPick(category);
@@ -175,169 +148,6 @@ const POLARITY_ICONS = {
 // ── The registry ────────────────────────────────────────────────────────────
 
 export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
-  rename_cluster: {
-    icon: 'i-lucide-pencil-line',
-    build: (ctx) => ({
-      placeholder: 'Pick a cluster to rename…',
-      children: clusterChildren(ctx, (cluster) => {
-        ctx.helpers.close();
-        run(async () => {
-          const name = await ctx.helpers.promptText({
-            title: 'Rename cluster',
-            description: clusterLabel(cluster),
-            initialValue: cluster.name,
-            confirmLabel: 'Rename',
-          });
-          if (name == null) {
-            return;
-          }
-          await ctx.helpers.dispatch({
-            kind: 'rename_cluster',
-            source_id: ctx.sourceId,
-            table: ctx.table,
-            cluster_id: cluster.id,
-            name,
-          });
-        });
-      }),
-    }),
-  },
-
-  merge_clusters: {
-    icon: 'i-lucide-merge',
-    build: (ctx) => ({
-      placeholder: 'Merge which cluster…',
-      // Two-level drill-down: from → into.
-      children: ctx.data.clusters.map((from) => ({
-        label: clusterLabel(from),
-        suffix: `${from.size} docs`,
-        icon: 'i-lucide-shapes',
-        placeholder: `Merge “${clusterLabel(from)}” into…`,
-        children: ctx.data.clusters
-          .filter((into) => into.id !== from.id)
-          .map((into) => ({
-            label: clusterLabel(into),
-            suffix: `${into.size} docs`,
-            icon: 'i-lucide-shapes',
-            onSelect: () => {
-              ctx.helpers.close();
-              run(() =>
-                ctx.helpers.dispatch({
-                  kind: 'merge_clusters',
-                  source_id: ctx.sourceId,
-                  table: ctx.table,
-                  from_cluster_id: from.id,
-                  into_cluster_id: into.id,
-                }),
-              );
-            },
-          })),
-      })),
-    }),
-  },
-
-  split_cluster: {
-    icon: 'i-lucide-split',
-    build: (ctx) => ({
-      placeholder: 'Pick a cluster to split…',
-      children: clusterChildren(ctx, (cluster) => {
-        ctx.helpers.close();
-        run(async () => {
-          // Not undoable: split refits the whole model with one more slot.
-          const confirmed = await ctx.helpers.confirm({
-            title: 'Split cluster',
-            description:
-              `Splitting “${clusterLabel(cluster)}” refits the topic model with one more ` +
-              `cluster slot. This cannot be undone.`,
-            confirmLabel: 'Refit',
-          });
-          if (!confirmed) {
-            return;
-          }
-          await ctx.helpers.dispatch({
-            kind: 'split_cluster',
-            source_id: ctx.sourceId,
-            table: ctx.table,
-            cluster_id: cluster.id,
-          });
-        });
-      }),
-    }),
-  },
-
-  exclude_term: {
-    icon: 'i-lucide-ban',
-    build: (ctx) => ({
-      onSelect: () => {
-        ctx.helpers.close();
-        run(async () => {
-          const term = await ctx.helpers.promptText({
-            title: 'Exclude term',
-            description: 'Removed from cluster naming and top-term lists.',
-            placeholder: 'e.g. backport',
-            confirmLabel: 'Exclude',
-          });
-          if (term == null) {
-            return;
-          }
-          await ctx.helpers.dispatch({
-            kind: 'exclude_term',
-            source_id: ctx.sourceId,
-            table: ctx.table,
-            term,
-          });
-        });
-      },
-    }),
-  },
-
-  mark_cluster_noise: {
-    icon: 'i-lucide-eye-off',
-    build: (ctx) => ({
-      placeholder: 'Mark which cluster as noise…',
-      children: clusterChildren(ctx, (cluster) => {
-        ctx.helpers.close();
-        run(() =>
-          ctx.helpers.dispatch({
-            kind: 'mark_cluster_noise',
-            source_id: ctx.sourceId,
-            table: ctx.table,
-            cluster_id: cluster.id,
-            is_noise: true,
-          }),
-        );
-      }),
-    }),
-  },
-
-  assign_cluster_label: {
-    icon: 'i-lucide-tag',
-    build: (ctx) => ({
-      placeholder: 'Label which cluster…',
-      children: clusterChildren(ctx, (cluster) => {
-        ctx.helpers.close();
-        run(async () => {
-          const label = await ctx.helpers.promptText({
-            title: 'Assign cluster label',
-            description: clusterLabel(cluster),
-            placeholder: 'e.g. payments',
-            confirmLabel: 'Assign',
-          });
-          if (label == null) {
-            return;
-          }
-          await ctx.helpers.dispatch({
-            kind: 'assign_cluster_label',
-            source_id: ctx.sourceId,
-            table: ctx.table,
-            cluster_id: cluster.id,
-            label,
-          });
-        });
-      }),
-    }),
-  },
-
   define_taxonomy_category: {
     icon: 'i-lucide-plus',
     build: (ctx) => ({
@@ -407,8 +217,8 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
           const confirmed = await ctx.helpers.confirm({
             title: 'Delete category',
             description:
-              `Delete “${category.name}”? Its ${category.labelledRows} row label(s) cascade ` +
-              `away with it. Undo restores both.`,
+              `Delete “${category.name}”? Tickets classified under it keep their ` +
+              `current value until the next run. Undo restores the entry.`,
             confirmLabel: 'Delete',
           });
           if (!confirmed) {

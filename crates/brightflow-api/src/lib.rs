@@ -44,7 +44,6 @@ pub mod sources;
 pub mod state;
 pub mod system;
 pub mod textexplore;
-pub mod topics;
 pub mod web_analytics;
 
 use std::net::SocketAddr;

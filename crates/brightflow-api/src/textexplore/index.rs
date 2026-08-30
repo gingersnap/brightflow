@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use polars::prelude::*;
 
-use brightflow_engine::enrichment::english_stopwords;
+use brightflow_engine::nlp::english_stopwords;
 use brightflow_engine::nlp::{ngrams, Tokenizer, Vocabulary};
 
 use crate::shared::{AppError, AppResult};
@@ -169,17 +169,15 @@ pub fn build_index(df: DataFrame, table_version: i64, text_columns: Vec<String>)
     }
 }
 
-/// Text columns for a table: the enrichment config's when resolvable,
-/// otherwise every String-dtype column present in the frame.
-fn resolve_text_columns(
+/// Text columns for a table: the classifier's configured columns when one
+/// is defined, otherwise every String-dtype column present in the frame.
+async fn resolve_text_columns(
     state: &AppState,
     source_id: &str,
     table: &str,
     df: &DataFrame,
 ) -> Vec<String> {
-    let configured = crate::topics::handlers::resolve_enrichment(state, source_id, table)
-        .map(|c| c.text_columns)
-        .unwrap_or_default();
+    let configured = crate::enrichment::configured_text_columns(state, source_id, table).await;
     let present: Vec<String> = configured
         .into_iter()
         .filter(|col| df.column(col).is_ok_and(|c| c.dtype() == &DataType::String))
@@ -221,7 +219,7 @@ pub async fn get_or_build(
         .read_table(source_id, table)
         .await
         .map_err(AppError::from)?;
-    let text_columns = resolve_text_columns(state, source_id, table, &df);
+    let text_columns = resolve_text_columns(state, source_id, table, &df).await;
     if text_columns.is_empty() {
         return Err(AppError::BadRequest(format!(
             "table '{table}' has no text columns to search"

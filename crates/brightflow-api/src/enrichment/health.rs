@@ -16,8 +16,8 @@ use brightflow_engine::enrichment::{health, VocabKind};
 
 use super::runner::prepare_run_inputs;
 use super::types::{
-    UsageByLanguageResponse, UsageByLanguageRow, VocabularyHealthResponse, VocabularyLevelHealth,
-    VocabularyParentHealth,
+    CategoryCount, TicketSummaryResponse, UsageByLanguageResponse, UsageByLanguageRow, ValueCount,
+    VocabularyHealthResponse, VocabularyLevelHealth, VocabularyParentHealth,
 };
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -206,5 +206,67 @@ pub async fn vocabulary_health(
         total_rows: df.height(),
         levels,
         per_parent,
+    }))
+}
+
+fn value_counts(values: &[Option<String>]) -> Vec<ValueCount> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for v in values.iter().flatten() {
+        *counts.entry(v.clone()).or_insert(0) += 1;
+    }
+    let mut out: Vec<ValueCount> = counts
+        .into_iter()
+        .map(|(value, rows)| ValueCount { value, rows })
+        .collect();
+    out.sort_by(|a, b| b.rows.cmp(&a.rows).then_with(|| a.value.cmp(&b.value)));
+    out
+}
+
+/// `GET /api/sources/{source_id}/tables/{table}/tickets/summary`
+///
+/// Ticket grain: rows per category (with its subcategories), per sentiment
+/// polarity, and per language, from the classifier's materialised columns.
+/// "billing tickets up 12 %" starts here; the time axis is the insights
+/// engine's job once these columns exist.
+pub async fn ticket_summary(
+    State(state): State<AppState>,
+    Path((source_id, table)): Path<(String, String)>,
+) -> AppResult<Json<TicketSummaryResponse>> {
+    let store = state.require_store()?;
+    let df = store.read_table(&source_id, &table).await?;
+    let categories = str_column(&df, OUTPUT_COLUMNS[2]).unwrap_or_default();
+    let subcategories = str_column(&df, OUTPUT_COLUMNS[3]).unwrap_or_default();
+    let polarity = str_column(&df, OUTPUT_COLUMNS[4]).unwrap_or_default();
+    let language = str_column(&df, OUTPUT_COLUMNS[1]).unwrap_or_default();
+
+    let mut per_category: BTreeMap<String, (usize, Vec<Option<String>>)> = BTreeMap::new();
+    for (i, cat) in categories.iter().enumerate() {
+        let Some(cat) = cat else { continue };
+        let entry = per_category
+            .entry(cat.clone())
+            .or_insert_with(|| (0, Vec::new()));
+        entry.0 += 1;
+        entry.1.push(subcategories.get(i).cloned().flatten());
+    }
+    let mut category_rows: Vec<CategoryCount> = per_category
+        .into_iter()
+        .map(|(category, (rows, subs))| CategoryCount {
+            category,
+            rows,
+            subcategories: value_counts(&subs),
+        })
+        .collect();
+    category_rows.sort_by(|a, b| {
+        b.rows
+            .cmp(&a.rows)
+            .then_with(|| a.category.cmp(&b.category))
+    });
+
+    Ok(Json(TicketSummaryResponse {
+        total_rows: df.height(),
+        classified_rows: categories.iter().flatten().count(),
+        categories: category_rows,
+        sentiment: value_counts(&polarity),
+        languages: value_counts(&language),
     }))
 }

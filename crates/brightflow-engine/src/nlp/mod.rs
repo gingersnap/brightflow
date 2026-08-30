@@ -1,54 +1,24 @@
-//! NLP primitives: tokenizing, vectorizing, clustering, and comparing text.
+//! Text primitives: tokenizing, n-grams, the term vocabulary, stopwords, a
+//! seeded RNG, and pre-call language identification.
 //!
-//! Pure algorithms with no I/O and no Polars dependency, so the numeric
-//! behaviour is unit-testable in isolation. This is the substrate the topic
-//! modelling and text enrichment features are built from.
+//! Pure algorithms with no I/O and no Polars dependency, so the behaviour is
+//! unit-testable in isolation. Text Explorer and ticket enrichment are built
+//! from these.
 
-pub mod classification_metrics;
-pub mod clean;
-pub mod cluster_eval;
-pub mod cluster_metrics;
-pub mod dense_clustering;
-pub mod density;
 pub mod error;
 pub mod fingerprint;
 pub mod language;
-pub mod linear;
-pub mod near_dup;
 pub mod ngrams;
-pub mod reduce;
 pub mod rng;
-pub mod similarity;
-pub mod sparse;
-pub mod tfidf;
+pub mod stopwords;
 pub mod tokenizer;
 pub mod vocabulary;
 
-pub use clean::{
-    clean_for_embedding, effective_model_id, CleaningProfile, CLEAN_VERSION, MIN_EMBED_TOKENS,
-};
-pub use cluster_eval::{
-    classifier_eval, eval_clustering, labelled_feature_rows, ClassifierEval, ClusteringEval,
-};
-pub use dense_clustering::{kmeans_dense, DenseClusterResult};
-pub use density::{default_min_cluster_size, hdbscan_dense};
 pub use error::SubtextError;
 pub use fingerprint::fingerprint;
 pub use language::{detect_language, MIN_DETECT_CHARS};
-pub use linear::{
-    best_threshold, fit_centroid_baseline, fit_multilabel_linear, train_val_split,
-    MultiLabelLinear, TrainOutcome,
-};
-pub use near_dup::{
-    find_near_duplicates, NearDupError, NearDupGroup, DEFAULT_NEAR_DUP_THRESHOLD, MAX_NEAR_DUP_ROWS,
-};
 pub use ngrams::ngrams;
-pub use reduce::Pca;
 pub use rng::SplitMix64;
-pub use similarity::{
-    cosine, cosine_unnormalized, dense_cosine, dense_cosine_unnormalized, dot_dense,
-};
-pub use sparse::SparseVec;
-pub use tfidf::{FittedTfIdf, TfIdf};
+pub use stopwords::english_stopwords;
 pub use tokenizer::{TokenSpan, Tokenizer, TokenizerPreset};
 pub use vocabulary::{TokenId, Vocabulary};

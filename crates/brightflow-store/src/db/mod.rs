@@ -48,6 +48,7 @@ static MIGRATIONS: &[Migration] = &[
     migration!(23, "023_vocabulary_agent_kinds"),
     migration!(24, "024_unresolved_subjects"),
     migration!(25, "025_ticket_function_kinds"),
+    migration!(26, "026_drop_embedding_tables"),
 ];
 
 #[derive(Clone, Debug)]

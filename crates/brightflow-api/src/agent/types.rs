@@ -8,8 +8,7 @@ use ts_rs::TS;
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct StartAgentRunRequest {
-    /// "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
-    /// | "propose_taxonomy" | "label_documents" | "propose_categories"
+    /// "narrate_insights" | "triage_insights" | "propose_categories"
     /// | "propose_subcategories" | "propose_feedback_categories"
     pub kind: String,
     pub source_id: String,

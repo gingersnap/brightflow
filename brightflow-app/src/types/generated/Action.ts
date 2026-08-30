@@ -4,11 +4,11 @@ import type { DismissReason } from "./DismissReason";
 import type { SuppressKind } from "./SuppressKind";
 
 /**
- * A curation operation. Cluster actions key on the RAW cluster id of the
- * current fit; durable storage attaches to the cluster's centroid so edits
- * survive re-fits (see `cluster_edits` + reconciliation).
+ * A curation operation: a vocabulary edit, an insight verdict, or a column
+ * semantic. Every one is logged with its actor and, where the manifest says
+ * so, undoable.
  */
-export type Action = { "kind": "rename_cluster", cluster_id: number, name: string, source_id: string, table: string, } | { "kind": "merge_clusters", from_cluster_id: number, into_cluster_id: number, source_id: string, table: string, } | { "kind": "split_cluster", cluster_id: number, source_id: string, table: string, } | { "kind": "exclude_term", term: string, source_id: string, table: string, } | { "kind": "mark_cluster_noise", cluster_id: number, is_noise: boolean, source_id: string, table: string, } | { "kind": "assign_cluster_label", cluster_id: number, label: string, source_id: string, table: string, } | { "kind": "define_taxonomy_category", name: string, description: string | null, 
+export type Action = { "kind": "define_taxonomy_category", name: string, description: string | null, 
 /**
  * category | subcategory | feedback_category | product | competitor.
  * Not `kind` — that is the enum's serde tag.
@@ -17,9 +17,4 @@ vocab_kind?: string, parent_id?: number,
 /**
  * Accepted surface forms (imported kinds); appended, never replaced.
  */
-aliases?: Array<string>, source_id: string, table: string, } | { "kind": "rename_taxonomy_category", category_id: number, name: string, source_id: string, table: string, } | { "kind": "redefine_taxonomy_category", category_id: number, description: string | null, source_id: string, table: string, } | { "kind": "freeze_taxonomy_category", category_id: number, frozen: boolean, source_id: string, table: string, } | { "kind": "delete_taxonomy_category", category_id: number, source_id: string, table: string, } | { "kind": "label_document", row_id: string, categories: Array<string>, source_id: string, table: string, } | { "kind": "recluster", k: number | null, language: string | null, embedder: string | null, min_cluster_size: number | null, 
-/**
- * Clustering algorithm; honored when the pipeline supports it
- * (k-means today, hdbscan later).
- */
-algorithm: string | null, source_id: string, table: string, } | { "kind": "dismiss_insight", fingerprint: string, reason: DismissReason, source_id: string, table: string, } | { "kind": "pin_insight", fingerprint: string, pinned: boolean, source_id: string, table: string, } | { "kind": "annotate_insight", fingerprint: string, note: string, source_id: string, table: string, } | { "kind": "suppress_target", target_kind: SuppressKind, target: string, source_id: string, table: string, } | { "kind": "set_kpi", column: string, is_kpi: boolean, source_id: string, table: string, } | { "kind": "set_column_polarity", column: string, polarity: ColumnPolarity, source_id: string, table: string, };
+aliases?: Array<string>, source_id: string, table: string, } | { "kind": "rename_taxonomy_category", category_id: number, name: string, source_id: string, table: string, } | { "kind": "redefine_taxonomy_category", category_id: number, description: string | null, source_id: string, table: string, } | { "kind": "freeze_taxonomy_category", category_id: number, frozen: boolean, source_id: string, table: string, } | { "kind": "delete_taxonomy_category", category_id: number, source_id: string, table: string, } | { "kind": "dismiss_insight", fingerprint: string, reason: DismissReason, source_id: string, table: string, } | { "kind": "pin_insight", fingerprint: string, pinned: boolean, source_id: string, table: string, } | { "kind": "annotate_insight", fingerprint: string, note: string, source_id: string, table: string, } | { "kind": "suppress_target", target_kind: SuppressKind, target: string, source_id: string, table: string, } | { "kind": "set_kpi", column: string, is_kpi: boolean, source_id: string, table: string, } | { "kind": "set_column_polarity", column: string, polarity: ColumnPolarity, source_id: string, table: string, };

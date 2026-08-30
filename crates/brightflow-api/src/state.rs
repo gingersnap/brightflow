@@ -36,11 +36,6 @@ pub struct AppState {
     pub schema_overrides: Arc<DashMap<String, Vec<ColumnOverride>>>,
     /// Table analysis settings overrides keyed by table name
     pub settings_overrides: Arc<DashMap<String, TableSettingsOverride>>,
-    /// Per-table enrichment overrides, keyed by `cache_key(source_id, table)`.
-    /// Hydrated from each table's promoted `topic_model` function at startup,
-    /// updated by the enrichment settings endpoints.
-    pub enrichment_overrides:
-        Arc<DashMap<String, brightflow_engine::enrichment::EnrichmentOverrides>>,
     /// Text Explorer index cache, keyed by `cache_key(source_id, table)`.
     /// The index module owns the caching contract (versioning + eviction);
     /// this is only the shared map it lives in.
@@ -100,7 +95,6 @@ impl AppState {
             schemas: Arc::new(DashMap::new()),
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
-            enrichment_overrides: Arc::new(DashMap::new()),
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
@@ -405,46 +399,6 @@ fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
         label: row.label.clone(),
         description: row.description.clone(),
     })
-}
-
-/// Load stored enrichment overrides into the state map at startup.
-///
-/// Source of truth is each table's **promoted** `topic_model` enrichment
-/// function (since migration 016, which converted the legacy
-/// `table_enrichment_settings` rows). Promoted-only on purpose: a draft
-/// function must not silently change what gets enriched.
-pub async fn hydrate_enrichment_overrides(state: &AppState, store: &ParquetStore) {
-    let tables = store.list_tables().await.unwrap_or_default();
-    let mut hydrated = 0;
-    for t in &tables {
-        let Ok(Some(row)) = store.db().get_table(&t.source_id, &t.name).await else {
-            continue;
-        };
-        let Ok(Some(config_json)) = store
-            .db()
-            .get_promoted_function_config(&row.id, "topic_model")
-            .await
-        else {
-            continue;
-        };
-        let Ok(brightflow_engine::enrichment::FunctionSpec::TopicModel(tm)) =
-            serde_json::from_str::<brightflow_engine::enrichment::FunctionSpec>(&config_json)
-        else {
-            tracing::warn!(
-                "promoted topic_model function for '{}/{}' has unreadable config — not hydrated",
-                t.source_id,
-                t.name,
-            );
-            continue;
-        };
-        state
-            .enrichment_overrides
-            .insert(cache_key(&t.source_id, &t.name), tm.overrides);
-        hydrated += 1;
-    }
-    if hydrated > 0 {
-        tracing::info!("Hydrated {hydrated} table enrichment overrides from functions");
-    }
 }
 
 /// Seed known TOML schema data into SQLite if `column_semantics` is empty.

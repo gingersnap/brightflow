@@ -5,7 +5,6 @@
 
 #![expect(
     clippy::unwrap_used,
-    clippy::indexing_slicing,
     reason = "integration tests panic on failure by design"
 )]
 
@@ -13,27 +12,37 @@ use std::sync::Arc;
 
 use polars::prelude::*;
 
-use brightflow_api::enrichment::runner::{llm_spec_hash, materialize, prepare_inputs, RunSpec};
+use brightflow_api::enrichment::runner::{materialize, prepare_run_inputs, RunSpec};
+use brightflow_api::enrichment::vocab;
 use brightflow_api::state::AppState;
-use brightflow_engine::enrichment::{LlmPromptSpec, OutputField, OutputType};
+use brightflow_engine::enrichment::{FunctionSpec, TicketClassifySpec, TicketExtractSpec};
 use brightflow_store::ParquetStore;
 use brightflow_test_support::{copy_template, TestWorkspace};
 
 const SOURCE: &str = "test-source";
 const TABLE: &str = "issues";
 
-fn spec(output: &str) -> LlmPromptSpec {
-    LlmPromptSpec {
-        input_columns: vec!["title".to_string()],
-        prompt_template: format!("{{{{col:title}}}} -> {output}"),
-        outputs: vec![OutputField {
-            name: output.to_string(),
-            dtype: OutputType::String,
-            description: String::new(),
-        }],
+fn classify_spec() -> FunctionSpec {
+    FunctionSpec::TicketClassify(TicketClassifySpec {
+        text_columns: vec!["title".to_string()],
+        language_column: None,
         provider_id: "p".to_string(),
         model: None,
-    }
+        categories: vec![],
+        subcategories: vec![],
+    })
+}
+
+fn extract_spec() -> FunctionSpec {
+    FunctionSpec::TicketExtract(TicketExtractSpec {
+        text_columns: vec!["title".to_string()],
+        language_column: None,
+        provider_id: "p".to_string(),
+        model: None,
+        products: vec![],
+        competitors: vec![],
+        feedback_categories: vec![],
+    })
 }
 
 async fn state_with_table(ws: &TestWorkspace) -> AppState {
@@ -56,30 +65,30 @@ async fn state_with_table(ws: &TestWorkspace) -> AppState {
 }
 
 /// Create a promoted function and fill its cache for every row so
-/// `materialize` has something to write.
-async fn function_with_cache(state: &AppState, spec: &LlmPromptSpec) -> String {
+/// `materialize` has something to write. Returns the id and runnable spec.
+async fn function_with_cache(
+    state: &AppState,
+    name: &str,
+    spec: FunctionSpec,
+    cell_value: serde_json::Value,
+) -> (String, RunSpec) {
     let store = state.store().unwrap();
     let table = store.db().get_table(SOURCE, TABLE).await.unwrap().unwrap();
-    let name = spec.outputs[0].name.clone();
     let row = store
         .db()
         .create_enrichment_function(
             &table.id,
-            &name,
-            "llm_prompt",
+            name,
+            spec.kind_str(),
             "promoted",
-            &serde_json::to_string(&brightflow_engine::enrichment::FunctionSpec::LlmPrompt(
-                spec.clone(),
-            ))
-            .unwrap(),
+            &serde_json::to_string(&spec).unwrap(),
         )
         .await
         .unwrap();
+    let run = vocab::run_spec_for(store, &table.id, spec).await.unwrap();
     let df = store.read_table(SOURCE, TABLE).await.unwrap();
-    let shash = llm_spec_hash(spec);
-    for input in prepare_inputs(&df, spec).unwrap() {
-        let value =
-            serde_json::json!({ name.clone(): format!("{name}:{}", input.rendered["title"]) });
+    let shash = run.spec_hash();
+    for input in prepare_run_inputs(&df, &run).unwrap() {
         store
             .db()
             .upsert_cached_cell(
@@ -87,7 +96,7 @@ async fn function_with_cache(state: &AppState, spec: &LlmPromptSpec) -> String {
                 &shash,
                 &input.hash,
                 "ok",
-                Some(&value.to_string()),
+                Some(&cell_value.to_string()),
                 None,
                 Some(1),
                 Some(1),
@@ -97,7 +106,7 @@ async fn function_with_cache(state: &AppState, spec: &LlmPromptSpec) -> String {
             .await
             .unwrap();
     }
-    row.id
+    (row.id, run)
 }
 
 #[tokio::test]
@@ -106,25 +115,35 @@ async fn concurrent_materializations_on_one_table_both_land() {
     let state = state_with_table(&ws).await;
     let store = Arc::clone(state.store().unwrap());
 
-    let spec_a = spec("alpha");
-    let spec_b = spec("beta");
-    let id_a = function_with_cache(&state, &spec_a).await;
-    let id_b = function_with_cache(&state, &spec_b).await;
+    let classify_cell = serde_json::json!({
+        "summary": "a summary",
+        "category_id": 0,
+        "subcategory_id": 0,
+        "sentiment_polarity": "none",
+        "sentiment_strength": "none",
+    });
+    let (id_a, run_a) =
+        function_with_cache(&state, "classify", classify_spec(), classify_cell).await;
+    let (id_b, run_b) = function_with_cache(
+        &state,
+        "extract",
+        extract_spec(),
+        serde_json::json!({ "mentions": [] }),
+    )
+    .await;
 
-    let run_a = RunSpec::LlmPrompt(spec_a.clone());
-    let run_b = RunSpec::LlmPrompt(spec_b.clone());
     let (ra, rb) = tokio::join!(
-        materialize(&state, &store, SOURCE, TABLE, &id_a, "alpha", &run_a),
-        materialize(&state, &store, SOURCE, TABLE, &id_b, "beta", &run_b),
+        materialize(&state, &store, SOURCE, TABLE, &id_a, "classify", &run_a),
+        materialize(&state, &store, SOURCE, TABLE, &id_b, "extract", &run_b),
     );
     ra.unwrap();
     rb.unwrap();
 
     let df = store.read_table(SOURCE, TABLE).await.unwrap();
-    let alpha = df.column("alpha").unwrap().str().unwrap();
-    let beta = df.column("beta").unwrap().str().unwrap();
-    assert_eq!(alpha.get(0), Some("alpha:a"));
-    assert_eq!(beta.get(2), Some("beta:c"));
-    assert!(df.column("alpha__status").is_ok());
-    assert!(df.column("beta__status").is_ok());
+    let summary = df.column("summary").unwrap().str().unwrap();
+    assert_eq!(summary.get(0), Some("a summary"));
+    let count = df.column("mention_count").unwrap().i32().unwrap();
+    assert_eq!(count.get(2), Some(0));
+    assert!(df.column("classify__status").is_ok());
+    assert!(df.column("extract__status").is_ok());
 }

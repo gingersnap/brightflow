@@ -1,6 +1,6 @@
 /**
- * Enrichment functions (versioned derived columns) and the LLM provider
- * settings they run against.
+ * Ticket enrichment functions (classification and extraction, versioned)
+ * and the LLM provider settings they run against.
  */
 
 import type {
@@ -15,6 +15,7 @@ import type {
   LlmProviderResponse,
   LlmTestResponse,
   UpsertLlmProviderRequest,
+  UsageByLanguageResponse,
 } from '@/types/generated';
 
 import { api } from './core';
@@ -56,10 +57,11 @@ export const enrichFnApi = {
     api.delete(`/api/functions/${encodeURIComponent(id)}?drop_columns=${String(dropColumns)}`),
   versions: (id: string): Promise<FunctionVersion[] | null> =>
     api.get<FunctionVersion[]>(`/api/functions/${encodeURIComponent(id)}/versions`),
-  promote: (id: string): Promise<EnrichFunction | null> =>
-    api.post<EnrichFunction>(`/api/functions/${encodeURIComponent(id)}/promote`),
-  demote: (id: string): Promise<EnrichFunction | null> =>
-    api.post<EnrichFunction>(`/api/functions/${encodeURIComponent(id)}/demote`),
+  /** Rewrite the outputs from the cache — no LLM call (renames, mapped subjects). */
+  materialize: (id: string): Promise<unknown> =>
+    api.post(`/api/functions/${encodeURIComponent(id)}/materialize`),
+  usageByLanguage: (id: string): Promise<UsageByLanguageResponse | null> =>
+    api.get<UsageByLanguageResponse>(`/api/functions/${encodeURIComponent(id)}/usage-by-language`),
   sampleRun: (
     id: string,
     body: { limit?: number; config?: unknown },

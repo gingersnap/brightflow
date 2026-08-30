@@ -222,21 +222,19 @@ done
 [[ "$flushed" == "1" ]] || die "events never flushed to the store"
 
 # ---------------------------------------------------------------------------
-# 4c. An enrichment function with two versions, so the promote path and the
-#     version table are represented.
+# 4c. A ticket-classification function with two versions, so the version
+#     table and the promoted-config resolution path are represented. Creating
+#     it never calls an LLM; only a run does, and the builder never runs one.
 # ---------------------------------------------------------------------------
-# Two versions and a promotion, so the fixture covers the version table and the
-# promoted-config resolution path, not just a bare function row.
-log "Seeding an enrichment function"
+log "Seeding a ticket-classification function"
 FN_PATH="/api/sources/$CONNECTOR_SOURCE/tables/issues/functions"
-api POST "$FN_PATH" '{"name":"issue_topics","kind":"topic_model","config":{"algorithm":"kmeans"}}' \
+api POST "$FN_PATH" '{"name":"classify","kind":"ticket_classify","config":{"text_columns":["title","body"],"provider_id":"default"}}' \
     >"$BUILD_DIR/enrich.json"
 FN_ID="$(sed -E 's/.*"id":"([^"]+)".*/\1/' "$BUILD_DIR/enrich.json")"
 [[ -n "$FN_ID" && "$FN_ID" != "$(cat "$BUILD_DIR/enrich.json")" ]] \
     || die "could not create enrichment function: $(cat "$BUILD_DIR/enrich.json")"
 
-api PUT "/api/functions/$FN_ID" '{"config":{"algorithm":"kmeans","cleaning_profile":"markdown_issue"}}' >/dev/null
-api POST "/api/functions/$FN_ID/promote" '{}' >/dev/null
+api PUT "/api/functions/$FN_ID" '{"config":{"text_columns":["title"],"provider_id":"default"}}' >/dev/null
 
 # ---------------------------------------------------------------------------
 # 4d. Insight runs and novelty history. Only the API writes `insight_runs` —
@@ -250,28 +248,6 @@ INSIGHT_TARGET="{\"sourceId\":\"$CONNECTOR_SOURCE\",\"datasetId\":\"orders\"}"
 api POST /api/insights/review "{\"sourceId\":\"$CONNECTOR_SOURCE\",\"datasetId\":\"orders\",\"cadence\":\"weekly\"}" >"$BUILD_DIR/review.json"
 api POST /api/insights/trends "$INSIGHT_TARGET" >"$BUILD_DIR/trends.json"
 api POST /api/insights/drivers "$INSIGHT_TARGET" >"$BUILD_DIR/drivers.json"
-
-# ---------------------------------------------------------------------------
-# 4e. Topic artifacts. `topics fit` needs the Model2Vec encoder, which is a
-#     ~125 MB model that is deliberately not in the repo — so the *model* is a
-#     build-time prerequisite pointed at with BRIGHTFLOW_EMBEDDER_PATH, while
-#     only its small output (cluster artifacts + embeddings for five rows) is
-#     committed. Reads never need it: `build_overview` loads the artifacts from
-#     disk and never embeds, so the committed template serves topics without
-#     anyone else needing the model.
-# ---------------------------------------------------------------------------
-EMBEDDER="${BRIGHTFLOW_EMBEDDER_PATH:-$ROOT/data/workspaces/default/models/embedder/potion-base-32M}"
-if [[ ! -f "$EMBEDDER/model.safetensors" ]]; then
-    die "topics fit needs the Model2Vec encoder, not found at $EMBEDDER
-  Set BRIGHTFLOW_EMBEDDER_PATH to a potion-base-32M directory (config.json,
-  model.safetensors, modules.json, tokenizer.json). It is a build-time
-  prerequisite only — the committed template does not carry it."
-fi
-
-log "Fitting topics on the issues table"
-# k=2 because the fixture is five rows; the default k assumes a real corpus.
-BRIGHTFLOW_EMBEDDER_PATH="$EMBEDDER" \
-    "$BF" topics fit --source "$CONNECTOR_SOURCE" --table issues --clusters 2 >/dev/null
 
 # ---------------------------------------------------------------------------
 # 5. Stop the server, then checkpoint. SQLite drops the -wal/-shm sidecars when

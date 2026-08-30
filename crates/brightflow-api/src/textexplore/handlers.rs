@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 
+use crate::enrichment::display::{bluesky_post_url, DocDisplay, UrlSpec};
 use crate::shared::{derive_title, read_i64_at, read_id_at, read_string_at, AppResult};
 use crate::state::AppState;
 use crate::textexplore::highlight::{contains_term, highlight_runs, snippet_runs};
@@ -17,7 +18,6 @@ use crate::textexplore::score::{common_terms, distinctive_terms, RankedTerm};
 use crate::textexplore::types::{
     TextExploreRequest, TextExploreResponse, TextExploreRow, WordScore,
 };
-use crate::topics::display::{bluesky_post_url, DocDisplay, UrlSpec};
 
 const MAX_LIMIT: usize = 500;
 

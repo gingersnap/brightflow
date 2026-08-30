@@ -2,26 +2,6 @@
 import type { TaxonomyCategory } from "./TaxonomyCategory";
 
 /**
- * A table's taxonomy plus the numbers a curator needs to judge it.
+ * A table's vocabularies, every kind and level in one flat list.
  */
-export type TaxonomyOverview = { categories: Array<TaxonomyCategory>, 
-/**
- * Distinct rows carrying at least one label.
- */
-labelledRows: number, totalRows: number, 
-/**
- * Minimum examples a category needs before the head will train on it.
- */
-minLabelSupport: number, 
-/**
- * Minimum labelled rows before a head can be trained at all.
- */
-minTrainRows: number, 
-/**
- * Held-out macro-F1 of the current head, when one is fitted.
- */
-classifierValMacroF1?: number, 
-/**
- * Whether a trained head exists beside the current fit.
- */
-hasClassifier: boolean, };
+export type TaxonomyOverview = { categories: Array<TaxonomyCategory>, };

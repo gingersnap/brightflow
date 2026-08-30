@@ -1,15 +1,5 @@
-//! End-to-end pins on the action bus: logging and the undo round-trip.
-//!
-//! Recluster used to have a direct HTTP route that bypassed the action bus,
-//! so refits never appeared in the log or the activity feed. That route is
-//! gone; the first test pins the closed state — dispatching
-//! `Action::Recluster` writes an action-log row *even when the refit itself
-//! fails* (here: a bare temp workspace with no embedding model), which is
-//! exactly the audit property the bypass lacked.
-//!
-//! The second test pins the full execute → capture-undo → undo round-trip
-//! through the public surface, using `ExcludeTerm` because it needs no
-//! embedding model. This is the seam the actions-module split must not cut.
+//! End-to-end pins on the action bus: logging, the undo round-trip, and the
+//! vocabulary hierarchy rules, all through the public dispatch surface.
 
 #![expect(
     clippy::unwrap_used,
@@ -55,63 +45,27 @@ async fn state_with_planted_table(ws: &TestWorkspace) -> AppState {
     AppState::with_store(store).await
 }
 
+/// Execute → capture-undo → undo, through the public surface: a define is
+/// logged, applied, undoable, and undone.
 #[tokio::test]
-async fn dispatching_recluster_writes_an_action_log_row() {
+async fn define_round_trips_through_undo() {
     let ws = copy_template().unwrap();
     let state = state_with_planted_table(&ws).await;
 
     let response = dispatch_action(
         &state,
-        Action::Recluster {
+        Action::DefineTaxonomyCategory {
             scope: Scope {
                 source_id: SOURCE.to_string(),
                 table: TABLE.to_string(),
             },
-            k: None,
-            language: None,
-            embedder: None,
-            min_cluster_size: None,
-            algorithm: None,
+            name: "billing".to_string(),
+            description: Some("charges and invoices".to_string()),
+            vocab_kind: None,
+            parent_id: None,
+            aliases: None,
         },
-        "req-recluster-1",
-        Actor::Human {
-            user_id: "user-1".to_string(),
-        },
-    )
-    .await
-    .unwrap();
-
-    // The refit fails in this bare workspace (no embedding model), but the
-    // attempt is still logged — dispatch inserts the row before executing.
-    assert!(matches!(
-        response.status,
-        ActionStatus::Applied | ActionStatus::Failed
-    ));
-
-    let rows = state.store().unwrap().db().list_actions(10).await.unwrap();
-    let row = rows
-        .iter()
-        .find(|r| r.action_kind == "recluster")
-        .expect("recluster action-log row must exist");
-    assert_eq!(row.request_id, "req-recluster-1");
-    assert!(row.resolved_at.is_some(), "attempt must be resolved");
-}
-
-#[tokio::test]
-async fn exclude_term_round_trips_through_undo() {
-    let ws = copy_template().unwrap();
-    let state = state_with_planted_table(&ws).await;
-
-    let response = dispatch_action(
-        &state,
-        Action::ExcludeTerm {
-            scope: Scope {
-                source_id: SOURCE.to_string(),
-                table: TABLE.to_string(),
-            },
-            term: "Noise".to_string(),
-        },
-        "req-exclude-1",
+        "req-define-1",
         Actor::Human {
             user_id: "user-1".to_string(),
         },
@@ -120,41 +74,39 @@ async fn exclude_term_round_trips_through_undo() {
     .unwrap();
     assert!(matches!(response.status, ActionStatus::Applied));
 
-    let db = state.store().unwrap().db();
-    let table_id = db
-        .get_table(SOURCE, TABLE)
-        .await
-        .unwrap()
-        .expect("planted table must exist")
-        .id;
-    let terms = db.get_excluded_terms(&table_id).await.unwrap();
+    let store = state.store().unwrap();
+    let table = store.db().get_table(SOURCE, TABLE).await.unwrap().unwrap();
     assert_eq!(
-        terms.iter().map(|t| t.term.as_str()).collect::<Vec<_>>(),
-        vec!["noise"],
-        "term is stored lowercased"
+        store
+            .db()
+            .get_taxonomy_categories(&table.id)
+            .await
+            .unwrap()
+            .len(),
+        1
     );
-
-    let row = db
-        .get_action(response.log_id)
-        .await
-        .unwrap()
+    let rows = store.db().list_actions(10).await.unwrap();
+    let row = rows
+        .iter()
+        .find(|r| r.request_id == "req-define-1")
         .expect("action-log row must exist");
-    assert_eq!(row.status, "applied");
-    assert!(row.undo_json.is_some(), "undoable action must capture undo");
+    assert!(row.undo_json.is_some(), "define must capture an undo op");
+    assert_eq!(row.user_id.as_deref(), Some("user-1"));
 
     // Undo through the public HTTP-handler surface.
     let undone = brightflow_api::actions::handlers::undo(
         axum::extract::State(state.clone()),
-        axum::extract::Path(response.log_id),
+        axum::extract::Path(row.id),
     )
     .await
     .unwrap();
     assert!(matches!(undone.0.status, ActionStatus::Undone));
-
-    let undone_row = db.get_action(response.log_id).await.unwrap().unwrap();
-    assert_eq!(undone_row.status, "undone");
-    let terms_after = db.get_excluded_terms(&table_id).await.unwrap();
-    assert!(terms_after.is_empty(), "undo must remove the excluded term");
+    assert!(store
+        .db()
+        .get_taxonomy_categories(&table.id)
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 /// The vocabulary hierarchy through the public bus: placement rules, the cap,

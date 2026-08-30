@@ -34,11 +34,12 @@ const UserExplorerPanel = defineAsyncComponent(
 );
 const ExploreTool = defineAsyncComponent(() => import('@/components/explore/ExploreTool.vue'));
 const InsightsView = defineAsyncComponent(() => import('@/components/insights/InsightsView.vue'));
-const TopicsView = defineAsyncComponent(() => import('@/components/topics/TopicsView.vue'));
+const TextAnalyticsView = defineAsyncComponent(
+  () => import('@/components/textanalytics/TextAnalyticsView.vue'),
+);
 const TextExploreTool = defineAsyncComponent(
   () => import('@/components/textexplore/TextExploreTool.vue'),
 );
-const EnrichTool = defineAsyncComponent(() => import('@/components/enrich/EnrichTool.vue'));
 const WebSourceSettings = defineAsyncComponent(
   () => import('@/components/settings/WebSourceSettings.vue'),
 );
@@ -148,8 +149,12 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       <!-- Insights -->
       <InsightsView v-else-if="activeTool === 'insights'" :source-id="sourceId" :table="table" />
 
-      <!-- Topics -->
-      <TopicsView v-else-if="activeTool === 'topics'" :source-id="sourceId" :table="table" />
+      <!-- Text analytics -->
+      <TextAnalyticsView
+        v-else-if="activeTool === 'textanalytics'"
+        :source-id="sourceId"
+        :table="table"
+      />
 
       <!-- Text Explorer -->
       <TextExploreTool
@@ -157,9 +162,6 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
         :source-id="sourceId"
         :table="table"
       />
-
-      <!-- Enrich -->
-      <EnrichTool v-else-if="activeTool === 'enrich'" :source-id="sourceId" :table="table" />
 
       <!-- Settings -->
       <template v-else-if="activeTool === 'settings'">

@@ -5,8 +5,7 @@
  */
 export type StartAgentRunRequest = { 
 /**
- * "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
- * | "propose_taxonomy" | "label_documents" | "propose_categories"
+ * "narrate_insights" | "triage_insights" | "propose_categories"
  * | "propose_subcategories" | "propose_feedback_categories"
  */
 kind: string, sourceId: string, table: string, 
