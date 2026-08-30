@@ -4,7 +4,10 @@
 //! payload for a finding is reproducible from the finding's inputs alone.
 //! Long raw series are stride-downsampled to a glance-chart budget
 //! ([`MAX_POINTS`]) before fit lines and bands are computed, so those overlays
-//! always have the same length as the points actually drawn.
+//! always have the same length as the points actually drawn. Overlays are
+//! expressed in *sampled-index* space, not original-row space: anything
+//! carrying a per-row rate (a trend slope) is rescaled by the stride on the way
+//! in, so the overlay lines up with the points rather than with the raw rows.
 
 use std::collections::HashMap;
 
@@ -17,11 +20,16 @@ use super::cache::ColumnCache;
 /// original indices, so a downsampled point is still traceable to its row.
 const MAX_POINTS: usize = 200;
 
-fn downsample(values: &[f64]) -> (Vec<String>, Vec<f64>) {
+/// Returns the labels, the sampled values, and the stride used.
+///
+/// The stride is part of the contract, not an implementation detail: callers
+/// that fit a line expressed in *original-row* units must rescale it, because
+/// sampled position `i` holds the value from original row `i * stride`.
+fn downsample(values: &[f64]) -> (Vec<String>, Vec<f64>, usize) {
     let n = values.len();
     if n <= MAX_POINTS {
         let labels = (0..n).map(|i| i.to_string()).collect();
-        return (labels, values.to_vec());
+        return (labels, values.to_vec(), 1);
     }
     // Ceiling division: flooring made the bound a lie for MAX_POINTS < n <
     // 2*MAX_POINTS (stride 1 emitted every point).
@@ -34,11 +42,12 @@ fn downsample(values: &[f64]) -> (Vec<String>, Vec<f64>) {
         labels.push(i.to_string());
         i += stride;
     }
-    (labels, out)
+    (labels, out, stride)
 }
 
 pub(super) fn build_anomaly_series(values: &[f64], mean: f64, std_dev: f64) -> NodeData {
-    let (labels, vals) = downsample(values);
+    // Stride is irrelevant here: the bands are constants, not a function of x.
+    let (labels, vals, _stride) = downsample(values);
     let band_low = vec![2.0_f64.mul_add(-std_dev, mean); vals.len()];
     let band_high = vec![2.0_f64.mul_add(std_dev, mean); vals.len()];
     let marker = vals.len().saturating_sub(1);
@@ -52,8 +61,11 @@ pub(super) fn build_anomaly_series(values: &[f64], mean: f64, std_dev: f64) -> N
     }
 }
 
+/// `slope` is per *original* row. The fit is drawn against sampled positions,
+/// so it is rescaled by the stride — without that the line under-slopes by
+/// exactly the stride factor and visibly drifts off the points it explains.
 pub(super) fn build_trend_data(values: &[f64], slope: f64) -> NodeData {
-    let (labels, vals) = downsample(values);
+    let (labels, vals, stride) = downsample(values);
     let n = vals.len();
     if n == 0 {
         return NodeData::SeriesWithFit {
@@ -63,7 +75,9 @@ pub(super) fn build_trend_data(values: &[f64], slope: f64) -> NodeData {
             y_label: None,
         };
     }
-    // Recompute simple linear fit on the (possibly downsampled) series
+    // Recompute the simple linear fit in sampled-index space: one step along
+    // the drawn x-axis advances `stride` original rows, hence the rescale.
+    let slope = slope * stride as f64;
     let xs: Vec<f64> = (0..n).map(|i| i as f64).collect();
     let mean_y: f64 = vals.iter().sum::<f64>() / n as f64;
     let mean_x = (n as f64 - 1.0) / 2.0;
@@ -270,7 +284,23 @@ pub(super) fn build_scatter_data(
     y_label: &str,
     r: f64,
 ) -> NodeData {
-    // Downsample if too large
+    // Empty input has no pairs to sample or fit; `take` would be 0 below and
+    // the stride division would panic. Mirrors the `n == 0` guard in
+    // `build_trend_data`.
+    if xs.is_empty() || ys.is_empty() {
+        return NodeData::Scatter {
+            x: Vec::new(),
+            y: Vec::new(),
+            x_label: x_label.to_string(),
+            y_label: y_label.to_string(),
+            fit_slope: None,
+            fit_intercept: None,
+        };
+    }
+    // Downsample if too large. This strides over *pairs* and refits OLS from
+    // the sampled pairs, so unlike `downsample`'s series fit it stays
+    // self-consistent without a stride rescale — hence the separate rule
+    // (floor + truncate) rather than a shared helper.
     let take = xs.len().min(ys.len()).min(MAX_POINTS);
     let stride = (xs.len() / take).max(1);
     let x: Vec<f64> = xs.iter().step_by(stride).take(take).copied().collect();
@@ -314,7 +344,7 @@ mod tests {
     #[test]
     fn downsample_short_series_is_identity() {
         let values: Vec<f64> = (0..MAX_POINTS).map(|i| i as f64).collect();
-        let (labels, out) = downsample(&values);
+        let (labels, out, _stride) = downsample(&values);
         assert_eq!(out, values);
         assert_eq!(labels.first().map(String::as_str), Some("0"));
         assert_eq!(labels.last().unwrap(), &(MAX_POINTS - 1).to_string());
@@ -324,7 +354,7 @@ mod tests {
     fn downsample_bound_holds_just_over_the_budget() {
         // Regression: flooring stride made 200 < n < 400 emit every point.
         let values: Vec<f64> = (0..399).map(f64::from).collect();
-        let (labels, out) = downsample(&values);
+        let (labels, out, _stride) = downsample(&values);
         assert!(out.len() <= MAX_POINTS, "399 points emitted {}", out.len());
         assert_eq!(labels.len(), out.len());
     }
@@ -333,7 +363,7 @@ mod tests {
     fn downsample_bound_holds_across_sizes() {
         for n in [201, 400, 401, 999, 1000, 5000] {
             let values: Vec<f64> = (0..n).map(f64::from).collect();
-            let (labels, out) = downsample(&values);
+            let (labels, out, _stride) = downsample(&values);
             assert!(out.len() <= MAX_POINTS, "n={n} emitted {}", out.len());
             // Labels are original indices: each sampled value matches its label.
             for (label, val) in labels.iter().zip(&out) {
@@ -378,6 +408,30 @@ mod tests {
         // Perfectly linear input: the fit reproduces the series.
         for (f, v) in fit.iter().zip(&vals) {
             assert!((f - v).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn trend_fit_tracks_points_when_the_series_is_downsampled() {
+        // Regression: the fit was computed with the per-original-row slope over
+        // sampled positions, so it under-sloped by exactly the stride factor.
+        // A perfectly linear series is the sharpest probe — the fit must
+        // reproduce it whether or not downsampling kicked in.
+        for n in [199usize, 399, 1000] {
+            let values: Vec<f64> = (0..n).map(|i| i as f64).collect();
+            let NodeData::SeriesWithFit {
+                values: vals, fit, ..
+            } = build_trend_data(&values, 1.0)
+            else {
+                panic!("expected SeriesWithFit");
+            };
+            assert_eq!(fit.len(), vals.len());
+            for (i, (f, v)) in fit.iter().zip(&vals).enumerate() {
+                assert!(
+                    (f - v).abs() < 1e-9,
+                    "n={n} i={i}: fit {f} drifted off point {v}"
+                );
+            }
         }
     }
 
@@ -473,6 +527,34 @@ mod tests {
         };
         assert!((fit_slope.unwrap() - 3.0).abs() < 1e-9);
         assert!((fit_intercept.unwrap() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn scatter_empty_input_is_safe() {
+        // Regression: `take` was 0, so the stride division panicked with
+        // "attempt to divide by zero".
+        let NodeData::Scatter {
+            x,
+            y,
+            fit_slope,
+            fit_intercept,
+            ..
+        } = build_scatter_data(&[], &[], "x", "y", 0.0)
+        else {
+            panic!("expected Scatter");
+        };
+        assert!(x.is_empty());
+        assert!(y.is_empty());
+        assert!(fit_slope.is_none());
+        assert!(fit_intercept.is_none());
+
+        // One side empty is equally unfittable.
+        let NodeData::Scatter { x: half_empty, .. } =
+            build_scatter_data(&[1.0, 2.0], &[], "x", "y", 0.0)
+        else {
+            panic!("expected Scatter");
+        };
+        assert!(half_empty.is_empty());
     }
 
     #[test]
