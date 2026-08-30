@@ -171,6 +171,15 @@ cargo run -- run-all              # API + WebSocket server (or just `cargo run`)
 ./scripts/install-hooks.sh        # install pre-commit hooks
 ./scripts/check-conventions.sh    # module-doc + prose-file conventions on staged files
                                   # (diff-scoped; also runs from the pre-commit hook)
+
+# Test workspace
+./scripts/build-test-template.sh          # rebuild testdata/workspaces/test through the
+                                          # real CLI + HTTP paths (needs the embedding
+                                          # model; see the script header)
+./scripts/build-test-template.sh --check  # report drift between the committed template
+                                          # and what the script produces
+./scripts/test-env.sh setup|reset|status  # the persistent interactive copy at
+                                          # data/workspaces/test
 ```
 
 ## Logs

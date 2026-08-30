@@ -1,0 +1,41 @@
+id,title,body
+1,card declined at checkout,Payment fails with a declined card error even though the card is valid.
+2,invoice missing VAT line,The generated invoice does not show the VAT breakdown for EU customers.
+3,double charged for one order,Customer was billed twice for a single subscription renewal.
+4,refund stuck in pending,A refund issued three days ago is still pending in the billing dashboard.
+5,coupon code not applied,Discount coupon is accepted but the total charged ignores it.
+6,subscription renews on wrong date,Annual plan renewed a month early and charged the full amount.
+7,payment webhook never arrives,The billing webhook is not delivered after a successful charge.
+8,currency shown in USD not EUR,Checkout displays USD for an account configured in euros.
+9,proration looks incorrect,Upgrading mid-cycle produced a proration credit that seems too small.
+10,tax id rejected on invoice,Entering a valid tax identifier returns an invalid format error.
+11,card expiry update fails,Updating the stored card expiry silently keeps the old expiry date.
+12,billing email never sent,Receipt emails are not sent after a paid invoice.
+13,plan downgrade loses credit,Downgrading a plan discards the remaining prepaid balance.
+14,failed charge not retried,A soft-declined payment is never retried by dunning.
+15,checkout total rounds wrong,Order total rounds up by one cent versus the line items.
+16,cannot remove saved card,Deleting a stored payment method returns a server error.
+17,trial converted early,The free trial charged the customer two days before it ended.
+18,credit note not generated,Cancelling a paid invoice does not produce a credit note.
+19,payment page slow to load,The hosted payment form takes several seconds to appear.
+20,duplicate invoice numbers,Two invoices in the same month share an invoice number.
+21,dashboard slow to render,The main dashboard takes over eight seconds to paint on first load.
+22,query timeout on large table,Running a group-by over the events table times out after 30 seconds.
+23,memory grows during sync,Resident memory climbs steadily through a long connector sync.
+24,api latency spike at peak,Response times triple during the daily traffic peak.
+25,export blocks the server,A large CSV export makes every other request hang.
+26,cold start takes too long,The first request after a deploy takes fifteen seconds.
+27,index not used for filter,A filtered scan reads the whole table instead of using the index.
+28,websocket reconnect storm,Clients reconnect in lockstep and saturate the server.
+29,cache never warms,The result cache misses on every request after a restart.
+30,parquet read is single threaded,Reading many small files does not parallelise across cores.
+31,slow join on wide table,Joining two wide tables is an order of magnitude slower than expected.
+32,gc pause during ingest,Long pauses appear while flushing a large event batch.
+33,search degrades with volume,Text search response time grows linearly with row count.
+34,timeseries query scans all days,A seven day window still reads every partition on disk.
+35,compaction blocks writes,Writes stall for the duration of a partition compaction.
+36,thumbnail generation is serial,Chart thumbnails render one at a time instead of in parallel.
+37,connection pool exhausted,Requests queue waiting for a free database connection.
+38,startup migration is slow,Applying migrations on boot adds ten seconds to startup.
+39,large payload serialisation,Serialising a big response dominates the request time.
+40,repeated schema inference,Schema is re-inferred on every read instead of being cached.

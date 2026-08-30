@@ -17,10 +17,11 @@ import { authApi } from './core';
 import { sourceApi } from './sources';
 
 describe('frontend data layer ↔ real backend', () => {
-  // Activate the seam once: point the client at the ephemeral backend, install
-  // The cookie jar, and open a real session as the committed demo user.
-  beforeAll(async () => {
-    await useIntegrationBackend();
+  /* Activate the seam once: point the client at the ephemeral backend and
+     install the run's session. This spec then logs in again on purpose — it is
+     the one that covers the login round-trip itself. */
+  beforeAll(() => {
+    useIntegrationBackend();
   });
 
   test('logs in through the real client and holds a session', async () => {

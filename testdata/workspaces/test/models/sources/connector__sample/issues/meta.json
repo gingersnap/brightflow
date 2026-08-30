@@ -1,0 +1,14 @@
+{
+  "embedding_model_id": "potion-base-32M#clean=markdown_issue.v1",
+  "k": 2,
+  "fitted_at": 1788035767,
+  "total_rows": 40,
+  "has_labels": false,
+  "language": null,
+  "artifact_version": 3,
+  "algorithm": "kmeans",
+  "min_cluster_size": null,
+  "pca_dims": null,
+  "has_classifier": false,
+  "classifier_val_macro_f1": null
+}
