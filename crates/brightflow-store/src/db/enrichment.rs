@@ -210,7 +210,10 @@ impl StoreDb {
             .transaction(move |tx| {
                 // The version read must stay inside the transaction: two
                 // concurrent updates would otherwise compute the same `next`
-                // and collide on the versions primary key.
+                // and collide on the versions primary key. `SqlitePool::
+                // transaction` opens BEGIN IMMEDIATE, so the second caller
+                // waits on the write lock and reads a version this one already
+                // committed, rather than racing it.
                 let (next,): (i64,) = fetch_one(
                     tx,
                     "SELECT current_version + 1 FROM enrichment_functions WHERE id = ?",

@@ -8,9 +8,9 @@
 //! `register_existing_events` (one-time walk of an
 //! `events/{source}/{date}/*.parquet` tree).
 //!
-//! Stored file paths exist in both forms — `register_file` canonicalizes to
-//! absolute, the ingest path stores root-relative — so `resolve_file_path`
-//! accepts either. Full-table rewrites (`replace_table_data`) take an
+//! Stored file paths are written root-relative, so a catalog keeps pointing at
+//! its data when the workspace is copied or moved. Absolute paths written
+//! before that was true still resolve, so reading accepts either form. Full-table rewrites (`replace_table_data`) take an
 //! optional `expected_version` and fail with `StoreError::VersionConflict`
 //! when the table's version has moved since the caller read it.
 
@@ -38,7 +38,7 @@ pub mod pool;
 pub mod row;
 pub mod scan;
 mod stats;
-mod table;
+pub(crate) mod table;
 
 pub use error::{StoreError, StoreResult};
 // Downstream crates use SQLite through these re-exports (including `rusqlite`
@@ -256,8 +256,15 @@ impl ParquetStore {
             .get_or_create_table(table_name, pc_json.as_deref(), source_id)
             .await?;
 
+        // Store the path relative to the store root so the catalog survives the
+        // workspace being copied or moved. Absolute paths written by older
+        // versions still resolve — `resolve_path` passes them through — so this
+        // needs no migration, but nothing new should be written that way.
         let abs_path = std::fs::canonicalize(file_path)?;
-        let path_str = abs_path.to_string_lossy().to_string();
+        let path_str = table::relativize_path(&self.root_path, &abs_path)
+            .unwrap_or_else(|| abs_path.clone())
+            .to_string_lossy()
+            .to_string();
         if self.db.is_file_registered(&table.id, &path_str).await? {
             return Ok(());
         }

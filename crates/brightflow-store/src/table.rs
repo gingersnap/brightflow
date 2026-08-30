@@ -148,6 +148,56 @@ fn resolve_path(root: &Path, stored_path: &str) -> PathBuf {
     }
 }
 
+/// The inverse of [`resolve_path`]: express `path` relative to `root` so the
+/// stored form survives the workspace being moved or copied.
+///
+/// A stored absolute path pins a table's files to the machine that wrote them —
+/// copy the workspace and every file in it is gone. Event partitions live
+/// beside the store rather than inside it (`{workspace}/events/` next to
+/// `{workspace}/store/`), so the answer legitimately walks up with `..`; that
+/// is still root-relative and still moves with the workspace.
+///
+/// Returns `None` when the two share no common ancestor (different drives, or
+/// a genuinely unrelated location), in which case the caller must keep the
+/// absolute path — a wrong relative path would be worse than an unportable one.
+pub fn relativize_path(root: &Path, path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+
+    // Only absolute, already-normalized inputs can be compared component-wise.
+    if !root.is_absolute() || !path.is_absolute() {
+        return None;
+    }
+
+    let root_parts: Vec<Component<'_>> = root.components().collect();
+    let path_parts: Vec<Component<'_>> = path.components().collect();
+    let shared = root_parts
+        .iter()
+        .zip(&path_parts)
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    // No shared prefix at all means no meaningful relative form. On Unix every
+    // absolute path shares RootDir, so this only trips across Windows drives.
+    if shared == 0 {
+        return None;
+    }
+
+    let mut out = PathBuf::new();
+    for _ in shared..root_parts.len() {
+        out.push("..");
+    }
+    // `shared <= path_parts.len()` by construction (it counts zipped pairs),
+    // but take the checked form so the invariant cannot rot into a panic.
+    for part in path_parts.get(shared..).unwrap_or(&[]) {
+        out.push(part);
+    }
+    // Identical paths produce an empty result, which is not a usable file path.
+    if out.as_os_str().is_empty() {
+        return None;
+    }
+    Some(out)
+}
+
 /// Get paths to all parquet files for a table
 pub async fn get_parquet_paths(
     db: &StoreDb,
@@ -222,6 +272,36 @@ pub async fn delete_table(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relativize_path_round_trips_through_resolve() {
+        let root = Path::new("/data/ws/store");
+        // Inside the store root.
+        let inside = Path::new("/data/ws/store/src1/issues/f.parquet");
+        let rel = relativize_path(root, inside).expect("relative form");
+        assert_eq!(rel, PathBuf::from("src1/issues/f.parquet"));
+        assert_eq!(resolve_path(root, &rel.to_string_lossy()), inside);
+
+        // Beside the store root: event partitions legitimately walk up.
+        let beside = Path::new("/data/ws/events/src1/2026-08-29/f.parquet");
+        let rel = relativize_path(root, beside).expect("relative form");
+        assert_eq!(rel, PathBuf::from("../events/src1/2026-08-29/f.parquet"));
+        // resolve_path joins without normalizing; the filesystem resolves `..`.
+        assert_eq!(
+            resolve_path(root, &rel.to_string_lossy()),
+            PathBuf::from("/data/ws/store/../events/src1/2026-08-29/f.parquet")
+        );
+    }
+
+    #[test]
+    fn relativize_path_refuses_what_it_cannot_express() {
+        let root = Path::new("/data/ws/store");
+        // Relative inputs cannot be compared component-wise.
+        assert!(relativize_path(root, Path::new("relative/f.parquet")).is_none());
+        assert!(relativize_path(Path::new("relative"), Path::new("/a/f.parquet")).is_none());
+        // Root itself has no file to point at.
+        assert!(relativize_path(root, root).is_none());
+    }
 
     #[test]
     fn resolve_path_joins_relative_paths_onto_root() {

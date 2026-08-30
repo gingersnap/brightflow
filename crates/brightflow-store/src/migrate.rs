@@ -10,6 +10,12 @@
 //! Each pending file runs inside its own transaction (batch + tracking
 //! insert), so a failing migration leaves the database at the previous
 //! version instead of half-applied — the same per-file semantics sqlx had.
+//!
+//! Applied rows also carry a content hash. Version, order and name drift are
+//! all detectable from the list alone, but an *edit to an already-applied
+//! file* is not: the database is silently no longer what the code describes,
+//! and every later database diverges from every earlier one. The hash is the
+//! only thing that catches it, so it is checked before anything is applied.
 
 use rusqlite::Connection;
 
@@ -119,15 +125,17 @@ pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         )",
     )?;
+    ensure_checksum_column(conn)?;
 
-    let applied: Vec<(i64, String)> = {
+    let applied: Vec<(i64, String, Option<String>)> = {
         let mut stmt =
-            conn.prepare("SELECT version, name FROM schema_migrations ORDER BY version")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            conn.prepare("SELECT version, name, checksum FROM schema_migrations ORDER BY version")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         rows.collect::<rusqlite::Result<_>>()?
     };
 
-    for (version, name) in &applied {
+    let mut backfill: Vec<(i64, String)> = Vec::new();
+    for (version, name, checksum) in &applied {
         let Some(m) = migrations.iter().find(|m| m.version == *version) else {
             return Err(MigrateError::Invalid(format!(
                 "database has applied version {version} ({name}) which this binary does not know \
@@ -140,10 +148,33 @@ pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result
                 m.name
             )));
         }
+        let expected = checksum_of(m.sql);
+        match checksum {
+            // Rows written before the column existed are grandfathered: their
+            // content was never recorded, so there is nothing to compare
+            // against. Backfill from the current file and start checking from
+            // the next run — refusing them instead would brick every database
+            // that predates this check, for no evidence of an actual edit.
+            None => backfill.push((*version, expected)),
+            Some(found) if *found != expected => {
+                return Err(MigrateError::Invalid(format!(
+                    "applied version {version} ({name}) no longer matches the file it was applied \
+                     from (recorded {found}, code has {expected}) — an already-applied migration \
+                     was edited; revert it and add a new migration instead"
+                )));
+            },
+            Some(_) => {},
+        }
+    }
+    for (version, checksum) in backfill {
+        conn.execute(
+            "UPDATE schema_migrations SET checksum = ?1 WHERE version = ?2",
+            (checksum, version),
+        )?;
     }
 
     for m in migrations {
-        if applied.iter().any(|(v, _)| *v == m.version) {
+        if applied.iter().any(|(v, _, _)| *v == m.version) {
             continue;
         }
         let tx = conn.transaction()?;
@@ -154,12 +185,37 @@ pub fn run_migrations(conn: &mut Connection, migrations: &[Migration]) -> Result
                 source,
             })?;
         tx.execute(
-            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
-            (m.version, m.name),
+            "INSERT INTO schema_migrations (version, name, checksum) VALUES (?1, ?2, ?3)",
+            (m.version, m.name, checksum_of(m.sql)),
         )?;
         tx.commit()?;
     }
 
+    Ok(())
+}
+
+/// Hex content hash of a migration's SQL, stored alongside the applied row.
+///
+/// blake3 rather than a hand-rolled hash because it is already a workspace
+/// dependency; this guards against accidental edits, not tampering, so any
+/// stable digest would do.
+fn checksum_of(sql: &str) -> String {
+    blake3::hash(sql.as_bytes()).to_hex().to_string()
+}
+
+/// Add the `checksum` column when an existing `schema_migrations` predates it.
+///
+/// This table is owned by this module, not by any migration file, so it
+/// evolves here — a migration cannot alter the table that records migrations.
+fn ensure_checksum_column(conn: &Connection) -> rusqlite::Result<()> {
+    let present: i64 = conn.query_row(
+        "SELECT count(*) FROM pragma_table_info('schema_migrations') WHERE name = 'checksum'",
+        [],
+        |r| r.get(0),
+    )?;
+    if present == 0 {
+        conn.execute_batch("ALTER TABLE schema_migrations ADD COLUMN checksum TEXT")?;
+    }
     Ok(())
 }
 
@@ -282,6 +338,72 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("_sqlx_migrations"), "got: {msg}");
         assert!(msg.contains("delete"), "got: {msg}");
+    }
+
+    #[test]
+    fn editing_an_applied_migration_is_rejected() {
+        let mut c = conn();
+        run_migrations(&mut c, &[M1, M2]).expect("apply");
+
+        // Same version, same name, different SQL — the one drift the version
+        // list cannot show.
+        let edited = Migration {
+            sql: "CREATE TABLE users (id TEXT PRIMARY KEY, extra TEXT);",
+            ..M1
+        };
+        let err = run_migrations(&mut c, &[edited, M2]).expect_err("edited file");
+        let msg = err.to_string();
+        assert!(matches!(err, MigrateError::Invalid(_)));
+        assert!(msg.contains("no longer matches"), "got: {msg}");
+        assert!(msg.contains("add a new migration"), "got: {msg}");
+
+        // The untouched pair still applies cleanly afterwards.
+        run_migrations(&mut c, &[M1, M2]).expect("unedited list still fine");
+    }
+
+    #[test]
+    fn checksums_are_recorded_on_apply() {
+        let mut c = conn();
+        run_migrations(&mut c, &[M1, M2]).expect("apply");
+        let recorded: Vec<String> = {
+            let mut stmt = c
+                .prepare("SELECT checksum FROM schema_migrations ORDER BY version")
+                .expect("prepare");
+            let rows = stmt.query_map([], |r| r.get(0)).expect("query");
+            rows.collect::<rusqlite::Result<_>>().expect("collect")
+        };
+        assert_eq!(recorded, vec![checksum_of(M1.sql), checksum_of(M2.sql)]);
+    }
+
+    #[test]
+    fn pre_checksum_databases_are_grandfathered_and_backfilled() {
+        // A database written before the checksum column existed: the column is
+        // added, the NULL row is accepted, and the hash is filled in so the
+        // next run has something to check against.
+        let mut c = conn();
+        c.execute_batch(
+            "CREATE TABLE schema_migrations (
+                 version INTEGER PRIMARY KEY,
+                 name TEXT NOT NULL,
+                 applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO schema_migrations (version, name) VALUES (1, '001_users');
+             CREATE TABLE users (id TEXT PRIMARY KEY);
+             CREATE INDEX idx_users ON users (id);",
+        )
+        .expect("pre-checksum state");
+
+        run_migrations(&mut c, &[M1, M2]).expect("grandfathered, not refused");
+        assert_eq!(applied_versions(&c), vec![1, 2]);
+
+        let backfilled: String = c
+            .query_row(
+                "SELECT checksum FROM schema_migrations WHERE version = 1",
+                [],
+                |r| r.get(0),
+            )
+            .expect("checksum backfilled");
+        assert_eq!(backfilled, checksum_of(M1.sql));
     }
 
     #[test]

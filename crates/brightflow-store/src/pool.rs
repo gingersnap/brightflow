@@ -116,15 +116,24 @@ impl SqlitePool {
     }
 
     /// Run a closure inside a transaction: commit on `Ok`, rollback on `Err`
-    /// (via drop). Deferred `BEGIN`, matching the semantics call sites had
-    /// with sqlx's `pool.begin()`.
+    /// (via drop).
+    ///
+    /// `BEGIN IMMEDIATE`, a deliberate divergence from the deferred `BEGIN`
+    /// sqlx's `pool.begin()` gave these call sites. A deferred transaction that
+    /// reads before it writes takes its read snapshot at the `SELECT`; if
+    /// another connection commits in between, the later write fails with
+    /// `SQLITE_BUSY_SNAPSHOT`, which SQLite does *not* route through the busy
+    /// handler — so the `busy_timeout` set in `apply_pragmas` never applies and
+    /// the caller just gets an error. Taking the write lock up front makes such
+    /// a transaction wait on the busy handler instead, at the cost of
+    /// serializing writers that would otherwise have overlapped.
     pub async fn transaction<T, F>(&self, f: F) -> Result<T, SqliteError>
     where
         F: FnOnce(&rusqlite::Transaction<'_>) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let out = f(&tx)?;
             tx.commit()?;
             Ok(out)
@@ -277,6 +286,66 @@ mod tests {
             .await
             .expect_err("missing table");
         assert!(!not_unique.is_unique_violation());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn transaction_takes_the_write_lock_up_front() {
+        // Pins BEGIN IMMEDIATE. A deferred transaction that has only read so
+        // far holds no write lock, so a second writer sails past it and the
+        // deferred transaction's own later write dies with
+        // SQLITE_BUSY_SNAPSHOT — which the busy handler never sees. Asserting
+        // the lock is held from the first statement is the deterministic way to
+        // pin that: no sleeps, no attempt to lose a race on purpose.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("t.db");
+        let url = format!("sqlite:{}?mode=rwc", db_path.display());
+        let pool = open_pool(&url, SqlitePoolProfile::METADATA)
+            .await
+            .expect("pool opens");
+        pool.call(|conn| {
+            conn.execute_batch(
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, v INTEGER NOT NULL);
+                 INSERT INTO t (id, v) VALUES (1, 0);",
+            )
+        })
+        .await
+        .expect("schema");
+
+        // `entered` fires once the transaction is open and has only read;
+        // `release` lets it commit. Both are std channels: the closure runs on
+        // a blocking thread, so blocking on recv there is correct.
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let held = tokio::spawn({
+            let pool = pool.clone();
+            async move {
+                pool.transaction(move |tx| {
+                    let _: i64 = tx.query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0))?;
+                    entered_tx.send(()).expect("signal entered");
+                    release_rx.recv().expect("wait for release");
+                    Ok(())
+                })
+                .await
+            }
+        });
+        entered_rx.recv().expect("transaction opened");
+
+        // A separate connection, busy_timeout 0 so the answer is immediate.
+        let probe = Connection::open(&db_path).expect("probe connection");
+        probe.busy_timeout(Duration::ZERO).expect("no waiting");
+        let blocked = probe.execute_batch("BEGIN IMMEDIATE");
+        assert!(
+            blocked.is_err(),
+            "a read-only-so-far pool transaction must already hold the write lock"
+        );
+
+        release_tx.send(()).expect("release");
+        held.await.expect("join").expect("transaction commits");
+
+        // Once it commits, the lock is gone.
+        probe
+            .execute_batch("BEGIN IMMEDIATE; COMMIT")
+            .expect("write lock free after commit");
     }
 
     #[tokio::test]
