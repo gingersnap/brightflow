@@ -9,6 +9,8 @@ name = "brightflow_engine"
 path = "src/lib.rs"
 
 [dependencies]
+# Pre-call language identification for ticket enrichment (nlp::language).
+whatlang = "0.16"
 polars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

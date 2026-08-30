@@ -42,6 +42,12 @@ static MIGRATIONS: &[Migration] = &[
     migration!(17, "017_action_log_status_index"),
     migration!(18, "018_column_polarity"),
     migration!(19, "019_insight_runs"),
+    migration!(20, "020_vocabulary_hierarchy"),
+    migration!(21, "021_action_log_user"),
+    migration!(22, "022_cached_tokens"),
+    migration!(23, "023_vocabulary_agent_kinds"),
+    migration!(24, "024_unresolved_subjects"),
+    migration!(25, "025_ticket_function_kinds"),
 ];
 
 #[derive(Clone, Debug)]

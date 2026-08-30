@@ -13,6 +13,7 @@ import { useRouter } from 'vue-router';
 
 import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
+import VocabularyPanel from '@/components/enrichment/VocabularyPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { useCuration } from '@/composables/useCuration';
 import { useSources } from '@/composables/useSources';
@@ -23,7 +24,6 @@ import type { DocRef } from '@/types/generated';
 import ClusterCard from './ClusterCard.vue';
 import CurationQueue from './CurationQueue.vue';
 import DocDrawer from './DocDrawer.vue';
-import TaxonomyPanel from './TaxonomyPanel.vue';
 import TopicsHeader from './TopicsHeader.vue';
 import TopicsPie from './TopicsPie.vue';
 
@@ -181,11 +181,15 @@ const tab = ref<'intent' | 'clusters'>('intent');
             :source-id="sourceId"
             :table="activeTable"
             :kinds="[
-              { kind: 'propose_taxonomy', label: 'Propose taxonomy', icon: 'i-lucide-list-tree' },
+              {
+                kind: 'propose_categories',
+                label: 'Propose categories',
+                icon: 'i-lucide-list-tree',
+              },
               { kind: 'label_documents', label: 'Label sample', icon: 'i-lucide-tags' },
             ]"
           />
-          <TaxonomyPanel :source-id="sourceId" :table="activeTable" />
+          <VocabularyPanel :source-id="sourceId" :table="activeTable" />
           <CurationQueue :source-id="sourceId" :table="activeTable" />
         </div>
 

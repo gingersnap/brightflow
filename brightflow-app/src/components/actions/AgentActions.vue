@@ -14,8 +14,11 @@ import type { AgentRunEventPayload, AgentRunResponse } from '@/types/generated';
 const props = defineProps<{
   sourceId: string;
   table: string;
-  /** Which run kinds to offer, e.g. ['auto_label','propose_merges'] */
-  kinds: { kind: string; label: string; icon: string }[];
+  /**
+   * Which run kinds to offer, e.g. ['auto_label','propose_merges'].
+   * `parentId` scopes an induction run to one parent category.
+   */
+  kinds: { kind: string; label: string; icon: string; parentId?: number }[];
 }>();
 
 /** Structural guard for a pushed `agentRun` frame. */
@@ -76,7 +79,7 @@ const canUndoAll = computed(
     lastRun.value.mode === 'auto_apply',
 );
 
-async function start(kind: string): Promise<void> {
+async function start(kind: string, parentId?: number): Promise<void> {
   lastResult.value = null;
   lastRun.value = null;
   const run = await agentApi.start({
@@ -84,6 +87,7 @@ async function start(kind: string): Promise<void> {
     sourceId: props.sourceId,
     table: props.table,
     mode: autoApply.value ? 'auto_apply' : 'propose',
+    ...(parentId == null ? {} : { parentId }),
   });
   if (run == null) {
     lastResult.value = 'Failed to start agent run';
@@ -140,7 +144,7 @@ async function undoAll(): Promise<void> {
         color="neutral"
         variant="soft"
         :icon="entry.icon"
-        @click="start(entry.kind)"
+        @click="start(entry.kind, entry.parentId)"
       >
         {{ entry.label }}
       </UButton>

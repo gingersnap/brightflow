@@ -1,6 +1,7 @@
 //! One module per subcommand family.
 
 pub mod admin;
+pub mod enrich;
 pub mod insights;
 pub mod serve;
 pub mod store;

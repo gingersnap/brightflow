@@ -19,25 +19,33 @@ use crate::actions::types::{
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
-/// Who performed an action. The agent runner (3C) passes `Agent`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Who performed an action. The agent runner (3C) passes `Agent`; the REST
+/// endpoint passes the session's user so the audit line can name them.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Actor {
-    Human,
+    Human { user_id: String },
     Agent { run_id: i64, auto_apply: bool },
 }
 
 impl Actor {
-    fn type_str(self) -> &'static str {
+    fn type_str(&self) -> &'static str {
         match self {
-            Self::Human => "human",
+            Self::Human { .. } => "human",
             Self::Agent { .. } => "agent",
         }
     }
 
-    fn agent_run_id(self) -> Option<i64> {
+    fn agent_run_id(&self) -> Option<i64> {
         match self {
-            Self::Human => None,
-            Self::Agent { run_id, .. } => Some(run_id),
+            Self::Human { .. } => None,
+            Self::Agent { run_id, .. } => Some(*run_id),
+        }
+    }
+
+    fn user_id(&self) -> Option<&str> {
+        match self {
+            Self::Human { user_id } => Some(user_id),
+            Self::Agent { .. } => None,
         }
     }
 }
@@ -47,9 +55,9 @@ impl Actor {
 /// Humans apply immediately (undo is the safety net). Agents in auto-apply
 /// mode get the same deal — but only for kinds whose undo genuinely exists;
 /// anything irreversible still queues for approval regardless of mode.
-fn initial_status(actor: Actor, kind_undoable: bool) -> &'static str {
+fn initial_status(actor: &Actor, kind_undoable: bool) -> &'static str {
     match actor {
-        Actor::Human => "applied",
+        Actor::Human { .. } => "applied",
         Actor::Agent {
             auto_apply: true, ..
         } if kind_undoable => "applied",
@@ -60,9 +68,23 @@ fn initial_status(actor: Actor, kind_undoable: bool) -> &'static str {
 /// `POST /api/actions` — dispatch an action as a human actor.
 pub async fn dispatch(
     State(state): State<AppState>,
+    auth_session: crate::auth::AuthSession,
     Json(req): Json<ActionRequest>,
 ) -> AppResult<Json<ActionResponse>> {
-    let response = dispatch_action(&state, req.action, &req.request_id, Actor::Human).await?;
+    // The route sits behind `require_auth`, so a missing user here is a
+    // wiring error, not an anonymous caller — refuse rather than log a blank.
+    let user_id = auth_session
+        .user
+        .as_ref()
+        .map(|u| u.id.clone())
+        .ok_or(AppError::Unauthorized)?;
+    let response = dispatch_action(
+        &state,
+        req.action,
+        &req.request_id,
+        Actor::Human { user_id },
+    )
+    .await?;
     Ok(Json(response))
 }
 
@@ -80,7 +102,7 @@ pub async fn dispatch_action(
         .map_err(|e| AppError::Internal(format!("action serialize: {e}")))?;
 
     let status = initial_status(
-        actor,
+        &actor,
         crate::actions::types::kind_is_undoable(action.kind()),
     );
     let inserted = store
@@ -89,6 +111,7 @@ pub async fn dispatch_action(
             request_id,
             actor.type_str(),
             actor.agent_run_id(),
+            actor.user_id(),
             action.kind(),
             &params_json,
             status,
@@ -602,13 +625,21 @@ pub async fn execute_action(
             scope: Scope { source_id, table },
             name,
             description,
+            vocab_kind,
+            parent_id,
+            aliases,
         } => {
             taxonomy::execute_define_taxonomy_category(
                 state,
                 source_id,
                 table,
-                name,
-                description.as_deref(),
+                &taxonomy::DefineArgs {
+                    name,
+                    description: description.as_deref(),
+                    kind: vocab_kind.as_deref(),
+                    parent_id: parent_id.unwrap_or(0),
+                    aliases: aliases.as_deref().unwrap_or(&[]),
+                },
             )
             .await
         },
@@ -619,6 +650,34 @@ pub async fn execute_action(
         } => {
             taxonomy::execute_rename_taxonomy_category(state, source_id, table, *category_id, name)
                 .await
+        },
+        Action::RedefineTaxonomyCategory {
+            scope: Scope { source_id, table },
+            category_id,
+            description,
+        } => {
+            taxonomy::execute_redefine_taxonomy_category(
+                state,
+                source_id,
+                table,
+                *category_id,
+                description.as_deref(),
+            )
+            .await
+        },
+        Action::FreezeTaxonomyCategory {
+            scope: Scope { source_id, table },
+            category_id,
+            frozen,
+        } => {
+            taxonomy::execute_freeze_taxonomy_category(
+                state,
+                source_id,
+                table,
+                *category_id,
+                *frozen,
+            )
+            .await
         },
         Action::DeleteTaxonomyCategory {
             scope: Scope { source_id, table },
@@ -725,6 +784,10 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             )
             .await
         },
+        UndoOp::RestoreTaxonomyFrozen {
+            category_id,
+            frozen,
+        } => taxonomy::undo_restore_taxonomy_frozen(state, *category_id, *frozen).await,
         UndoOp::RecreateTaxonomyCategory {
             table_id,
             category_id,
@@ -732,19 +795,23 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             description,
             created_at,
             labels,
+            kind,
+            parent_id,
+            frozen,
+            aliases_json,
         } => {
-            taxonomy::undo_recreate_taxonomy_category(
-                state,
-                &taxonomy::RecreateTaxonomyCategoryArgs {
-                    table_id,
-                    category_id: *category_id,
-                    name,
-                    description: description.as_deref(),
-                    created_at: *created_at,
-                    labels,
-                },
-            )
-            .await
+            let row = brightflow_store::TaxonomyCategoryRow {
+                id: *category_id,
+                table_id: table_id.clone(),
+                kind: kind.clone(),
+                parent_id: *parent_id,
+                name: name.clone(),
+                description: description.clone(),
+                frozen: *frozen,
+                aliases_json: aliases_json.clone(),
+                created_at: *created_at,
+            };
+            taxonomy::undo_recreate_taxonomy_category(state, &row, labels).await
         },
         UndoOp::RestoreDocumentLabels {
             table_id,
@@ -761,11 +828,14 @@ mod tests {
     /// The reversibility tier, pinned over all four combinations.
     #[test]
     fn initial_status_tiers_by_actor_and_undoability() {
-        assert_eq!(initial_status(Actor::Human, true), "applied");
-        assert_eq!(initial_status(Actor::Human, false), "applied");
+        let human = Actor::Human {
+            user_id: "u1".to_string(),
+        };
+        assert_eq!(initial_status(&human, true), "applied");
+        assert_eq!(initial_status(&human, false), "applied");
         assert_eq!(
             initial_status(
-                Actor::Agent {
+                &Actor::Agent {
                     run_id: 1,
                     auto_apply: true
                 },
@@ -776,7 +846,7 @@ mod tests {
         // Irreversible kinds queue even in auto-apply mode.
         assert_eq!(
             initial_status(
-                Actor::Agent {
+                &Actor::Agent {
                     run_id: 1,
                     auto_apply: true
                 },
@@ -786,7 +856,7 @@ mod tests {
         );
         assert_eq!(
             initial_status(
-                Actor::Agent {
+                &Actor::Agent {
                     run_id: 1,
                     auto_apply: false
                 },
@@ -796,7 +866,7 @@ mod tests {
         );
         assert_eq!(
             initial_status(
-                Actor::Agent {
+                &Actor::Agent {
                     run_id: 1,
                     auto_apply: false
                 },

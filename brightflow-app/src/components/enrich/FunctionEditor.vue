@@ -4,8 +4,8 @@
  * function and its lifecycle — save (with a rerun-choice dialog when editing
  * a promoted prompt), full-table runs, promote/demote, version restore, and
  * delete. The kind-specific editing surfaces live in LlmFunctionEditor and
- * TopicFunctionEditor behind a `v-model:config`. Dirtiness is a JSON
- * snapshot comparison gating Save and Run all.
+ * TopicFunctionEditor / TicketFunctionEditor behind a `v-model:config`.
+ * Dirtiness is a JSON snapshot comparison gating Save and Run all.
  */
 
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue';
@@ -17,6 +17,7 @@ import type {
   FunctionKind,
   LlmPromptConfig,
   RunScope,
+  TicketFunctionConfig,
   TopicModelConfig,
 } from '@/types/enrichment';
 
@@ -25,6 +26,7 @@ import LlmFunctionEditor from './LlmFunctionEditor.vue';
 import PromoteToggle from './PromoteToggle.vue';
 import RerunPromptModal from './RerunPromptModal.vue';
 import RunAllModal from './RunAllModal.vue';
+import TicketFunctionEditor from './TicketFunctionEditor.vue';
 import TopicFunctionEditor from './TopicFunctionEditor.vue';
 import VersionHistoryPanel from './VersionHistoryPanel.vue';
 
@@ -45,6 +47,9 @@ const emit = defineEmits<{
 const columnNames = computed(() => props.columns.map((c) => c.name));
 const kind = computed<FunctionKind>(() => props.fn?.kind ?? props.createKind ?? 'llm_prompt');
 const isNew = computed(() => props.fn == null);
+const isTicketKind = computed(
+  () => kind.value === 'ticket_classify' || kind.value === 'ticket_extract',
+);
 
 const llmEditor = useTemplateRef('llmEditor');
 
@@ -55,6 +60,7 @@ const llmEditor = useTemplateRef('llmEditor');
 const draftName = ref('');
 const llmConfig = ref<LlmPromptConfig>(emptyLlmConfig());
 const topicConfig = ref<TopicModelConfig>(emptyTopicConfig());
+const ticketConfig = ref<TicketFunctionConfig>(emptyTicketConfig());
 const savedSnapshot = ref('');
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -80,12 +86,19 @@ function emptyTopicConfig(): TopicModelConfig {
   };
 }
 
+function emptyTicketConfig(): TicketFunctionConfig {
+  return { language_column: null, model: null, provider_id: 'default', text_columns: [] };
+}
+
 function currentDraftConfig(): unknown {
   if (kind.value === 'llm_prompt') {
     return { ...llmConfig.value };
   }
   if (kind.value === 'topic_model') {
     return { ...topicConfig.value };
+  }
+  if (isTicketKind.value) {
+    return { ...ticketConfig.value };
   }
   return {};
 }
@@ -102,6 +115,7 @@ function loadFromFn(fn: EnrichFunction | null): void {
     draftName.value = '';
     llmConfig.value = emptyLlmConfig();
     topicConfig.value = emptyTopicConfig();
+    ticketConfig.value = emptyTicketConfig();
   } else {
     draftName.value = fn.name;
     if (fn.kind === 'llm_prompt') {
@@ -127,6 +141,14 @@ function loadFromFn(fn: EnrichFunction | null): void {
             ? config.text_columns
             : null,
       };
+    } else if (fn.kind === 'ticket_classify' || fn.kind === 'ticket_extract') {
+      const config = fn.config as Partial<TicketFunctionConfig>;
+      ticketConfig.value = {
+        language_column: config.language_column ?? null,
+        model: config.model ?? null,
+        provider_id: config.provider_id ?? 'default',
+        text_columns: config.text_columns ?? [],
+      };
     }
   }
   savedSnapshot.value = snapshot();
@@ -149,7 +171,7 @@ async function handleSave(): Promise<void> {
     await persist('none', true);
     return;
   }
-  if (props.fn?.status === 'promoted' && kind.value === 'llm_prompt') {
+  if (props.fn?.status === 'promoted' && (kind.value === 'llm_prompt' || isTicketKind.value)) {
     rerunModalOpen.value = true;
     return;
   }
@@ -309,7 +331,7 @@ async function deleteFn(dropColumns: boolean): Promise<void> {
           :disabled="!isDirty || (isNew && draftName.trim() === '')"
           @click="handleSave"
         >
-          {{ isNew ? 'Create draft' : 'Save' }}
+          {{ isNew ? (isTicketKind ? 'Create' : 'Create draft') : 'Save' }}
         </UButton>
       </div>
     </div>
@@ -344,6 +366,16 @@ async function deleteFn(dropColumns: boolean): Promise<void> {
       :has-fn="fn != null"
       :source-id="sourceId"
       :table="table"
+    />
+    <TicketFunctionEditor
+      v-else-if="isTicketKind"
+      v-model:config="ticketConfig"
+      :column-names="columnNames"
+      :fn="fn"
+      :kind="kind"
+      :source-id="sourceId"
+      :table="table"
+      @run-all="runModalOpen = true"
     />
 
     <!-- classifier placeholder -->

@@ -349,6 +349,7 @@ impl StoreDb {
         rows_cached: i64,
         prompt_tokens: i64,
         completion_tokens: i64,
+        cached_tokens: i64,
     ) -> StoreResult<()> {
         let id = id.to_owned();
         self.pool
@@ -357,7 +358,7 @@ impl StoreDb {
                     conn,
                     r"UPDATE enrichment_runs
               SET rows_done = ?, rows_failed = ?, rows_cached = ?,
-                  prompt_tokens = ?, completion_tokens = ?,
+                  prompt_tokens = ?, completion_tokens = ?, cached_tokens = ?,
                   total_tokens = ? + ?
               WHERE id = ?",
                     params![
@@ -366,6 +367,7 @@ impl StoreDb {
                         rows_cached,
                         prompt_tokens,
                         completion_tokens,
+                        cached_tokens,
                         prompt_tokens,
                         completion_tokens,
                         id
@@ -504,6 +506,7 @@ impl StoreDb {
         error: Option<&str>,
         prompt_tokens: Option<i64>,
         completion_tokens: Option<i64>,
+        cached_tokens: Option<i64>,
         version: i64,
     ) -> StoreResult<()> {
         let function_id = function_id.to_owned();
@@ -518,14 +521,15 @@ impl StoreDb {
                     conn,
                     r"INSERT INTO enrichment_cache
                 (function_id, spec_hash, input_hash, status, value_json, error,
-                 prompt_tokens, completion_tokens, version)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 prompt_tokens, completion_tokens, cached_tokens, version)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT (function_id, spec_hash, input_hash) DO UPDATE SET
                 status = excluded.status,
                 value_json = excluded.value_json,
                 error = excluded.error,
                 prompt_tokens = excluded.prompt_tokens,
                 completion_tokens = excluded.completion_tokens,
+                cached_tokens = excluded.cached_tokens,
                 version = excluded.version,
                 created_at = datetime('now')",
                     params![
@@ -537,6 +541,7 @@ impl StoreDb {
                         error,
                         prompt_tokens,
                         completion_tokens,
+                        cached_tokens,
                         version
                     ],
                 )

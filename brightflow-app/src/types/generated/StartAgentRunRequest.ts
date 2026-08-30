@@ -6,9 +6,15 @@
 export type StartAgentRunRequest = { 
 /**
  * "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
- * | "propose_taxonomy" | "label_documents"
+ * | "propose_taxonomy" | "label_documents" | "propose_categories"
+ * | "propose_subcategories" | "propose_feedback_categories"
  */
 kind: string, sourceId: string, table: string, 
+/**
+ * Parent category id for `propose_subcategories` (required there,
+ * ignored elsewhere).
+ */
+parentId?: number, 
 /**
  * "auto_apply" (default) | "propose". Auto-apply is the default because
  * every action the agent runner hands out is undoable — reversibility,

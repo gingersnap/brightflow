@@ -20,6 +20,8 @@ pub enum FunctionSpec {
     LlmPrompt(LlmPromptSpec),
     TopicModel(TopicModelSpec),
     Classifier(ClassifierSpec),
+    TicketClassify(TicketClassifySpec),
+    TicketExtract(TicketExtractSpec),
 }
 
 impl FunctionSpec {
@@ -28,8 +30,135 @@ impl FunctionSpec {
             Self::LlmPrompt(_) => "llm_prompt",
             Self::TopicModel(_) => "topic_model",
             Self::Classifier(_) => "classifier",
+            Self::TicketClassify(_) => "ticket_classify",
+            Self::TicketExtract(_) => "ticket_extract",
         }
     }
+}
+
+/// Built-in mention extraction (Call B).
+///
+/// Every product, competitor, pricing, service or feedback mention in a
+/// ticket, 0..n rows per ticket. Same snapshot rule as
+/// [`TicketClassifySpec`]: ids and definitions, never names.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TicketExtractSpec {
+    pub text_columns: Vec<String>,
+    #[serde(default)]
+    pub language_column: Option<String>,
+    pub provider_id: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Product areas (root) and components (children), kind `product`.
+    #[serde(default)]
+    pub products: Vec<VocabEntry>,
+    /// Kind `competitor`, roots only.
+    #[serde(default)]
+    pub competitors: Vec<VocabEntry>,
+    /// Kind `feedback_category`, roots only.
+    #[serde(default)]
+    pub feedback_categories: Vec<VocabEntry>,
+}
+
+impl TicketExtractSpec {
+    pub fn vocabulary_matches(
+        &self,
+        products: &[VocabEntry],
+        competitors: &[VocabEntry],
+        feedback_categories: &[VocabEntry],
+    ) -> bool {
+        sorted(&self.products) == sorted(products)
+            && sorted(&self.competitors) == sorted(competitors)
+            && sorted(&self.feedback_categories) == sorted(feedback_categories)
+    }
+}
+
+/// Content hash of an extraction spec — see [`ticket_classify_hash`].
+pub fn ticket_extract_hash(spec: &TicketExtractSpec, prompt_fingerprint: &str) -> String {
+    let canonical = serde_json::json!({
+        "text_columns": spec.text_columns,
+        "language_column": spec.language_column,
+        "provider": spec.provider_id,
+        "model": spec.model,
+        "prompt_fingerprint": prompt_fingerprint,
+        "products": sorted(&spec.products),
+        "competitors": sorted(&spec.competitors),
+        "feedback_categories": sorted(&spec.feedback_categories),
+    });
+    let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
+    blake3::hash(&bytes).to_hex().to_string()
+}
+
+/// One vocabulary entry as the classifier prompt sees it.
+///
+/// The *name* is not here: names are labels, looked up live at render and
+/// materialise time, so a rename never changes this snapshot. The
+/// description is the definition the model classifies against; changing it
+/// is a recalibration event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VocabEntry {
+    pub id: i64,
+    /// 0 = root.
+    pub parent_id: i64,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// Built-in ticket classification (Call A): summary, language, category,
+/// subcategory, sentiment. The prompt is owned by the runner; only the
+/// customer-specific parts are config, snapshotted per version.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TicketClassifySpec {
+    /// Text columns rendered into the prompt, in order; first = headline.
+    pub text_columns: Vec<String>,
+    /// Source-provided language column; None = detect pre-call.
+    #[serde(default)]
+    pub language_column: Option<String>,
+    pub provider_id: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Root categories (kind `category`).
+    #[serde(default)]
+    pub categories: Vec<VocabEntry>,
+    /// Subcategories; each `parent_id` names one of `categories`.
+    #[serde(default)]
+    pub subcategories: Vec<VocabEntry>,
+}
+
+impl TicketClassifySpec {
+    /// Snapshot equality for the parts that reach the hash — used to decide
+    /// whether a vocabulary edit needs a new function version.
+    pub fn vocabulary_matches(
+        &self,
+        categories: &[VocabEntry],
+        subcategories: &[VocabEntry],
+    ) -> bool {
+        sorted(&self.categories) == sorted(categories)
+            && sorted(&self.subcategories) == sorted(subcategories)
+    }
+}
+
+fn sorted(entries: &[VocabEntry]) -> Vec<VocabEntry> {
+    let mut v = entries.to_vec();
+    v.sort_by_key(|e| (e.parent_id, e.id));
+    v
+}
+
+/// Content hash of a ticket-classification spec: inputs, provider, model,
+/// the runner's prompt fingerprint, and the vocabulary as (id, parent,
+/// description) — never names (see [`VocabEntry`]).
+pub fn ticket_classify_hash(spec: &TicketClassifySpec, prompt_fingerprint: &str) -> String {
+    let canonical = serde_json::json!({
+        "text_columns": spec.text_columns,
+        "language_column": spec.language_column,
+        "provider": spec.provider_id,
+        "model": spec.model,
+        "prompt_fingerprint": prompt_fingerprint,
+        "categories": sorted(&spec.categories),
+        "subcategories": sorted(&spec.subcategories),
+    });
+    let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
+    blake3::hash(&bytes).to_hex().to_string()
 }
 
 /// Ad-hoc per-column LLM enrichment: a prompt template over row values,
@@ -151,15 +280,19 @@ pub fn render_prompt(template: &str, values: &BTreeMap<String, String>) -> Strin
 
 /// Content hash of the spec parts that determine an LLM output.
 ///
-/// Covers template, outputs, provider and model — NOT the version: draft
-/// edits must recompute without a bump, and reverting a prompt re-hits old
-/// cache for free.
-pub fn spec_hash(spec: &LlmPromptSpec) -> String {
+/// Covers template, outputs, provider, model and `prompt_fingerprint` — the
+/// runner's hash of everything it adds around the template (system prompt,
+/// sampling parameters) — but NOT the version: draft edits must recompute
+/// without a bump, and reverting a prompt re-hits old cache for free. The
+/// fingerprint is here because a changed system prompt with an unchanged
+/// hash is wrong data that looks fresh.
+pub fn spec_hash(spec: &LlmPromptSpec, prompt_fingerprint: &str) -> String {
     let canonical = serde_json::json!({
         "template": spec.prompt_template,
         "outputs": spec.outputs,
         "provider": spec.provider_id,
         "model": spec.model,
+        "prompt_fingerprint": prompt_fingerprint,
     });
     let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
     blake3::hash(&bytes).to_hex().to_string()
@@ -342,24 +475,75 @@ mod tests {
         assert_eq!(out, "Login broken");
     }
 
+    fn entry(id: i64, parent_id: i64, description: &str) -> VocabEntry {
+        VocabEntry {
+            id,
+            parent_id,
+            description: Some(description.to_string()),
+        }
+    }
+
+    fn classify_spec() -> TicketClassifySpec {
+        TicketClassifySpec {
+            text_columns: vec!["title".to_string(), "body".to_string()],
+            language_column: None,
+            provider_id: "p1".to_string(),
+            model: None,
+            categories: vec![entry(1, 0, "charges"), entry(2, 0, "sign-in")],
+            subcategories: vec![entry(3, 1, "vat")],
+        }
+    }
+
+    /// Order of entries never matters; a description does; a fingerprint
+    /// does. Names are not in the spec at all, so a rename cannot reach it.
+    #[test]
+    fn ticket_classify_hash_ignores_order_and_tracks_definitions() {
+        let a = classify_spec();
+        let mut b = classify_spec();
+        b.categories.reverse();
+        assert_eq!(
+            ticket_classify_hash(&a, "fp"),
+            ticket_classify_hash(&b, "fp")
+        );
+        assert!(a.vocabulary_matches(&b.categories, &b.subcategories));
+
+        let mut c = classify_spec();
+        c.categories[0].description = Some("charges and refunds".to_string());
+        assert_ne!(
+            ticket_classify_hash(&a, "fp"),
+            ticket_classify_hash(&c, "fp")
+        );
+        assert!(!a.vocabulary_matches(&c.categories, &c.subcategories));
+
+        assert_ne!(
+            ticket_classify_hash(&a, "fp"),
+            ticket_classify_hash(&a, "fp2")
+        );
+        let json = serde_json::to_string(&FunctionSpec::TicketClassify(a)).unwrap();
+        assert!(json.contains("\"kind\":\"ticket_classify\""));
+    }
+
     #[test]
     fn spec_hash_is_stable_and_content_sensitive() {
         let a = spec("classify {{col:Title}}");
         let b = spec("classify {{col:Title}}");
-        assert_eq!(spec_hash(&a), spec_hash(&b));
+        assert_eq!(spec_hash(&a, "fp"), spec_hash(&b, "fp"));
 
         let mut c = spec("classify {{col:Title}}");
         c.prompt_template = "judge {{col:Title}}".to_string();
-        assert_ne!(spec_hash(&a), spec_hash(&c));
+        assert_ne!(spec_hash(&a, "fp"), spec_hash(&c, "fp"));
 
         // input_columns is NOT part of the hash (refs drive inputs).
         let mut d = spec("classify {{col:Title}}");
         d.input_columns.push("Body".to_string());
-        assert_eq!(spec_hash(&a), spec_hash(&d));
+        assert_eq!(spec_hash(&a, "fp"), spec_hash(&d, "fp"));
 
         let mut e = spec("classify {{col:Title}}");
         e.model = Some("gpt-x".to_string());
-        assert_ne!(spec_hash(&a), spec_hash(&e));
+        assert_ne!(spec_hash(&a, "fp"), spec_hash(&e, "fp"));
+        // A changed runner fingerprint (system prompt, temperature) is a
+        // different output even for a byte-identical spec.
+        assert_ne!(spec_hash(&a, "fp"), spec_hash(&a, "fp2"));
     }
 
     #[test]

@@ -27,6 +27,12 @@ use crate::topics::labels::read_row_ids;
 /// vocabulary, and the whole point is that LLM cost stays O(taxonomy), not
 /// O(rows).
 pub const TAXONOMY_SAMPLE: usize = 60;
+/// Summaries shown to the summary-driven induction runs.
+///
+/// Larger than `TAXONOMY_SAMPLE` because a summary is ~12 tokens: 200 of
+/// them cost less than 60 truncated bodies and are a far better induction
+/// corpus.
+pub const INDUCTION_SAMPLE: usize = 200;
 /// Documents labelled by `label_documents` — the seed the head trains on.
 pub const LABEL_SAMPLE: usize = 1_200;
 /// Rows per `label_document` batch shown to the model at once.
@@ -173,9 +179,138 @@ pub async fn stratified_sample(
         .collect())
 }
 
+/// One summary for an induction run.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryDoc {
+    pub row_id: String,
+    pub summary: String,
+}
+
+/// Uniform, seeded sample of classified ticket summaries.
+///
+/// Optionally only those whose `category` is `category_filter` (subcategory
+/// induction). Rows without a summary are not classified yet and never
+/// sampled.
+pub async fn summary_sample(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    n: usize,
+    category_filter: Option<&str>,
+) -> AppResult<Vec<SummaryDoc>> {
+    let store = state.require_store()?;
+    let df = store.read_table(source_id, table).await?;
+    let display = DocDisplay::for_table(table);
+    let ids = read_row_ids(&df, display.id_column).ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "table '{table}' has no readable id column '{}'",
+            display.id_column
+        ))
+    })?;
+    let summaries = read_str_column(&df, "summary").unwrap_or_default();
+    let categories = read_str_column(&df, "category");
+    let candidates: Vec<usize> = (0..df.height())
+        .filter(|&row| {
+            summaries
+                .get(row)
+                .and_then(|s| s.as_deref())
+                .is_some_and(|s| !s.trim().is_empty())
+        })
+        .filter(|&row| match (category_filter, &categories) {
+            (Some(want), Some(cats)) => cats
+                .get(row)
+                .and_then(|c| c.as_deref())
+                .is_some_and(|c| c == want),
+            (Some(_), None) => false,
+            (None, _) => true,
+        })
+        .collect();
+    Ok(pick_summaries(&candidates, n, &ids, &summaries))
+}
+
+/// Seeded sample of `feedback_summary` values from the table's mention
+/// child table (`{table}_mentions`); empty when it does not exist yet.
+pub async fn feedback_summary_sample(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    n: usize,
+) -> AppResult<Vec<SummaryDoc>> {
+    let store = state.require_store()?;
+    let mentions = format!("{table}_mentions");
+    let Some(_) = store.db().get_table(source_id, &mentions).await? else {
+        return Ok(Vec::new());
+    };
+    let df = store.read_table(source_id, &mentions).await?;
+    let ids = read_str_column(&df, "ticket_id")
+        .or_else(|| {
+            df.column("ticket_id")
+                .ok()
+                .and_then(|c| c.as_materialized_series().cast(&DataType::String).ok())
+                .and_then(|s| s.str().ok().cloned())
+                .map(|ca| ca.into_iter().map(|o| o.map(str::to_string)).collect())
+        })
+        .unwrap_or_default();
+    let ids: Vec<String> = ids.into_iter().map(Option::unwrap_or_default).collect();
+    let summaries = read_str_column(&df, "feedback_summary").unwrap_or_default();
+    let candidates: Vec<usize> = (0..df.height())
+        .filter(|&row| {
+            summaries
+                .get(row)
+                .and_then(|s| s.as_deref())
+                .is_some_and(|s| !s.trim().is_empty())
+        })
+        .collect();
+    Ok(pick_summaries(&candidates, n, &ids, &summaries))
+}
+
+/// Deterministic uniform pick of up to `n` candidates (seeded shuffle, so a
+/// re-run resumes the same queue).
+fn pick_summaries(
+    candidates: &[usize],
+    n: usize,
+    ids: &[String],
+    summaries: &[Option<String>],
+) -> Vec<SummaryDoc> {
+    let mut rows = candidates.to_vec();
+    let mut rng = SplitMix64::new(SAMPLE_SEED);
+    rng.shuffle(&mut rows);
+    rows.into_iter()
+        .take(n)
+        .map(|row| SummaryDoc {
+            row_id: ids.get(row).cloned().unwrap_or_default(),
+            summary: summaries.get(row).cloned().flatten().unwrap_or_default(),
+        })
+        .filter(|d| !d.row_id.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::truncate;
+    use super::{pick_summaries, truncate};
+
+    /// Seeded: the same candidates give the same pick; n bounds it; rows with
+    /// no id are dropped.
+    #[test]
+    fn pick_summaries_is_deterministic_and_bounded() {
+        let ids: Vec<String> = (0..10)
+            .map(|i| if i == 3 { String::new() } else { i.to_string() })
+            .collect();
+        let summaries: Vec<Option<String>> = (0..10).map(|i| Some(format!("s{i}"))).collect();
+        let candidates: Vec<usize> = (0..10).collect();
+        let a = pick_summaries(&candidates, 4, &ids, &summaries);
+        let b = pick_summaries(&candidates, 4, &ids, &summaries);
+        assert_eq!(
+            a.iter().map(|d| d.row_id.clone()).collect::<Vec<_>>(),
+            b.iter().map(|d| d.row_id.clone()).collect::<Vec<_>>()
+        );
+        assert!(a.len() <= 4);
+        assert!(a
+            .iter()
+            .all(|d| !d.row_id.is_empty() && d.summary.starts_with('s')));
+        assert!(pick_summaries(&[], 4, &ids, &summaries).is_empty());
+    }
 
     #[test]
     fn truncate_leaves_short_text_alone() {

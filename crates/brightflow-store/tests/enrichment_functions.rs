@@ -234,6 +234,7 @@ async fn cache_round_trip_and_housekeeping() {
         None,
         Some(100),
         Some(20),
+        None,
         1,
     )
     .await
@@ -247,6 +248,7 @@ async fn cache_round_trip_and_housekeeping() {
         Some("boom"),
         Some(50),
         Some(0),
+        None,
         1,
     )
     .await
@@ -260,6 +262,7 @@ async fn cache_round_trip_and_housekeeping() {
         None,
         Some(300),
         Some(60),
+        None,
         2,
     )
     .await
@@ -292,6 +295,7 @@ async fn cache_round_trip_and_housekeeping() {
         None,
         Some(10),
         Some(5),
+        None,
         1,
     )
     .await
@@ -307,6 +311,7 @@ async fn cache_round_trip_and_housekeeping() {
         "error",
         None,
         Some("x"),
+        None,
         None,
         None,
         1,
@@ -352,7 +357,7 @@ async fn run_lifecycle() {
         .expect("active")
         .is_some());
 
-    db.update_enrichment_run_progress(&run.id, 40, 2, 10, 4000, 800)
+    db.update_enrichment_run_progress(&run.id, 40, 2, 10, 4000, 800, 1200)
         .await
         .expect("progress");
     let reread = db

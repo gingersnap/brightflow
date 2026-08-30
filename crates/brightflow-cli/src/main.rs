@@ -169,6 +169,12 @@ enum Commands {
         action: TopicsAction,
     },
 
+    /// Ticket enrichment (Call A classification / Call B extraction)
+    Enrich {
+        #[command(subcommand)]
+        action: EnrichAction,
+    },
+
     /// Register existing event Parquet files in the Litehouse catalog
     MigrateEvents,
 
@@ -320,6 +326,31 @@ enum TopicsAction {
         /// Table name
         #[arg(long, default_value = "issues")]
         table: String,
+    },
+}
+
+/// `enrich` subcommands.
+#[derive(Subcommand, Debug)]
+pub enum EnrichAction {
+    /// Score Call A or Call B against testdata/eval/<lang>/issues.csv using
+    /// the table's current vocabulary and the BRIGHTFLOW_LLM_* provider.
+    /// Costs money; never touches the cache.
+    Eval {
+        /// Source id owning the table whose vocabulary is used
+        #[arg(long)]
+        source: String,
+        /// Table name (e.g. issues)
+        #[arg(long, default_value = "issues")]
+        table: String,
+        /// Language folder under testdata/eval (en | sv | fi | ...)
+        #[arg(long)]
+        lang: String,
+        /// Which call: a (classify) | b (extract)
+        #[arg(long, default_value = "a")]
+        call: String,
+        /// Score only the first N rows
+        #[arg(long)]
+        limit: Option<usize>,
     },
 }
 
@@ -534,6 +565,22 @@ async fn main() -> Result<()> {
         Commands::Topics { action } => {
             init_tracing_simple("brightflow=info");
             handle_topics(action).await?;
+        },
+
+        Commands::Enrich { action } => {
+            init_tracing_simple("brightflow=info");
+            match action {
+                EnrichAction::Eval {
+                    source,
+                    table,
+                    lang,
+                    call,
+                    limit,
+                } => {
+                    let call = commands::enrich::EvalCall::parse(&call)?;
+                    commands::enrich::run_eval(&source, &table, &lang, call, limit).await?;
+                },
+            }
         },
 
         Commands::MigrateEvents => {

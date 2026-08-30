@@ -1,9 +1,12 @@
 <script setup lang="ts">
 /**
- * Settings section for LLM providers: list, add, remove, and a per-provider
- * connectivity test. Any OpenAI-compatible chat endpoint qualifies, so the
- * API key is optional (local servers like ollama don't need one) and only
- * name, base URL, and model are required.
+ * Settings section for LLM providers: list, add, edit, remove, and a
+ * per-provider connectivity test. Any OpenAI-compatible chat endpoint
+ * qualifies, so the API key is optional (local servers like ollama don't need
+ * one) and only name, base URL, and model are required. Edit reuses the same
+ * form: the name is the upsert key so it is locked, and a blank key means
+ * "keep the stored one" — the server never returns the key, so the form
+ * cannot pre-fill it.
  */
 
 import { onMounted, reactive, ref } from 'vue';
@@ -15,6 +18,8 @@ const providers = ref<LlmProviderResponse[]>([]);
 const loading = ref(false);
 const testResults = ref<Record<number, string>>({});
 const formOpen = ref(false);
+/** Provider being edited, or null when adding. */
+const editingId = ref<number | null>(null);
 const saving = ref(false);
 const errorMessage = ref<string | null>(null);
 
@@ -53,16 +58,38 @@ async function save(): Promise<void> {
       isDefault: form.isDefault,
     });
     providers.value = result ?? providers.value;
-    formOpen.value = false;
-    form.name = '';
-    form.baseUrl = '';
-    form.apiKey = '';
-    form.model = '';
+    closeForm();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Save failed';
   } finally {
     saving.value = false;
   }
+}
+
+function closeForm(): void {
+  formOpen.value = false;
+  editingId.value = null;
+  errorMessage.value = null;
+  form.name = '';
+  form.baseUrl = '';
+  form.apiKey = '';
+  form.model = '';
+  form.isDefault = true;
+}
+
+function startAdd(): void {
+  closeForm();
+  formOpen.value = true;
+}
+
+function startEdit(provider: LlmProviderResponse): void {
+  closeForm();
+  editingId.value = provider.id;
+  form.name = provider.name;
+  form.baseUrl = provider.baseUrl;
+  form.model = provider.model;
+  form.isDefault = provider.isDefault;
+  formOpen.value = true;
 }
 
 async function remove(id: number): Promise<void> {
@@ -117,6 +144,9 @@ async function test(id: number): Promise<void> {
             <UButton size="xs" color="neutral" variant="soft" @click="test(provider.id)">
               Test
             </UButton>
+            <UButton size="xs" color="neutral" variant="ghost" @click="startEdit(provider)">
+              Edit
+            </UButton>
             <UButton size="xs" color="error" variant="ghost" @click="remove(provider.id)">
               Remove
             </UButton>
@@ -125,13 +155,25 @@ async function test(id: number): Promise<void> {
       </ul>
 
       <div v-if="formOpen" class="space-y-2">
-        <UInput v-model="form.name" placeholder="Name (e.g. local-ollama)" size="md" />
+        <UInput
+          v-model="form.name"
+          placeholder="Name (e.g. local-ollama)"
+          size="md"
+          :disabled="editingId != null"
+        />
         <UInput
           v-model="form.baseUrl"
           placeholder="Base URL (e.g. http://localhost:11434/v1)"
           size="md"
         />
-        <UInput v-model="form.apiKey" placeholder="API key (optional)" type="password" size="md" />
+        <UInput
+          v-model="form.apiKey"
+          :placeholder="
+            editingId != null ? 'API key (blank keeps the stored key)' : 'API key (optional)'
+          "
+          type="password"
+          size="md"
+        />
         <UInput v-model="form.model" placeholder="Model (e.g. llama3.1:8b)" size="md" />
         <div class="flex items-center gap-2">
           <USwitch v-model="form.isDefault" />
@@ -139,10 +181,10 @@ async function test(id: number): Promise<void> {
         </div>
         <p v-if="errorMessage" class="text-sm text-red-500">{{ errorMessage }}</p>
         <div class="flex gap-2">
-          <UButton size="md" color="primary" :loading="saving" @click="save">Save</UButton>
-          <UButton size="md" color="neutral" variant="ghost" @click="formOpen = false">
-            Cancel
+          <UButton size="md" color="primary" :loading="saving" @click="save">
+            {{ editingId != null ? 'Save changes' : 'Save' }}
           </UButton>
+          <UButton size="md" color="neutral" variant="ghost" @click="closeForm">Cancel</UButton>
         </div>
       </div>
       <UButton
@@ -151,7 +193,7 @@ async function test(id: number): Promise<void> {
         color="neutral"
         variant="soft"
         icon="i-lucide-plus"
-        @click="formOpen = true"
+        @click="startAdd"
       >
         Add provider
       </UButton>

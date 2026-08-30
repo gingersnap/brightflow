@@ -109,7 +109,7 @@ export function useCommandPalette(
   });
 
   const { data: taxonomy } = useQuery({
-    // Same key as TaxonomyPanel.vue.
+    // Same key as VocabularyPanel.vue.
     key: () => ['taxonomy', scopeSourceId.value ?? '', scopeTable.value ?? ''],
     query: () => taxonomyApi.overview(scopeSourceId.value ?? '', scopeTable.value ?? ''),
     enabled: () => open.value && isTopics.value,

@@ -10,7 +10,11 @@
 //! only for runtime reasons, not for shape reasons.
 
 use brightflow_engine::embedding::EmbedderId;
-use brightflow_engine::enrichment::{extract_column_refs, FunctionSpec, LlmPromptSpec, OutputType};
+use brightflow_engine::enrichment::mentions::FLAG_COLUMNS;
+use brightflow_engine::enrichment::ticket_classify::OUTPUT_COLUMNS;
+use brightflow_engine::enrichment::{
+    extract_column_refs, FunctionSpec, LlmPromptSpec, OutputType, TicketClassifySpec,
+};
 
 use crate::shared::{AppError, AppResult};
 
@@ -93,7 +97,71 @@ pub(crate) fn validate_spec(spec: &FunctionSpec, columns: &[String]) -> AppResul
             Ok(())
         },
         FunctionSpec::Classifier(_) => Ok(()),
+        FunctionSpec::TicketClassify(tc) => validate_classify_spec(tc, columns),
+        FunctionSpec::TicketExtract(te) => validate_ticket_inputs(
+            &te.text_columns,
+            te.language_column.as_deref(),
+            &te.provider_id,
+            &FLAG_COLUMNS,
+            columns,
+        ),
     }
+}
+
+/// The built-in classifier: its inputs must exist and its fixed outputs must
+/// not collide with the table. The vocabulary snapshot is server-injected
+/// and not validated here.
+pub(crate) fn validate_classify_spec(
+    spec: &TicketClassifySpec,
+    columns: &[String],
+) -> AppResult<()> {
+    validate_ticket_inputs(
+        &spec.text_columns,
+        spec.language_column.as_deref(),
+        &spec.provider_id,
+        &OUTPUT_COLUMNS,
+        columns,
+    )
+}
+
+/// Shared rules for the two built-in ticket kinds.
+fn validate_ticket_inputs(
+    text_columns: &[String],
+    language_column: Option<&str>,
+    provider_id: &str,
+    outputs: &[&str],
+    columns: &[String],
+) -> AppResult<()> {
+    if text_columns.is_empty() {
+        return Err(AppError::BadRequest(
+            "at least one text column is required".to_string(),
+        ));
+    }
+    for col in text_columns {
+        if !columns.iter().any(|c| c == col) {
+            return Err(AppError::BadRequest(format!(
+                "text column '{col}' not found in table"
+            )));
+        }
+    }
+    if let Some(lang) = language_column {
+        if !columns.iter().any(|c| c == lang) {
+            return Err(AppError::BadRequest(format!(
+                "language column '{lang}' not found in table"
+            )));
+        }
+    }
+    if provider_id.trim().is_empty() {
+        return Err(AppError::BadRequest("provider_id is required".to_string()));
+    }
+    for out in outputs {
+        if columns.iter().any(|c| c == out) {
+            return Err(AppError::BadRequest(format!(
+                "output column '{out}' collides with an existing table column"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_llm_spec(spec: &LlmPromptSpec, columns: &[String]) -> AppResult<()> {
@@ -307,5 +375,48 @@ mod tests {
             &columns
         )
         .is_ok());
+    }
+
+    fn classify(text_columns: &[&str], language: Option<&str>) -> TicketClassifySpec {
+        TicketClassifySpec {
+            text_columns: text_columns.iter().map(|c| (*c).to_string()).collect(),
+            language_column: language.map(str::to_string),
+            provider_id: "p".to_string(),
+            model: None,
+            categories: vec![],
+            subcategories: vec![],
+        }
+    }
+
+    #[test]
+    fn extract_spec_collides_on_flag_columns() {
+        use brightflow_engine::enrichment::TicketExtractSpec;
+        let spec = TicketExtractSpec {
+            text_columns: vec!["body".to_string()],
+            language_column: None,
+            provider_id: "p".to_string(),
+            model: None,
+            products: vec![],
+            competitors: vec![],
+            feedback_categories: vec![],
+        };
+        let cols = vec!["id".to_string(), "body".to_string()];
+        assert!(validate_spec(&FunctionSpec::TicketExtract(spec.clone()), &cols).is_ok());
+        let mut clashing = cols;
+        clashing.push("has_feedback".to_string());
+        assert!(validate_spec(&FunctionSpec::TicketExtract(spec), &clashing).is_err());
+    }
+
+    #[test]
+    fn classify_spec_checks_inputs_and_fixed_output_collisions() {
+        let cols = vec!["id".to_string(), "title".to_string(), "body".to_string()];
+        assert!(validate_classify_spec(&classify(&["title", "body"], None), &cols).is_ok());
+        assert!(validate_classify_spec(&classify(&[], None), &cols).is_err());
+        assert!(validate_classify_spec(&classify(&["nope"], None), &cols).is_err());
+        assert!(validate_classify_spec(&classify(&["title"], Some("lang")), &cols).is_err());
+        let mut clashing = cols;
+        clashing.push("summary".to_string());
+        let err = validate_classify_spec(&classify(&["title"], None), &clashing).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(ref m) if m.contains("summary")));
     }
 }

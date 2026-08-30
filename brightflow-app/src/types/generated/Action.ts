@@ -8,7 +8,16 @@ import type { SuppressKind } from "./SuppressKind";
  * current fit; durable storage attaches to the cluster's centroid so edits
  * survive re-fits (see `cluster_edits` + reconciliation).
  */
-export type Action = { "kind": "rename_cluster", cluster_id: number, name: string, source_id: string, table: string, } | { "kind": "merge_clusters", from_cluster_id: number, into_cluster_id: number, source_id: string, table: string, } | { "kind": "split_cluster", cluster_id: number, source_id: string, table: string, } | { "kind": "exclude_term", term: string, source_id: string, table: string, } | { "kind": "mark_cluster_noise", cluster_id: number, is_noise: boolean, source_id: string, table: string, } | { "kind": "assign_cluster_label", cluster_id: number, label: string, source_id: string, table: string, } | { "kind": "define_taxonomy_category", name: string, description: string | null, source_id: string, table: string, } | { "kind": "rename_taxonomy_category", category_id: number, name: string, source_id: string, table: string, } | { "kind": "delete_taxonomy_category", category_id: number, source_id: string, table: string, } | { "kind": "label_document", row_id: string, categories: Array<string>, source_id: string, table: string, } | { "kind": "recluster", k: number | null, language: string | null, embedder: string | null, min_cluster_size: number | null, 
+export type Action = { "kind": "rename_cluster", cluster_id: number, name: string, source_id: string, table: string, } | { "kind": "merge_clusters", from_cluster_id: number, into_cluster_id: number, source_id: string, table: string, } | { "kind": "split_cluster", cluster_id: number, source_id: string, table: string, } | { "kind": "exclude_term", term: string, source_id: string, table: string, } | { "kind": "mark_cluster_noise", cluster_id: number, is_noise: boolean, source_id: string, table: string, } | { "kind": "assign_cluster_label", cluster_id: number, label: string, source_id: string, table: string, } | { "kind": "define_taxonomy_category", name: string, description: string | null, 
+/**
+ * category | subcategory | feedback_category | product | competitor.
+ * Not `kind` — that is the enum's serde tag.
+ */
+vocab_kind?: string, parent_id?: number, 
+/**
+ * Accepted surface forms (imported kinds); appended, never replaced.
+ */
+aliases?: Array<string>, source_id: string, table: string, } | { "kind": "rename_taxonomy_category", category_id: number, name: string, source_id: string, table: string, } | { "kind": "redefine_taxonomy_category", category_id: number, description: string | null, source_id: string, table: string, } | { "kind": "freeze_taxonomy_category", category_id: number, frozen: boolean, source_id: string, table: string, } | { "kind": "delete_taxonomy_category", category_id: number, source_id: string, table: string, } | { "kind": "label_document", row_id: string, categories: Array<string>, source_id: string, table: string, } | { "kind": "recluster", k: number | null, language: string | null, embedder: string | null, min_cluster_size: number | null, 
 /**
  * Clustering algorithm; honored when the pipeline supports it
  * (k-means today, hdbscan later).

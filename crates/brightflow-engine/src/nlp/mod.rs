@@ -12,6 +12,7 @@ pub mod dense_clustering;
 pub mod density;
 pub mod error;
 pub mod fingerprint;
+pub mod language;
 pub mod linear;
 pub mod near_dup;
 pub mod ngrams;
@@ -33,6 +34,7 @@ pub use dense_clustering::{kmeans_dense, DenseClusterResult};
 pub use density::{default_min_cluster_size, hdbscan_dense};
 pub use error::SubtextError;
 pub use fingerprint::fingerprint;
+pub use language::{detect_language, MIN_DETECT_CHARS};
 pub use linear::{
     best_threshold, fit_centroid_baseline, fit_multilabel_linear, train_val_split,
     MultiLabelLinear, TrainOutcome,

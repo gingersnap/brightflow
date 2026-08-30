@@ -109,6 +109,10 @@ pub struct ChatOutcome {
     pub prompt_tokens: Option<u64>,
     /// Completion-side tokens, when the provider reports the split.
     pub completion_tokens: Option<u64>,
+    /// Prompt tokens served from the provider's prefix cache
+    /// (`usage.prompt_tokens_details.cached_tokens`), when reported. None
+    /// means "not reported", not zero — the two price differently.
+    pub cached_tokens: Option<u64>,
 }
 
 impl ChatOutcome {
@@ -379,6 +383,14 @@ struct WireUsage {
     prompt_tokens: Option<u64>,
     #[serde(default)]
     completion_tokens: Option<u64>,
+    #[serde(default)]
+    prompt_tokens_details: Option<WirePromptDetails>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WirePromptDetails {
+    #[serde(default)]
+    cached_tokens: Option<u64>,
 }
 
 fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
@@ -393,6 +405,7 @@ fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
         total_tokens: None,
         prompt_tokens: None,
         completion_tokens: None,
+        prompt_tokens_details: None,
     });
     Ok(ChatOutcome {
         message: choice.message,
@@ -400,6 +413,7 @@ fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
         total_tokens: usage.total_tokens,
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
+        cached_tokens: usage.prompt_tokens_details.and_then(|d| d.cached_tokens),
     })
 }
 
@@ -445,6 +459,21 @@ mod tests {
             parse_completion("not json"),
             Err(LlmError::BadResponse(_))
         ));
+    }
+
+    #[test]
+    fn parses_cached_tokens_when_reported() {
+        let text = r#"{"choices":[{"message":{"role":"assistant","content":"x"}}],
+            "usage":{"prompt_tokens":300,"completion_tokens":12,"total_tokens":312,
+                     "prompt_tokens_details":{"cached_tokens":256}}}"#;
+        let outcome = parse_completion(text).expect("parses");
+        assert_eq!(outcome.cached_tokens, Some(256));
+        let without = r#"{"choices":[{"message":{"role":"assistant","content":"x"}}],
+            "usage":{"prompt_tokens":30,"completion_tokens":12,"total_tokens":42}}"#;
+        assert_eq!(
+            parse_completion(without).expect("parses").cached_tokens,
+            None
+        );
     }
 
     #[test]

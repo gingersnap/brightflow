@@ -47,6 +47,8 @@ export const agentApi = {
     table: string;
     /** "auto_apply" (default) or "propose". */
     mode?: 'auto_apply' | 'propose';
+    /** Parent category for `propose_subcategories`. */
+    parentId?: number;
   }): Promise<AgentRunResponse | null> => api.post<AgentRunResponse>('/api/agent/runs', req),
   /** Revert every applied, undoable action of a run, newest first. */
   undoAll: (id: number): Promise<BulkUndoResponse | null> =>

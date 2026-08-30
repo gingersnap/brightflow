@@ -3,4 +3,8 @@
 /**
  * One row in the audit feed (mirrors `action_log`).
  */
-export type ActionLogEntry = { id: number, requestId: string, actorType: string, agentRunId?: number, actionKind: string, params: unknown, result?: unknown | null, status: string, undoable: boolean, createdAt: number, resolvedAt?: number, };
+export type ActionLogEntry = { id: number, requestId: string, actorType: string, agentRunId?: number, 
+/**
+ * The human who acted; absent for agent rows.
+ */
+userId?: string, actionKind: string, params: unknown, result?: unknown | null, status: string, undoable: boolean, createdAt: number, resolvedAt?: number, };

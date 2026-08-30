@@ -1,0 +1,6 @@
+id,title,body,expected_category,expected_polarity,expected_mentions
+1,kortet nekas i kassan,"Betalningen misslyckas med felet nekat kort trots att kortet fungerar i andra butiker. Har försökt tre gånger idag.",billing,negative,
+2,fakturan saknar momsrad,"Den genererade fakturan visar inte momsen separat för kunder inom EU. Vår revisor behöver den.",billing,negative,product:Invoice screen
+3,kan inte logga in efter lösenordsåterställning,"Länken fungerar men det nya lösenordet nekas på inloggningssidan.",authentication,negative,
+4,dubbeldebiterad för en beställning,"Vi debiterades två gånger för en förnyelse. Supporten svarade dock snabbt i chatten.",billing,mixed,service:
+5,önskemål: mörkt läge,"Inte brådskande, men ett mörkt läge i instrumentpanelen vore toppen för kvällsskiften.",other,positive,feedback:

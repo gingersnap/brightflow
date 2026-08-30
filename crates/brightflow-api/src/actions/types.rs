@@ -87,16 +87,33 @@ pub enum Action {
         cluster_id: i64,
         label: String,
     },
-    /// Add an intent category to the table's taxonomy — the vocabulary of what
-    /// tickets are ABOUT. Idempotent on (table, name).
+    /// Add an entry to one of the table's vocabularies. `kind` defaults to
+    /// `category`; `parent_id` (0 or absent = root) places subcategories under
+    /// a category and product components under an area. Idempotent on
+    /// (table, kind, parent, name). Refused at the level's cap and for the
+    /// reserved name `other`.
     DefineTaxonomyCategory {
         #[serde(flatten)]
         #[ts(flatten)]
         scope: Scope,
         name: String,
         description: Option<String>,
+        /// category | subcategory | feedback_category | product | competitor.
+        /// Not `kind` — that is the enum's serde tag.
+        #[serde(default)]
+        #[ts(optional)]
+        vocab_kind: Option<String>,
+        #[serde(default)]
+        #[ts(optional, type = "number")]
+        parent_id: Option<i64>,
+        /// Accepted surface forms (imported kinds); appended, never replaced.
+        #[serde(default)]
+        #[ts(optional)]
+        aliases: Option<Vec<String>>,
     },
-    /// Rename an intent category. The human's right to fix the LLM's wording.
+    /// Rename a vocabulary entry. The human's right to fix the LLM's wording;
+    /// a rename never changes what the model classifies against, so it never
+    /// invalidates enrichment cells. Refused on a frozen entry.
     RenameTaxonomyCategory {
         #[serde(flatten)]
         #[ts(flatten)]
@@ -105,7 +122,31 @@ pub enum Action {
         category_id: i64,
         name: String,
     },
-    /// Remove an intent category; its row labels cascade away with it.
+    /// Replace an entry's description — its definition. Unlike a rename this
+    /// changes what the model sees, so it is a recalibration event: every
+    /// cell classified under the old definition recomputes. Refused on a
+    /// frozen entry.
+    RedefineTaxonomyCategory {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        #[ts(type = "number")]
+        category_id: i64,
+        description: Option<String>,
+    },
+    /// Freeze or unfreeze an entry. Frozen entries refuse rename, redefine and
+    /// delete — how `category` holds the long-horizon trend line while the
+    /// levels below it are recalibrated.
+    FreezeTaxonomyCategory {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        #[ts(type = "number")]
+        category_id: i64,
+        frozen: bool,
+    },
+    /// Remove a vocabulary entry; its row labels cascade away with it. Refused
+    /// while the entry has children or is frozen.
     DeleteTaxonomyCategory {
         #[serde(flatten)]
         #[ts(flatten)]
@@ -238,6 +279,8 @@ impl Action {
             Self::AssignClusterLabel { .. } => "assign_cluster_label",
             Self::DefineTaxonomyCategory { .. } => "define_taxonomy_category",
             Self::RenameTaxonomyCategory { .. } => "rename_taxonomy_category",
+            Self::RedefineTaxonomyCategory { .. } => "redefine_taxonomy_category",
+            Self::FreezeTaxonomyCategory { .. } => "freeze_taxonomy_category",
             Self::DeleteTaxonomyCategory { .. } => "delete_taxonomy_category",
             Self::LabelDocument { .. } => "label_document",
             Self::Recluster { .. } => "recluster",
@@ -261,6 +304,8 @@ impl Action {
             | Self::AssignClusterLabel { scope, .. }
             | Self::DefineTaxonomyCategory { scope, .. }
             | Self::RenameTaxonomyCategory { scope, .. }
+            | Self::RedefineTaxonomyCategory { scope, .. }
+            | Self::FreezeTaxonomyCategory { scope, .. }
             | Self::DeleteTaxonomyCategory { scope, .. }
             | Self::LabelDocument { scope, .. }
             | Self::Recluster { scope, .. }
@@ -392,6 +437,9 @@ pub struct ActionLogEntry {
     pub actor_type: String,
     #[ts(optional, type = "number")]
     pub agent_run_id: Option<i64>,
+    /// The human who acted; absent for agent rows.
+    #[ts(optional)]
+    pub user_id: Option<String>,
     pub action_kind: String,
     #[ts(type = "unknown")]
     pub params: serde_json::Value,
@@ -415,6 +463,7 @@ impl ActionLogEntry {
             request_id: row.request_id,
             actor_type: row.actor_type,
             agent_run_id: row.agent_run_id,
+            user_id: row.user_id,
             action_kind: row.action_kind,
             params: serde_json::from_str(&row.params_json).unwrap_or(serde_json::Value::Null),
             result: row
@@ -489,8 +538,8 @@ pub enum UndoOp {
         column: String,
         polarity: String,
     },
-    /// Undo of define/rename: put a category's name and description back, or
-    /// delete it outright when it did not exist before the action.
+    /// Undo of define/rename/redefine: put an entry's name and description
+    /// back, or delete it outright when it did not exist before the action.
     RestoreTaxonomyCategory {
         category_id: i64,
         /// True when the category did not exist before the action.
@@ -498,7 +547,12 @@ pub enum UndoOp {
         name: Option<String>,
         description: Option<String>,
     },
-    /// Undo of delete: recreate the category AND the row labels that cascaded
+    /// Undo of freeze: put the previous frozen flag back.
+    RestoreTaxonomyFrozen {
+        category_id: i64,
+        frozen: bool,
+    },
+    /// Undo of delete: recreate the entry AND the row labels that cascaded
     /// away with it.
     ///
     /// The labels are the whole point — deleting a category silently destroys
@@ -513,6 +567,15 @@ pub enum UndoOp {
         created_at: i64,
         /// (row_id, source, created_at) of every cascaded label.
         labels: Vec<(String, String, i64)>,
+        /// Defaults keep undo rows written before the hierarchy readable.
+        #[serde(default = "default_kind")]
+        kind: String,
+        #[serde(default)]
+        parent_id: i64,
+        #[serde(default)]
+        frozen: bool,
+        #[serde(default)]
+        aliases_json: Option<String>,
     },
     /// Undo of label_document: restore a row's exact prior label set (empty =
     /// the row was unlabelled).
@@ -522,6 +585,10 @@ pub enum UndoOp {
         /// (category_id, source, created_at).
         labels: Vec<(i64, String, i64)>,
     },
+}
+
+fn default_kind() -> String {
+    "category".to_string()
 }
 
 /// Static list of `(kind, label, description, undoable)` — the manifest registry.
@@ -570,24 +637,39 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
     ),
     (
         "define_taxonomy_category",
-        "Define taxonomy category",
-        "Define one problem-intent category: what is WRONG for the user (e.g. \
-         'authentication failure', 'data loss on sync'). Never categorize by \
-         tooling, file format, or mechanism (e.g. 'backport commits', 'stack \
+        "Define vocabulary entry",
+        "Define one vocabulary entry. For categories: what is WRONG for the user \
+         (e.g. 'authentication failure', 'data loss on sync'). Never categorize \
+         by tooling, file format, or mechanism (e.g. 'backport commits', 'stack \
          traces') — those describe how a ticket is written, not what it is about. \
-         Give a short name and a one-sentence description of the symptom.",
+         Give a short name and a one-sentence description. Pass `vocab_kind` and, for a \
+         subcategory or product component, `parent_id`. Do not define 'other' — \
+         it exists implicitly at every level.",
         true,
     ),
     (
         "rename_taxonomy_category",
-        "Rename taxonomy category",
-        "Rename an existing intent category",
+        "Rename vocabulary entry",
+        "Rename an existing vocabulary entry (label only; no recompute)",
+        true,
+    ),
+    (
+        "redefine_taxonomy_category",
+        "Redefine vocabulary entry",
+        "Replace an entry's description — the definition the model classifies \
+         against. Recomputes every affected cell.",
+        true,
+    ),
+    (
+        "freeze_taxonomy_category",
+        "Freeze vocabulary entry",
+        "Freeze (or unfreeze) an entry so it cannot be renamed, redefined or deleted",
         true,
     ),
     (
         "delete_taxonomy_category",
-        "Delete taxonomy category",
-        "Delete an intent category and all of its row labels",
+        "Delete vocabulary entry",
+        "Delete a vocabulary entry and all of its row labels",
         true,
     ),
     (
@@ -781,6 +863,25 @@ mod tests {
                 },
                 name: String::new(),
                 description: None,
+                vocab_kind: None,
+                parent_id: None,
+                aliases: None,
+            },
+            Action::RedefineTaxonomyCategory {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                category_id: 0,
+                description: None,
+            },
+            Action::FreezeTaxonomyCategory {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                category_id: 0,
+                frozen: true,
             },
             Action::RenameTaxonomyCategory {
                 scope: Scope {

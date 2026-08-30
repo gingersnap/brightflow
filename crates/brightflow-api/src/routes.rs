@@ -130,6 +130,34 @@ fn api_routes() -> Router<AppState> {
         )
         .route("/functions/{id}/runs", post(enrichment_handlers::start_run))
         .route(
+            "/functions/{id}/usage-by-language",
+            get(crate::enrichment::health::usage_by_language),
+        )
+        .route(
+            "/functions/{id}/materialize",
+            post(enrichment_handlers::materialize_only),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/mentions/summary",
+            get(crate::enrichment::mentions_api::mention_summary),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/unresolved-subjects",
+            get(crate::enrichment::mentions_api::list_unresolved),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/unresolved-subjects/{id}",
+            post(crate::enrichment::mentions_api::update_unresolved),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/vocabulary/import",
+            post(crate::enrichment::mentions_api::import_vocabulary),
+        )
+        .route(
+            "/sources/{source_id}/tables/{table}/vocabulary/health",
+            get(crate::enrichment::health::vocabulary_health),
+        )
+        .route(
             "/enrichment/runs/{rid}",
             get(enrichment_handlers::get_run),
         )

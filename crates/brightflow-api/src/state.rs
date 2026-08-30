@@ -49,6 +49,11 @@ pub struct AppState {
     pub agent_runs: Arc<DashMap<i64, tokio::task::AbortHandle>>,
     /// Abort handles for in-flight enrichment runs, keyed by run id.
     pub enrichment_jobs: Arc<DashMap<String, tokio::task::AbortHandle>>,
+    /// Per-table materialisation locks, keyed by `cache_key(source_id, table)`.
+    /// Held by `enrichment::runner::materialize` for its read-rebuild-write so
+    /// two functions on one table serialise instead of racing the version
+    /// check. Entries are never removed: one small Arc per table.
+    pub materialize_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Single-flight markers for post-sync insight auto-runs, keyed by
     /// `cache_key(source_id, table)` (see `insights::auto`).
     pub insight_auto_inflight: Arc<DashMap<String, ()>>,
@@ -99,6 +104,7 @@ impl AppState {
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
+            materialize_locks: Arc::new(DashMap::new()),
             insight_auto_inflight: Arc::new(DashMap::new()),
             scheduler: None,
 
@@ -112,6 +118,16 @@ impl AppState {
             ingest: None,
             paths: None,
         }
+    }
+
+    /// The materialisation lock for one table (created on first use).
+    pub fn materialize_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(
+            &self
+                .materialize_locks
+                .entry(key.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        )
     }
 
     /// Load column semantic overrides from SQLite into memory (DashMaps).

@@ -8,7 +8,10 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 
-use brightflow_engine::enrichment::{spec_hash, FunctionSpec, LlmPromptSpec};
+use brightflow_engine::enrichment::FunctionSpec;
+
+use super::runner::{output_columns_for, spec_hash_for, RunSpec};
+use super::vocab;
 use brightflow_store::{EnrichmentFunctionRow, ParquetStore, TableRow};
 
 use crate::enrichment::runner;
@@ -60,21 +63,21 @@ async fn to_response(
     // Approximate staleness: table rows minus cells cached under the current
     // spec. Duplicated-content rows make this an over-count — acceptable for
     // a badge.
-    let stale_row_count = if row.kind == "llm_prompt" {
-        let spec: Option<FunctionSpec> = serde_json::from_str(&version.config_json).ok();
-        if let Some(FunctionSpec::LlmPrompt(llm)) = spec {
-            let (cached, _errors) = store.db().count_cached(&row.id, &spec_hash(&llm)).await?;
+    let stale_row_count = match serde_json::from_str::<FunctionSpec>(&version.config_json)
+        .ok()
+        .as_ref()
+        .and_then(spec_hash_for)
+    {
+        Some(shash) => {
+            let (cached, _errors) = store.db().count_cached(&row.id, &shash).await?;
             let total = store
                 .db()
                 .get_table_by_id(&row.table_id)
                 .await?
                 .map_or(0, |t| t.total_rows);
             Some((total - cached).max(0))
-        } else {
-            None
-        }
-    } else {
-        None
+        },
+        None => None,
     };
 
     Ok(EnrichFunctionResponse {
@@ -109,15 +112,24 @@ async fn function_context(
     Ok((row, table))
 }
 
-/// Load the current (or a specific draft) LlmPromptSpec for a function.
-fn llm_spec_from_config(config_json: &str) -> AppResult<LlmPromptSpec> {
-    match serde_json::from_str::<FunctionSpec>(config_json) {
-        Ok(FunctionSpec::LlmPrompt(spec)) => Ok(spec),
-        Ok(_) => Err(AppError::BadRequest(
-            "this operation is only available for llm_prompt functions".to_string(),
-        )),
-        Err(e) => Err(AppError::Internal(format!("stored config unreadable: {e}"))),
-    }
+/// Parse a stored config. The spec's own kind tag decides what it is.
+fn spec_from_config(config_json: &str) -> AppResult<FunctionSpec> {
+    serde_json::from_str::<FunctionSpec>(config_json)
+        .map_err(|e| AppError::Internal(format!("stored config unreadable: {e}")))
+}
+
+/// Load the runnable form of a function's current version.
+async fn run_spec_from_row(
+    store: &ParquetStore,
+    row: &EnrichmentFunctionRow,
+) -> AppResult<RunSpec> {
+    let version = store
+        .db()
+        .get_enrichment_function_version(&row.id, row.current_version)
+        .await?
+        .ok_or_else(|| AppError::Internal("missing version snapshot".to_string()))?;
+    let spec = spec_from_config(&version.config_json)?;
+    vocab::run_spec_for(store, &row.table_id, spec).await
 }
 
 /// `POST /api/sources/{source_id}/tables/{table}/functions`
@@ -129,7 +141,7 @@ pub async fn create_function(
     let store = store(&state)?;
     if !matches!(
         req.kind.as_str(),
-        "llm_prompt" | "topic_model" | "classifier"
+        "llm_prompt" | "topic_model" | "classifier" | "ticket_classify" | "ticket_extract"
     ) {
         return Err(AppError::BadRequest(format!(
             "unknown function kind '{}'",
@@ -155,13 +167,25 @@ pub async fn create_function(
         )));
     }
 
-    let spec = parse_spec(&req.kind, &req.config)?;
+    let mut spec = parse_spec(&req.kind, &req.config)?;
     validate_spec(&spec, &columns)?;
+    // Built-in kinds are promoted from birth: there is no draft state whose
+    // materialised columns a sync could wipe, and the vocabulary snapshot is
+    // the server's to write, never the client's.
+    vocab::inject(store, &table_row.id, &mut spec).await?;
+    let status = if matches!(
+        spec,
+        FunctionSpec::TicketClassify(_) | FunctionSpec::TicketExtract(_)
+    ) {
+        "promoted"
+    } else {
+        "draft"
+    };
     let config_json = serde_json::to_string(&spec).map_err(AppError::Json)?;
 
     let created = store
         .db()
-        .create_enrichment_function(&table_row.id, &req.name, &req.kind, "draft", &config_json)
+        .create_enrichment_function(&table_row.id, &req.name, &req.kind, status, &config_json)
         .await
         .map_err(|e| {
             if e.is_unique_violation() {
@@ -220,7 +244,7 @@ pub async fn update_function(
         )));
     }
 
-    let spec = parse_spec(&row.kind, &req.config)?;
+    let mut spec = parse_spec(&row.kind, &req.config)?;
     let columns = table_columns(&table_row);
     // The function's own materialized outputs may already be table columns;
     // exclude them from the collision check on edit.
@@ -231,10 +255,7 @@ pub async fn update_function(
     let own_outputs: Vec<String> = previous
         .as_ref()
         .and_then(|v| serde_json::from_str::<FunctionSpec>(&v.config_json).ok())
-        .map(|old| match old {
-            FunctionSpec::LlmPrompt(llm) => llm.outputs.iter().map(|f| f.name.clone()).collect(),
-            _ => Vec::new(),
-        })
+        .map(|old| output_columns_for(&old))
         .unwrap_or_default();
     let mut status_col = own_outputs.clone();
     status_col.push(format!("{}__status", row.name));
@@ -243,6 +264,7 @@ pub async fn update_function(
         .filter(|c| !status_col.contains(c))
         .collect();
     validate_spec(&spec, &filtered)?;
+    vocab::inject(store, &table_row.id, &mut spec).await?;
 
     let config_json = serde_json::to_string(&spec).map_err(AppError::Json)?;
     store
@@ -251,13 +273,15 @@ pub async fn update_function(
         .await?;
 
     // Cache housekeeping: keep only the new and previous spec's cells.
-    if let FunctionSpec::LlmPrompt(new_llm) = &spec {
-        let mut keep = vec![spec_hash(new_llm)];
-        if let Some(FunctionSpec::LlmPrompt(prev_llm)) = previous
+    if let Some(new_hash) = spec_hash_for(&spec) {
+        let mut keep = vec![new_hash];
+        if let Some(prev_hash) = previous
             .as_ref()
             .and_then(|v| serde_json::from_str::<FunctionSpec>(&v.config_json).ok())
+            .as_ref()
+            .and_then(spec_hash_for)
         {
-            keep.push(spec_hash(&prev_llm));
+            keep.push(prev_hash);
         }
         keep.dedup();
         store.db().prune_cache_except(&row.id, &keep).await?;
@@ -269,12 +293,10 @@ pub async fn update_function(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("function {id} not found")))?;
 
-    if rerun != "none" {
-        if let FunctionSpec::LlmPrompt(_) = &spec {
-            // Best effort: a conflicting active run leaves the edit saved.
-            if let Err(e) = start_run_internal(&state, &updated, rerun == "all").await {
-                tracing::warn!("post-edit rerun not started: {e}");
-            }
+    if rerun != "none" && spec_hash_for(&spec).is_some() {
+        // Best effort: a conflicting active run leaves the edit saved.
+        if let Err(e) = start_run_internal(&state, &updated, rerun == "all").await {
+            tracing::warn!("post-edit rerun not started: {e}");
         }
     }
 
@@ -302,14 +324,14 @@ pub async fn delete_function(
         )));
     }
 
-    if q.drop_columns.unwrap_or(false) && row.kind == "llm_prompt" {
+    if q.drop_columns.unwrap_or(false) && super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
         let version = store
             .db()
             .get_enrichment_function_version(&row.id, row.current_version)
             .await?;
         if let Some(v) = version {
-            if let Ok(spec) = llm_spec_from_config(&v.config_json) {
-                let mut names: Vec<String> = spec.outputs.iter().map(|f| f.name.clone()).collect();
+            if let Ok(spec) = spec_from_config(&v.config_json) {
+                let mut names: Vec<String> = output_columns_for(&spec);
                 names.push(format!("{}__status", row.name));
                 let df = store
                     .read_table(&table_row.source_id, &table_row.name)
@@ -407,36 +429,28 @@ pub async fn sample_run(
 ) -> AppResult<Json<SampleRunResponse>> {
     let store = store(&state)?;
     let (row, table_row) = function_context(store, &id).await?;
-    if row.kind != "llm_prompt" {
+    if !super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
         return Err(AppError::BadRequest(
-            "sample runs are only available for llm_prompt functions".to_string(),
+            "sample runs are only available for llm_prompt and ticket_classify functions"
+                .to_string(),
         ));
     }
 
     let spec = if let Some(draft) = &req.config {
-        let parsed = parse_spec(&row.kind, draft)?;
+        let mut parsed = parse_spec(&row.kind, draft)?;
         let columns = table_columns(&table_row);
-        let own: Vec<String> = vec![format!("{}__status", row.name)];
+        let mut own: Vec<String> = output_columns_for(&parsed);
+        own.push(format!("{}__status", row.name));
         let filtered: Vec<String> = columns.into_iter().filter(|c| !own.contains(c)).collect();
         validate_spec(&parsed, &filtered)?;
-        match parsed {
-            FunctionSpec::LlmPrompt(llm) => llm,
-            FunctionSpec::TopicModel(_) | FunctionSpec::Classifier(_) => {
-                return Err(AppError::BadRequest(
-                    "draft config must be an llm_prompt spec".to_string(),
-                ))
-            },
-        }
+        vocab::inject(store, &table_row.id, &mut parsed).await?;
+        vocab::run_spec_for(store, &table_row.id, parsed).await?
     } else {
-        let version = store
-            .db()
-            .get_enrichment_function_version(&row.id, row.current_version)
-            .await?
-            .ok_or_else(|| AppError::Internal("missing version snapshot".to_string()))?;
-        llm_spec_from_config(&version.config_json)?
+        run_spec_from_row(store, &row).await?
     };
 
-    let client = crate::llm::client_for(&state, &spec.provider_id, spec.model.as_deref()).await?;
+    let (provider_id, model) = spec.provider();
+    let client = crate::llm::client_for(&state, provider_id, model).await?;
     let limit = req
         .limit
         .unwrap_or(DEFAULT_SAMPLE_ROWS)
@@ -445,7 +459,7 @@ pub async fn sample_run(
         .read_table(&table_row.source_id, &table_row.name)
         .await?;
     let sample = df.head(Some(limit));
-    let inputs = runner::prepare_inputs(&sample, &spec)?;
+    let inputs = runner::prepare_run_inputs(&sample, &spec)?;
 
     let outcome = runner::execute_cells(
         store,
@@ -467,7 +481,7 @@ pub async fn sample_run(
                 .map(|cell| SampleCellResponse {
                     row_key: input.hash.clone(),
                     inputs: input.rendered.clone(),
-                    value: cell.value.clone(),
+                    value: cell.value.as_ref().map(|v| spec.display_value(v)),
                     status: cell.status.clone(),
                     error: cell.error.clone(),
                     cached: cell.cached,
@@ -482,6 +496,7 @@ pub async fn sample_run(
         prompt_tokens: prompt,
         completion_tokens: completion,
         total_tokens: prompt + completion,
+        cached_tokens: u64::try_from(outcome.cached_tokens).unwrap_or(0),
         cache_hits: outcome.cache_hits,
     }))
 }
@@ -499,19 +514,14 @@ pub async fn estimate(
 ) -> AppResult<Json<EstimateResponse>> {
     let store = store(&state)?;
     let (row, table_row) = function_context(store, &id).await?;
-    let version = store
-        .db()
-        .get_enrichment_function_version(&row.id, row.current_version)
-        .await?
-        .ok_or_else(|| AppError::Internal("missing version snapshot".to_string()))?;
-    let spec = llm_spec_from_config(&version.config_json)?;
+    let spec = run_spec_from_row(store, &row).await?;
     let scope = q.scope.as_deref().unwrap_or("missing");
 
-    let shash = spec_hash(&spec);
+    let shash = spec.spec_hash();
     let df = store
         .read_table(&table_row.source_id, &table_row.name)
         .await?;
-    let inputs = runner::prepare_inputs(&df, &spec)?;
+    let inputs = runner::prepare_run_inputs(&df, &spec)?;
     let mut hashes: Vec<String> = inputs.iter().map(|r| r.hash.clone()).collect();
     hashes.sort_unstable();
     hashes.dedup();
@@ -553,8 +563,8 @@ pub async fn estimate(
     let (per_row, basis) = match p75 {
         Some(t) if t > 0 => (t, "history"),
         _ => {
-            let prompt_chars = i64::try_from(spec.prompt_template.len()).unwrap_or(0);
-            let outputs = i64::try_from(spec.outputs.len()).unwrap_or(1);
+            let prompt_chars = i64::try_from(spec.prompt_chars()).unwrap_or(0);
+            let outputs = i64::try_from(spec.output_count()).unwrap_or(1);
             (
                 prompt_chars / 4 + HEURISTIC_COMPLETION_TOKENS_PER_OUTPUT * outputs.max(1),
                 "heuristic",
@@ -606,9 +616,10 @@ async fn start_run_internal_scoped(
     scope: &str,
 ) -> AppResult<String> {
     let store = state.require_store()?;
-    if row.kind != "llm_prompt" {
+    if !super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
         return Err(AppError::BadRequest(
-            "runs are only available for llm_prompt functions (topics run via recluster)"
+            "runs are only available for llm_prompt and ticket_classify functions (topics run \
+             via recluster)"
                 .to_string(),
         ));
     }
@@ -623,16 +634,12 @@ async fn start_run_internal_scoped(
         .get_table_by_id(&row.table_id)
         .await?
         .ok_or_else(|| AppError::NotFound("owning table not found".to_string()))?;
-    let version = store
-        .db()
-        .get_enrichment_function_version(&row.id, row.current_version)
-        .await?
-        .ok_or_else(|| AppError::Internal("missing version snapshot".to_string()))?;
-    let spec = llm_spec_from_config(&version.config_json)?;
+    let spec = run_spec_from_row(store, row).await?;
     // Fail fast when no provider is configured.
-    crate::llm::client_for(state, &spec.provider_id, spec.model.as_deref()).await?;
+    let (provider_id, model) = spec.provider();
+    crate::llm::client_for(state, provider_id, model).await?;
 
-    let shash = spec_hash(&spec);
+    let shash = spec.spec_hash();
     match scope {
         "all" => {
             store.db().delete_cache_for_spec(&row.id, &shash).await?;
@@ -672,6 +679,40 @@ async fn start_run_internal_scoped(
         .enrichment_jobs
         .insert(run_id.clone(), handle.abort_handle());
     Ok(run_id)
+}
+
+/// `POST /api/functions/{id}/materialize` — rewrite the outputs from the
+/// cache without any LLM call. This is how a vocabulary rename or a mapped
+/// unresolved subject reaches the table.
+pub async fn materialize_only(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    let store = store(&state)?;
+    let (row, table_row) = function_context(store, &id).await?;
+    if !super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
+        return Err(AppError::BadRequest(
+            "materialize is only available for per-row functions".to_string(),
+        ));
+    }
+    if let Some(active) = store.db().active_enrichment_run(&row.id).await? {
+        return Err(AppError::Conflict(format!(
+            "run {} is active for this function — wait for it",
+            active.id
+        )));
+    }
+    let spec = run_spec_from_row(store, &row).await?;
+    runner::materialize(
+        &state,
+        store,
+        &table_row.source_id,
+        &table_row.name,
+        &row.id,
+        &row.name,
+        &spec,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({ "materialized": true })))
 }
 
 /// `GET /api/enrichment/runs/{rid}`

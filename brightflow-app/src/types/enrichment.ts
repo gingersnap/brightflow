@@ -8,7 +8,12 @@
  * pre-commit regen breaks the narrowed type here — fix it to match.
  */
 
-export type FunctionKind = 'llm_prompt' | 'topic_model' | 'classifier';
+export type FunctionKind =
+  | 'llm_prompt'
+  | 'topic_model'
+  | 'classifier'
+  | 'ticket_classify'
+  | 'ticket_extract';
 export type FunctionStatus = 'draft' | 'promoted';
 
 export type OutputType =
@@ -43,6 +48,18 @@ export interface TopicModelConfig {
   algorithm: string | null;
 }
 
+/**
+ * Config payload shared by the two built-in ticket kinds (`ticket_classify`,
+ * `ticket_extract`). The vocabulary snapshot is server-injected and never
+ * sent by the client.
+ */
+export interface TicketFunctionConfig {
+  text_columns: string[];
+  language_column: string | null;
+  provider_id: string;
+  model: string | null;
+}
+
 export interface EnrichFunction {
   id: string;
   name: string;
@@ -72,6 +89,7 @@ export interface SampleRunResult {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
   cacheHits: number;
 }
 
@@ -99,6 +117,8 @@ export interface EnrichRun {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** Prompt tokens the provider served from its prefix cache. */
+  cachedTokens: number;
   error?: string | null;
   createdAt: string;
   finishedAt?: string | null;

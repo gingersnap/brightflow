@@ -10,7 +10,7 @@ use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
 /// Must stay in sync with `runner::tools_for`, `runner::build_context`, and the
-/// `agent_runs.kind` CHECK constraint (migration 014).
+/// `agent_runs.kind` CHECK constraint (migration 023).
 const VALID_KINDS: &[&str] = &[
     "auto_label",
     "propose_merges",
@@ -18,6 +18,9 @@ const VALID_KINDS: &[&str] = &[
     "triage_insights",
     "propose_taxonomy",
     "label_documents",
+    "propose_categories",
+    "propose_subcategories",
+    "propose_feedback_categories",
 ];
 
 /// Must stay inside the `agent_runs.mode` CHECK constraint (migration 010).
@@ -63,7 +66,18 @@ pub async fn start_run(
     crate::llm::default_client(&state).await?;
 
     let store = state.require_store()?;
-    let scope = format!("{}:{}:{}", req.kind, req.source_id, req.table);
+    if req.kind == "propose_subcategories" && req.parent_id.is_none() {
+        return Err(AppError::BadRequest(
+            "propose_subcategories needs parent_id — subcategories are induced per parent"
+                .to_string(),
+        ));
+    }
+    let scope = match req.parent_id {
+        Some(parent) if req.kind == "propose_subcategories" => {
+            format!("{}:{}:{}:{parent}", req.kind, req.source_id, req.table)
+        },
+        _ => format!("{}:{}:{}", req.kind, req.source_id, req.table),
+    };
     if let Some(active) = store.db().active_agent_run_for_scope(&scope).await? {
         return Err(AppError::Conflict(format!(
             "agent run {} is already running for this scope",
@@ -81,8 +95,12 @@ pub async fn start_run(
     let kind = req.kind.clone();
     let source_id = req.source_id.clone();
     let table = req.table.clone();
+    let parent_id = req.parent_id;
     let handle = tokio::spawn(async move {
-        runner::execute_run(task_state, run_id, kind, source_id, table, auto_apply).await;
+        runner::execute_run(
+            task_state, run_id, kind, source_id, table, auto_apply, parent_id,
+        )
+        .await;
     });
     state.agent_runs.insert(run_id, handle.abort_handle());
 

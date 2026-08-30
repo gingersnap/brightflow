@@ -17,9 +17,15 @@ pub struct TaxonomyCategory {
     /// the round trip (same rationale as the id fields in `Action`).
     #[ts(type = "number")]
     pub id: i64,
+    /// category | subcategory | feedback_category | product | competitor
+    pub kind: String,
+    /// 0 = root.
+    #[ts(type = "number")]
+    pub parent_id: i64,
     pub name: String,
     #[ts(optional)]
     pub description: Option<String>,
+    pub frozen: bool,
     /// Rows currently carrying this category.
     pub labelled_rows: usize,
     /// False when `labelled_rows` is under the engine's `MIN_LABEL_SUPPORT`, so

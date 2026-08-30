@@ -21,6 +21,12 @@ const kindIcon = computed(() => {
     case 'topic_model': {
       return 'i-lucide-shapes';
     }
+    case 'ticket_classify': {
+      return 'i-lucide-list-tree';
+    }
+    case 'ticket_extract': {
+      return 'i-lucide-message-square-quote';
+    }
     default: {
       return 'i-lucide-tags';
     }

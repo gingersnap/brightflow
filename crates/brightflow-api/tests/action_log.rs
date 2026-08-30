@@ -13,7 +13,8 @@
 
 #![expect(
     clippy::unwrap_used,
-    reason = "integration tests panic on failure by design"
+    clippy::too_many_lines,
+    reason = "integration tests panic on failure by design and read top to bottom"
 )]
 
 use polars::prelude::*;
@@ -73,7 +74,9 @@ async fn dispatching_recluster_writes_an_action_log_row() {
             algorithm: None,
         },
         "req-recluster-1",
-        Actor::Human,
+        Actor::Human {
+            user_id: "user-1".to_string(),
+        },
     )
     .await
     .unwrap();
@@ -109,7 +112,9 @@ async fn exclude_term_round_trips_through_undo() {
             term: "Noise".to_string(),
         },
         "req-exclude-1",
-        Actor::Human,
+        Actor::Human {
+            user_id: "user-1".to_string(),
+        },
     )
     .await
     .unwrap();
@@ -150,4 +155,194 @@ async fn exclude_term_round_trips_through_undo() {
     assert_eq!(undone_row.status, "undone");
     let terms_after = db.get_excluded_terms(&table_id).await.unwrap();
     assert!(terms_after.is_empty(), "undo must remove the excluded term");
+}
+
+/// The vocabulary hierarchy through the public bus: placement rules, the cap,
+/// the frozen guard, and the audit line naming the human who acted.
+#[tokio::test]
+async fn vocabulary_actions_enforce_hierarchy_and_log_the_user() {
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
+    let scope = || Scope {
+        source_id: SOURCE.to_string(),
+        table: TABLE.to_string(),
+    };
+    let jens = || Actor::Human {
+        user_id: "user-jens".to_string(),
+    };
+
+    // A root category.
+    let billing = dispatch_action(
+        &state,
+        Action::DefineTaxonomyCategory {
+            scope: scope(),
+            name: "billing".to_string(),
+            description: Some("charges and invoices".to_string()),
+            vocab_kind: None,
+            parent_id: None,
+            aliases: None,
+        },
+        "req-vocab-1",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(billing.status, ActionStatus::Applied));
+    let billing_id = billing.result["categoryId"].as_i64().unwrap();
+
+    // A subcategory needs a parent...
+    let err = dispatch_action(
+        &state,
+        Action::DefineTaxonomyCategory {
+            scope: scope(),
+            name: "vat".to_string(),
+            description: None,
+            vocab_kind: Some("subcategory".to_string()),
+            parent_id: None,
+            aliases: None,
+        },
+        "req-vocab-2",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(err.status, ActionStatus::Failed), "{err:?}");
+
+    // ...and lands under one.
+    let vat = dispatch_action(
+        &state,
+        Action::DefineTaxonomyCategory {
+            scope: scope(),
+            name: "vat".to_string(),
+            description: None,
+            vocab_kind: Some("subcategory".to_string()),
+            parent_id: Some(billing_id),
+            aliases: None,
+        },
+        "req-vocab-3",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(vat.status, ActionStatus::Applied), "{vat:?}");
+    assert_eq!(vat.result["parentId"], billing_id);
+
+    // The reserved value is never a row.
+    let other = dispatch_action(
+        &state,
+        Action::DefineTaxonomyCategory {
+            scope: scope(),
+            name: "Other".to_string(),
+            description: None,
+            vocab_kind: None,
+            parent_id: None,
+            aliases: None,
+        },
+        "req-vocab-4",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(other.status, ActionStatus::Failed));
+
+    // Frozen refuses rename; unfreeze via undo-free path still logs.
+    let frozen = dispatch_action(
+        &state,
+        Action::FreezeTaxonomyCategory {
+            scope: scope(),
+            category_id: billing_id,
+            frozen: true,
+        },
+        "req-vocab-5",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(frozen.status, ActionStatus::Applied));
+    let rename = dispatch_action(
+        &state,
+        Action::RenameTaxonomyCategory {
+            scope: scope(),
+            category_id: billing_id,
+            name: "payments".to_string(),
+        },
+        "req-vocab-6",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(rename.status, ActionStatus::Failed), "{rename:?}");
+
+    // A parent with children cannot be deleted even once unfrozen.
+    dispatch_action(
+        &state,
+        Action::FreezeTaxonomyCategory {
+            scope: scope(),
+            category_id: billing_id,
+            frozen: false,
+        },
+        "req-vocab-7",
+        jens(),
+    )
+    .await
+    .unwrap();
+    let delete = dispatch_action(
+        &state,
+        Action::DeleteTaxonomyCategory {
+            scope: scope(),
+            category_id: billing_id,
+        },
+        "req-vocab-8",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(delete.status, ActionStatus::Failed), "{delete:?}");
+
+    // The cap: ten roots is the limit for an induced kind.
+    for i in 0..9 {
+        let r = dispatch_action(
+            &state,
+            Action::DefineTaxonomyCategory {
+                scope: scope(),
+                name: format!("cat {i}"),
+                description: None,
+                vocab_kind: None,
+                parent_id: None,
+                aliases: None,
+            },
+            &format!("req-vocab-cap-{i}"),
+            jens(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(r.status, ActionStatus::Applied), "{r:?}");
+    }
+    let over = dispatch_action(
+        &state,
+        Action::DefineTaxonomyCategory {
+            scope: scope(),
+            name: "one too many".to_string(),
+            description: None,
+            vocab_kind: None,
+            parent_id: None,
+            aliases: None,
+        },
+        "req-vocab-over",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(over.status, ActionStatus::Failed), "{over:?}");
+
+    // Every row names the human.
+    let rows = state.store().unwrap().db().list_actions(100).await.unwrap();
+    let vocab_rows: Vec<_> = rows
+        .iter()
+        .filter(|r| r.request_id.starts_with("req-vocab"))
+        .collect();
+    assert!(vocab_rows.len() >= 10);
+    assert!(vocab_rows
+        .iter()
+        .all(|r| r.user_id.as_deref() == Some("user-jens")));
 }

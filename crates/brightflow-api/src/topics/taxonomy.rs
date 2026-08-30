@@ -62,8 +62,11 @@ async fn categories_with_support(
             let labelled_rows = usize::try_from(n).unwrap_or(0);
             TaxonomyCategory {
                 id: c.id,
+                kind: c.kind,
+                parent_id: c.parent_id,
                 name: c.name,
                 description: c.description,
+                frozen: c.frozen,
                 labelled_rows,
                 trainable: labelled_rows >= required,
             }

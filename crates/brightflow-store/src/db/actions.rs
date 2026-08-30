@@ -20,6 +20,7 @@ impl StoreDb {
         request_id: &str,
         actor_type: &str,
         agent_run_id: Option<i64>,
+        user_id: Option<&str>,
         action_kind: &str,
         params_json: &str,
         status: &str,
@@ -27,6 +28,7 @@ impl StoreDb {
     ) -> StoreResult<Option<ActionLogRow>> {
         let request_id = request_id.to_owned();
         let actor_type = actor_type.to_owned();
+        let user_id = user_id.map(ToOwned::to_owned);
         let action_kind = action_kind.to_owned();
         let params_json = params_json.to_owned();
         let status = status.to_owned();
@@ -36,14 +38,15 @@ impl StoreDb {
                 fetch_optional::<ActionLogRow, _>(
                     conn,
                     r"INSERT INTO action_log
-                        (request_id, actor_type, agent_run_id, action_kind, params_json, status, created_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (request_id, actor_type, agent_run_id, user_id, action_kind, params_json, status, created_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT (request_id) DO NOTHING
                       RETURNING *",
                     params![
                         request_id,
                         actor_type,
                         agent_run_id,
+                        user_id,
                         action_kind,
                         params_json,
                         status,
@@ -236,7 +239,7 @@ mod tests {
             ("r4", "label_document", "proposed"),
         ] {
             let row = db
-                .insert_action(request_id, "agent", Some(1), kind, "{}", status, 0)
+                .insert_action(request_id, "agent", Some(1), None, kind, "{}", status, 0)
                 .await
                 .expect("insert")
                 .expect("no request_id conflict");

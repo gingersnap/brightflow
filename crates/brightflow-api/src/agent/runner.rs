@@ -47,8 +47,12 @@ pub async fn execute_run(
     source_id: String,
     table: String,
     auto_apply: bool,
+    parent_id: Option<i64>,
 ) {
-    let outcome = run_inner(&state, run_id, &kind, &source_id, &table, auto_apply).await;
+    let outcome = run_inner(
+        &state, run_id, &kind, &source_id, &table, auto_apply, parent_id,
+    )
+    .await;
     let Some(store) = state.store() else { return };
     let (status, detail) = match outcome {
         Ok(summary) => ("completed", summary),
@@ -77,10 +81,12 @@ async fn run_inner(
     source_id: &str,
     table: &str,
     auto_apply: bool,
+    parent_id: Option<i64>,
 ) -> AppResult<String> {
     let client = crate::llm::default_client(state).await?;
-    let (system, context) = build_context(state, kind, source_id, table).await?;
+    let (system, context) = build_context(state, kind, source_id, table, parent_id).await?;
     let tools = tools_for(kind);
+    let defaults = vocab_defaults(kind, parent_id);
 
     let mut messages = vec![ChatMessage::system(system), ChatMessage::user(context)];
     let mut applied = 0usize;
@@ -117,7 +123,9 @@ async fn run_inner(
                 &call.function.arguments,
                 source_id,
                 table,
-            ) {
+            )
+            .map(|action| apply_vocab_defaults(action, defaults))
+            {
                 Ok(action) => {
                     let request_id = format!("agent-{run_id}-{iteration}-{}", call.id);
                     let actor = Actor::Agent { run_id, auto_apply };
@@ -236,13 +244,51 @@ fn parse_action(
     serde_json::from_value(args).map_err(|e| format!("invalid action parameters: {e}"))
 }
 
+/// The vocabulary level an induction run defines into: (kind, parent). The
+/// model never chooses these — they are pinned server-side so a
+/// `propose_subcategories` run cannot wander into another parent or level.
+fn vocab_defaults(kind: &str, parent_id: Option<i64>) -> Option<(&'static str, i64)> {
+    match kind {
+        "propose_categories" | "propose_taxonomy" => Some(("category", 0)),
+        "propose_subcategories" => Some(("subcategory", parent_id.unwrap_or(0))),
+        "propose_feedback_categories" => Some(("feedback_category", 0)),
+        _ => None,
+    }
+}
+
+/// Pin `vocab_kind`/`parent_id` on a define action per `vocab_defaults`.
+fn apply_vocab_defaults(action: Action, defaults: Option<(&'static str, i64)>) -> Action {
+    match (action, defaults) {
+        (
+            Action::DefineTaxonomyCategory {
+                scope,
+                name,
+                description,
+                ..
+            },
+            Some((kind, parent)),
+        ) => Action::DefineTaxonomyCategory {
+            scope,
+            name,
+            description,
+            vocab_kind: Some(kind.to_string()),
+            parent_id: Some(parent),
+            aliases: None,
+        },
+        (action, _) => action,
+    }
+}
+
 /// Manifest slice + `done` tool per run kind.
 fn tools_for(kind: &str) -> Vec<ToolDef> {
     let action_kinds: &[&str] = match kind {
         "auto_label" => &["assign_cluster_label", "rename_cluster"],
         "propose_merges" => &["merge_clusters", "mark_cluster_noise"],
         "triage_insights" => &["dismiss_insight", "pin_insight", "annotate_insight"],
-        "propose_taxonomy" => &["define_taxonomy_category"],
+        "propose_taxonomy"
+        | "propose_categories"
+        | "propose_subcategories"
+        | "propose_feedback_categories" => &["define_taxonomy_category"],
         "label_documents" => &["label_document"],
         _ => &[], // narrate_insights: text only
     };
@@ -317,6 +363,18 @@ async fn existing_taxonomy(
     source_id: &str,
     table: &str,
 ) -> AppResult<Vec<serde_json::Value>> {
+    existing_vocabulary(state, source_id, table, None).await
+}
+
+/// The current entries the model is shown, optionally one level only, so
+/// an induction run proposes a diff against the list rather than a fresh
+/// list.
+async fn existing_vocabulary(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    level: Option<(&str, i64)>,
+) -> AppResult<Vec<serde_json::Value>> {
     let store = state.require_store()?;
     let Some(table_row) = store.db().get_table(source_id, table).await? else {
         return Ok(Vec::new());
@@ -324,8 +382,40 @@ async fn existing_taxonomy(
     let categories = store.db().get_taxonomy_categories(&table_row.id).await?;
     Ok(categories
         .into_iter()
-        .map(|c| json!({ "name": c.name, "description": c.description }))
+        .filter(|c| level.is_none_or(|(kind, parent)| c.kind == kind && c.parent_id == parent))
+        .map(|c| {
+            json!({
+                "id": c.id,
+                "kind": c.kind,
+                "parentId": c.parent_id,
+                "name": c.name,
+                "description": c.description,
+            })
+        })
         .collect())
+}
+
+/// Fewest classified summaries an induction run will accept. Inducing a
+/// vocabulary from less produces a guessed list, which the design forbids.
+const MIN_SUMMARIES_FOR_INDUCTION: usize = 50;
+
+/// Shared instruction for the three summary-driven induction runs.
+fn induction_system(level: &str, corpus: &str, cap: usize) -> String {
+    format!(
+        "You are defining {level} for a customer-insight vocabulary. Read the sample of \
+         {corpus} and propose entries via define_taxonomy_category, then call done.\n\n\
+         Propose AT MOST {cap} entries in total, existing ones included — if the corpus \
+         needs more, group: a broader entry that covers several themes beats a longer \
+         list. Do not propose 'other'; it exists implicitly. Do not re-propose an existing \
+         entry unless its definition should change.\n\n\
+         Categorize by WHAT IS WRONG or WHAT IS WANTED for the user, never by tooling, \
+         file format, mechanism, or how the text is written. If an entry would still make \
+         sense after someone rewrote the text in different words, it is real; if it would \
+         evaporate, it is a format bucket — discard it.\n\n\
+         Entries should be mutually distinguishable, cover the corpus, and be specific \
+         enough to act on. Give each a short name and a one-sentence definition — the \
+         definition is what a classifier will judge against, so make it precise."
+    )
 }
 
 /// Kind-specific context: what the model sees.
@@ -334,6 +424,7 @@ async fn build_context(
     kind: &str,
     source_id: &str,
     table: &str,
+    parent_id: Option<i64>,
 ) -> AppResult<(String, String)> {
     match kind {
         "auto_label" | "propose_merges" => {
@@ -516,10 +607,115 @@ async fn build_context(
                 .unwrap_or_default(),
             ))
         },
+        "propose_categories" => {
+            let docs = crate::agent::sampling::summary_sample(
+                state,
+                source_id,
+                table,
+                crate::agent::sampling::INDUCTION_SAMPLE,
+                None,
+            )
+            .await?;
+            require_summaries(docs.len(), "classified tickets")?;
+            let existing =
+                existing_vocabulary(state, source_id, table, Some(("category", 0))).await?;
+            Ok((
+                induction_system(
+                    "the root CATEGORIES (why people contact support)",
+                    "one-line ticket summaries",
+                    brightflow_engine::enrichment::INDUCED_CAP,
+                ),
+                serde_json::to_string_pretty(&json!({
+                    "existingEntries": existing,
+                    "summaries": docs,
+                }))
+                .unwrap_or_default(),
+            ))
+        },
+        "propose_subcategories" => {
+            let parent_id = parent_id.ok_or_else(|| {
+                AppError::BadRequest("propose_subcategories needs parent_id".to_string())
+            })?;
+            let store = state.require_store()?;
+            let parent = store
+                .db()
+                .get_taxonomy_category(parent_id)
+                .await?
+                .filter(|p| p.kind == "category")
+                .ok_or_else(|| AppError::NotFound(format!("category {parent_id} not found")))?;
+            let docs = crate::agent::sampling::summary_sample(
+                state,
+                source_id,
+                table,
+                crate::agent::sampling::INDUCTION_SAMPLE,
+                Some(&parent.name),
+            )
+            .await?;
+            require_summaries(
+                docs.len(),
+                &format!("tickets classified as '{}'", parent.name),
+            )?;
+            let existing =
+                existing_vocabulary(state, source_id, table, Some(("subcategory", parent_id)))
+                    .await?;
+            Ok((
+                induction_system(
+                    &format!(
+                        "the SUBCATEGORIES of the category '{}' ({})",
+                        parent.name,
+                        parent.description.as_deref().unwrap_or("no definition")
+                    ),
+                    "one-line ticket summaries, all already classified under that category",
+                    brightflow_engine::enrichment::INDUCED_CAP,
+                ),
+                serde_json::to_string_pretty(&json!({
+                    "parent": { "id": parent.id, "name": parent.name, "description": parent.description },
+                    "existingEntries": existing,
+                    "summaries": docs,
+                }))
+                .unwrap_or_default(),
+            ))
+        },
+        "propose_feedback_categories" => {
+            let docs = crate::agent::sampling::feedback_summary_sample(
+                state,
+                source_id,
+                table,
+                crate::agent::sampling::INDUCTION_SAMPLE,
+            )
+            .await?;
+            require_summaries(docs.len(), "extracted feedback mentions")?;
+            let existing =
+                existing_vocabulary(state, source_id, table, Some(("feedback_category", 0)))
+                    .await?;
+            Ok((
+                induction_system(
+                    "the FEEDBACK CATEGORIES (what people think of the product: friction, \
+                     wants, praise)",
+                    "short feedback summaries extracted from tickets",
+                    brightflow_engine::enrichment::INDUCED_CAP,
+                ),
+                serde_json::to_string_pretty(&json!({
+                    "existingEntries": existing,
+                    "summaries": docs,
+                }))
+                .unwrap_or_default(),
+            ))
+        },
         other => Err(AppError::BadRequest(format!(
             "unknown agent kind '{other}'"
         ))),
     }
+}
+
+fn require_summaries(found: usize, what: &str) -> AppResult<()> {
+    if found < MIN_SUMMARIES_FOR_INDUCTION {
+        return Err(AppError::BadRequest(format!(
+            "only {found} {what} have a summary — at least {MIN_SUMMARIES_FOR_INDUCTION} are \
+             needed to induce a vocabulary rather than guess one"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -595,6 +791,44 @@ mod tests {
                     tool.name
                 );
             }
+        }
+    }
+
+    /// An induction run's defines land on the pinned level regardless of
+    /// what the model wrote; other kinds pass through untouched.
+    #[test]
+    fn vocab_defaults_pin_kind_and_parent_on_defines() {
+        let action = parse_action(
+            "define_taxonomy_category",
+            r#"{"name": "vat", "vocab_kind": "category", "parent_id": 99}"#,
+            "src-1",
+            "issues",
+        )
+        .unwrap();
+        let pinned = apply_vocab_defaults(action, vocab_defaults("propose_subcategories", Some(7)));
+        match pinned {
+            Action::DefineTaxonomyCategory {
+                vocab_kind,
+                parent_id,
+                ..
+            } => {
+                assert_eq!(vocab_kind.as_deref(), Some("subcategory"));
+                assert_eq!(parent_id, Some(7));
+            },
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(
+            vocab_defaults("propose_feedback_categories", None),
+            Some(("feedback_category", 0))
+        );
+        assert_eq!(vocab_defaults("auto_label", None), None);
+        for kind in [
+            "propose_categories",
+            "propose_subcategories",
+            "propose_feedback_categories",
+        ] {
+            let names: Vec<String> = tools_for(kind).into_iter().map(|t| t.name).collect();
+            assert_eq!(names, vec!["define_taxonomy_category", "done"]);
         }
     }
 

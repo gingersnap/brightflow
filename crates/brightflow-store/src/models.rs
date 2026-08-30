@@ -160,6 +160,8 @@ pub struct ActionLogRow {
     /// 'human' | 'agent'
     pub actor_type: String,
     pub agent_run_id: Option<i64>,
+    /// The human who acted; None for agent rows and pre-audit rows.
+    pub user_id: Option<String>,
     pub action_kind: String,
     pub params_json: String,
     pub result_json: Option<String>,
@@ -210,14 +212,40 @@ pub struct ExcludedTermRow {
     pub created_at: i64,
 }
 
-/// One intent category — an entry in the supervised taxonomy vocabulary.
+/// One vocabulary entry.
+///
+/// An induced category / subcategory / feedback_category, or an imported
+/// product / competitor. `parent_id` is 0 for roots; `frozen` rows refuse
+/// rename and redefine; `aliases_json` is a JSON array of accepted surface
+/// forms (imported kinds only).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaxonomyCategoryRow {
     pub id: i64,
     pub table_id: String,
+    pub kind: String,
+    pub parent_id: i64,
     pub name: String,
     pub description: Option<String>,
+    pub frozen: bool,
+    pub aliases_json: Option<String>,
     pub created_at: i64,
+}
+
+/// One unresolved subject surface from mention extraction (review queue).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnresolvedSubjectRow {
+    pub id: i64,
+    pub table_id: String,
+    /// product | competitor | pricing | service
+    pub kind: String,
+    /// The model's normalised name for the entity.
+    pub surface: String,
+    pub mention_count: i64,
+    pub first_seen: i64,
+    pub last_seen: i64,
+    /// open | mapped | ignored
+    pub status: String,
+    pub mapped_to: Option<i64>,
 }
 
 /// One ROW-level intent label.
@@ -300,6 +328,8 @@ pub struct EnrichmentRunRow {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
     pub total_tokens: i64,
+    /// Prompt tokens the provider served from its prefix cache.
+    pub cached_tokens: i64,
     pub error: Option<String>,
     pub created_at: String,
     pub finished_at: Option<String>,
@@ -319,6 +349,8 @@ pub struct EnrichmentCacheRow {
     pub error: Option<String>,
     pub prompt_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
+    /// None = not reported by the provider.
+    pub cached_tokens: Option<i64>,
     /// Bookkeeping only — never part of the cache key.
     pub version: i64,
     pub created_at: String,
@@ -430,6 +462,7 @@ crate::impl_from_row!(ActionLogRow {
     request_id,
     actor_type,
     agent_run_id,
+    user_id,
     action_kind,
     params_json,
     result_json,
@@ -470,9 +503,24 @@ crate::impl_from_row!(ExcludedTermRow {
 crate::impl_from_row!(TaxonomyCategoryRow {
     id,
     table_id,
+    kind,
+    parent_id,
     name,
     description,
+    frozen,
+    aliases_json,
     created_at
+});
+crate::impl_from_row!(UnresolvedSubjectRow {
+    id,
+    table_id,
+    kind,
+    surface,
+    mention_count,
+    first_seen,
+    last_seen,
+    status,
+    mapped_to
 });
 crate::impl_from_row!(DocumentLabelRow {
     id,
@@ -523,6 +571,7 @@ crate::impl_from_row!(EnrichmentRunRow {
     rows_cached,
     prompt_tokens,
     completion_tokens,
+    cached_tokens,
     total_tokens,
     error,
     created_at,
@@ -537,6 +586,7 @@ crate::impl_from_row!(EnrichmentCacheRow {
     error,
     prompt_tokens,
     completion_tokens,
+    cached_tokens,
     version,
     created_at,
 });

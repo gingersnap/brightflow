@@ -9,10 +9,16 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 pub struct StartAgentRunRequest {
     /// "auto_label" | "propose_merges" | "narrate_insights" | "triage_insights"
-    /// | "propose_taxonomy" | "label_documents"
+    /// | "propose_taxonomy" | "label_documents" | "propose_categories"
+    /// | "propose_subcategories" | "propose_feedback_categories"
     pub kind: String,
     pub source_id: String,
     pub table: String,
+    /// Parent category id for `propose_subcategories` (required there,
+    /// ignored elsewhere).
+    #[serde(default)]
+    #[ts(optional, type = "number")]
+    pub parent_id: Option<i64>,
     /// "auto_apply" (default) | "propose". Auto-apply is the default because
     /// every action the agent runner hands out is undoable — reversibility,
     /// not pre-approval, is the safety mechanism.

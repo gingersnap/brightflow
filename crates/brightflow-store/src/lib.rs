@@ -51,7 +51,7 @@ pub use models::{
     DocumentLabelWithName, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow,
     EnrichmentRunRow, ExcludedTermRow, FileColumnStatRow, InsightHistoryRow, InsightRunRow,
     InsightStateRow, InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow,
-    TableEnrichmentSettingsRow, TableRow, TaxonomyCategoryRow,
+    TableEnrichmentSettingsRow, TableRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
 };
 pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};

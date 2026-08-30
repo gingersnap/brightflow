@@ -190,6 +190,7 @@ mod tests {
             request_id: "req-1".to_string(),
             actor_type: "human".to_string(),
             agent_run_id: None,
+            user_id: Some("u1".to_string()),
             action_kind: "rename_cluster".to_string(),
             params_json: r#"{"kind":"rename_cluster"}"#.to_string(),
             result_json: None,

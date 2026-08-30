@@ -9,7 +9,15 @@ export type TaxonomyCategory = {
  * plain JSON number, and a real BigInt would break JSON.stringify on
  * the round trip (same rationale as the id fields in `Action`).
  */
-id: number, name: string, description?: string, 
+id: number, 
+/**
+ * category | subcategory | feedback_category | product | competitor
+ */
+kind: string, 
+/**
+ * 0 = root.
+ */
+parentId: number, name: string, description?: string, frozen: boolean, 
 /**
  * Rows currently carrying this category.
  */

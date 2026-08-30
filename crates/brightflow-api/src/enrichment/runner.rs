@@ -1,18 +1,29 @@
-//! Async LLM batch runner + column materialization for `llm_prompt` functions.
+//! Async LLM batch runner + column materialization for per-row functions
+//! (`llm_prompt` and the built-in `ticket_classify`).
 //!
 //! The engine owns the pure pieces (render/hash/schema/validate); this module
-//! owns the async loop, the cache, and the parquet rewrite.
+//! owns the async loop, the cache, and the parquet rewrite. Both kinds share
+//! one cell shape — `(input_hash → value_json)` under a spec hash — and differ
+//! only in how a row becomes messages and how a value becomes columns, which
+//! is what [`RunSpec`] dispatches on.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use polars::prelude::*;
 
-use brightflow_engine::enrichment::{
-    extract_column_refs, input_hash, output_tool_schema, render_prompt, spec_hash, validate_output,
-    LlmPromptSpec, OutputField, OutputType,
+use brightflow_engine::enrichment::mentions::{self, ExtractCell, SubjectResolver, FLAG_COLUMNS};
+use brightflow_engine::enrichment::ticket_classify::{
+    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS,
 };
+use brightflow_engine::enrichment::{
+    extract_column_refs, input_hash, output_tool_schema, render_prompt, spec_hash,
+    ticket_classify_hash, ticket_extract_hash, validate_output, FunctionSpec, LlmPromptSpec,
+    OutputField, OutputType, TicketClassifySpec, TicketExtractSpec,
+};
+use brightflow_engine::nlp::detect_language;
 use brightflow_llm::{
     chat_with_backoff, ChatClient, ChatMessage, ChatOptions, ChatOutcome, RetryPolicy, ToolDef,
 };
@@ -23,7 +34,7 @@ use crate::state::AppState;
 
 /// Concurrent in-flight LLM calls per run.
 const CONCURRENCY: usize = 4;
-/// Tool name for the forced structured-output call.
+/// Tool name for the forced structured-output call (`llm_prompt`).
 const TOOL_NAME: &str = "set_values";
 /// Progress-row update cadence.
 const PROGRESS_EVERY: Duration = Duration::from_secs(2);
@@ -31,6 +42,339 @@ const PROGRESS_EVERY: Duration = Duration::from_secs(2);
 const SYSTEM_PROMPT: &str = "You are a data-enrichment function. Apply the instruction to the \
 given row and record the result by calling the `set_values` tool. Always call the tool — never \
 reply with prose.";
+/// Sampling temperature for every enrichment call. Part of the fingerprint.
+const TEMPERATURE: f64 = 0.0;
+
+/// Hash of everything this runner adds around an `llm_prompt` template.
+///
+/// Covers the system prompt and sampling parameters. Folded into `spec_hash`
+/// so an edit here invalidates cached cells instead of silently reusing them.
+pub fn prompt_fingerprint() -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(SYSTEM_PROMPT.as_bytes());
+    hasher.update(&TEMPERATURE.to_le_bytes());
+    hasher.finalize().to_hex().to_string()
+}
+
+/// `spec_hash` under this runner's fingerprint — the one cache key for
+/// `llm_prompt` cells. Every call site goes through here so the fingerprint
+/// cannot be forgotten.
+pub fn llm_spec_hash(spec: &LlmPromptSpec) -> String {
+    spec_hash(spec, &prompt_fingerprint())
+}
+
+/// Fingerprint for `ticket_classify`: the engine's system prompt rendered
+/// with no names (every entry shows as `#id`), so the hash tracks the prompt
+/// wording and the definitions but never a display name.
+fn classify_fingerprint(spec: &TicketClassifySpec) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(ticket_classify::system_prompt(spec, &VocabNames::new()).as_bytes());
+    hasher.update(&TEMPERATURE.to_le_bytes());
+    hasher.finalize().to_hex().to_string()
+}
+
+/// Cache key for a `ticket_classify` spec.
+pub fn classify_spec_hash(spec: &TicketClassifySpec) -> String {
+    ticket_classify_hash(spec, &classify_fingerprint(spec))
+}
+
+/// Fingerprint for `ticket_extract`, same construction as the classifier's.
+fn extract_fingerprint(spec: &TicketExtractSpec) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(mentions::system_prompt(spec, &VocabNames::new()).as_bytes());
+    hasher.update(&TEMPERATURE.to_le_bytes());
+    hasher.finalize().to_hex().to_string()
+}
+
+/// Cache key for a `ticket_extract` spec.
+pub fn extract_spec_hash(spec: &TicketExtractSpec) -> String {
+    ticket_extract_hash(spec, &extract_fingerprint(spec))
+}
+
+/// The cache key of any runnable spec; None for kinds this runner does not
+/// drive (topic models, classifier heads).
+pub fn spec_hash_for(spec: &FunctionSpec) -> Option<String> {
+    match spec {
+        FunctionSpec::LlmPrompt(llm) => Some(llm_spec_hash(llm)),
+        FunctionSpec::TicketClassify(tc) => Some(classify_spec_hash(tc)),
+        FunctionSpec::TicketExtract(te) => Some(extract_spec_hash(te)),
+        FunctionSpec::TopicModel(_) | FunctionSpec::Classifier(_) => None,
+    }
+}
+
+/// Materialised output columns on the *parent* table of any runnable spec.
+///
+/// Excludes the `{fn}__status` column; empty for kinds this runner does not
+/// drive. The extractor's child table is not listed here.
+pub fn output_columns_for(spec: &FunctionSpec) -> Vec<String> {
+    match spec {
+        FunctionSpec::LlmPrompt(llm) => llm.outputs.iter().map(|f| f.name.clone()).collect(),
+        FunctionSpec::TicketClassify(_) => {
+            OUTPUT_COLUMNS.iter().map(|c| (*c).to_string()).collect()
+        },
+        FunctionSpec::TicketExtract(_) => FLAG_COLUMNS.iter().map(|c| (*c).to_string()).collect(),
+        FunctionSpec::TopicModel(_) | FunctionSpec::Classifier(_) => Vec::new(),
+    }
+}
+
+/// A runnable per-row function: what the runner needs beyond the stored spec.
+#[derive(Debug, Clone)]
+pub enum RunSpec {
+    LlmPrompt(LlmPromptSpec),
+    TicketClassify {
+        spec: TicketClassifySpec,
+        /// Live id → name lookup, loaded when the run starts. Names reach the
+        /// prompt and the materialised columns, never the cache key.
+        names: Arc<VocabNames>,
+    },
+    TicketExtract {
+        spec: TicketExtractSpec,
+        names: Arc<VocabNames>,
+        /// Name/alias → id for products and competitors.
+        resolver: Arc<SubjectResolver>,
+    },
+}
+
+impl RunSpec {
+    pub fn spec_hash(&self) -> String {
+        match self {
+            Self::LlmPrompt(llm) => llm_spec_hash(llm),
+            Self::TicketClassify { spec, .. } => classify_spec_hash(spec),
+            Self::TicketExtract { spec, .. } => extract_spec_hash(spec),
+        }
+    }
+
+    pub fn provider(&self) -> (&str, Option<&str>) {
+        match self {
+            Self::LlmPrompt(llm) => (&llm.provider_id, llm.model.as_deref()),
+            Self::TicketClassify { spec, .. } => (&spec.provider_id, spec.model.as_deref()),
+            Self::TicketExtract { spec, .. } => (&spec.provider_id, spec.model.as_deref()),
+        }
+    }
+
+    /// (text columns, language column) for the two ticket kinds.
+    fn text_inputs(&self) -> Option<(&[String], Option<&str>)> {
+        match self {
+            Self::LlmPrompt(_) => None,
+            Self::TicketClassify { spec, .. } => {
+                Some((&spec.text_columns, spec.language_column.as_deref()))
+            },
+            Self::TicketExtract { spec, .. } => {
+                Some((&spec.text_columns, spec.language_column.as_deref()))
+            },
+        }
+    }
+
+    /// Table columns rendered into each row's inputs.
+    fn input_columns(&self) -> Vec<String> {
+        match self.text_inputs() {
+            None => {
+                if let Self::LlmPrompt(llm) = self {
+                    extract_column_refs(&llm.prompt_template)
+                } else {
+                    Vec::new()
+                }
+            },
+            Some((text_columns, language_column)) => {
+                let mut cols = text_columns.to_vec();
+                if let Some(lang) = language_column {
+                    if !cols.iter().any(|c| c == lang) {
+                        cols.push(lang.to_string());
+                    }
+                }
+                cols
+            },
+        }
+    }
+
+    /// Derived inputs added after rendering. Deterministic functions of the
+    /// rendered values only, so they are safe inside the input hash.
+    fn augment(&self, rendered: &mut BTreeMap<String, String>) {
+        let Some((text_columns, language_column)) = self.text_inputs() else {
+            return;
+        };
+        let language = if let Some(col) = language_column {
+            rendered
+                .get(col)
+                .and_then(|v| normalize_lang(v))
+                .unwrap_or_default()
+        } else {
+            {
+                let text: Vec<&str> = text_columns
+                    .iter()
+                    .filter_map(|c| rendered.get(c).map(String::as_str))
+                    .collect();
+                detect_language(&text.join("\n"))
+                    .unwrap_or_default()
+                    .to_string()
+            }
+        };
+        rendered.insert(LANGUAGE_INPUT.to_string(), language);
+    }
+
+    /// The per-row user turn for the two ticket kinds.
+    fn ticket_turn(&self, row: &RowInput) -> ChatMessage {
+        let (text_columns, _) = self.text_inputs().unwrap_or((&[], None));
+        let language = row
+            .rendered
+            .get(LANGUAGE_INPUT)
+            .map(String::as_str)
+            .filter(|l| !l.is_empty());
+        ChatMessage::user(ticket_classify::user_prompt(
+            text_columns,
+            &row.rendered,
+            language,
+        ))
+    }
+
+    fn messages(&self, row: &RowInput) -> Vec<ChatMessage> {
+        match self {
+            Self::LlmPrompt(llm) => vec![
+                ChatMessage::system(SYSTEM_PROMPT),
+                ChatMessage::user(render_prompt(&llm.prompt_template, &row.rendered)),
+            ],
+            Self::TicketClassify { spec, names } => vec![
+                ChatMessage::system(ticket_classify::system_prompt(spec, names)),
+                self.ticket_turn(row),
+            ],
+            Self::TicketExtract { spec, names, .. } => vec![
+                ChatMessage::system(mentions::system_prompt(spec, names)),
+                self.ticket_turn(row),
+            ],
+        }
+    }
+
+    fn tool(&self) -> ToolDef {
+        match self {
+            Self::LlmPrompt(llm) => set_values_tool(&llm.outputs),
+            Self::TicketClassify { spec, names } => ToolDef {
+                name: ticket_classify::TOOL_NAME.to_string(),
+                description: "Record the classification of this ticket.".to_string(),
+                parameters: ticket_classify::tool_schema(spec, names),
+            },
+            Self::TicketExtract { spec, names, .. } => ToolDef {
+                name: mentions::TOOL_NAME.to_string(),
+                description: "Record every mention in this ticket (an empty list is a valid \
+                              answer)."
+                    .to_string(),
+                parameters: mentions::tool_schema(spec, names),
+            },
+        }
+    }
+
+    fn tool_name(&self) -> &'static str {
+        match self {
+            Self::LlmPrompt(_) => TOOL_NAME,
+            Self::TicketClassify { .. } => ticket_classify::TOOL_NAME,
+            Self::TicketExtract { .. } => mentions::TOOL_NAME,
+        }
+    }
+
+    /// Validate a model answer into the cell's `value_json`.
+    fn validate(&self, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+        match self {
+            Self::LlmPrompt(llm) => {
+                validate_output(&llm.outputs, args).map(serde_json::Value::Object)
+            },
+            Self::TicketClassify { spec, names } => ticket_classify::validate(spec, names, args)
+                .and_then(|cell| serde_json::to_value(cell).map_err(|e| e.to_string())),
+            Self::TicketExtract {
+                spec,
+                names,
+                resolver,
+            } => mentions::validate(spec, names, resolver, args)
+                .and_then(|cell| serde_json::to_value(cell).map_err(|e| e.to_string())),
+        }
+    }
+
+    /// A cell's `value_json` as a human reads it: the built-in kinds store
+    /// vocabulary ids, so sample-run previews resolve them to current names
+    /// (and list mentions as one row per mention). `llm_prompt` values are
+    /// already display-shaped and pass through.
+    pub fn display_value(&self, value: &serde_json::Value) -> serde_json::Value {
+        match self {
+            Self::LlmPrompt(_) => value.clone(),
+            Self::TicketClassify { names, .. } => {
+                let Ok(cell) = serde_json::from_value::<ClassifyCell>(value.clone()) else {
+                    return value.clone();
+                };
+                serde_json::json!({
+                    "summary": cell.summary,
+                    "category": ticket_classify::resolve_name(names, cell.category_id),
+                    "subcategory": ticket_classify::resolve_name(names, cell.subcategory_id),
+                    "sentiment_polarity": cell.sentiment_polarity,
+                    "sentiment_strength": cell.sentiment_strength,
+                })
+            },
+            Self::TicketExtract { names, .. } => {
+                let Ok(cell) = serde_json::from_value::<ExtractCell>(value.clone()) else {
+                    return value.clone();
+                };
+                let mentions: Vec<serde_json::Value> = cell
+                    .mentions
+                    .iter()
+                    .map(|m| {
+                        let subject = m
+                            .subject_id
+                            .map(|id| ticket_classify::resolve_name(names, id))
+                            .or_else(|| {
+                                m.subject_surface
+                                    .as_ref()
+                                    .map(|s| format!("{s} (unresolved)"))
+                            });
+                        serde_json::json!({
+                            "type": m.mention_type,
+                            "subject": subject,
+                            "feedback_summary": m.feedback_summary,
+                            "feedback_category": m
+                                .feedback_category_id
+                                .map(|id| ticket_classify::resolve_name(names, id)),
+                            "incidental": m.incidental,
+                            "polarity": m.polarity,
+                            "confidence": m.confidence,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({ "mentions": mentions })
+            },
+        }
+    }
+
+    /// Materialised output column names on the parent table (excluding
+    /// `{fn}__status`).
+    pub fn output_columns(&self) -> Vec<String> {
+        match self {
+            Self::LlmPrompt(llm) => llm.outputs.iter().map(|f| f.name.clone()).collect(),
+            Self::TicketClassify { .. } => {
+                OUTPUT_COLUMNS.iter().map(|c| (*c).to_string()).collect()
+            },
+            Self::TicketExtract { .. } => FLAG_COLUMNS.iter().map(|c| (*c).to_string()).collect(),
+        }
+    }
+
+    /// Prompt-side character count for the cold-start token heuristic.
+    pub fn prompt_chars(&self) -> usize {
+        match self {
+            Self::LlmPrompt(llm) => llm.prompt_template.len(),
+            Self::TicketClassify { spec, names } => {
+                ticket_classify::system_prompt(spec, names).len()
+            },
+            Self::TicketExtract { spec, names, .. } => mentions::system_prompt(spec, names).len(),
+        }
+    }
+
+    /// Output count for the cold-start token heuristic.
+    pub fn output_count(&self) -> usize {
+        self.output_columns().len()
+    }
+}
+
+/// Lowercase primary subtag of a source-provided language tag ("sv-SE" →
+/// "sv"); None for blank.
+fn normalize_lang(raw: &str) -> Option<String> {
+    let primary = raw.trim().split(['-', '_']).next()?.to_ascii_lowercase();
+    (!primary.is_empty()).then_some(primary)
+}
 
 /// One row's rendered inputs, hashed for cache identity.
 #[derive(Debug, Clone)]
@@ -48,6 +392,9 @@ pub struct CellResult {
     pub cached: bool,
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
+    /// Prompt tokens served from the provider's prefix cache; None when
+    /// the provider never reported the figure.
+    pub cached_tokens: Option<i64>,
 }
 
 /// Batch outcome keyed by input hash.
@@ -56,6 +403,7 @@ pub struct ExecOutcome {
     pub cache_hits: usize,
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
+    pub cached_tokens: i64,
 }
 
 /// Row-level (done, failed, cached) counts, weighting each cell by how many
@@ -80,10 +428,16 @@ fn progress_counts(
     (done, failed, cached)
 }
 
-/// Render + hash every row of `df` for this spec. Template references must
-/// already be validated against the schema; a missing column errors here.
+/// Render + hash every row of `df` for an `llm_prompt` spec. Template
+/// references must already be validated against the schema; a missing column
+/// errors here.
 pub fn prepare_inputs(df: &DataFrame, spec: &LlmPromptSpec) -> AppResult<Vec<RowInput>> {
-    let refs = extract_column_refs(&spec.prompt_template);
+    prepare_run_inputs(df, &RunSpec::LlmPrompt(spec.clone()))
+}
+
+/// Render + hash every row of `df` for any runnable spec.
+pub fn prepare_run_inputs(df: &DataFrame, run: &RunSpec) -> AppResult<Vec<RowInput>> {
+    let refs = run.input_columns();
     let mut columns: Vec<(String, Vec<String>)> = Vec::with_capacity(refs.len());
     for name in &refs {
         columns.push((name.clone(), column_as_strings(df, name)?));
@@ -96,6 +450,7 @@ pub fn prepare_inputs(df: &DataFrame, spec: &LlmPromptSpec) -> AppResult<Vec<Row
         for (name, values) in &columns {
             rendered.insert(name.clone(), values.get(i).cloned().unwrap_or_default());
         }
+        run.augment(&mut rendered);
         let pairs: Vec<(String, String)> = rendered
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
@@ -137,11 +492,16 @@ fn set_values_tool(outputs: &[OutputField]) -> ToolDef {
 /// Pull the arguments object out of a completion: the forced tool call when
 /// the provider honored `tool_choice`, else the message text parsed as JSON
 /// (some providers ignore `tool_choice`).
+#[cfg(test)]
 fn extract_args(outcome: &ChatOutcome) -> Result<serde_json::Value, String> {
+    extract_args_named(outcome, TOOL_NAME)
+}
+
+fn extract_args_named(outcome: &ChatOutcome, tool_name: &str) -> Result<serde_json::Value, String> {
     if let Some(call) = outcome
         .tool_calls()
         .iter()
-        .find(|c| c.function.name == TOOL_NAME)
+        .find(|c| c.function.name == tool_name)
         .or_else(|| outcome.tool_calls().first())
     {
         return serde_json::from_str(&call.function.arguments)
@@ -179,43 +539,59 @@ fn add_tokens(outcome: &ChatOutcome, prompt: &mut i64, completion: &mut i64) {
     }
 }
 
+/// Fold a reported cached-token count into a running Option: stays None
+/// until any call reports one, so "never reported" is distinguishable from 0.
+fn add_cached_tokens(outcome: &ChatOutcome, cached: &mut Option<i64>) {
+    if let Some(c) = outcome.cached_tokens {
+        let c = i64::try_from(c).unwrap_or(0);
+        *cached = Some(cached.unwrap_or(0) + c);
+    }
+}
+
 /// One cell: render → chat (forced tool call) → validate → one re-ask.
+///
 /// Never panics, never propagates: every path lands in a CellResult.
-async fn compute_cell(client: &ChatClient, spec: &LlmPromptSpec, row: &RowInput) -> CellResult {
+/// Public for the eval CLI, which scores cells without touching the cache.
+pub async fn compute_cell(client: &ChatClient, run: &RunSpec, row: &RowInput) -> CellResult {
     let mut prompt_tokens = 0_i64;
     let mut completion_tokens = 0_i64;
-    let tool = set_values_tool(&spec.outputs);
-    let tools = [tool];
+    let mut cached_tokens: Option<i64> = None;
+    let tools = [run.tool()];
+    let tool_name = run.tool_name();
     let options = ChatOptions {
-        tool_choice: Some(TOOL_NAME.to_string()),
-        temperature: Some(0.0),
+        tool_choice: Some(tool_name.to_string()),
+        temperature: Some(TEMPERATURE),
         max_tokens: None,
     };
     let policy = RetryPolicy::default();
-    let user_prompt = render_prompt(&spec.prompt_template, &row.rendered);
-    let mut messages = vec![
-        ChatMessage::system(SYSTEM_PROMPT),
-        ChatMessage::user(user_prompt),
-    ];
+    let mut messages = run.messages(row);
 
-    let error_cell = |error: String, prompt_used: i64, completion_used: i64| CellResult {
-        status: "error".to_string(),
-        value: None,
-        error: Some(error),
-        cached: false,
-        prompt_tokens: prompt_used,
-        completion_tokens: completion_used,
-    };
+    let error_cell =
+        |error: String, prompt_used: i64, completion_used: i64, cached: Option<i64>| CellResult {
+            status: "error".to_string(),
+            value: None,
+            error: Some(error),
+            cached: false,
+            prompt_tokens: prompt_used,
+            completion_tokens: completion_used,
+            cached_tokens: cached,
+        };
 
     let first = match chat_with_backoff(client, &messages, &tools, &options, &policy).await {
         Ok(outcome) => outcome,
-        Err(e) => return error_cell(format!("llm: {e}"), prompt_tokens, completion_tokens),
+        Err(e) => {
+            return error_cell(
+                format!("llm: {e}"),
+                prompt_tokens,
+                completion_tokens,
+                cached_tokens,
+            )
+        },
     };
     add_tokens(&first, &mut prompt_tokens, &mut completion_tokens);
+    add_cached_tokens(&first, &mut cached_tokens);
 
-    let first_error = match extract_args(&first)
-        .and_then(|v| validate_output(&spec.outputs, &v).map(serde_json::Value::Object))
-    {
+    let first_error = match extract_args_named(&first, tool_name).and_then(|v| run.validate(&v)) {
         Ok(value) => {
             return CellResult {
                 status: "ok".to_string(),
@@ -224,6 +600,7 @@ async fn compute_cell(client: &ChatClient, spec: &LlmPromptSpec, row: &RowInput)
                 cached: false,
                 prompt_tokens,
                 completion_tokens,
+                cached_tokens,
             }
         },
         Err(why) => why,
@@ -232,7 +609,7 @@ async fn compute_cell(client: &ChatClient, spec: &LlmPromptSpec, row: &RowInput)
     // One re-ask with the validation error, then give up.
     messages.push(first.message.clone());
     messages.push(ChatMessage::user(format!(
-        "Your previous output was invalid: {first_error}. Call `{TOOL_NAME}` again with corrected \
+        "Your previous output was invalid: {first_error}. Call `{tool_name}` again with corrected \
          values that satisfy the schema."
     )));
     let second = match chat_with_backoff(client, &messages, &tools, &options, &policy).await {
@@ -242,14 +619,14 @@ async fn compute_cell(client: &ChatClient, spec: &LlmPromptSpec, row: &RowInput)
                 format!("{first_error}; re-ask failed: {e}"),
                 prompt_tokens,
                 completion_tokens,
+                cached_tokens,
             )
         },
     };
     add_tokens(&second, &mut prompt_tokens, &mut completion_tokens);
+    add_cached_tokens(&second, &mut cached_tokens);
 
-    match extract_args(&second)
-        .and_then(|v| validate_output(&spec.outputs, &v).map(serde_json::Value::Object))
-    {
+    match extract_args_named(&second, tool_name).and_then(|v| run.validate(&v)) {
         Ok(value) => CellResult {
             status: "ok".to_string(),
             value: Some(value),
@@ -257,11 +634,13 @@ async fn compute_cell(client: &ChatClient, spec: &LlmPromptSpec, row: &RowInput)
             cached: false,
             prompt_tokens,
             completion_tokens,
+            cached_tokens,
         },
         Err(why) => error_cell(
             format!("invalid after re-ask: {why}"),
             prompt_tokens,
             completion_tokens,
+            cached_tokens,
         ),
     }
 }
@@ -277,11 +656,11 @@ pub async fn execute_cells(
     client: &ChatClient,
     function_id: &str,
     version: i64,
-    spec: &LlmPromptSpec,
+    run: &RunSpec,
     rows: &[RowInput],
     run_id: Option<&str>,
 ) -> AppResult<ExecOutcome> {
-    let shash = spec_hash(spec);
+    let shash = run.spec_hash();
 
     // Deduplicate by content: identical inputs share one cell.
     let mut unique: Vec<&RowInput> = Vec::new();
@@ -315,6 +694,7 @@ pub async fn execute_cells(
                 cached: true,
                 prompt_tokens: 0,
                 completion_tokens: 0,
+                cached_tokens: None,
             },
         );
     }
@@ -330,13 +710,14 @@ pub async fn execute_cells(
 
     let mut prompt_total = 0_i64;
     let mut completion_total = 0_i64;
+    let mut cached_total = 0_i64;
     let mut last_progress = Instant::now();
 
     let mut stream = futures::stream::iter(misses.into_iter().map(|row: RowInput| {
         let client = client.clone();
-        let spec = spec.clone();
+        let run = run.clone();
         async move {
-            let cell = compute_cell(&client, &spec, &row).await;
+            let cell = compute_cell(&client, &run, &row).await;
             (row.hash, cell)
         }
     }))
@@ -345,6 +726,7 @@ pub async fn execute_cells(
     while let Some((hash, cell)) = stream.next().await {
         prompt_total += cell.prompt_tokens;
         completion_total += cell.completion_tokens;
+        cached_total += cell.cached_tokens.unwrap_or(0);
 
         // Cache ok AND error results — a full re-run must not hammer the
         // provider with known-bad rows; scope=failed clears errors first.
@@ -363,6 +745,7 @@ pub async fn execute_cells(
                 cell.error.as_deref(),
                 Some(cell.prompt_tokens),
                 Some(cell.completion_tokens),
+                cell.cached_tokens,
                 version,
             )
             .await
@@ -383,6 +766,7 @@ pub async fn execute_cells(
                         cached_rows,
                         prompt_total,
                         completion_total,
+                        cached_total,
                     )
                     .await
                 {
@@ -405,6 +789,7 @@ pub async fn execute_cells(
                 cached_rows,
                 prompt_total,
                 completion_total,
+                cached_total,
             )
             .await?;
     }
@@ -414,19 +799,23 @@ pub async fn execute_cells(
         cache_hits,
         prompt_tokens: prompt_total,
         completion_tokens: completion_total,
+        cached_tokens: cached_total,
     })
 }
 
-/// Rewrite the table with one materialized column per output field, plus a
+/// Rewrite the table with one materialized column per output, plus a
 /// `{fn}__status` column.
 ///
 /// Values come from the cache under the current spec; rows without a cache
 /// entry get nulls (they fill in on the next run — unchanged content is a
-/// free cache hit).
+/// free cache hit). For `ticket_classify` the `language` column is written
+/// from the pre-call detector for every row, cached or not.
 ///
-/// A concurrent sync moving `tables.version` fails the optimistic check; one
-/// retry re-reads and rebuilds. The residual window is the same one
-/// `merge_parquet` already lives with.
+/// One materialisation per table at a time (`AppState::materialize_lock`):
+/// two functions rebuilding the same table would otherwise race on
+/// `replace_table_data`. The optimistic version check stays for the
+/// scheduler's merge, which is a different process boundary and does not
+/// take this lock; one retry re-reads and rebuilds.
 pub async fn materialize(
     state: &AppState,
     store: &ParquetStore,
@@ -434,9 +823,11 @@ pub async fn materialize(
     table_name: &str,
     function_id: &str,
     function_name: &str,
-    spec: &LlmPromptSpec,
+    run: &RunSpec,
 ) -> AppResult<()> {
-    let shash = spec_hash(spec);
+    let shash = run.spec_hash();
+    let lock = state.materialize_lock(&crate::state::cache_key(source_id, table_name));
+    let _guard = lock.lock().await;
     let mut attempts = 0_u8;
     loop {
         attempts += 1;
@@ -449,7 +840,7 @@ pub async fn materialize(
         if df.height() == 0 {
             return Ok(());
         }
-        let inputs = prepare_inputs(&df, spec)?;
+        let inputs = prepare_run_inputs(&df, run)?;
         let mut hashes: Vec<String> = inputs.iter().map(|r| r.hash.clone()).collect();
         hashes.sort_unstable();
         hashes.dedup();
@@ -477,16 +868,36 @@ pub async fn materialize(
 
         let mut out_df = df;
         // Drop any pre-existing columns with our names (re-materialization).
-        let mut names: Vec<String> = spec.outputs.iter().map(|f| f.name.clone()).collect();
-        names.push(format!("{function_name}__status"));
-        for name in &names {
+        let mut column_names: Vec<String> = run.output_columns();
+        column_names.push(format!("{function_name}__status"));
+        for name in &column_names {
             if out_df.column(name).is_ok() {
                 out_df = out_df.drop(name).map_err(AppError::Polars)?;
             }
         }
 
-        for field in &spec.outputs {
-            let column = build_output_column(field, &values_per_row);
+        let mut child: Option<ChildTable> = None;
+        let columns = match run {
+            RunSpec::LlmPrompt(llm) => llm
+                .outputs
+                .iter()
+                .map(|field| build_output_column(field, &values_per_row))
+                .collect(),
+            RunSpec::TicketClassify { names, .. } => {
+                build_classify_columns(&inputs, &values_per_row, names)
+            },
+            RunSpec::TicketExtract {
+                names, resolver, ..
+            } => {
+                let cells = extract_cells(&values_per_row, resolver);
+                let id_column = parent_id_column(&out_df, table_name);
+                let rows = mentions::build_mention_rows(&id_column, &cells, names)
+                    .map_err(AppError::Polars)?;
+                child = Some((rows, mentions::unresolved_surfaces(&cells)));
+                mentions::derive_ticket_flags(&cells)
+            },
+        };
+        for column in columns {
             out_df.with_column(column).map_err(AppError::Polars)?;
         }
         let status_name = format!("{function_name}__status");
@@ -498,7 +909,25 @@ pub async fn materialize(
             .replace_table_data(source_id, table_name, out_df, Some(table_row.version))
             .await
         {
-            Ok(()) => break,
+            Ok(()) => {
+                if let Some((rows, unresolved)) = child {
+                    let child_name = mentions::mentions_table_name(table_name);
+                    write_child_table(store, source_id, &child_name, rows).await?;
+                    state.invalidate_schema_cache(&crate::state::cache_key(source_id, &child_name));
+                    if let Err(e) = store
+                        .db()
+                        .sync_unresolved_subjects(
+                            &table_row.id,
+                            &unresolved,
+                            chrono::Utc::now().timestamp(),
+                        )
+                        .await
+                    {
+                        tracing::warn!("unresolved-subject sync failed: {e}");
+                    }
+                }
+                break;
+            },
             Err(brightflow_store::StoreError::VersionConflict { .. }) if attempts < 2 => {
                 tracing::info!("table '{table_name}' moved during materialization — retrying once");
             },
@@ -508,6 +937,91 @@ pub async fn materialize(
 
     state.invalidate_schema_cache(&crate::state::cache_key(source_id, table_name));
     Ok(())
+}
+
+/// The extractor's child frame plus the unresolved `(kind, surface) → count`
+/// it produced, carried from the rebuild to the write.
+type ChildTable = (DataFrame, Vec<((String, String), usize)>);
+
+/// Parse cached extraction cells and re-resolve any surface the live
+/// resolver now knows (a mapped queue entry back-fills without an LLM call).
+fn extract_cells(
+    values: &[Option<serde_json::Value>],
+    resolver: &SubjectResolver,
+) -> Vec<Option<ExtractCell>> {
+    values
+        .iter()
+        .map(|v| {
+            let mut cell: ExtractCell = serde_json::from_value(v.clone()?).ok()?;
+            for m in &mut cell.mentions {
+                if m.subject_id.is_none() {
+                    if let Some(id) = m
+                        .subject_surface
+                        .as_deref()
+                        .and_then(|s| resolver.resolve(s))
+                    {
+                        m.subject_id = Some(id);
+                        m.subject_surface = None;
+                    }
+                }
+            }
+            Some(cell)
+        })
+        .collect()
+}
+
+/// The parent's id column, per the table's display convention; a row index
+/// when the table has none, so the child table still keys to something.
+fn parent_id_column(df: &DataFrame, table_name: &str) -> Column {
+    let id_column = crate::topics::display::DocDisplay::for_table(table_name).id_column;
+    df.column(id_column).map_or_else(
+        |_| {
+            let idx: Vec<i64> = (0..df.height())
+                .map(|i| i64::try_from(i).unwrap_or(i64::MAX))
+                .collect();
+            Column::new("row_index".into(), idx)
+        },
+        Column::clone,
+    )
+}
+
+/// Write the whole child table: replace when it exists, create otherwise.
+/// Creation goes through a scratch Parquet under the store root because the
+/// store's create path takes a file, not a frame.
+async fn write_child_table(
+    store: &ParquetStore,
+    source_id: &str,
+    table_name: &str,
+    df: DataFrame,
+) -> AppResult<()> {
+    if store.db().get_table(source_id, table_name).await?.is_some() {
+        store
+            .replace_table_data(source_id, table_name, df, None)
+            .await?;
+        return Ok(());
+    }
+    let scratch = store
+        .root_path()
+        .join(format!(".mentions-{}.parquet", uuid::Uuid::now_v7()));
+    let mut frame = df;
+    let path = scratch.clone();
+    let written = tokio::task::spawn_blocking(move || -> PolarsResult<()> {
+        let file = std::fs::File::create(&path)?;
+        ParquetWriter::new(file).finish(&mut frame)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("scratch write join: {e}")))?;
+    let ingested = match written {
+        Ok(()) => store
+            .ingest_parquet(source_id, table_name, &scratch, None)
+            .await
+            .map(|_| ())
+            .map_err(AppError::Store),
+        Err(e) => Err(AppError::Polars(e)),
+    };
+    drop(std::fs::remove_file(&scratch));
+    ingested
 }
 
 fn build_output_column(field: &OutputField, values: &[Option<serde_json::Value>]) -> Column {
@@ -543,9 +1057,70 @@ fn build_output_column(field: &OutputField, values: &[Option<serde_json::Value>]
     }
 }
 
+/// The six `ticket_classify` columns, in `OUTPUT_COLUMNS` order. Ids resolve
+/// to current names here, which is what makes a rename a re-materialise
+/// rather than a re-call.
+fn build_classify_columns(
+    inputs: &[RowInput],
+    values: &[Option<serde_json::Value>],
+    names: &VocabNames,
+) -> Vec<Column> {
+    let cells: Vec<Option<ClassifyCell>> = values
+        .iter()
+        .map(|v| {
+            v.as_ref()
+                .and_then(|x| serde_json::from_value(x.clone()).ok())
+        })
+        .collect();
+    let summary: Vec<Option<String>> = cells
+        .iter()
+        .map(|c| c.as_ref().map(|c| c.summary.clone()))
+        .collect();
+    let language: Vec<Option<String>> = inputs
+        .iter()
+        .map(|r| {
+            r.rendered
+                .get(LANGUAGE_INPUT)
+                .filter(|l| !l.is_empty())
+                .cloned()
+        })
+        .collect();
+    let category: Vec<Option<String>> = cells
+        .iter()
+        .map(|c| {
+            c.as_ref()
+                .map(|c| ticket_classify::resolve_name(names, c.category_id))
+        })
+        .collect();
+    let subcategory: Vec<Option<String>> = cells
+        .iter()
+        .map(|c| {
+            c.as_ref()
+                .map(|c| ticket_classify::resolve_name(names, c.subcategory_id))
+        })
+        .collect();
+    let polarity: Vec<Option<String>> = cells
+        .iter()
+        .map(|c| c.as_ref().map(|c| c.sentiment_polarity.clone()))
+        .collect();
+    let strength: Vec<Option<String>> = cells
+        .iter()
+        .map(|c| c.as_ref().map(|c| c.sentiment_strength.clone()))
+        .collect();
+    vec![
+        Column::new(OUTPUT_COLUMNS[0].into(), summary),
+        Column::new(OUTPUT_COLUMNS[1].into(), language),
+        Column::new(OUTPUT_COLUMNS[2].into(), category),
+        Column::new(OUTPUT_COLUMNS[3].into(), subcategory),
+        Column::new(OUTPUT_COLUMNS[4].into(), polarity),
+        Column::new(OUTPUT_COLUMNS[5].into(), strength),
+    ]
+}
+
 /// Full/incremental run driver: execute all cells, materialize, finish the
 /// run row. Spawned as an aborted-on-cancel task; the abort handle lives in
 /// `state.enrichment_jobs`.
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_full_run(
     state: AppState,
     run_id: String,
@@ -554,7 +1129,7 @@ pub async fn execute_full_run(
     version: i64,
     source_id: String,
     table_name: String,
-    spec: LlmPromptSpec,
+    run: RunSpec,
 ) {
     let result = drive_run(
         &state,
@@ -564,7 +1139,7 @@ pub async fn execute_full_run(
         version,
         &source_id,
         &table_name,
-        &spec,
+        &run,
     )
     .await;
     if let Some(store) = state.store() {
@@ -595,18 +1170,19 @@ async fn drive_run(
     version: i64,
     source_id: &str,
     table_name: &str,
-    spec: &LlmPromptSpec,
+    run: &RunSpec,
 ) -> AppResult<()> {
     let store = state.require_store()?;
-    let client = crate::llm::client_for(state, &spec.provider_id, spec.model.as_deref()).await?;
+    let (provider_id, model) = run.provider();
+    let client = crate::llm::client_for(state, provider_id, model).await?;
     let df = store.read_table(source_id, table_name).await?;
-    let inputs = prepare_inputs(&df, spec)?;
+    let inputs = prepare_run_inputs(&df, run)?;
     execute_cells(
         store,
         &client,
         function_id,
         version,
-        spec,
+        run,
         &inputs,
         Some(run_id),
     )
@@ -618,7 +1194,7 @@ async fn drive_run(
         table_name,
         function_id,
         function_name,
-        spec,
+        run,
     )
     .await
 }
@@ -648,6 +1224,7 @@ mod tests {
             cached,
             prompt_tokens: 0,
             completion_tokens: 0,
+            cached_tokens: None,
         }
     }
 
@@ -682,6 +1259,7 @@ mod tests {
             total_tokens: None,
             prompt_tokens: None,
             completion_tokens: None,
+            cached_tokens: None,
         }
     }
 
@@ -706,6 +1284,16 @@ mod tests {
     }
 
     // ── progress_counts ───────────────────────────────────────────
+
+    /// The fingerprint is deterministic and reaches the cache key: the same
+    /// spec under a different fingerprint is a different cell.
+    #[test]
+    fn prompt_fingerprint_is_stable_and_keys_the_cache() {
+        assert_eq!(prompt_fingerprint(), prompt_fingerprint());
+        let s = spec("{{col:Title}}");
+        assert_eq!(llm_spec_hash(&s), spec_hash(&s, &prompt_fingerprint()));
+        assert_ne!(llm_spec_hash(&s), spec_hash(&s, "another system prompt"));
+    }
 
     #[test]
     fn progress_counts_empty_cells() {
@@ -981,5 +1569,153 @@ mod tests {
     fn build_output_column_empty_input_is_empty_column() {
         let col = build_output_column(&field("score", OutputType::Number), &[]);
         assert_eq!(col.len(), 0);
+    }
+
+    // ── RunSpec::TicketClassify ───────────────────────────────────
+
+    fn classify_run() -> RunSpec {
+        use brightflow_engine::enrichment::VocabEntry;
+        let spec = TicketClassifySpec {
+            text_columns: vec!["title".to_string(), "body".to_string()],
+            language_column: None,
+            provider_id: "p1".to_string(),
+            model: None,
+            categories: vec![VocabEntry {
+                id: 1,
+                parent_id: 0,
+                description: Some("charges".to_string()),
+            }],
+            subcategories: vec![],
+        };
+        let names: VocabNames = VocabNames::from([(1, "Billing".to_string())]);
+        RunSpec::TicketClassify {
+            spec,
+            names: Arc::new(names),
+        }
+    }
+
+    /// Language is detected pre-call, stored in the rendered inputs (so it is
+    /// part of the cache identity) and carried into the user turn; the system
+    /// turn is byte-identical across rows.
+    #[test]
+    fn classify_inputs_carry_a_detected_language_and_a_stable_prefix() {
+        let df = df!(
+            "title" => &["Faktura saknar moms", "Invoice missing VAT line"],
+            "body" => &[
+                "Fakturan visar inte momsen separat för kunder inom EU och beloppet blir därför fel.",
+                "The generated invoice does not show the VAT breakdown for customers in the EU.",
+            ],
+        )
+        .unwrap();
+        let run = classify_run();
+        let inputs = prepare_run_inputs(&df, &run).unwrap();
+        assert_eq!(inputs[0].rendered[LANGUAGE_INPUT], "sv");
+        assert_eq!(inputs[1].rendered[LANGUAGE_INPUT], "en");
+        let m0 = run.messages(&inputs[0]);
+        let m1 = run.messages(&inputs[1]);
+        assert_eq!(
+            m0[0].content, m1[0].content,
+            "system turn must be prefix-cacheable"
+        );
+        assert!(m0[1]
+            .content
+            .as_deref()
+            .unwrap()
+            .starts_with("Ticket language: sv."));
+        assert_eq!(run.tool_name(), ticket_classify::TOOL_NAME);
+    }
+
+    /// A source-provided language column wins over detection and is
+    /// normalised to its primary subtag.
+    #[test]
+    fn classify_uses_the_language_column_when_configured() {
+        let RunSpec::TicketClassify { mut spec, names } = classify_run() else {
+            unreachable!()
+        };
+        spec.language_column = Some("lang".to_string());
+        let run = RunSpec::TicketClassify { spec, names };
+        let df = df!(
+            "title" => &["x"],
+            "body" => &["The generated invoice does not show the VAT breakdown."],
+            "lang" => &["fi-FI"],
+        )
+        .unwrap();
+        let inputs = prepare_run_inputs(&df, &run).unwrap();
+        assert_eq!(inputs[0].rendered[LANGUAGE_INPUT], "fi");
+    }
+
+    /// Names never reach the hash: renaming an entry keeps every cell.
+    #[test]
+    fn classify_hash_ignores_names() {
+        let a = classify_run();
+        let RunSpec::TicketClassify { spec, .. } = classify_run() else {
+            unreachable!()
+        };
+        let b = RunSpec::TicketClassify {
+            spec,
+            names: Arc::new(VocabNames::from([(1, "Payments".to_string())])),
+        };
+        assert_eq!(a.spec_hash(), b.spec_hash());
+        assert_ne!(
+            a.spec_hash(),
+            classify_run_with_description("charges and refunds").spec_hash()
+        );
+    }
+
+    fn classify_run_with_description(description: &str) -> RunSpec {
+        let RunSpec::TicketClassify { mut spec, names } = classify_run() else {
+            unreachable!()
+        };
+        spec.categories[0].description = Some(description.to_string());
+        RunSpec::TicketClassify { spec, names }
+    }
+
+    /// Materialised columns resolve ids to current names and write the
+    /// language for rows with no cell.
+    #[test]
+    fn classify_columns_resolve_ids_and_always_write_language() {
+        let names: VocabNames = VocabNames::from([(1, "Billing".to_string())]);
+        let inputs = vec![
+            RowInput {
+                rendered: BTreeMap::from([(LANGUAGE_INPUT.to_string(), "sv".to_string())]),
+                hash: "h1".to_string(),
+            },
+            RowInput {
+                rendered: BTreeMap::from([(LANGUAGE_INPUT.to_string(), String::new())]),
+                hash: "h2".to_string(),
+            },
+        ];
+        let values = vec![
+            Some(json!({
+                "summary": "Invoice omits VAT",
+                "category_id": 1,
+                "subcategory_id": 0,
+                "sentiment_polarity": "negative",
+                "sentiment_strength": "low",
+            })),
+            None,
+        ];
+        let cols = build_classify_columns(&inputs, &values, &names);
+        let get = |i: usize, row: usize| -> Option<String> {
+            cols[i]
+                .as_materialized_series()
+                .str()
+                .unwrap()
+                .get(row)
+                .map(str::to_string)
+        };
+        assert_eq!(get(0, 0).as_deref(), Some("Invoice omits VAT"));
+        assert_eq!(get(1, 0).as_deref(), Some("sv"));
+        assert_eq!(get(1, 1), None);
+        assert_eq!(get(2, 0).as_deref(), Some("Billing"));
+        assert_eq!(get(3, 0).as_deref(), Some("other"));
+        assert_eq!(get(2, 1), None);
+    }
+
+    #[test]
+    fn normalize_lang_takes_the_primary_subtag() {
+        assert_eq!(normalize_lang("sv-SE").as_deref(), Some("sv"));
+        assert_eq!(normalize_lang(" EN_us ").as_deref(), Some("en"));
+        assert_eq!(normalize_lang(""), None);
     }
 }

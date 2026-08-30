@@ -24,6 +24,8 @@ const emit = defineEmits<{
 }>();
 
 const hasTopicModel = computed(() => props.functions.some((f) => f.kind === 'topic_model'));
+const hasClassify = computed(() => props.functions.some((f) => f.kind === 'ticket_classify'));
+const hasExtract = computed(() => props.functions.some((f) => f.kind === 'ticket_extract'));
 
 /** Columns owned by functions (outputs + status) — shown in the derived group. */
 const derivedColumnNames = computed(() => {
@@ -56,9 +58,16 @@ const addItems = computed(() => [
       onSelect: () => emit('create', 'topic_model'),
     },
     {
-      disabled: true,
-      icon: 'i-lucide-tags',
-      label: 'Classifier (coming soon)',
+      disabled: hasClassify.value,
+      icon: 'i-lucide-list-tree',
+      label: hasClassify.value ? 'Ticket classification (exists)' : 'Ticket classification',
+      onSelect: () => emit('create', 'ticket_classify'),
+    },
+    {
+      disabled: hasExtract.value,
+      icon: 'i-lucide-message-square-quote',
+      label: hasExtract.value ? 'Mention extraction (exists)' : 'Mention extraction',
+      onSelect: () => emit('create', 'ticket_extract'),
     },
   ],
 ]);

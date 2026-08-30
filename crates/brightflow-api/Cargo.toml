@@ -54,6 +54,8 @@ serde_json = { workspace = true }
 
 # Utilities
 uuid = { workspace = true }
+# Vocabulary CSV import (enrichment::mentions_api).
+csv = "1.3"
 chrono = { workspace = true }
 futures = "0.3"
 thiserror = { workspace = true }

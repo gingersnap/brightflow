@@ -112,6 +112,9 @@ pub struct SampleRunResponse {
     pub completion_tokens: u64,
     #[ts(type = "number")]
     pub total_tokens: u64,
+    /// Prompt tokens the provider served from its prefix cache.
+    #[ts(type = "number")]
+    pub cached_tokens: u64,
     pub cache_hits: usize,
 }
 
@@ -178,6 +181,9 @@ pub struct EnrichRunResponse {
     pub completion_tokens: i64,
     #[ts(type = "number")]
     pub total_tokens: i64,
+    /// Prompt tokens the provider served from its prefix cache.
+    #[ts(type = "number")]
+    pub cached_tokens: i64,
     #[ts(optional)]
     pub error: Option<String>,
     pub created_at: String,
@@ -200,9 +206,192 @@ impl From<brightflow_store::EnrichmentRunRow> for EnrichRunResponse {
             prompt_tokens: row.prompt_tokens,
             completion_tokens: row.completion_tokens,
             total_tokens: row.total_tokens,
+            cached_tokens: row.cached_tokens,
             error: row.error,
             created_at: row.created_at,
             finished_at: row.finished_at,
         }
     }
+}
+
+/// Token totals for one source language.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageByLanguageRow {
+    /// BCP-47 primary subtag, or `unknown`.
+    pub language: String,
+    /// Table rows in this language.
+    pub rows: usize,
+    /// Distinct cached cells (rows sharing content share a cell).
+    pub cells: usize,
+    #[ts(type = "number")]
+    pub prompt_tokens: i64,
+    #[ts(type = "number")]
+    pub completion_tokens: i64,
+    #[ts(type = "number")]
+    pub cached_tokens: i64,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageByLanguageResponse {
+    pub function_id: String,
+    pub languages: Vec<UsageByLanguageRow>,
+}
+
+/// One vocabulary level's health (see the engine's `vocabulary::health`).
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabularyLevelHealth {
+    /// category | subcategory | feedback_category | product | competitor
+    pub kind: String,
+    pub entries: usize,
+    pub cap: usize,
+    pub rows: usize,
+    /// Share of rows in `other`; above ~0.15 the vocabulary is wrong.
+    pub other_rate: f64,
+    pub max_share: f64,
+    pub min_share: f64,
+    /// Entries outside the 2 %–40 % balance band, with their share.
+    pub unbalanced: Vec<UnbalancedEntry>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UnbalancedEntry {
+    pub name: String,
+    pub share: f64,
+}
+
+impl From<brightflow_engine::enrichment::LevelHealth> for VocabularyLevelHealth {
+    fn from(h: brightflow_engine::enrichment::LevelHealth) -> Self {
+        Self {
+            kind: h.kind.as_str().to_string(),
+            entries: h.entries,
+            cap: h.cap,
+            rows: h.rows,
+            other_rate: h.other_rate,
+            max_share: h.max_share,
+            min_share: h.min_share,
+            unbalanced: h
+                .unbalanced
+                .into_iter()
+                .map(|(name, share)| UnbalancedEntry { name, share })
+                .collect(),
+        }
+    }
+}
+
+/// Subcategory health under one parent category.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabularyParentHealth {
+    pub parent: String,
+    pub health: VocabularyLevelHealth,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabularyHealthResponse {
+    /// Rows with a non-null `category`.
+    pub classified_rows: usize,
+    pub total_rows: usize,
+    /// The root level (categories), when the table has been classified.
+    pub levels: Vec<VocabularyLevelHealth>,
+    pub per_parent: Vec<VocabularyParentHealth>,
+}
+
+/// Headline numbers for one mentioned subject.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct MentionSubjectStats {
+    /// product | competitor | pricing | service | feedback
+    pub mention_type: String,
+    /// Resolved entry name, or the unresolved surface.
+    pub subject: String,
+    pub resolved: bool,
+    #[ts(type = "number")]
+    pub mentions: i64,
+    /// The headline: repeated complaints and long calls inflate `mentions`.
+    #[ts(type = "number")]
+    pub distinct_tickets: i64,
+    pub negative_share: f64,
+    pub incidental_share: f64,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct MentionSummaryResponse {
+    pub mentions_table: String,
+    pub total_mentions: usize,
+    pub subjects: Vec<MentionSubjectStats>,
+}
+
+/// One unresolved-subject queue entry.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UnresolvedSubjectResponse {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub kind: String,
+    pub surface: String,
+    #[ts(type = "number")]
+    pub mention_count: i64,
+    #[ts(type = "number")]
+    pub first_seen: i64,
+    #[ts(type = "number")]
+    pub last_seen: i64,
+    /// open | mapped | ignored
+    pub status: String,
+    #[ts(optional, type = "number")]
+    pub mapped_to: Option<i64>,
+}
+
+impl From<brightflow_store::UnresolvedSubjectRow> for UnresolvedSubjectResponse {
+    fn from(r: brightflow_store::UnresolvedSubjectRow) -> Self {
+        Self {
+            id: r.id,
+            kind: r.kind,
+            surface: r.surface,
+            mention_count: r.mention_count,
+            first_seen: r.first_seen,
+            last_seen: r.last_seen,
+            status: r.status,
+            mapped_to: r.mapped_to,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateUnresolvedRequest {
+    /// open | mapped | ignored
+    pub status: String,
+    /// Vocabulary entry to alias the surface onto (required for `mapped`).
+    #[serde(default)]
+    #[ts(optional, type = "number")]
+    pub mapped_to: Option<i64>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportVocabularyResponse {
+    pub applied: usize,
+    pub total: usize,
+    /// 1-based line (header is line 1) where the import stopped.
+    #[ts(optional)]
+    pub failed_line: Option<usize>,
+    #[ts(optional)]
+    pub error: Option<String>,
 }

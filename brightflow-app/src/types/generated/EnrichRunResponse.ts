@@ -11,4 +11,8 @@ mode: string,
 /**
  * 'running' | 'completed' | 'failed' | 'cancelled'
  */
-status: string, rowsTotal: number, rowsDone: number, rowsFailed: number, rowsCached: number, promptTokens: number, completionTokens: number, totalTokens: number, error?: string, createdAt: string, finishedAt?: string, };
+status: string, rowsTotal: number, rowsDone: number, rowsFailed: number, rowsCached: number, promptTokens: number, completionTokens: number, totalTokens: number, 
+/**
+ * Prompt tokens the provider served from its prefix cache.
+ */
+cachedTokens: number, error?: string, createdAt: string, finishedAt?: string, };
