@@ -8,6 +8,7 @@ name = "brightflow"
 path = "src/main.rs"
 
 [dependencies]
+tempfile = "3"
 brightflow-core = { path = "../brightflow-core" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-store = { path = "../brightflow-store" }
