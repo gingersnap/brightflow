@@ -47,8 +47,11 @@ pub async fn load(store: &ParquetStore, table_id: &str) -> AppResult<VocabSnapsh
     }
     // A subcategory whose parent was deleted (RESTRICT should prevent it,
     // but the snapshot must not depend on that) is dropped rather than
-    // offered under nothing.
-    subcategories.retain(|s| categories.iter().any(|c| c.id == s.parent_id));
+    // offered under nothing. Parent 0 is `other`, which has no row.
+    subcategories.retain(|s| {
+        s.parent_id == brightflow_engine::enrichment::OTHER_PARENT
+            || categories.iter().any(|c| c.id == s.parent_id)
+    });
     Ok(VocabSnapshot {
         categories,
         subcategories,

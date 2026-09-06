@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 
 use super::function::{TicketClassifySpec, VocabEntry};
-use super::vocabulary::{is_other, OTHER};
+use super::vocabulary::{is_other, OTHER, OTHER_PARENT};
 
 /// Upper bound the prompt states for the summary; validation trims, never
 /// rejects, so a verbose model degrades to a truncated summary rather than a
@@ -152,6 +152,27 @@ pub fn system_prompt(spec: &TicketClassifySpec, names: &VocabNames) -> String {
         &mut out,
         format_args!("- {OTHER} — none of the above (available at both levels)\n"),
     );
+    // `other` can have subcategories of its own: what the vocabulary does
+    // not cover yet, grouped. They hang off the root sentinel.
+    let mut orphans: Vec<&VocabEntry> = spec
+        .subcategories
+        .iter()
+        .filter(|s| s.parent_id == OTHER_PARENT)
+        .collect();
+    orphans.sort_by_key(|e| e.id);
+    if !orphans.is_empty() {
+        out.push_str("  SUBCATEGORIES:\n");
+        for s in orphans {
+            push_fmt(
+                &mut out,
+                format_args!(
+                    "  - {} — {}\n",
+                    name_of(names, s.id),
+                    s.description.as_deref().unwrap_or("(no definition)")
+                ),
+            );
+        }
+    }
     out
 }
 
@@ -290,12 +311,10 @@ pub fn validate(
         .as_str()
         .ok_or_else(|| "field 'subcategory' must be a string".to_string())?
         .trim();
+    // `category_id == 0` is `other`, whose children sit at OTHER_PARENT (also
+    // 0), so one filter serves both a listed category and `other`.
     let subcategory_id = if is_other(subcategory_raw) {
         0
-    } else if category_id == 0 {
-        return Err(format!(
-            "field 'subcategory': must be '{OTHER}' when category is '{OTHER}'"
-        ));
     } else {
         let children = spec
             .subcategories
@@ -342,6 +361,8 @@ mod tests {
             subcategories: vec![
                 entry(3, 1, "missing VAT line"),
                 entry(4, 2, "password reset"),
+                // A subcategory of `other`: parent is the root sentinel.
+                entry(5, OTHER_PARENT, "feature wishes with no home yet"),
             ],
         };
         let names: VocabNames = [
@@ -349,6 +370,7 @@ mod tests {
             (2, "Authentication".to_string()),
             (3, "VAT".to_string()),
             (4, "Password".to_string()),
+            (5, "Wishes".to_string()),
         ]
         .into_iter()
         .collect();
@@ -373,6 +395,8 @@ mod tests {
         assert!(a.contains("- Billing — charges and invoices"));
         assert!(a.contains("  - VAT — missing VAT line"));
         assert!(a.contains("- other — none of the above"));
+        // `other`'s own subcategories are listed right under it.
+        assert!(a.contains("- other — none of the above (available at both levels)\n  SUBCATEGORIES:\n  - Wishes — feature wishes with no home yet"), "{a}");
         // One sentiment step and nothing after it: strength is gone.
         assert!(a.contains("4. sentiment — neutral | mixed | positive | negative"));
         assert!(!a.contains("5. "), "{a}");
@@ -417,7 +441,7 @@ mod tests {
         let (spec, names) = fixture();
         let err = validate(&spec, &names, &args("Billing", "Password", "negative")).unwrap_err();
         assert!(err.contains("not a subcategory of 'Billing'"), "{err}");
-        // other at both levels is fine; other category forces other subcategory.
+        // other at both levels is fine; `other` also has children of its own.
         let cell = validate(&spec, &names, &args("other", "Other", "neutral")).unwrap();
         assert_eq!((cell.category_id, cell.subcategory_id), (0, 0));
         let billing_other = validate(&spec, &names, &args("Billing", "other", "neutral")).unwrap();
@@ -425,7 +449,11 @@ mod tests {
             (billing_other.category_id, billing_other.subcategory_id),
             (1, 0)
         );
+        let other_wish = validate(&spec, &names, &args("other", "wishes", "neutral")).unwrap();
+        assert_eq!((other_wish.category_id, other_wish.subcategory_id), (0, 5));
+        // A child of `other` is not a child of a listed category, and vice versa.
         assert!(validate(&spec, &names, &args("other", "VAT", "neutral")).is_err());
+        assert!(validate(&spec, &names, &args("Billing", "Wishes", "neutral")).is_err());
     }
 
     #[test]

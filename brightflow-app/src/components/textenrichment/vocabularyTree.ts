@@ -22,6 +22,25 @@ export type EntryBadge =
   | { kind: 'unused'; text: string }
   | { kind: 'out-of-band'; text: string };
 
+/**
+ * The reserved `other` category as a tree entry. Never a stored row: id 0 is
+ * the root sentinel, which is also where its subcategories hang (kind
+ * `subcategory`, parent 0), so `children(OTHER_ENTRY)` works unchanged. It
+ * cannot be renamed, redefined, frozen or deleted; `frozen` keeps the
+ * generic guards on those buttons honest.
+ */
+export const OTHER_ENTRY: TaxonomyCategory = {
+  id: 0,
+  kind: 'category',
+  parentId: 0,
+  name: 'other',
+  frozen: true,
+};
+
+export function isOtherEntry(entry: TaxonomyCategory): boolean {
+  return entry.id === OTHER_ENTRY.id;
+}
+
 export interface EntryRow {
   entry: TaxonomyCategory;
   /** Rows classified into this entry; null when the level has no row grain. */
@@ -108,4 +127,11 @@ export function eligibleParents(
     rowsUnder.set(p.parent, p.health.rows);
   }
   return categories.filter((c) => (rowsUnder.get(c.name) ?? 0) >= minRows);
+}
+
+/** Largest first; entries without counts sort as zero; ties by name. */
+export function sortBySize(rows: EntryRow[]): EntryRow[] {
+  return [...rows].toSorted(
+    (a, b) => (b.rows ?? 0) - (a.rows ?? 0) || a.entry.name.localeCompare(b.entry.name),
+  );
 }

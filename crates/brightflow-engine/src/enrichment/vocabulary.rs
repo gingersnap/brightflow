@@ -24,6 +24,10 @@ pub const HARD_BACKSTOP: usize = 50;
 /// prompt offers it, the validator accepts it, and it counts toward the
 /// other-rate health signal rather than toward the cap.
 pub const OTHER: &str = "other";
+/// The parent id of subcategories under `other`. `other` is never a stored
+/// row, so its children hang off the root sentinel; the classifier offers
+/// them whenever it picks `other` at the category level.
+pub const OTHER_PARENT: i64 = 0;
 
 /// Which list an entry belongs to. Serialized in snake_case to match the
 /// `taxonomy_categories.kind` CHECK constraint.
@@ -88,9 +92,12 @@ impl VocabKind {
         }
     }
 
-    /// Whether an entry of this kind may sit at the root (parent 0).
-    pub fn allows_root(self) -> bool {
-        self != Self::Subcategory
+    /// Whether an entry of this kind may sit at parent 0. For every kind
+    /// but subcategories that is the root; a subcategory at parent 0 sits
+    /// under the reserved `other` category, which has no row of its own —
+    /// see [`OTHER_PARENT`].
+    pub const fn allows_root(self) -> bool {
+        true
     }
 
     /// Whether an entry of this kind may have children.
@@ -345,7 +352,8 @@ mod tests {
             Some(VocabKind::Category)
         );
         assert_eq!(VocabKind::Product.parent_kind(), Some(VocabKind::Product));
-        assert!(!VocabKind::Subcategory.allows_root());
+        // A subcategory at parent 0 is a subcategory of `other`.
+        assert!(VocabKind::Subcategory.allows_root());
         assert!(VocabKind::Product.allows_root());
         assert!(!VocabKind::FeedbackCategory.allows_children());
     }

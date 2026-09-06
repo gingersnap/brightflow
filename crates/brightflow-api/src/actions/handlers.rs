@@ -620,6 +620,10 @@ pub async fn execute_action(
         } => {
             taxonomy::execute_delete_taxonomy_category(state, source_id, table, *category_id).await
         },
+        Action::ClearVocabulary {
+            scope: Scope { source_id, table },
+            vocab_kind,
+        } => taxonomy::execute_clear_vocabulary(state, source_id, table, vocab_kind).await,
     }
 }
 
@@ -709,6 +713,9 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
                 created_at: *created_at,
             };
             taxonomy::undo_recreate_taxonomy_category(state, &row).await
+        },
+        UndoOp::RecreateVocabulary { rows } => {
+            taxonomy::undo_recreate_vocabulary(state, rows).await
         },
     }
 }

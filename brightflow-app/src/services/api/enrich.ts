@@ -60,6 +60,9 @@ export const enrichFnApi = {
   /** Rewrite the outputs from the cache — no LLM call (renames, mapped subjects). */
   materialize: (id: string): Promise<unknown> =>
     api.post(`/api/functions/${encodeURIComponent(id)}/materialize`),
+  /** Drop every cached cell and materialised column; the config stays. Not undoable. */
+  reset: (id: string): Promise<unknown> =>
+    api.post(`/api/functions/${encodeURIComponent(id)}/reset`),
   usageByLanguage: (id: string): Promise<UsageByLanguageResponse | null> =>
     api.get<UsageByLanguageResponse>(`/api/functions/${encodeURIComponent(id)}/usage-by-language`),
   sampleRun: (

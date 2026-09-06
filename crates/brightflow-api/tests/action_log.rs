@@ -142,12 +142,12 @@ async fn vocabulary_actions_enforce_hierarchy_and_log_the_user() {
     assert!(matches!(billing.status, ActionStatus::Applied));
     let billing_id = billing.result["categoryId"].as_i64().unwrap();
 
-    // A subcategory needs a parent...
-    let err = dispatch_action(
+    // A subcategory without a parent is a subcategory of `other` (parent 0)...
+    let under_other = dispatch_action(
         &state,
         Action::DefineTaxonomyCategory {
             scope: scope(),
-            name: "vat".to_string(),
+            name: "uncovered wish".to_string(),
             description: None,
             vocab_kind: Some("subcategory".to_string()),
             parent_id: None,
@@ -158,9 +158,13 @@ async fn vocabulary_actions_enforce_hierarchy_and_log_the_user() {
     )
     .await
     .unwrap();
-    assert!(matches!(err.status, ActionStatus::Failed), "{err:?}");
+    assert!(
+        matches!(under_other.status, ActionStatus::Applied),
+        "{under_other:?}"
+    );
+    assert_eq!(under_other.result["parentId"], 0);
 
-    // ...and lands under one.
+    // ...and one with a parent lands under it.
     let vat = dispatch_action(
         &state,
         Action::DefineTaxonomyCategory {
@@ -297,4 +301,54 @@ async fn vocabulary_actions_enforce_hierarchy_and_log_the_user() {
     assert!(vocab_rows
         .iter()
         .all(|r| r.user_id.as_deref() == Some("user-jens")));
+
+    // Clear the category level: roots, their subcategories and `other`'s
+    // subcategories go in one action, frozen or not; undo brings every row
+    // back under its original id.
+    let store = state.store().unwrap();
+    let table = store.db().get_table(SOURCE, TABLE).await.unwrap().unwrap();
+    let before = store.db().get_taxonomy_categories(&table.id).await.unwrap();
+    assert!(before
+        .iter()
+        .any(|r| r.kind == "subcategory" && r.parent_id == 0));
+    let cleared = dispatch_action(
+        &state,
+        Action::ClearVocabulary {
+            scope: scope(),
+            vocab_kind: "category".to_string(),
+        },
+        "req-vocab-clear",
+        jens(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(cleared.status, ActionStatus::Applied),
+        "{cleared:?}"
+    );
+    assert_eq!(cleared.result["deleted"], before.len());
+    assert!(store
+        .db()
+        .get_taxonomy_categories(&table.id)
+        .await
+        .unwrap()
+        .is_empty());
+    let undone = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(cleared.log_id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(undone.0.status, ActionStatus::Undone));
+    let mut after = store.db().get_taxonomy_categories(&table.id).await.unwrap();
+    after.sort_by_key(|r| r.id);
+    let mut expected = before;
+    expected.sort_by_key(|r| r.id);
+    let key = |r: &brightflow_store::TaxonomyCategoryRow| {
+        (r.id, r.kind.clone(), r.parent_id, r.name.clone(), r.frozen)
+    };
+    assert_eq!(
+        after.iter().map(key).collect::<Vec<_>>(),
+        expected.iter().map(key).collect::<Vec<_>>()
+    );
 }

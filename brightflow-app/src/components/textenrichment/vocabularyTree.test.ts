@@ -12,7 +12,7 @@ import type {
   VocabularyParentHealth,
 } from '@/types/generated';
 
-import { buildLevelRows, eligibleParents } from './vocabularyTree';
+import { buildLevelRows, eligibleParents, OTHER_ENTRY, sortBySize } from './vocabularyTree';
 
 function entry(id: number, name: string, kind = 'category'): TaxonomyCategory {
   return { id, kind, parentId: 0, name, frozen: false };
@@ -118,6 +118,52 @@ describe('eligibleParents', () => {
     ];
     expect(eligibleParents(cats, perParentWithChildren, 50).map((c) => c.name)).toEqual([
       'billing',
+    ]);
+  });
+});
+
+describe('sortBySize', () => {
+  test('largest first, ties and missing counts by name', () => {
+    const rows = buildLevelRows({
+      entries: [entry(1, 'zeta'), entry(2, 'alpha'), entry(3, 'mid'), OTHER_ENTRY],
+      counts: [
+        { value: 'alpha', rows: 5 },
+        { value: 'zeta', rows: 5 },
+        { value: 'other', rows: 40 },
+      ],
+      health: null,
+      stale: false,
+    });
+    expect(sortBySize(rows).map((r) => r.entry.name)).toEqual(['other', 'alpha', 'zeta', 'mid']);
+    // No row grain at all: pure name order.
+    const bare = buildLevelRows({
+      entries: [entry(1, 'b', 'competitor'), entry(2, 'a', 'competitor')],
+      counts: null,
+      health: null,
+      stale: false,
+    });
+    expect(sortBySize(bare).map((r) => r.entry.name)).toEqual(['a', 'b']);
+  });
+
+  test('other never carries a badge, even when its share is out of band', () => {
+    const rows = buildLevelRows({
+      entries: [OTHER_ENTRY],
+      counts: [{ value: 'other', rows: 90 }],
+      health: level({ rows: 100, otherRate: 0.9 }),
+      stale: false,
+    });
+    expect(rows[0]?.badge).toBeNull();
+    expect(rows[0]?.share).toBeCloseTo(1);
+  });
+});
+
+describe('eligibleParents with other', () => {
+  test('other is a parent like any other when enough rows landed there', () => {
+    const perParent: VocabularyParentHealth[] = [
+      { parent: 'other', health: level({ kind: 'subcategory', rows: 60 }) },
+    ];
+    expect(eligibleParents([entry(1, 'billing'), OTHER_ENTRY], perParent, 50)).toEqual([
+      OTHER_ENTRY,
     ]);
   });
 });

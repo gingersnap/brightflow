@@ -15,5 +15,5 @@ pub use function::{
 };
 pub use vocabulary::{
     check_cap, health, is_other, CapError, LevelHealth, VocabKind, HARD_BACKSTOP, IMPORTED_CAP,
-    INDUCED_CAP, MIN_ROWS_PER_ENTRY, OTHER,
+    INDUCED_CAP, MIN_ROWS_PER_ENTRY, OTHER, OTHER_PARENT,
 };

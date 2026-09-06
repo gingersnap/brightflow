@@ -314,41 +314,83 @@ pub async fn delete_function(
         )));
     }
 
-    if q.drop_columns.unwrap_or(false) && super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
-        let version = store
-            .db()
-            .get_enrichment_function_version(&row.id, row.current_version)
-            .await?;
-        if let Some(v) = version {
-            if let Ok(spec) = spec_from_config(&v.config_json) {
-                let mut names: Vec<String> = output_columns_for(&spec);
-                names.push(format!("{}__status", row.name));
-                let df = store
-                    .read_table(&table_row.source_id, &table_row.name)
-                    .await?;
-                let mut out_df = df;
-                let mut dropped_any = false;
-                for name in &names {
-                    if out_df.column(name).is_ok() {
-                        out_df = out_df.drop(name).map_err(AppError::Polars)?;
-                        dropped_any = true;
-                    }
-                }
-                if dropped_any {
-                    store
-                        .replace_table_data(&table_row.source_id, &table_row.name, out_df, None)
-                        .await?;
-                    state.invalidate_schema_cache(&crate::state::cache_key(
-                        &table_row.source_id,
-                        &table_row.name,
-                    ));
-                }
-            }
-        }
+    if q.drop_columns.unwrap_or(false) {
+        drop_output_columns(&state, store, &row, &table_row).await?;
     }
 
     store.db().delete_enrichment_function(&row.id).await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+/// Drop the function's materialised columns (outputs plus `{fn}__status`)
+/// from its table. Returns how many were present. A no-op for kinds this
+/// runner does not materialise.
+async fn drop_output_columns(
+    state: &AppState,
+    store: &ParquetStore,
+    row: &EnrichmentFunctionRow,
+    table_row: &TableRow,
+) -> AppResult<usize> {
+    if !super::RUNNABLE_KINDS.contains(&row.kind.as_str()) {
+        return Ok(0);
+    }
+    let Some(version) = store
+        .db()
+        .get_enrichment_function_version(&row.id, row.current_version)
+        .await?
+    else {
+        return Ok(0);
+    };
+    let Ok(spec) = spec_from_config(&version.config_json) else {
+        return Ok(0);
+    };
+    let mut names: Vec<String> = output_columns_for(&spec);
+    names.push(format!("{}__status", row.name));
+    let mut out_df = store
+        .read_table(&table_row.source_id, &table_row.name)
+        .await?;
+    let mut dropped = 0_usize;
+    for name in &names {
+        if out_df.column(name).is_ok() {
+            out_df = out_df.drop(name).map_err(AppError::Polars)?;
+            dropped += 1;
+        }
+    }
+    if dropped > 0 {
+        store
+            .replace_table_data(&table_row.source_id, &table_row.name, out_df, None)
+            .await?;
+        state.invalidate_schema_cache(&crate::state::cache_key(
+            &table_row.source_id,
+            &table_row.name,
+        ));
+    }
+    Ok(dropped)
+}
+
+/// `POST /api/functions/{id}/reset` — forget everything the function computed.
+///
+/// The configuration stays; every cached cell under every spec hash and the
+/// materialised columns go, so the next run starts from nothing. Not
+/// undoable, which is why the caller confirms; refused while a run is active.
+pub async fn reset_function(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
+    let store = store(&state)?;
+    let (row, table_row) = function_context(store, &id).await?;
+    if let Some(active) = store.db().active_enrichment_run(&row.id).await? {
+        return Err(AppError::Conflict(format!(
+            "run {} is active for this function — cancel it first",
+            active.id
+        )));
+    }
+    let columns_dropped = drop_output_columns(&state, store, &row, &table_row).await?;
+    let cells_deleted = store.db().prune_cache_except(&row.id, &[]).await?;
+    Ok(Json(serde_json::json!({
+        "cellsDeleted": cells_deleted,
+        "columnsDropped": columns_dropped,
+    })))
 }
 
 /// `GET /api/functions/{id}/versions`

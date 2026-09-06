@@ -15,11 +15,16 @@
  * are watched over the pushed `agentRun` frame; "Propose all subcategories"
  * starts one run per eligible parent and counts them down.
  *
- * `other` is a fixed row at every induced level, never a stored entry: the
- * classifier always offers it, so the tree shows it — with the share of rows
- * landing there, which is the number that says whether the level is wrong.
+ * `other` is never a stored entry, but the tree shows it as a category like
+ * any other: sorted by size with the rest, with the share of rows landing
+ * there (the number that says whether the level is wrong), and with
+ * subcategories of its own — what the vocabulary misses, grouped. Levels
+ * with children are collapsed by default and sorted largest first.
  * Induction buttons state their precondition (rows classified at that level)
- * and disable below it instead of starting a run that fails.
+ * and disable below it instead of starting a run that fails. "Clear all" on
+ * the category level is the clean-slate path: one undoable action empties
+ * the vocabulary, and the classify function's cache and columns are dropped
+ * (not undoable, hence the confirm) while its configuration stays.
  */
 
 import { useQuery, useQueryCache } from '@pinia/colada';
@@ -36,7 +41,14 @@ import type {
   VocabularyLevelHealth,
 } from '@/types/generated';
 
-import { buildLevelRows, eligibleParents, type EntryRow } from './vocabularyTree';
+import {
+  buildLevelRows,
+  eligibleParents,
+  isOtherEntry,
+  OTHER_ENTRY,
+  sortBySize,
+  type EntryRow,
+} from './vocabularyTree';
 
 type VocabKind = 'category' | 'subcategory' | 'feedback_category' | 'product' | 'competitor';
 
@@ -75,7 +87,8 @@ const KINDS: {
 const levels = computed(() => KINDS.filter((k) => props.kinds.includes(k.kind)));
 
 /** What the reserved value means, shown where a definition would be. */
-const OTHER_DEFINITION = 'None of the above — always offered, never proposed, not counted.';
+const OTHER_DEFINITION =
+  'None of the listed entries fit — always offered, never proposed, not counted toward the cap.';
 
 const curation = useCuration();
 const curationStore = useCurationStore();
@@ -183,13 +196,20 @@ function rootCounts(kind: VocabKind): ValueCount[] | null {
   return tickets.value.categories.map((c) => ({ value: c.category, rows: c.rows }));
 }
 
+/** Root categories plus the reserved `other`; the parents a fan-out may pick. */
+function categoryParents(): TaxonomyCategory[] {
+  return [...roots('category'), OTHER_ENTRY];
+}
+
 function rootRows(kind: VocabKind): EntryRow[] {
-  return buildLevelRows({
-    entries: roots(kind),
-    counts: rootCounts(kind),
-    health: levelHealth(kind),
-    stale: stale.value,
-  });
+  return sortBySize(
+    buildLevelRows({
+      entries: kind === 'category' ? categoryParents() : roots(kind),
+      counts: rootCounts(kind),
+      health: levelHealth(kind),
+      stale: stale.value,
+    }),
+  );
 }
 
 function childRows(parent: TaxonomyCategory, childKind: VocabKind): EntryRow[] {
@@ -197,12 +217,31 @@ function childRows(parent: TaxonomyCategory, childKind: VocabKind): EntryRow[] {
     childKind === 'subcategory'
       ? (tickets.value?.categories.find((c) => c.category === parent.name)?.subcategories ?? null)
       : null;
-  return buildLevelRows({
-    entries: children(parent, childKind),
-    counts,
-    health: parentHealth(parent),
-    stale: stale.value,
-  });
+  return sortBySize(
+    buildLevelRows({
+      entries: children(parent, childKind),
+      counts,
+      health: parentHealth(parent),
+      stale: stale.value,
+    }),
+  );
+}
+
+/** Expanded root entries by id; everything starts collapsed. */
+const expandedIds = ref(new Set<number>());
+
+function isExpanded(entry: TaxonomyCategory): boolean {
+  return expandedIds.value.has(entry.id);
+}
+
+function toggleExpanded(entry: TaxonomyCategory): void {
+  const next = new Set(expandedIds.value);
+  if (next.has(entry.id)) {
+    next.delete(entry.id);
+  } else {
+    next.add(entry.id);
+  }
+  expandedIds.value = next;
 }
 
 function badgeColor(kind: 'too-small' | 'unused' | 'out-of-band'): 'warning' | 'neutral' {
@@ -296,6 +335,40 @@ async function toggleFrozen(entry: TaxonomyCategory): Promise<void> {
     category_id: entry.id,
     frozen: !entry.frozen,
   });
+}
+
+/**
+ * The clean slate: every category and subcategory goes in one undoable
+ * action, then the classify function forgets its cache and columns (not
+ * undoable) but keeps its configuration, so the next run starts from nothing.
+ */
+async function clearAll(): Promise<void> {
+  const classify = (functions.value ?? []).find((f) => f.kind === 'ticket_classify');
+  const confirmed = window.confirm(
+    'Clear all classification?\n\n' +
+      'Every category and subcategory is deleted (undoable from Activity under Settings). ' +
+      'The classification columns and cache are dropped and cannot be restored; ' +
+      'the function keeps its configuration.',
+  );
+  if (!confirmed) {
+    return;
+  }
+  busy.value = true;
+  try {
+    await curation.dispatch({ kind: 'clear_vocabulary', ...scope(), vocab_kind: 'category' });
+    if (classify != null) {
+      await enrichFnApi.reset(classify.id);
+    }
+    runLines.value = [];
+    fanout.value = null;
+    expandedIds.value = new Set();
+    await Promise.all([
+      refresh(),
+      queryCache.invalidateQueries({ key: ['tables-index', props.sourceId] }),
+    ]);
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function remove(entry: TaxonomyCategory): Promise<void> {
@@ -426,7 +499,7 @@ async function induce(kind: string, level: VocabKind, parent?: TaxonomyCategory)
 }
 
 const parentsReady = computed(() =>
-  eligibleParents(roots('category'), health.value?.perParent ?? [], inductionMin.value),
+  eligibleParents(categoryParents(), health.value?.perParent ?? [], inductionMin.value),
 );
 
 /** One run per eligible parent, in parallel; the backend locks per parent. */
@@ -563,6 +636,17 @@ async function undoRun(line: RunLine): Promise<void> {
             >
               Add
             </UButton>
+            <UButton
+              v-if="level.kind === 'category'"
+              size="md"
+              color="error"
+              variant="outline"
+              icon="i-lucide-eraser"
+              :disabled="busy"
+              @click="() => void clearAll()"
+            >
+              Clear all
+            </UButton>
           </div>
         </div>
 
@@ -620,8 +704,26 @@ async function undoRun(line: RunLine): Promise<void> {
             <div class="flex items-start justify-between gap-3">
               <div class="flex min-w-0 flex-col gap-1">
                 <div class="flex flex-wrap items-center gap-2">
+                  <!-- Row header carries the entry's own buttons, so the chevron is
+                       the trigger rather than the whole row (the same reason
+                       CollapsibleSection keeps its header outside UCollapsible). -->
+                  <UButton
+                    v-if="level.childKind"
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    :icon="
+                      isExpanded(row.entry) ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'
+                    "
+                    :aria-label="isExpanded(row.entry) ? 'Collapse' : 'Expand'"
+                    @click="toggleExpanded(row.entry)"
+                  />
                   <span class="text-sm font-medium text-highlighted">{{ row.entry.name }}</span>
-                  <UIcon v-if="row.entry.frozen" name="i-lucide-lock" class="size-4 text-muted" />
+                  <UIcon
+                    v-if="row.entry.frozen && !isOtherEntry(row.entry)"
+                    name="i-lucide-lock"
+                    class="size-4 text-muted"
+                  />
                   <span v-if="row.rows != null" class="text-sm text-muted">
                     {{ row.rows.toLocaleString() }} rows<template v-if="row.share != null">
                       · {{ pct(row.share) }}</template
@@ -635,13 +737,26 @@ async function undoRun(line: RunLine): Promise<void> {
                   >
                     {{ row.badge.text }}
                   </UBadge>
+                  <UBadge
+                    v-else-if="isOtherEntry(row.entry) && (row.share ?? 0) > 0.15"
+                    size="md"
+                    variant="subtle"
+                    color="warning"
+                  >
+                    above 15% — the vocabulary misses these
+                  </UBadge>
                 </div>
-                <p v-if="row.entry.description" class="line-clamp-2 text-sm text-muted">
-                  {{ row.entry.description }}
-                </p>
-                <p v-if="auditLine(row.entry)" class="text-sm text-dimmed">
-                  {{ auditLine(row.entry) }}
-                </p>
+                <template v-if="!level.childKind || isExpanded(row.entry)">
+                  <p v-if="isOtherEntry(row.entry)" class="line-clamp-2 text-sm text-muted">
+                    {{ OTHER_DEFINITION }}
+                  </p>
+                  <p v-else-if="row.entry.description" class="line-clamp-2 text-sm text-muted">
+                    {{ row.entry.description }}
+                  </p>
+                  <p v-if="auditLine(row.entry)" class="text-sm text-dimmed">
+                    {{ auditLine(row.entry) }}
+                  </p>
+                </template>
               </div>
               <div class="flex shrink-0 gap-1">
                 <UTooltip
@@ -669,47 +784,53 @@ async function undoRun(line: RunLine): Promise<void> {
                   :disabled="busy"
                   @click="() => void define(level.childKind ?? level.kind, row.entry)"
                 />
-                <UButton
-                  size="md"
-                  color="neutral"
-                  variant="ghost"
-                  :icon="row.entry.frozen ? 'i-lucide-lock-open' : 'i-lucide-lock'"
-                  :aria-label="row.entry.frozen ? 'Unfreeze' : 'Freeze'"
-                  :disabled="busy"
-                  @click="() => void toggleFrozen(row.entry)"
-                />
-                <UButton
-                  size="md"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-pencil"
-                  aria-label="Rename"
-                  :disabled="busy || row.entry.frozen"
-                  @click="() => void rename(row.entry)"
-                />
-                <UButton
-                  size="md"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-file-pen"
-                  aria-label="Redefine"
-                  :disabled="busy || row.entry.frozen"
-                  @click="() => void redefine(row.entry)"
-                />
-                <UButton
-                  size="md"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-trash-2"
-                  aria-label="Delete"
-                  :disabled="busy || row.entry.frozen"
-                  @click="() => void remove(row.entry)"
-                />
+                <template v-if="!isOtherEntry(row.entry)">
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    :icon="row.entry.frozen ? 'i-lucide-lock-open' : 'i-lucide-lock'"
+                    :aria-label="row.entry.frozen ? 'Unfreeze' : 'Freeze'"
+                    :disabled="busy"
+                    @click="() => void toggleFrozen(row.entry)"
+                  />
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-pencil"
+                    aria-label="Rename"
+                    :disabled="busy || row.entry.frozen"
+                    @click="() => void rename(row.entry)"
+                  />
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-file-pen"
+                    aria-label="Redefine"
+                    :disabled="busy || row.entry.frozen"
+                    @click="() => void redefine(row.entry)"
+                  />
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-trash-2"
+                    aria-label="Delete"
+                    :disabled="busy || row.entry.frozen"
+                    @click="() => void remove(row.entry)"
+                  />
+                </template>
               </div>
             </div>
 
             <p
-              v-if="level.kind === 'category' && children(row.entry, 'subcategory').length === 0"
+              v-if="
+                level.kind === 'category' &&
+                isExpanded(row.entry) &&
+                children(row.entry, 'subcategory').length === 0
+              "
               class="mt-2 text-sm text-muted"
             >
               No subcategories — propose from the {{ rowsUnder(row.entry).toLocaleString() }} rows
@@ -718,6 +839,7 @@ async function undoRun(line: RunLine): Promise<void> {
             <ul
               v-if="
                 level.childKind &&
+                isExpanded(row.entry) &&
                 (children(row.entry, level.childKind).length > 0 || level.kind === 'category')
               "
               class="mt-2 flex flex-col gap-1 border-l border-default pl-3"
@@ -804,7 +926,12 @@ async function undoRun(line: RunLine): Promise<void> {
               </li>
             </ul>
           </li>
-          <li v-if="level.induced" class="rounded-lg border border-dashed border-default p-3">
+          <!-- Levels without children keep the fixed `other` row; categories
+               render it as an entry in the sorted list above. -->
+          <li
+            v-if="level.induced && !level.childKind"
+            class="rounded-lg border border-dashed border-default p-3"
+          >
             <div class="flex min-w-0 flex-col gap-1">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-highlighted">other</span>

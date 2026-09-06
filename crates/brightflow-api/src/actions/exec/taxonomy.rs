@@ -1,6 +1,6 @@
-//! Vocabulary curation: define/rename/redefine/freeze/delete entries across
-//! every kind (induced categories and imported catalogs alike) — the ratified
-//! vocabulary the LLM must stay inside.
+//! Vocabulary curation: define/rename/redefine/freeze/delete entries, and
+//! clear a whole level, across every kind (induced categories and imported
+//! catalogs alike) — the ratified vocabulary the LLM must stay inside.
 //!
 //! Contracts the executors hold: an entry's *name* is a label and may change
 //! freely; its *description* is the definition and changing it is a
@@ -11,6 +11,7 @@
 use serde_json::json;
 
 use brightflow_engine::enrichment::{check_cap, VocabKind};
+use brightflow_store::TaxonomyCategoryRow;
 
 use super::{table_ctx, StoreHandle};
 use crate::actions::types::UndoOp;
@@ -270,6 +271,59 @@ pub(crate) async fn execute_delete_taxonomy_category(
     ))
 }
 
+/// Clear one vocabulary kind on the table — the clean-slate action. Children
+/// go first so RESTRICT never fires; frozen entries go too, since the point
+/// is an empty level and undo restores the flag with the row.
+pub(crate) async fn execute_clear_vocabulary(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    vocab_kind: &str,
+) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
+    let kind = parse_kind(Some(vocab_kind))?;
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    let all = store.db().get_taxonomy_categories(&table_id).await?;
+    let rows = clear_order(&all, kind);
+    for row in rows.iter().rev() {
+        store.db().delete_taxonomy_category(row.id).await?;
+    }
+    let bumped = crate::enrichment::vocab::refresh_snapshots(state, &table_id).await;
+    Ok((
+        json!({ "deleted": rows.len(), "functionsBumped": bumped }),
+        Some(UndoOp::RecreateVocabulary { rows }),
+    ))
+}
+
+/// Everything a clear of `kind` removes, parents first: the level's roots,
+/// then its child level (subcategories under a category — `other`'s
+/// included, since they sit at parent 0 with kind `subcategory` — or
+/// components under a product). Delete in reverse, recreate in order.
+fn clear_order(all: &[TaxonomyCategoryRow], kind: VocabKind) -> Vec<TaxonomyCategoryRow> {
+    let is_root = |r: &&TaxonomyCategoryRow| r.kind == kind.as_str() && r.parent_id == 0;
+    let is_child = |r: &&TaxonomyCategoryRow| match kind {
+        VocabKind::Category => r.kind == VocabKind::Subcategory.as_str(),
+        VocabKind::Product => r.kind == VocabKind::Product.as_str() && r.parent_id != 0,
+        VocabKind::Subcategory | VocabKind::FeedbackCategory | VocabKind::Competitor => false,
+    };
+    let mut rows: Vec<TaxonomyCategoryRow> = all.iter().filter(is_root).cloned().collect();
+    rows.extend(all.iter().filter(is_child).cloned());
+    rows
+}
+
+pub(crate) async fn undo_recreate_vocabulary(
+    state: &AppState,
+    rows: &[TaxonomyCategoryRow],
+) -> AppResult<()> {
+    let store = state.require_store()?;
+    for row in rows {
+        store.db().recreate_taxonomy_category(row).await?;
+    }
+    if let Some(first) = rows.first() {
+        crate::enrichment::vocab::refresh_snapshots(state, &first.table_id).await;
+    }
+    Ok(())
+}
+
 pub(crate) async fn undo_restore_taxonomy_category(
     state: &AppState,
     category_id: i64,
@@ -319,7 +373,7 @@ pub(crate) async fn undo_restore_taxonomy_frozen(
 
 pub(crate) async fn undo_recreate_taxonomy_category(
     state: &AppState,
-    row: &brightflow_store::TaxonomyCategoryRow,
+    row: &TaxonomyCategoryRow,
 ) -> AppResult<()> {
     let store = state.require_store()?;
     store.db().recreate_taxonomy_category(row).await?;
@@ -327,7 +381,7 @@ pub(crate) async fn undo_recreate_taxonomy_category(
     Ok(())
 }
 
-fn refuse_frozen(row: &brightflow_store::TaxonomyCategoryRow, verb: &str) -> AppResult<()> {
+fn refuse_frozen(row: &TaxonomyCategoryRow, verb: &str) -> AppResult<()> {
     if row.frozen {
         return Err(AppError::BadRequest(format!(
             "'{}' is frozen — unfreeze it before you {verb} it",
@@ -346,7 +400,7 @@ async fn owned_category(
     store: &StoreHandle,
     table_id: &str,
     category_id: i64,
-) -> AppResult<brightflow_store::TaxonomyCategoryRow> {
+) -> AppResult<TaxonomyCategoryRow> {
     let row = store
         .db()
         .get_taxonomy_category(category_id)
@@ -356,4 +410,47 @@ async fn owned_category(
         return Err(AppError::NotFound(format!("entry {category_id} not found")));
     }
     Ok(row)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: i64, kind: &str, parent_id: i64) -> TaxonomyCategoryRow {
+        TaxonomyCategoryRow {
+            id,
+            table_id: "t".to_string(),
+            kind: kind.to_string(),
+            parent_id,
+            name: format!("e{id}"),
+            description: None,
+            frozen: id % 2 == 0,
+            aliases_json: None,
+            created_at: 0,
+        }
+    }
+
+    /// Parents first so undo recreates in order; a subcategory of `other`
+    /// (parent 0) is part of the category level; other kinds are untouched.
+    #[test]
+    fn clear_order_is_parents_then_children_and_kind_scoped() {
+        let all = vec![
+            row(1, "category", 0),
+            row(2, "subcategory", 1),
+            row(3, "subcategory", 0),
+            row(4, "feedback_category", 0),
+            row(5, "product", 0),
+            row(6, "product", 5),
+            row(7, "competitor", 0),
+        ];
+        let ids = |rows: Vec<TaxonomyCategoryRow>| rows.iter().map(|r| r.id).collect::<Vec<_>>();
+        assert_eq!(ids(clear_order(&all, VocabKind::Category)), vec![1, 2, 3]);
+        assert_eq!(ids(clear_order(&all, VocabKind::Product)), vec![5, 6]);
+        assert_eq!(ids(clear_order(&all, VocabKind::FeedbackCategory)), vec![4]);
+        assert_eq!(ids(clear_order(&all, VocabKind::Competitor)), vec![7]);
+        // Frozen rows are not skipped.
+        assert!(clear_order(&all, VocabKind::Category)
+            .iter()
+            .any(|r| r.frozen));
+    }
 }

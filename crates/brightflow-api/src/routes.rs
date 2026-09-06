@@ -124,6 +124,10 @@ fn api_routes() -> Router<AppState> {
             post(enrichment_handlers::materialize_only),
         )
         .route(
+            "/functions/{id}/reset",
+            post(enrichment_handlers::reset_function),
+        )
+        .route(
             "/sources/{source_id}/tables/{table}/mentions/summary",
             get(crate::enrichment::mentions_api::mention_summary),
         )

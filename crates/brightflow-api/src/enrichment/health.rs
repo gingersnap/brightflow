@@ -12,7 +12,7 @@ use axum::Json;
 use polars::prelude::*;
 
 use brightflow_engine::enrichment::ticket_classify::{LANGUAGE_INPUT, OUTPUT_COLUMNS};
-use brightflow_engine::enrichment::{health, VocabKind};
+use brightflow_engine::enrichment::{health, is_other, VocabKind};
 
 use super::runner::prepare_run_inputs;
 use super::types::{
@@ -175,12 +175,17 @@ pub async fn vocabulary_health(
                 }
             }
             for (parent, values) in by_parent {
-                let parent_row = defined.iter().find(|d| d.name == parent);
+                // `other` has no row; its subcategories sit at OTHER_PARENT.
+                let parent_id = if is_other(&parent) {
+                    Some(brightflow_engine::enrichment::OTHER_PARENT)
+                } else {
+                    defined.iter().find(|d| d.name == parent).map(|d| d.id)
+                };
                 let mut child_counts = count_values(&values);
-                if let Some(p) = parent_row {
+                if let Some(pid) = parent_id {
                     for d in store
                         .db()
-                        .list_vocabulary(&table_row.id, VocabKind::Subcategory.as_str(), p.id)
+                        .list_vocabulary(&table_row.id, VocabKind::Subcategory.as_str(), pid)
                         .await?
                     {
                         if !child_counts.iter().any(|(v, _)| v == &d.name) {

@@ -94,6 +94,18 @@ pub enum Action {
         #[ts(type = "number")]
         category_id: i64,
     },
+    /// Remove every entry of one vocabulary kind on the table, children
+    /// first: `category` takes its subcategories with it, `product` its
+    /// components. Frozen entries go too — this is the clean-slate action —
+    /// and undo puts every row back under its original id, frozen flag
+    /// included.
+    ClearVocabulary {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        /// category | feedback_category | product | competitor
+        vocab_kind: String,
+    },
     /// Hide an insight permanently (keyed by its stable fingerprint).
     DismissInsight {
         #[serde(flatten)]
@@ -191,6 +203,7 @@ impl Action {
             Self::RedefineTaxonomyCategory { .. } => "redefine_taxonomy_category",
             Self::FreezeTaxonomyCategory { .. } => "freeze_taxonomy_category",
             Self::DeleteTaxonomyCategory { .. } => "delete_taxonomy_category",
+            Self::ClearVocabulary { .. } => "clear_vocabulary",
             Self::DismissInsight { .. } => "dismiss_insight",
             Self::PinInsight { .. } => "pin_insight",
             Self::AnnotateInsight { .. } => "annotate_insight",
@@ -208,6 +221,7 @@ impl Action {
             | Self::RedefineTaxonomyCategory { scope, .. }
             | Self::FreezeTaxonomyCategory { scope, .. }
             | Self::DeleteTaxonomyCategory { scope, .. }
+            | Self::ClearVocabulary { scope, .. }
             | Self::DismissInsight { scope, .. }
             | Self::PinInsight { scope, .. }
             | Self::AnnotateInsight { scope, .. }
@@ -451,6 +465,11 @@ pub enum UndoOp {
         #[serde(default)]
         aliases_json: Option<String>,
     },
+    /// Undo of clear: every deleted row, parents before children, recreated
+    /// under its original id for the same reason as above.
+    RecreateVocabulary {
+        rows: Vec<brightflow_store::TaxonomyCategoryRow>,
+    },
 }
 
 fn default_kind() -> String {
@@ -500,6 +519,12 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "delete_taxonomy_category",
         "Delete vocabulary entry",
         "Delete a vocabulary entry and all of its row labels",
+        true,
+    ),
+    (
+        "clear_vocabulary",
+        "Clear vocabulary",
+        "Delete every entry of one vocabulary kind on the table, children first; undo restores them all",
         true,
     ),
     (
@@ -666,6 +691,13 @@ mod tests {
                     table: String::new(),
                 },
                 category_id: 0,
+            },
+            Action::ClearVocabulary {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                vocab_kind: String::new(),
             },
             Action::DismissInsight {
                 scope: Scope {

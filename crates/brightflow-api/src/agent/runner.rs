@@ -484,24 +484,36 @@ async fn build_context(
             let parent_id = parent_id.ok_or_else(|| {
                 AppError::BadRequest("propose_subcategories needs parent_id".to_string())
             })?;
-            let store = state.require_store()?;
-            let parent = store
-                .db()
-                .get_taxonomy_category(parent_id)
-                .await?
-                .filter(|p| p.kind == "category")
-                .ok_or_else(|| AppError::NotFound(format!("category {parent_id} not found")))?;
+            // Parent 0 is `other`: no row, but rows classified there and a
+            // subcategory level of its own (what the vocabulary misses, grouped).
+            let (parent_name, parent_description) = if parent_id
+                == brightflow_engine::enrichment::OTHER_PARENT
+            {
+                (
+                    brightflow_engine::enrichment::OTHER.to_string(),
+                    Some("none of the listed categories fit".to_string()),
+                )
+            } else {
+                let store = state.require_store()?;
+                let parent = store
+                    .db()
+                    .get_taxonomy_category(parent_id)
+                    .await?
+                    .filter(|p| p.kind == "category")
+                    .ok_or_else(|| AppError::NotFound(format!("category {parent_id} not found")))?;
+                (parent.name, parent.description)
+            };
             let docs = crate::agent::sampling::summary_sample(
                 state,
                 source_id,
                 table,
                 crate::agent::sampling::INDUCTION_SAMPLE,
-                Some(&parent.name),
+                Some(&parent_name),
             )
             .await?;
             require_summaries(
                 docs.len(),
-                &format!("tickets classified as '{}'", parent.name),
+                &format!("tickets classified as '{parent_name}'"),
             )?;
             let existing =
                 existing_vocabulary(state, source_id, table, Some(("subcategory", parent_id)))
@@ -509,15 +521,14 @@ async fn build_context(
             Ok((
                 induction_system(
                     &format!(
-                        "the SUBCATEGORIES of the category '{}' ({})",
-                        parent.name,
-                        parent.description.as_deref().unwrap_or("no definition")
+                        "the SUBCATEGORIES of the category '{parent_name}' ({})",
+                        parent_description.as_deref().unwrap_or("no definition")
                     ),
                     "one-line ticket summaries, all already classified under that category",
                     brightflow_engine::enrichment::INDUCED_CAP,
                 ),
                 serde_json::to_string_pretty(&json!({
-                    "parent": { "id": parent.id, "name": parent.name, "description": parent.description },
+                    "parent": { "id": parent_id, "name": parent_name, "description": parent_description },
                     "existingEntries": existing,
                     "summaries": docs,
                 }))
