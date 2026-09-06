@@ -214,7 +214,7 @@ async function toggleFrozen(entry: TaxonomyCategory): Promise<void> {
 }
 
 async function remove(entry: TaxonomyCategory): Promise<void> {
-  if (!window.confirm(`Delete "${entry.name}"? Undoable from the activity feed.`)) {
+  if (!window.confirm(`Delete "${entry.name}"? Undoable from Activity under Settings.`)) {
     return;
   }
   await dispatch({ kind: 'delete_taxonomy_category', ...scope(), category_id: entry.id });

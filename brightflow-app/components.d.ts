@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     ActiveRunBar: typeof import('./src/components/textenrichment/ActiveRunBar.vue')['default']
     ActivityFeed: typeof import('./src/components/actions/ActivityFeed.vue')['default']
+    ActivityView: typeof import('./src/components/actions/ActivityView.vue')['default']
     AgentActions: typeof import('./src/components/actions/AgentActions.vue')['default']
     AnomalyRenderer: typeof import('./src/components/insights/renderers/AnomalyRenderer.vue')['default']
     AppSidebar: typeof import('./src/components/layout/AppSidebar.vue')['default']

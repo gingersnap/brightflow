@@ -39,6 +39,11 @@ const router = createRouter({
       component: () => import('./components/system/SystemView.vue'),
     },
     {
+      path: '/activity',
+      name: 'activity',
+      component: () => import('./components/actions/ActivityView.vue'),
+    },
+    {
       path: '/preferences',
       name: 'preferences',
       component: () => import('./components/preferences/PreferencesPage.vue'),

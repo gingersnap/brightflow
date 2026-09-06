@@ -1,16 +1,16 @@
 <script setup lang="ts">
 /**
  * Route-level shell for the Insights tool: table picker, report-type and
- * cadence toolbar, and the Run trigger, with agent curation, narration,
- * history, and activity panels arranged around the results. Mounts the
- * store's realtime curation sync on open, and marks a table's findings
- * seen both on open and after each run.
+ * cadence toolbar, and the Run trigger, with agent curation, narration and
+ * history panels arranged around the results. Mounts the store's realtime
+ * curation sync on open, and marks a table's findings seen both on open and
+ * after each run. The audit trail itself lives on the Activity page under
+ * Settings, not here.
  */
 
 import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import AgentActions from '@/components/actions/AgentActions.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { useInsightsRuns } from '@/composables/useInsightsRuns';
@@ -32,13 +32,12 @@ const router = useRouter();
 const insightsStore = useInsightsStore();
 const insightsRuns = useInsightsRuns();
 const insightsActivity = useInsightsActivityStore();
-const activityOpen = ref(false);
 const historyOpen = ref(false);
 const historyResetNote = ref<string | null>(null);
 
 onMounted(() => {
-  // Live curation: dismiss/pin/suppress events (own tab, agent runs, Activity
-  // Undo) move cards without a re-run.
+  // Live curation: dismiss/pin/suppress events move cards without a re-run,
+  // Whether they come from this tab, an agent run, or an undo on Activity.
   insightsStore.initCurationSync();
   insightsActivity.initRealtime();
 });
@@ -238,21 +237,6 @@ watch(
       </div>
     </div>
 
-    <UButton
-      size="md"
-      color="neutral"
-      variant="soft"
-      icon="i-lucide-history"
-      class="fixed right-4 bottom-4 z-10 shadow-lg"
-      @click="activityOpen = true"
-    >
-      Activity
-    </UButton>
-    <USlideover v-model:open="activityOpen" title="Activity">
-      <template #body>
-        <ActivityFeed />
-      </template>
-    </USlideover>
     <USlideover v-model:open="historyOpen" title="Insight history">
       <template #body>
         <InsightHistoryPanel

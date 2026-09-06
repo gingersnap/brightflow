@@ -100,6 +100,15 @@ const navItems = computed(() => {
           open.value = false;
         },
       },
+      {
+        label: 'Activity',
+        icon: 'i-lucide-history',
+        active: route.name === 'activity',
+        onSelect: () => {
+          router.push({ name: 'activity' });
+          open.value = false;
+        },
+      },
     ],
   ];
 });

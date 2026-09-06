@@ -1,16 +1,15 @@
 <script setup lang="ts">
 /**
- * Route-level Text enrichment view: table picker on top, then three panes.
+ * Route-level Text enrichment view: table picker on top, then two panes.
  * Setup is the vocabularies and the two text functions (classify, extract);
  * Results is what they materialised — row grain, mention grain, the
- * unresolved-subject queue and vocabulary health; Activity is the action
- * feed where induction proposals are approved and any edit is undone.
+ * unresolved-subject queue and vocabulary health. The action log is on the
+ * Activity page under Settings, not in this tool.
  */
 
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import ActivityFeed from '@/components/actions/ActivityFeed.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import type { SourceTable } from '@/types';
 
@@ -25,12 +24,11 @@ const props = defineProps<{
 const router = useRouter();
 const activeTable = computed(() => props.table);
 
-type Pane = 'setup' | 'results' | 'activity';
+type Pane = 'setup' | 'results';
 const pane = ref<Pane>('setup');
 const panes: { id: Pane; label: string; icon: string }[] = [
   { id: 'setup', label: 'Setup', icon: 'i-lucide-sliders-horizontal' },
   { id: 'results', label: 'Results', icon: 'i-lucide-chart-bar' },
-  { id: 'activity', label: 'Activity', icon: 'i-lucide-history' },
 ];
 
 function handleSelectTable(table: SourceTable): void {
@@ -78,8 +76,7 @@ function handleAutoSelectTable(table: SourceTable): void {
 
       <div class="flex-1 overflow-auto p-4">
         <SetupPane v-if="pane === 'setup'" :source-id="sourceId" :table="activeTable" />
-        <ResultsPane v-else-if="pane === 'results'" :source-id="sourceId" :table="activeTable" />
-        <ActivityFeed v-else />
+        <ResultsPane v-else :source-id="sourceId" :table="activeTable" />
       </div>
     </template>
   </div>

@@ -169,6 +169,7 @@ export function useCommandPalette(
       { label: 'Add source', icon: 'i-lucide-plus', onSelect: go('sources-new') },
       { label: 'Schedules', icon: 'i-lucide-calendar-clock', onSelect: go('schedules') },
       { label: 'System', icon: 'i-lucide-activity', onSelect: go('system') },
+      { label: 'Activity', icon: 'i-lucide-history', onSelect: go('activity') },
       { label: 'Preferences', icon: 'i-lucide-settings-2', onSelect: go('preferences') },
     );
     return items;
