@@ -474,6 +474,41 @@ fn add_cached_tokens(outcome: &ChatOutcome, cached: &mut Option<i64>) {
 ///
 /// Never panics, never propagates: every path lands in a CellResult.
 /// Public for the eval CLI, which scores cells without touching the cache.
+/// The message list for the single re-ask after a validation failure.
+///
+/// Deliberately a *fresh single turn* — the original system and user turns with
+/// the failure appended — rather than a continuation of the tool-call exchange.
+/// Echoing the assistant's tool call back and answering it with a `role:"tool"`
+/// message is what the OpenAI protocol describes, but providers disagree on
+/// what may legally follow a tool result. Mistral rejects the whole request
+/// (`invalid_request_message_order`, "Not the same number of function calls and
+/// responses"), so every re-ask died there and no row could ever recover from a
+/// validation slip.
+///
+/// This call carries no state worth preserving — one stateless extraction with
+/// a forced tool choice — so re-asking in exactly the shape that already
+/// succeeded is both simpler and portable. The rejection travels as text in the
+/// user turn instead of as a tool-call echo.
+fn reask_messages(original: &[ChatMessage], tool_name: &str, error: &str) -> Vec<ChatMessage> {
+    let mut out = original.to_vec();
+    let note = format!(
+        "Your previous answer was rejected: {error}. Call `{tool_name}` again with corrected \
+         values that satisfy every rule above."
+    );
+    match out.last_mut() {
+        // Append to the final user turn, keeping the exact system/user
+        // alternation the first call used.
+        Some(last) if last.role == "user" => {
+            let mut content = last.content.clone().unwrap_or_default();
+            content.push_str("\n\n");
+            content.push_str(&note);
+            last.content = Some(content);
+        },
+        _ => out.push(ChatMessage::user(note)),
+    }
+    out
+}
+
 pub async fn compute_cell(client: &ChatClient, run: &RunSpec, row: &RowInput) -> CellResult {
     let mut prompt_tokens = 0_i64;
     let mut completion_tokens = 0_i64;
@@ -484,9 +519,12 @@ pub async fn compute_cell(client: &ChatClient, run: &RunSpec, row: &RowInput) ->
         tool_choice: Some(tool_name.to_string()),
         temperature: Some(TEMPERATURE),
         max_tokens: None,
+        // Off: this is a forced tool call over a fixed schema, so thinking
+        // traces would be billed completion tokens for no gain.
+        reasoning_effort: None,
     };
     let policy = RetryPolicy::default();
-    let mut messages = run.messages(row);
+    let messages = run.messages(row);
 
     let error_cell =
         |error: String, prompt_used: i64, completion_used: i64, cached: Option<i64>| CellResult {
@@ -529,12 +567,8 @@ pub async fn compute_cell(client: &ChatClient, run: &RunSpec, row: &RowInput) ->
     };
 
     // One re-ask with the validation error, then give up.
-    messages.push(first.message.clone());
-    messages.push(ChatMessage::user(format!(
-        "Your previous output was invalid: {first_error}. Call `{tool_name}` again with corrected \
-         values that satisfy the schema."
-    )));
-    let second = match chat_with_backoff(client, &messages, &tools, &options, &policy).await {
+    let reask = reask_messages(&messages, tool_name, &first_error);
+    let second = match chat_with_backoff(client, &reask, &tools, &options, &policy).await {
         Ok(outcome) => outcome,
         Err(e) => {
             return error_cell(
@@ -569,8 +603,51 @@ pub async fn compute_cell(client: &ChatClient, run: &RunSpec, row: &RowInput) ->
 
 /// Execute all cells for `rows`.
 ///
-/// Bulk cache lookup first, then misses through the LLM at bounded
-/// concurrency. Every computed cell (ok AND error) is cached. Per-cell
+/// Whether a batch may reuse previously computed cells.
+///
+/// `Bypass` exists for sample runs: a "test" that replays cached answers is not
+/// a test, since the whole reason to run one is to see what the current prompt
+/// and config produce. It also keeps results computed from a *draft* config out
+/// of the cache, where they would later be served as if the draft had shipped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheMode {
+    /// Read hits and write results — the normal, cost-saving path.
+    Use,
+    /// Neither read nor write.
+    Bypass,
+}
+
+/// A cached row as a reusable result, or `None` when it must be recomputed.
+///
+/// Only a success is a hit. A stored error is kept for reporting and for
+/// `scope=failed` to clear, but never replayed: replaying one pins the row to
+/// a failure it may have long grown out of — a fixed prompt, a fixed bug, a
+/// provider outage since passed — and `sample_run` takes no scope, so a test
+/// run could never escape it at all. The cost is one call per still-failing
+/// row per run, which is the deliberate trade.
+fn cache_hit(cached: &brightflow_store::EnrichmentCacheRow) -> Option<CellResult> {
+    if cached.status != "ok" {
+        return None;
+    }
+    Some(CellResult {
+        status: cached.status.clone(),
+        value: cached
+            .value_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+        error: cached.error.clone(),
+        cached: true,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cached_tokens: None,
+    })
+}
+
+/// Bulk cache lookup first, then misses through the LLM at bounded concurrency.
+///
+/// Every computed cell is written to the cache, successes and errors alike, but
+/// only successes are read back as hits (see `cache_hit`) — so a failed row is
+/// retried on the next run instead of being pinned to its error. Per-cell
 /// failures never abort the batch. When `run_id` is set, the run row gets
 /// progress updates every ~2s (row counts include duplicate-input rows).
 pub async fn execute_cells(
@@ -581,6 +658,7 @@ pub async fn execute_cells(
     run: &RunSpec,
     rows: &[RowInput],
     run_id: Option<&str>,
+    cache: CacheMode,
 ) -> AppResult<ExecOutcome> {
     let shash = run.spec_hash();
 
@@ -598,27 +676,17 @@ pub async fn execute_cells(
 
     let mut cells: HashMap<String, CellResult> = HashMap::new();
     let mut cache_hits = 0_usize;
-    for cached in store
-        .db()
-        .get_cached_cells(function_id, &shash, &hashes)
-        .await?
-    {
-        cache_hits += 1;
-        cells.insert(
-            cached.input_hash.clone(),
-            CellResult {
-                status: cached.status.clone(),
-                value: cached
-                    .value_json
-                    .as_deref()
-                    .and_then(|s| serde_json::from_str(s).ok()),
-                error: cached.error.clone(),
-                cached: true,
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                cached_tokens: None,
-            },
-        );
+    if cache == CacheMode::Use {
+        for cached in store
+            .db()
+            .get_cached_cells(function_id, &shash, &hashes)
+            .await?
+        {
+            if let Some(cell) = cache_hit(&cached) {
+                cache_hits += 1;
+                cells.insert(cached.input_hash.clone(), cell);
+            }
+        }
     }
 
     // Collected eagerly on purpose: a lazy iterator would hold a borrow of
@@ -650,13 +718,19 @@ pub async fn execute_cells(
         completion_total += cell.completion_tokens;
         cached_total += cell.cached_tokens.unwrap_or(0);
 
-        // Cache ok AND error results — a full re-run must not hammer the
-        // provider with known-bad rows; scope=failed clears errors first.
+        // Errors are written as well as successes, but only so the failure is
+        // reportable and `scope=failed` has rows to clear. They are never
+        // served back as hits (see the read above), so storing one cannot pin
+        // a row to a failure it has since grown out of.
         let value_json = cell
             .value
             .as_ref()
             .and_then(|v| serde_json::to_string(v).ok());
-        if let Err(e) = store
+        if cache == CacheMode::Bypass {
+            // Nothing is written either: a sample may have been computed from a
+            // draft config, and storing that would serve it back later as
+            // though the draft had shipped.
+        } else if let Err(e) = store
             .db()
             .upsert_cached_cell(
                 function_id,
@@ -1074,6 +1148,7 @@ async fn drive_run(
         run,
         &inputs,
         Some(run_id),
+        CacheMode::Use,
     )
     .await?;
     materialize(
@@ -1090,6 +1165,77 @@ async fn drive_run(
 
 #[cfg(test)]
 mod tests {
+
+    use brightflow_store::EnrichmentCacheRow;
+
+    fn cache_row(status: &str, value: Option<&str>, error: Option<&str>) -> EnrichmentCacheRow {
+        EnrichmentCacheRow {
+            function_id: "fn-1".to_string(),
+            spec_hash: "spec-1".to_string(),
+            input_hash: "row-1".to_string(),
+            status: status.to_string(),
+            value_json: value.map(str::to_string),
+            error: error.map(str::to_string),
+            prompt_tokens: Some(1),
+            completion_tokens: Some(2),
+            cached_tokens: None,
+            version: 1,
+            created_at: "2026-08-30 19:20:35".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_cached_success_is_reused() {
+        let hit = cache_hit(&cache_row("ok", Some(r#"{"a":1}"#), None)).expect("ok row is a hit");
+        assert_eq!(hit.status, "ok");
+        assert!(hit.cached);
+        assert_eq!(hit.value, Some(json!({"a": 1})));
+        // A hit bills nothing: the tokens were paid on the run that stored it.
+        assert_eq!(hit.prompt_tokens, 0);
+        assert_eq!(hit.completion_tokens, 0);
+    }
+
+    #[test]
+    fn a_cached_error_is_never_reused() {
+        // The policy this pins: errors are stored for reporting but must not
+        // be replayed, or a row stays broken across the very fix that would
+        // have repaired it — and sample_run, which takes no scope, could
+        // never get past one.
+        assert!(cache_hit(&cache_row("error", None, Some("llm: boom"))).is_none());
+    }
+
+    #[test]
+    fn reask_repeats_the_first_calls_shape_with_the_failure_appended() {
+        // No assistant or tool turns: providers disagree on what may legally
+        // follow a tool result, and Mistral rejects such a request outright,
+        // which is what silently killed every re-ask. Reusing the shape that
+        // already succeeded cannot hit that class of error at all.
+        let original = vec![
+            ChatMessage::system("rules"),
+            ChatMessage::user("ticket text"),
+        ];
+        let out = reask_messages(&original, "classify", "bad sentiment pairing");
+
+        let roles: Vec<&str> = out.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["system", "user"]);
+
+        let user = out[1].content.clone().expect("user turn has content");
+        assert!(
+            user.starts_with("ticket text"),
+            "original turn preserved: {user}"
+        );
+        assert!(user.contains("bad sentiment pairing"), "states why: {user}");
+        assert!(user.contains("classify"), "names the tool: {user}");
+    }
+
+    #[test]
+    fn reask_appends_a_user_turn_when_the_last_message_is_not_one() {
+        let original = vec![ChatMessage::system("rules")];
+        let out = reask_messages(&original, "classify", "nope");
+        let roles: Vec<&str> = out.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["system", "user"]);
+    }
+
     use super::*;
     use brightflow_llm::{ToolCall, ToolCallFunction};
     use polars::df;

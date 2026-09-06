@@ -132,6 +132,15 @@ pub struct ChatOptions {
     pub tool_choice: Option<String>,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u64>,
+    /// How much the model should think before answering, for models that
+    /// reason (Mistral exposes this on `mistral-small-latest`; it is also the
+    /// OpenAI dialect's name, so one field serves both).
+    ///
+    /// `None` does not send the field at all — the deliberate default. Reasoning
+    /// traces are billed as completion tokens, and a structured extraction
+    /// behind a forced tool call has nothing to think about; omitting the key
+    /// also keeps strict providers from rejecting a value they do not know.
+    pub reasoning_effort: Option<String>,
 }
 
 /// Exponential-backoff policy for `chat_with_backoff`.
@@ -336,6 +345,11 @@ fn build_request_body(
     if let Some(max_tokens) = options.max_tokens {
         obj.insert("max_tokens".to_string(), serde_json::json!(max_tokens));
     }
+    // Omitted entirely when unset: an absent key and an explicit null are not
+    // the same request to every provider.
+    if let Some(effort) = &options.reasoning_effort {
+        obj.insert("reasoning_effort".to_string(), serde_json::json!(effort));
+    }
     body
 }
 
@@ -501,6 +515,30 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_effort_is_absent_unless_asked_for() {
+        // Default is off, and off means the key is not present at all: an
+        // absent field and an explicit null are not the same request to every
+        // provider, and reasoning traces bill as completion tokens.
+        let unset = build_request_body(
+            "m",
+            &[ChatMessage::user("hi")],
+            &[],
+            &ChatOptions::default(),
+        );
+        assert!(
+            unset.get("reasoning_effort").is_none(),
+            "unset must send nothing: {unset}"
+        );
+
+        let options = ChatOptions {
+            reasoning_effort: Some("low".to_string()),
+            ..ChatOptions::default()
+        };
+        let low = build_request_body("m", &[ChatMessage::user("hi")], &[], &options);
+        assert_eq!(low["reasoning_effort"], serde_json::json!("low"));
+    }
+
+    #[test]
     fn tool_choice_serializes_as_forced_function() {
         let tools = [ToolDef {
             name: "set_values".to_string(),
@@ -511,6 +549,7 @@ mod tests {
             tool_choice: Some("set_values".to_string()),
             temperature: Some(0.0),
             max_tokens: Some(512),
+            reasoning_effort: None,
         };
         let body = build_request_body("m", &[ChatMessage::user("x")], &tools, &options);
         assert_eq!(

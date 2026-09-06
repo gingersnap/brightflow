@@ -23,7 +23,9 @@ use axum::routing::post;
 use axum::{Json, Router};
 use polars::prelude::*;
 
-use brightflow_api::enrichment::runner::{execute_cells, materialize, prepare_run_inputs};
+use brightflow_api::enrichment::runner::{
+    execute_cells, materialize, prepare_run_inputs, CacheMode,
+};
 use brightflow_api::enrichment::vocab;
 use brightflow_api::state::AppState;
 use brightflow_engine::enrichment::{FunctionSpec, TicketClassifySpec, TicketExtractSpec};
@@ -94,8 +96,10 @@ async fn completions(
                     "summary": "Password reset link expired",
                     "category": "other",
                     "subcategory": "other",
-                    "sentiment_polarity": "none",
-                    "sentiment_strength": "none"
+                    // `none` was folded into `neutral`: text with no evaluative
+                    // content is neutral, and strength is always meaningful.
+                    "sentiment_polarity": "neutral",
+                    "sentiment_strength": "low"
                 })
             },
         ));
@@ -289,9 +293,18 @@ async fn classify_and_extract_materialize_columns_child_table_and_queue() {
     let run = vocab::run_spec_for(&store, &table_id, spec).await.unwrap();
     let df = store.read_table(SOURCE, TABLE).await.unwrap();
     let inputs = prepare_run_inputs(&df, &run).unwrap();
-    let outcome = execute_cells(&store, &client, &classify_id, 1, &run, &inputs, None)
-        .await
-        .unwrap();
+    let outcome = execute_cells(
+        &store,
+        &client,
+        &classify_id,
+        1,
+        &run,
+        &inputs,
+        None,
+        CacheMode::Use,
+    )
+    .await
+    .unwrap();
     // Rows 1 and 3 are identical: one cell, two rows.
     assert_eq!(outcome.cells.len(), 2);
     assert_eq!(outcome.cached_tokens, 2 * 256);
@@ -321,7 +334,7 @@ async fn classify_and_extract_materialize_columns_child_table_and_queue() {
     assert_eq!(col("subcategory")[0].as_deref(), Some("VAT"));
     assert_eq!(col("category")[1].as_deref(), Some("other"));
     assert_eq!(col("language")[0].as_deref(), Some("en"));
-    assert_eq!(col("sentiment_polarity")[1].as_deref(), Some("none"));
+    assert_eq!(col("sentiment_polarity")[1].as_deref(), Some("neutral"));
     assert_eq!(col("classify__status")[2].as_deref(), Some("ok"));
     assert!(col("summary")[0]
         .as_deref()
@@ -360,9 +373,18 @@ async fn classify_and_extract_materialize_columns_child_table_and_queue() {
     let run = vocab::run_spec_for(&store, &table_id, spec).await.unwrap();
     let df = store.read_table(SOURCE, TABLE).await.unwrap();
     let inputs = prepare_run_inputs(&df, &run).unwrap();
-    execute_cells(&store, &client, &extract_id, 1, &run, &inputs, None)
-        .await
-        .unwrap();
+    execute_cells(
+        &store,
+        &client,
+        &extract_id,
+        1,
+        &run,
+        &inputs,
+        None,
+        CacheMode::Use,
+    )
+    .await
+    .unwrap();
     materialize(&state, &store, SOURCE, TABLE, &extract_id, "extract", &run)
         .await
         .unwrap();
@@ -440,9 +462,18 @@ async fn classify_and_extract_materialize_columns_child_table_and_queue() {
         .unwrap();
     let df = store.read_table(SOURCE, TABLE).await.unwrap();
     let inputs = prepare_run_inputs(&df, &run).unwrap();
-    execute_cells(&store, &client, &extract_id, 1, &run, &inputs, None)
-        .await
-        .unwrap();
+    execute_cells(
+        &store,
+        &client,
+        &extract_id,
+        1,
+        &run,
+        &inputs,
+        None,
+        CacheMode::Use,
+    )
+    .await
+    .unwrap();
     materialize(&state, &store, SOURCE, TABLE, &extract_id, "extract", &run)
         .await
         .unwrap();

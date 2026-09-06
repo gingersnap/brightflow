@@ -24,8 +24,17 @@ use super::vocabulary::{is_other, OTHER};
 /// failed cell.
 pub const SUMMARY_MAX_WORDS: usize = 15;
 
-pub const POLARITY_VALUES: [&str; 5] = ["positive", "negative", "neutral", "mixed", "none"];
-pub const STRENGTH_VALUES: [&str; 3] = ["none", "low", "strong"];
+/// Sentiment direction, with no `none` value.
+///
+/// "No evaluative content" folds into `neutral`. A separate `none` existed only
+/// to be kept in lockstep with a `none` strength — a cross-field rule no JSON
+/// schema can express, and one the model broke on roughly a third of rows even
+/// with it spelled out in the prompt. Four values that cannot contradict a
+/// second field beat five that can.
+pub const POLARITY_VALUES: [&str; 4] = ["positive", "negative", "neutral", "mixed"];
+/// Sentiment intensity. Always meaningful now that polarity is always a real
+/// direction, so this has no `none` either and the two fields are independent.
+pub const STRENGTH_VALUES: [&str; 2] = ["low", "strong"];
 
 /// Materialised columns, in table order. `language` is written from the
 /// pre-call detector even when the LLM call fails.
@@ -102,14 +111,13 @@ pub fn system_prompt(spec: &TicketClassifySpec, names: &VocabNames) -> String {
          user, never by how the ticket is written. Use `other` only when no entry fits.\n\
          3. subcategory — exactly one entry from the chosen category's SUBCATEGORIES, or \
          `other` when none fits or the category is `other`.\n\
-         4. sentiment_polarity — positive | negative | neutral | mixed | none.\n\
-         \x20  neutral: evaluative content is present but flat or balanced.\n\
-         \x20  none: no evaluative content at all (machine-generated, log dumps, one-line \
-         issues).\n\
+         4. sentiment_polarity — positive | negative | neutral | mixed.\n\
+         \x20  neutral: flat or balanced, and also the answer when there is no evaluative \
+         content at all (machine-generated text, log dumps, one-line issues).\n\
          \x20  mixed: both directions at once (\"support was great but the product is still \
          broken\"). Never collapse mixed to neutral.\n\
-         5. sentiment_strength — none | low | strong. `none` if and only if polarity is \
-         `none`.\n\n",
+         5. sentiment_strength — low | strong. How forcefully the polarity is expressed; \
+         use `low` for flat or neutral text.\n\n",
     );
     out.push_str("CATEGORIES (name — definition):\n");
     for c in entries_sorted(&spec.categories) {
@@ -315,13 +323,6 @@ pub fn validate(
         get("sentiment_strength")?,
         "sentiment_strength",
     )?;
-    if (polarity == "none") != (strength == "none") {
-        return Err(
-            "sentiment_strength must be 'none' exactly when sentiment_polarity is 'none'"
-                .to_string(),
-        );
-    }
-
     Ok(ClassifyCell {
         summary,
         category_id,
@@ -432,7 +433,7 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("not a subcategory of 'Billing'"), "{err}");
         // other at both levels is fine; other category forces other subcategory.
-        let cell = validate(&spec, &names, &args("other", "Other", "none", "none")).unwrap();
+        let cell = validate(&spec, &names, &args("other", "Other", "neutral", "low")).unwrap();
         assert_eq!((cell.category_id, cell.subcategory_id), (0, 0));
         let billing_other =
             validate(&spec, &names, &args("Billing", "other", "neutral", "low")).unwrap();
@@ -440,12 +441,23 @@ mod tests {
             (billing_other.category_id, billing_other.subcategory_id),
             (1, 0)
         );
-        assert!(validate(&spec, &names, &args("other", "VAT", "none", "none")).is_err());
+        assert!(validate(&spec, &names, &args("other", "VAT", "neutral", "low")).is_err());
     }
 
     #[test]
-    fn sentiment_none_is_paired_and_unknown_values_are_rejected() {
+    fn sentiment_fields_are_independent_and_unknown_values_are_rejected() {
         let (spec, names) = fixture();
+        // Every polarity pairs with every strength: there is no cross-field
+        // rule left to violate, which is the point of dropping `none`.
+        for polarity in POLARITY_VALUES {
+            for strength in STRENGTH_VALUES {
+                let cell = validate(&spec, &names, &args("Billing", "VAT", polarity, strength))
+                    .unwrap_or_else(|e| panic!("{polarity}/{strength} must be legal: {e}"));
+                assert_eq!(cell.sentiment_polarity, polarity);
+                assert_eq!(cell.sentiment_strength, strength);
+            }
+        }
+        // `none` was a legal polarity before the fold; it is not one now.
         assert!(validate(&spec, &names, &args("Billing", "VAT", "none", "low")).is_err());
         assert!(validate(&spec, &names, &args("Billing", "VAT", "negative", "none")).is_err());
         assert!(validate(&spec, &names, &args("Billing", "VAT", "angry", "low")).is_err());

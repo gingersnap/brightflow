@@ -203,156 +203,110 @@ function inductionKind(kind: VocabKind): string | null {
       Loading vocabularies…
     </div>
 
-    <section v-for="level in KINDS" v-else :key="level.kind" class="flex flex-col gap-2">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <h4 class="text-sm font-medium text-highlighted">{{ level.label }}</h4>
-          <UBadge
-            size="lg"
-            variant="subtle"
-            :color="roots(level.kind).length >= level.cap ? 'warning' : 'neutral'"
-          >
-            {{ roots(level.kind).length }} / {{ level.cap }}
-          </UBadge>
-        </div>
-        <div class="flex gap-1">
-          <UButton
-            v-if="inductionKind(level.kind)"
-            size="md"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-sparkles"
-            :loading="busy"
-            @click="() => void induce(inductionKind(level.kind) ?? '')"
-          >
-            Propose
-          </UButton>
-          <UButton
-            size="md"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-plus"
-            :disabled="busy"
-            @click="() => void define(level.kind, null)"
-          >
-            Add
-          </UButton>
-        </div>
-      </div>
-
-      <p v-if="roots(level.kind).length === 0" class="text-sm text-muted">
-        Nothing yet<template v-if="inductionKind(level.kind)">
-          — propose a list from summaries, or add by hand</template
-        >.
-      </p>
-
-      <ul v-else class="flex flex-col gap-2">
-        <li
-          v-for="entry in roots(level.kind)"
-          :key="entry.id"
-          class="rounded-lg border border-default bg-elevated p-3"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex min-w-0 flex-col gap-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-highlighted">{{ entry.name }}</span>
-                <UIcon v-if="entry.frozen" name="i-lucide-lock" class="size-4 text-muted" />
-              </div>
-              <p v-if="entry.description" class="line-clamp-2 text-sm text-muted">
-                {{ entry.description }}
-              </p>
-              <p v-if="auditLine(entry)" class="text-sm text-dimmed">{{ auditLine(entry) }}</p>
-            </div>
-            <div class="flex shrink-0 gap-1">
-              <UButton
-                v-if="level.kind === 'category'"
-                size="md"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-sparkles"
-                aria-label="Propose subcategories"
-                :disabled="busy"
-                @click="() => void induce('propose_subcategories', entry)"
-              />
-              <UButton
-                v-if="level.childKind"
-                size="md"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-plus"
-                aria-label="Add child"
-                :disabled="busy"
-                @click="() => void define(level.childKind ?? level.kind, entry)"
-              />
-              <UButton
-                size="md"
-                color="neutral"
-                variant="ghost"
-                :icon="entry.frozen ? 'i-lucide-lock-open' : 'i-lucide-lock'"
-                :aria-label="entry.frozen ? 'Unfreeze' : 'Freeze'"
-                :disabled="busy"
-                @click="() => void toggleFrozen(entry)"
-              />
-              <UButton
-                size="md"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-pencil"
-                aria-label="Rename"
-                :disabled="busy || entry.frozen"
-                @click="() => void rename(entry)"
-              />
-              <UButton
-                size="md"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-file-pen"
-                aria-label="Redefine"
-                :disabled="busy || entry.frozen"
-                @click="() => void redefine(entry)"
-              />
-              <UButton
-                size="md"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-trash-2"
-                aria-label="Delete"
-                :disabled="busy || entry.frozen"
-                @click="() => void remove(entry)"
-              />
-            </div>
-          </div>
-
-          <ul
-            v-if="level.childKind && children(entry, level.childKind).length > 0"
-            class="mt-2 flex flex-col gap-1 border-l border-default pl-3"
-          >
-            <li
-              v-for="child in children(entry, level.childKind)"
-              :key="child.id"
-              class="flex items-start justify-between gap-3"
+    <!-- v-for lives inside the v-else, never on it: Vue 3 gives v-if/v-else
+         higher priority than v-for, so combining them makes the else-branch a
+         keyed fragment where the compiler expects one stable node. With nested
+         keyed lists inside, patching corrupts Vue's DOM node tracking and
+         throws from getNextHostNode. -->
+    <template v-else>
+      <section v-for="level in KINDS" :key="level.kind" class="flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-medium text-highlighted">{{ level.label }}</h4>
+            <UBadge
+              size="lg"
+              variant="subtle"
+              :color="roots(level.kind).length >= level.cap ? 'warning' : 'neutral'"
             >
-              <div class="flex min-w-0 flex-col">
-                <span class="text-sm text-highlighted">
-                  {{ child.name }}
-                  <UIcon v-if="child.frozen" name="i-lucide-lock" class="size-3 text-muted" />
-                </span>
-                <span v-if="child.description" class="line-clamp-1 text-sm text-muted">
-                  {{ child.description }}
-                </span>
-                <span v-if="auditLine(child)" class="text-sm text-dimmed">{{
-                  auditLine(child)
-                }}</span>
+              {{ roots(level.kind).length }} / {{ level.cap }}
+            </UBadge>
+          </div>
+          <div class="flex gap-1">
+            <UButton
+              v-if="inductionKind(level.kind)"
+              size="md"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-sparkles"
+              :loading="busy"
+              @click="() => void induce(inductionKind(level.kind) ?? '')"
+            >
+              Propose
+            </UButton>
+            <UButton
+              size="md"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-plus"
+              :disabled="busy"
+              @click="() => void define(level.kind, null)"
+            >
+              Add
+            </UButton>
+          </div>
+        </div>
+
+        <p v-if="roots(level.kind).length === 0" class="text-sm text-muted">
+          Nothing yet<template v-if="inductionKind(level.kind)">
+            — propose a list from summaries, or add by hand</template
+          >.
+        </p>
+
+        <ul v-else class="flex flex-col gap-2">
+          <li
+            v-for="entry in roots(level.kind)"
+            :key="entry.id"
+            class="rounded-lg border border-default bg-elevated p-3"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex min-w-0 flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-medium text-highlighted">{{ entry.name }}</span>
+                  <UIcon v-if="entry.frozen" name="i-lucide-lock" class="size-4 text-muted" />
+                </div>
+                <p v-if="entry.description" class="line-clamp-2 text-sm text-muted">
+                  {{ entry.description }}
+                </p>
+                <p v-if="auditLine(entry)" class="text-sm text-dimmed">{{ auditLine(entry) }}</p>
               </div>
               <div class="flex shrink-0 gap-1">
+                <UButton
+                  v-if="level.kind === 'category'"
+                  size="md"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-sparkles"
+                  aria-label="Propose subcategories"
+                  :disabled="busy"
+                  @click="() => void induce('propose_subcategories', entry)"
+                />
+                <UButton
+                  v-if="level.childKind"
+                  size="md"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-plus"
+                  aria-label="Add child"
+                  :disabled="busy"
+                  @click="() => void define(level.childKind ?? level.kind, entry)"
+                />
+                <UButton
+                  size="md"
+                  color="neutral"
+                  variant="ghost"
+                  :icon="entry.frozen ? 'i-lucide-lock-open' : 'i-lucide-lock'"
+                  :aria-label="entry.frozen ? 'Unfreeze' : 'Freeze'"
+                  :disabled="busy"
+                  @click="() => void toggleFrozen(entry)"
+                />
                 <UButton
                   size="md"
                   color="neutral"
                   variant="ghost"
                   icon="i-lucide-pencil"
                   aria-label="Rename"
-                  :disabled="busy || child.frozen"
-                  @click="() => void rename(child)"
+                  :disabled="busy || entry.frozen"
+                  @click="() => void rename(entry)"
                 />
                 <UButton
                   size="md"
@@ -360,8 +314,8 @@ function inductionKind(kind: VocabKind): string | null {
                   variant="ghost"
                   icon="i-lucide-file-pen"
                   aria-label="Redefine"
-                  :disabled="busy || child.frozen"
-                  @click="() => void redefine(child)"
+                  :disabled="busy || entry.frozen"
+                  @click="() => void redefine(entry)"
                 />
                 <UButton
                   size="md"
@@ -369,14 +323,67 @@ function inductionKind(kind: VocabKind): string | null {
                   variant="ghost"
                   icon="i-lucide-trash-2"
                   aria-label="Delete"
-                  :disabled="busy || child.frozen"
-                  @click="() => void remove(child)"
+                  :disabled="busy || entry.frozen"
+                  @click="() => void remove(entry)"
                 />
               </div>
-            </li>
-          </ul>
-        </li>
-      </ul>
-    </section>
+            </div>
+
+            <ul
+              v-if="level.childKind && children(entry, level.childKind).length > 0"
+              class="mt-2 flex flex-col gap-1 border-l border-default pl-3"
+            >
+              <li
+                v-for="child in children(entry, level.childKind)"
+                :key="child.id"
+                class="flex items-start justify-between gap-3"
+              >
+                <div class="flex min-w-0 flex-col">
+                  <span class="text-sm text-highlighted">
+                    {{ child.name }}
+                    <UIcon v-if="child.frozen" name="i-lucide-lock" class="size-3 text-muted" />
+                  </span>
+                  <span v-if="child.description" class="line-clamp-1 text-sm text-muted">
+                    {{ child.description }}
+                  </span>
+                  <span v-if="auditLine(child)" class="text-sm text-dimmed">{{
+                    auditLine(child)
+                  }}</span>
+                </div>
+                <div class="flex shrink-0 gap-1">
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-pencil"
+                    aria-label="Rename"
+                    :disabled="busy || child.frozen"
+                    @click="() => void rename(child)"
+                  />
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-file-pen"
+                    aria-label="Redefine"
+                    :disabled="busy || child.frozen"
+                    @click="() => void redefine(child)"
+                  />
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-trash-2"
+                    aria-label="Delete"
+                    :disabled="busy || child.frozen"
+                    @click="() => void remove(child)"
+                  />
+                </div>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </section>
+    </template>
   </div>
 </template>

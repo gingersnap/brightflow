@@ -287,8 +287,13 @@ const outputs = computed(() =>
           — {{ fn.staleRowCount?.toLocaleString() }} rows not yet computed</template
         >
       </span>
+      <!-- Was 'topics-table', a route removed with the clustering path. An
+           unresolvable name makes RouterLink throw on every render, so this
+           now targets the tool that hosts the vocabularies. Note it resolves
+           to the page this editor already sits on — see the note in the
+           review if this link should scroll or simply go. -->
       <RouterLink
-        :to="{ name: 'topics-table', params: { sourceId, table } }"
+        :to="{ name: 'textanalytics-table', params: { sourceId, table } }"
         class="ml-auto inline-flex items-center gap-1 text-sm text-primary-500 hover:underline"
       >
         Vocabulary

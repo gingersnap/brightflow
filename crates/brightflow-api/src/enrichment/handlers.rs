@@ -423,6 +423,10 @@ pub async fn sample_run(
         &spec,
         &inputs,
         None,
+        // A sample is always computed fresh. Reading the cache would replay
+        // stale answers precisely when the point is to see what the current
+        // prompt produces; writing it would store results from a draft config.
+        runner::CacheMode::Bypass,
     )
     .await?;
 

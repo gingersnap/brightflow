@@ -204,7 +204,7 @@ pub fn system_prompt(spec: &TicketExtractSpec, names: &VocabNames) -> String {
          product row for the invoice screen and a feedback row for what was said.\n\
          - Several distinct feedback points are several rows.\n\
          - A comparison (\"X is better than Y\") is two rows with opposite polarity.\n\
-         - `polarity`: positive | negative | neutral | mixed | none, as the customer \
+         - `polarity`: positive | negative | neutral | mixed, as the customer \
          expressed it about THAT subject.\n\
          - `confidence`: 0 to 1.\n\
          - Most tickets contain NO incidental feedback and few mentions. An empty list is \
