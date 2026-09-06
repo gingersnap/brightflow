@@ -4,6 +4,8 @@
  * Works on a local copy of the fields so vuedraggable never mutates props:
  * a dropped column is stripped back out of the local list and re-emitted as
  * an `add` event for the store to apply, and reorders are emitted whole.
+ * Value chips carry an aggregation select; row and column chips carry the
+ * field's sort (largest first by default) — both emit `update`.
  */
 
 import { ref, watch } from 'vue';
@@ -11,6 +13,12 @@ import draggable from 'vuedraggable';
 
 import type { AggFn, PivotField } from '@/types';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
+import {
+  DEFAULT_FIELD_SORT,
+  FIELD_SORT_OPTIONS,
+  type FieldSort,
+  sortKey,
+} from '@/utils/pivotOrder';
 
 // AggFn (not string) so USelectMenu emits a value assignable to PivotField.aggregation.
 interface AggregationOption {
@@ -41,6 +49,8 @@ const props = withDefaults(
     fields: PivotField[];
     bucket: 'rows' | 'columns' | 'values';
     showAggregation?: boolean;
+    /** Row and column buckets: show each chip's sort. */
+    showSort?: boolean;
     maxItems?: number | null;
     disabled?: boolean;
     disabledMessage?: string;
@@ -60,8 +70,20 @@ const props = withDefaults(
     fields: () => [],
     maxItems: null,
     showAggregation: false,
+    showSort: false,
   },
 );
+
+// USelectMenu compares by value-key, so the options are keyed by a string.
+const sortItems = FIELD_SORT_OPTIONS.map((o) => ({ label: o.label, value: sortKey(o.value) }));
+
+function sortOf(field: PivotField): FieldSort {
+  return field.sort ?? DEFAULT_FIELD_SORT;
+}
+
+function sortFromKey(key: string): FieldSort {
+  return FIELD_SORT_OPTIONS.find((o) => sortKey(o.value) === key)?.value ?? DEFAULT_FIELD_SORT;
+}
 
 const emit = defineEmits<{
   add: [field: { column: string; dtype: string }];
@@ -175,6 +197,19 @@ function handleChange(evt: DragEvent): void {
             size="xs"
             class="w-20"
             @update:model-value="(val: AggFn) => emit('update', element.id, { aggregation: val })"
+          />
+
+          <!-- Sort selector for row/column buckets -->
+          <USelectMenu
+            v-if="showSort"
+            :model-value="sortKey(sortOf(element))"
+            :items="sortItems"
+            value-key="value"
+            size="xs"
+            class="w-28"
+            @update:model-value="
+              (key: string) => emit('update', element.id, { sort: sortFromKey(key) })
+            "
           />
 
           <!-- Remove button -->

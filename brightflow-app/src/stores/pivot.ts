@@ -2,7 +2,9 @@
  * Pivot builder state: the row, column, and value buckets.
  *
  * Field order within a bucket is meaningful (it is the nesting order of the
- * resulting headers), which is why buckets are arrays rather than sets.
+ * resulting headers), which is why buckets are arrays rather than sets. Row
+ * and column fields carry their own sort, the way Excel's do; a new field
+ * starts largest-first, and the table and chart both order by it.
  */
 
 import { defineStore } from 'pinia';
@@ -10,6 +12,7 @@ import { computed, ref } from 'vue';
 
 import type { AggFn, PivotField } from '@/types';
 import { isNumericDtype } from '@/utils/dtype';
+import { DEFAULT_FIELD_SORT, type FieldSort } from '@/utils/pivotOrder';
 
 export const usePivotStore = defineStore('pivot', () => {
   // === Bucket State ===
@@ -49,7 +52,16 @@ export const usePivotStore = defineStore('pivot', () => {
       column,
       dtype,
       id: crypto.randomUUID(),
+      sort: { ...DEFAULT_FIELD_SORT },
     });
+  }
+
+  /** Change a row or column field's display order. */
+  function setFieldSort(id: string, sort: FieldSort): void {
+    const field = [...rowFields.value, ...columnFields.value].find((f) => f.id === id);
+    if (field) {
+      field.sort = { ...sort };
+    }
   }
 
   function removeRowField(id: string): void {
@@ -67,6 +79,7 @@ export const usePivotStore = defineStore('pivot', () => {
         column,
         dtype,
         id: crypto.randomUUID(),
+        sort: { ...DEFAULT_FIELD_SORT },
       },
     ];
   }
@@ -178,6 +191,7 @@ export const usePivotStore = defineStore('pivot', () => {
     isConfigured,
 
     // Actions
+    setFieldSort,
     addRowField,
     removeRowField,
     reorderRowFields,

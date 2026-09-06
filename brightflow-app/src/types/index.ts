@@ -3,6 +3,8 @@
  */
 
 // Import generated types used in interfaces below
+import type { FieldSort } from '@/utils/pivotOrder';
+
 import type { Aggregation as AggFn, FilterOp, SourceTool, UnifiedSource } from './generated';
 
 // Re-export generated types from Rust backend
@@ -102,6 +104,8 @@ export interface PivotField {
   column: string;
   dtype: string;
   aggregation?: AggFn;
+  /** Row and column fields: their display order (see `utils/pivotOrder`). */
+  sort?: FieldSort;
 }
 
 // Connection status (frontend-only)

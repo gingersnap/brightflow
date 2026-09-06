@@ -4,7 +4,8 @@
  * (collapsible group-header rows, subtotals, column totals, per-cell heatmap
  * shading) is the justified raw-markup exception to Nuxt-UI-first. With
  * multiple row fields, rows are grouped client-side by the first index
- * column, with subtotals accumulated per group.
+ * column, with subtotals accumulated per group. Rows and groups follow each
+ * row field's sort (`utils/pivotOrder`), the same order the chart uses.
  */
 
 import { computed } from 'vue';
@@ -14,6 +15,7 @@ import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
 import { formatDecimal } from '@/utils/format';
+import { DEFAULT_FIELD_SORT, orderRows } from '@/utils/pivotOrder';
 
 const pivotStore = usePivotStore();
 const resultsStore = useResultsStore();
@@ -72,13 +74,20 @@ const pivotData = computed((): PivotData | null => {
     }
   }
 
+  // Index columns come back in row-field order, so the field sorts line up.
+  const sorts = pivotStore.rowFields.map((f) => f.sort ?? DEFAULT_FIELD_SORT);
+  const order = orderRows({ rows, indexIdx: indexColIndices, valueIdx: valueColIndices, sorts });
+
   return {
     indexColumns: indexColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
-    rows: rows.map((row, rowIdx) => ({
-      id: `row-${rowIdx}`,
-      indexValues: indexColIndices.map((i) => row[i]),
-      dataValues: valueColIndices.map((i) => row[i]),
-    })),
+    rows: order.map((rowIdx) => {
+      const row = rows[rowIdx] ?? [];
+      return {
+        id: `row-${rowIdx}`,
+        indexValues: indexColIndices.map((i) => row[i]),
+        dataValues: valueColIndices.map((i) => row[i]),
+      };
+    }),
     valueColumns: valueColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
   };
 });

@@ -154,6 +154,13 @@ function handleReorderRows(newOrder: PivotField[]): void {
   pivotStore.reorderRowFields(newOrder);
 }
 
+/** Row/column chips only ever update their sort. */
+function handleFieldSort(id: string, updates: Partial<PivotField>): void {
+  if (updates.sort != null) {
+    pivotStore.setFieldSort(id, updates.sort);
+  }
+}
+
 function handleReorderValues(newOrder: PivotField[]): void {
   pivotStore.reorderValueFields(newOrder);
 }
@@ -270,9 +277,11 @@ const sortColumnOptions = computed(() =>
             title="Rows"
             bucket="rows"
             :fields="pivotStore.rowFields"
+            :show-sort="true"
             @add="handleAddRow"
             @remove="pivotStore.removeRowField"
             @reorder="handleReorderRows"
+            @update="handleFieldSort"
           />
 
           <div class="relative">
@@ -290,10 +299,12 @@ const sortColumnOptions = computed(() =>
               bucket="columns"
               :fields="pivotStore.columnFields"
               :max-items="1"
+              :show-sort="true"
               :disabled="pivotStore.rowFields.length === 0"
               disabled-message="Add rows first"
               @add="handleAddColumn"
               @remove="pivotStore.removeColumnField"
+              @update="handleFieldSort"
             />
           </div>
 

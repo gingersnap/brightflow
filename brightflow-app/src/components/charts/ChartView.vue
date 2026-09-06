@@ -18,6 +18,7 @@ import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { ChartType } from '@/types';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
+import { DEFAULT_FIELD_SORT, orderRows, orderSeries } from '@/utils/pivotOrder';
 
 // Register ECharts components
 const resultsStore = useResultsStore();
@@ -166,12 +167,35 @@ const chartOption = computed(() => {
     return null;
   }
 
-  const yIndices = yAxes.value.map((y) => chartColumns.value.findIndex((c) => c.name === y));
-  if (yIndices.some((i) => i === -1)) {
+  const unorderedY = yAxes.value.map((y) => chartColumns.value.findIndex((c) => c.name === y));
+  if (unorderedY.some((i) => i === -1)) {
     return null;
   }
 
-  const xData = chartRows.value.map((row) => row[xIndex]);
+  // Pivot results follow the field sorts, the same order the pivot table
+  // Shows; hand-built tables keep their query order.
+  const usingPivot = pivotStore.isConfigured && resultsStore.hasPivotResults;
+  const names = chartColumns.value.map((c) => c.name);
+  const yIndices = usingPivot
+    ? orderSeries({
+        rows: chartRows.value,
+        seriesIdx: unorderedY,
+        names,
+        sort: pivotStore.columnFields[0]?.sort ?? DEFAULT_FIELD_SORT,
+      })
+    : unorderedY;
+  const rowOrder = usingPivot
+    ? orderRows({
+        rows: chartRows.value,
+        indexIdx: pivotStore.rowFields.map((f) => names.indexOf(f.column)).filter((i) => i !== -1),
+        valueIdx: yIndices,
+        sorts: pivotStore.rowFields.map((f) => f.sort ?? DEFAULT_FIELD_SORT),
+      })
+    : chartRows.value.map((_, i) => i);
+  const orderedRows = rowOrder.map((i) => chartRows.value[i] ?? []);
+  const yNames = yIndices.map((i) => names[i] ?? '');
+
+  const xData = orderedRows.map((row) => row[xIndex]);
 
   const baseOption = {
     color: colors,
@@ -184,7 +208,7 @@ const chartOption = computed(() => {
     legend:
       yAxes.value.length > 1
         ? {
-            data: yAxes.value,
+            data: yNames,
             bottom: 0,
           }
         : undefined,
@@ -197,9 +221,9 @@ const chartOption = computed(() => {
   // Build series for each Y axis
   const buildSeries = (type: string): SeriesItem[] =>
     yIndices.map((yIdx, i) => {
-      const yData = chartRows.value.map((row) => row[yIdx]);
+      const yData = orderedRows.map((row) => row[yIdx]);
       const series: SeriesItem = {
-        name: yAxes.value[i],
+        name: yNames[i],
         type,
         data: yData,
         itemStyle: { color: colors[i % colors.length] },
@@ -234,7 +258,7 @@ const chartOption = computed(() => {
     });
 
   const firstYIdx = yIndices[0];
-  const firstYAxis = yAxes.value[0];
+  const firstYAxis = yNames[0];
 
   switch (uiStore.chartType) {
     case 'bar': {
@@ -276,7 +300,7 @@ const chartOption = computed(() => {
     }
 
     case 'pie': {
-      const yData = firstYIdx === undefined ? [] : chartRows.value.map((row) => row[firstYIdx]);
+      const yData = firstYIdx === undefined ? [] : orderedRows.map((row) => row[firstYIdx]);
       return {
         color: colors,
         legend: { orient: 'vertical' as const, left: 'left' },
@@ -311,7 +335,7 @@ const chartOption = computed(() => {
             data:
               firstYIdx === undefined
                 ? []
-                : chartRows.value.map((row) => [row[xIndex], row[firstYIdx]]),
+                : orderedRows.map((row) => [row[xIndex], row[firstYIdx]]),
             itemStyle: { color: colors[0] },
           },
         ],
