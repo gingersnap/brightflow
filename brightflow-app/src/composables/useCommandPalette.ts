@@ -102,7 +102,7 @@ export function useCommandPalette(
   const isInsights = computed(() => routeTool.value === 'insights' && hasScope.value);
 
   const { data: taxonomy } = useQuery({
-    // Same key as VocabularyPanel.vue.
+    // Same key as VocabularyTree.vue.
     key: () => ['taxonomy', scopeSourceId.value ?? '', scopeTable.value ?? ''],
     query: () => taxonomyApi.overview(scopeSourceId.value ?? '', scopeTable.value ?? ''),
     enabled: () => open.value && isTextEnrichment.value,

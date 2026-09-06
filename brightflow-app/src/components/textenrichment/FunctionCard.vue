@@ -1,16 +1,24 @@
 <script setup lang="ts">
 /**
- * One text function (classify or extract): create when absent, otherwise
- * edit the saved config, test on a sample, run with an explicit scope,
- * restore a version, delete. Owns the draft config; TicketFunctionEditor is
- * the form. A saved edit to a running function asks for the rerun scope the
- * same way the old editor did, because a config change empties the cache.
+ * One text function (classify or extract), self-contained: it finds its own
+ * function row by kind, creates it when absent, and otherwise edits the
+ * saved config, tests on a sample, runs with an explicit scope, restores a
+ * version, deletes. The card owns the expand state: once a function exists
+ * it collapses to a one-line header — name, version, columns, provider, rows
+ * computed of total, rows to recompute — with Run and Edit; the editor only
+ * shows while editing or creating. A saved edit asks for the rerun scope,
+ * because a config change empties the cache.
+ *
+ * Queries share keys with the rest of the tool (`enrich-fns`,
+ * `vocabulary-health`, `tables-index`, `llm-providers`) so one fetch serves
+ * every card and pane on the page.
  */
 
+import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { useEnrichRun } from '@/composables/useEnrichRun';
-import { enrichFnApi } from '@/services/api';
+import { enrichFnApi, llmApi, tableApi, vocabularyApi } from '@/services/api';
 import type {
   EnrichFunction,
   FunctionKind,
@@ -25,15 +33,45 @@ import VersionHistoryPanel from './VersionHistoryPanel.vue';
 
 const props = defineProps<{
   kind: FunctionKind;
-  fn: EnrichFunction | null;
-  columnNames: string[];
   sourceId: string;
   table: string;
 }>();
 
-const emit = defineEmits<{
-  changed: [];
-}>();
+const queryCache = useQueryCache();
+
+const functionsKey = computed(() => ['enrich-fns', props.sourceId, props.table]);
+const { data: functions } = useQuery({
+  key: () => functionsKey.value,
+  query: async () => (await enrichFnApi.list(props.sourceId, props.table)) ?? [],
+});
+const fn = computed<EnrichFunction | null>(
+  () => (functions.value ?? []).find((f) => f.kind === props.kind) ?? null,
+);
+
+const { data: tableIndex } = useQuery({
+  key: () => ['tables-index', props.sourceId],
+  query: async () => (await tableApi.listAvailable()) ?? [],
+});
+const columnNames = computed(() => {
+  const info = (tableIndex.value ?? []).find(
+    (t) => t.source_id === props.sourceId && t.name === props.table,
+  );
+  const schema = info?.schema as { fields?: { name?: string }[] } | null;
+  return (schema?.fields ?? [])
+    .map((f) => f.name)
+    .filter((n): n is string => typeof n === 'string');
+});
+
+const { data: health } = useQuery({
+  key: () => ['vocabulary-health', props.sourceId, props.table],
+  query: () => vocabularyApi.health(props.sourceId, props.table),
+});
+const totalRows = computed(() => health.value?.totalRows ?? null);
+
+const { data: providers } = useQuery({
+  key: ['llm-providers'],
+  query: async () => (await llmApi.listProviders()) ?? [],
+});
 
 const title = computed(() =>
   props.kind === 'ticket_classify' ? 'Summary and classification' : 'Extraction',
@@ -49,6 +87,7 @@ const savedSnapshot = ref('');
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 const creating = ref(false);
+const editing = ref(false);
 
 function snapshot(): string {
   return JSON.stringify(config.value);
@@ -56,12 +95,12 @@ function snapshot(): string {
 
 const isDirty = computed(() => snapshot() !== savedSnapshot.value);
 
-function loadFromFn(fn: EnrichFunction | null): void {
+function loadFromFn(current: EnrichFunction | null): void {
   saveError.value = null;
-  if (fn == null) {
+  if (current == null) {
     config.value = emptyConfig();
   } else {
-    const c = fn.config as Partial<TicketFunctionConfig>;
+    const c = current.config as Partial<TicketFunctionConfig>;
     config.value = {
       language_column: c.language_column ?? null,
       model: c.model ?? null,
@@ -73,31 +112,58 @@ function loadFromFn(fn: EnrichFunction | null): void {
 }
 
 watch(
-  () => [props.fn?.id, props.fn?.version] as const,
-  () => loadFromFn(props.fn),
+  () => [fn.value?.id, fn.value?.version] as const,
+  () => loadFromFn(fn.value),
   {
     immediate: true,
   },
 );
+
+/** The header's one-line summary of the saved config. */
+const providerLabel = computed(() => {
+  const saved = fn.value?.config as Partial<TicketFunctionConfig> | undefined;
+  const id = saved?.provider_id ?? 'default';
+  const hit = (providers.value ?? []).find((p) => String(p.id) === id);
+  let base = hit?.name ?? id;
+  if (hit == null && id === 'default') {
+    base = 'default provider';
+  }
+  return saved?.model == null ? base : `${base} · ${saved.model}`;
+});
+const columnsLabel = computed(() => {
+  const saved = fn.value?.config as Partial<TicketFunctionConfig> | undefined;
+  return (saved?.text_columns ?? []).join(', ');
+});
+const computedRows = computed(() => {
+  if (totalRows.value == null) {
+    return null;
+  }
+  return Math.max(0, totalRows.value - (fn.value?.staleRowCount ?? 0));
+});
+
+async function refresh(): Promise<void> {
+  await queryCache.invalidateQueries({ key: functionsKey.value });
+}
 
 async function persist(rerun: 'none' | 'missing' | 'all'): Promise<void> {
   saving.value = true;
   saveError.value = null;
   try {
     const saved =
-      props.fn == null
+      fn.value == null
         ? await enrichFnApi.create(props.sourceId, props.table, {
             config: { ...config.value },
             kind: props.kind,
             name: defaultName.value,
           })
-        : await enrichFnApi.update(props.fn.id, { config: { ...config.value }, rerun });
+        : await enrichFnApi.update(fn.value.id, { config: { ...config.value }, rerun });
     if (saved == null) {
       throw new Error('Save failed');
     }
     savedSnapshot.value = snapshot();
     creating.value = false;
-    emit('changed');
+    editing.value = false;
+    await refresh();
   } catch (error) {
     saveError.value = error instanceof Error ? error.message : 'Save failed';
   } finally {
@@ -108,7 +174,7 @@ async function persist(rerun: 'none' | 'missing' | 'all'): Promise<void> {
 const rerunChoiceOpen = ref(false);
 
 async function handleSave(): Promise<void> {
-  if (props.fn == null) {
+  if (fn.value == null) {
     await persist('none');
     return;
   }
@@ -120,11 +186,17 @@ async function chooseRerun(rerun: 'none' | 'missing' | 'all'): Promise<void> {
   await persist(rerun);
 }
 
-const enrichRun = useEnrichRun(() => emit('changed'));
+function cancelEdit(): void {
+  loadFromFn(fn.value);
+  editing.value = false;
+  creating.value = false;
+}
+
+const enrichRun = useEnrichRun(() => void refresh());
 const runModalOpen = ref(false);
 
 onMounted(() => {
-  const activeRunId = props.fn?.activeRunId;
+  const activeRunId = fn.value?.activeRunId;
   if (activeRunId != null) {
     void enrichRun.resume(activeRunId);
   }
@@ -132,14 +204,14 @@ onMounted(() => {
 
 async function confirmRun(scope: RunScope): Promise<void> {
   runModalOpen.value = false;
-  if (props.fn != null) {
-    await enrichRun.start(props.fn.id, scope);
+  if (fn.value != null) {
+    await enrichRun.start(fn.value.id, scope);
   }
 }
 
 async function rerunFailed(): Promise<void> {
-  if (props.fn != null) {
-    await enrichRun.start(props.fn.id, 'failed');
+  if (fn.value != null) {
+    await enrichRun.start(fn.value.id, 'failed');
   }
 }
 
@@ -154,30 +226,64 @@ function restoreVersion(restored: unknown): void {
     text_columns: c.text_columns ?? [],
   };
   historyOpen.value = false;
+  editing.value = true;
 }
 
 async function remove(): Promise<void> {
-  if (props.fn == null) {
+  if (fn.value == null) {
     return;
   }
   const dropColumns = window.confirm(
-    `Delete "${props.fn.name}"?\n\nOK also drops its materialised columns; Cancel keeps the function.`,
+    `Delete "${fn.value.name}"?\n\nOK also drops its materialised columns; Cancel keeps the function.`,
   );
   if (!dropColumns) {
     return;
   }
-  await enrichFnApi.delete(props.fn.id, true);
-  emit('changed');
+  await enrichFnApi.delete(fn.value.id, true);
+  editing.value = false;
+  await refresh();
 }
+
+const expanded = computed(() => creating.value || editing.value);
 </script>
 
 <template>
   <div class="rounded-lg border border-default bg-elevated p-4">
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <h4 class="text-sm font-medium text-highlighted">{{ title }}</h4>
-      <span v-if="fn" class="text-sm text-muted">{{ fn.name }} · v{{ fn.version }}</span>
+      <template v-if="fn">
+        <span class="text-sm text-muted">{{ fn.name }} · v{{ fn.version }}</span>
+        <span v-if="columnsLabel" class="text-sm text-muted">· {{ columnsLabel }}</span>
+        <span class="text-sm text-muted">· {{ providerLabel }}</span>
+        <span v-if="computedRows != null" class="text-sm text-muted">
+          · {{ computedRows.toLocaleString() }} of {{ totalRows?.toLocaleString() }} rows
+        </span>
+        <span v-if="(fn.staleRowCount ?? 0) > 0" class="text-sm text-warning">
+          · {{ fn.staleRowCount?.toLocaleString() }} rows to recompute
+        </span>
+      </template>
       <div class="ml-auto flex items-center gap-2">
-        <template v-if="fn">
+        <template v-if="fn && !expanded">
+          <UButton
+            size="md"
+            color="primary"
+            variant="soft"
+            icon="i-lucide-play"
+            @click="runModalOpen = true"
+          >
+            Run
+          </UButton>
+          <UButton
+            size="md"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-pencil"
+            @click="editing = true"
+          >
+            Edit
+          </UButton>
+        </template>
+        <template v-else-if="fn">
           <UButton
             size="md"
             color="neutral"
@@ -195,6 +301,7 @@ async function remove(): Promise<void> {
             aria-label="Delete function"
             @click="() => void remove()"
           />
+          <UButton size="md" color="neutral" variant="ghost" @click="cancelEdit">Close</UButton>
           <UButton
             size="md"
             color="primary"
@@ -216,9 +323,7 @@ async function remove(): Promise<void> {
           Set up
         </UButton>
         <template v-else>
-          <UButton size="md" color="neutral" variant="ghost" @click="creating = false">
-            Cancel
-          </UButton>
+          <UButton size="md" color="neutral" variant="ghost" @click="cancelEdit">Cancel</UButton>
           <UButton
             size="md"
             color="primary"
@@ -246,6 +351,7 @@ async function remove(): Promise<void> {
       </p>
 
       <TicketFunctionEditor
+        v-if="expanded"
         v-model:config="config"
         :column-names="columnNames"
         :fn="fn"

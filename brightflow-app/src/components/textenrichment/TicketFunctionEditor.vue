@@ -285,18 +285,6 @@ const outputs = computed(() =>
           — {{ fn.staleRowCount?.toLocaleString() }} rows not yet computed</template
         >
       </span>
-      <!-- Was 'topics-table', a route removed with the clustering path. An
-           unresolvable name makes RouterLink throw on every render, so this
-           now targets the tool that hosts the vocabularies. Note it resolves
-           to the page this editor already sits on — see the note in the
-           review if this link should scroll or simply go. -->
-      <RouterLink
-        :to="{ name: 'textenrichment-table', params: { sourceId, table } }"
-        class="ml-auto inline-flex items-center gap-1 text-sm text-primary-500 hover:underline"
-      >
-        Vocabulary
-        <UIcon name="i-lucide-arrow-right" class="size-4" />
-      </RouterLink>
     </div>
   </div>
 </template>

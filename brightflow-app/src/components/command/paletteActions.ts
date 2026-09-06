@@ -25,7 +25,7 @@ import type {
  *
  * v1 exclusions (deliberate): `redefine_taxonomy_category` and
  * `freeze_taxonomy_category` need the entry's current definition in view
- * (VocabularyPanel owns them).
+ * (VocabularyTree owns them).
  */
 
 /** One palette item — a structural subset of Nuxt UI's CommandPaletteItem. */
