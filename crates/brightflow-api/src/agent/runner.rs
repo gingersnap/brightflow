@@ -373,9 +373,12 @@ async fn existing_vocabulary(
         .collect())
 }
 
-/// Fewest classified summaries an induction run will accept. Inducing a
-/// vocabulary from less produces a guessed list, which the design forbids.
-const MIN_SUMMARIES_FOR_INDUCTION: usize = 50;
+/// Fewest classified summaries an induction run will accept.
+///
+/// Inducing a vocabulary from less produces a guessed list, which the design
+/// forbids. Public so the vocabulary health response can state it and the UI
+/// can say why a proposal is not yet possible instead of letting the run fail.
+pub const MIN_SUMMARIES_FOR_INDUCTION: usize = 50;
 
 /// Shared instruction for the three summary-driven induction runs.
 fn induction_system(level: &str, corpus: &str, cap: usize) -> String {

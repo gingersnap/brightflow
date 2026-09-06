@@ -10,4 +10,11 @@ classifiedRows: number, totalRows: number,
 /**
  * The root level (categories), when the table has been classified.
  */
-levels: Array<VocabularyLevelHealth>, perParent: Array<VocabularyParentHealth>, };
+levels: Array<VocabularyLevelHealth>, perParent: Array<VocabularyParentHealth>, 
+/**
+ * Fewest rows a level (or a parent's rows, for subcategories) must have
+ * before an induction run will propose entries for it. Stated here so
+ * the UI can disable "propose" with the reason rather than start a run
+ * that fails.
+ */
+inductionMinRows: number, };

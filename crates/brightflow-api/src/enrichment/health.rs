@@ -206,6 +206,7 @@ pub async fn vocabulary_health(
         total_rows: df.height(),
         levels,
         per_parent,
+        induction_min_rows: crate::agent::runner::MIN_SUMMARIES_FOR_INDUCTION,
     }))
 }
 

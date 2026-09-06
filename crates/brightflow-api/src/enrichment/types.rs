@@ -305,6 +305,11 @@ pub struct VocabularyHealthResponse {
     /// The root level (categories), when the table has been classified.
     pub levels: Vec<VocabularyLevelHealth>,
     pub per_parent: Vec<VocabularyParentHealth>,
+    /// Fewest rows a level (or a parent's rows, for subcategories) must have
+    /// before an induction run will propose entries for it. Stated here so
+    /// the UI can disable "propose" with the reason rather than start a run
+    /// that fails.
+    pub induction_min_rows: usize,
 }
 
 /// Headline numbers for one mentioned subject.

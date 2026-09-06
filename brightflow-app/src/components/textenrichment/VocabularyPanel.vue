@@ -6,13 +6,19 @@
  * delete, and the audit line naming who did what. Every write dispatches
  * through the action bus; LLM induction runs start from here so a proposed
  * list lands as a reviewable diff against the current one.
+ *
+ * `other` is a fixed row at every induced level, never a stored entry: the
+ * classifier always offers it, so the panel shows it — with the share of rows
+ * landing there, which is the number that says whether the level is wrong.
+ * Induction buttons state their precondition (rows classified at that level)
+ * and disable below it instead of starting a run that fails.
  */
 
 import { useQuery, useQueryCache } from '@pinia/colada';
 import { computed, ref } from 'vue';
 
 import { useCuration } from '@/composables/useCuration';
-import { agentApi, taxonomyApi } from '@/services/api';
+import { agentApi, taxonomyApi, vocabularyApi } from '@/services/api';
 import { useCurationStore } from '@/stores/curation';
 import type { TaxonomyCategory } from '@/types/generated';
 
@@ -23,13 +29,33 @@ const props = defineProps<{
 
 type VocabKind = 'category' | 'subcategory' | 'feedback_category' | 'product' | 'competitor';
 
-/** Kinds with a root level, in display order, with their caps. */
-const KINDS: { kind: VocabKind; label: string; cap: number; childKind: VocabKind | null }[] = [
-  { kind: 'category', label: 'Categories', cap: 10, childKind: 'subcategory' },
-  { kind: 'feedback_category', label: 'Feedback categories', cap: 10, childKind: null },
-  { kind: 'product', label: 'Products', cap: 20, childKind: 'product' },
-  { kind: 'competitor', label: 'Competitors', cap: 20, childKind: null },
+/**
+ * Kinds with a root level, in display order, with their caps. `induced`
+ * levels are proposed from summaries and carry the implicit `other`;
+ * imported ones (products, competitors) have neither — an unlisted name
+ * becomes an unresolved subject instead.
+ */
+const KINDS: {
+  kind: VocabKind;
+  label: string;
+  cap: number;
+  childKind: VocabKind | null;
+  induced: boolean;
+}[] = [
+  { kind: 'category', label: 'Categories', cap: 10, childKind: 'subcategory', induced: true },
+  {
+    kind: 'feedback_category',
+    label: 'Feedback categories',
+    cap: 10,
+    childKind: null,
+    induced: true,
+  },
+  { kind: 'product', label: 'Products', cap: 20, childKind: 'product', induced: false },
+  { kind: 'competitor', label: 'Competitors', cap: 20, childKind: null, induced: false },
 ];
+
+/** What the reserved value means, shown where a definition would be. */
+const OTHER_DEFINITION = 'None of the above — always offered, never proposed, not counted.';
 
 const curation = useCuration();
 const curationStore = useCurationStore();
@@ -40,8 +66,51 @@ const { data: taxonomy, isLoading } = useQuery({
   query: () => taxonomyApi.overview(props.sourceId, props.table),
 });
 
+// Same key as ResultsPane: one fetch serves both panes.
+const { data: health } = useQuery({
+  key: () => ['vocabulary-health', props.sourceId, props.table],
+  query: () => vocabularyApi.health(props.sourceId, props.table),
+});
+
 async function refresh(): Promise<void> {
-  await queryCache.invalidateQueries({ key: ['taxonomy', props.sourceId, props.table] });
+  await Promise.all([
+    queryCache.invalidateQueries({ key: ['taxonomy', props.sourceId, props.table] }),
+    queryCache.invalidateQueries({ key: ['vocabulary-health', props.sourceId, props.table] }),
+  ]);
+}
+
+const pct = (share: number): string => `${Math.round(share * 100)}%`;
+
+/** Share of rows in `other` at a root level, once the table is classified. */
+function rootOtherRate(kind: VocabKind): number | null {
+  return health.value?.levels.find((l) => l.kind === kind)?.otherRate ?? null;
+}
+
+/** Share of a category's rows whose subcategory is `other`. */
+function childOtherRate(parent: TaxonomyCategory): number | null {
+  return health.value?.perParent.find((p) => p.parent === parent.name)?.health.otherRate ?? null;
+}
+
+/** Rows classified under a category — what a subcategory proposal reads. */
+function rowsUnder(parent: TaxonomyCategory): number {
+  return health.value?.perParent.find((p) => p.parent === parent.name)?.health.rows ?? 0;
+}
+
+const inductionMin = computed(() => health.value?.inductionMinRows ?? 50);
+
+/** Why a proposal cannot start yet, or null when it can. */
+function subcategoryBlocker(parent: TaxonomyCategory): string | null {
+  const rows = rowsUnder(parent);
+  return rows >= inductionMin.value
+    ? null
+    : `Needs ${inductionMin.value} rows classified as "${parent.name}" — has ${rows}`;
+}
+
+function categoryBlocker(): string | null {
+  const rows = health.value?.classifiedRows ?? 0;
+  return rows >= inductionMin.value
+    ? null
+    : `Needs ${inductionMin.value} classified rows — has ${rows}`;
 }
 
 const entries = computed(() => taxonomy.value?.categories ?? []);
@@ -192,8 +261,8 @@ function inductionKind(kind: VocabKind): string | null {
       <h3 class="text-sm font-medium text-highlighted">Vocabularies</h3>
       <p class="text-sm text-muted">
         Every closed list the enrichment resolves against. Induced lists are proposed from row
-        summaries and reviewed as a diff; imported lists come from your catalog. A rename is free; a
-        redefinition recomputes.
+        summaries and reviewed as a diff — up to the cap, fewer when the corpus needs fewer;
+        imported lists come from your catalog. A rename is free; a redefinition recomputes.
       </p>
       <p v-if="lastRunNote" class="text-sm text-default">{{ lastRunNote }}</p>
     </div>
@@ -222,17 +291,22 @@ function inductionKind(kind: VocabKind): string | null {
             </UBadge>
           </div>
           <div class="flex gap-1">
-            <UButton
+            <UTooltip
               v-if="inductionKind(level.kind)"
-              size="md"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-sparkles"
-              :loading="busy"
-              @click="() => void induce(inductionKind(level.kind) ?? '')"
+              :text="level.kind === 'category' ? (categoryBlocker() ?? '') : ''"
             >
-              Propose
-            </UButton>
+              <UButton
+                size="md"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-sparkles"
+                :loading="busy"
+                :disabled="level.kind === 'category' && categoryBlocker() != null"
+                @click="() => void induce(inductionKind(level.kind) ?? '')"
+              >
+                Propose
+              </UButton>
+            </UTooltip>
             <UButton
               size="md"
               color="neutral"
@@ -252,7 +326,7 @@ function inductionKind(kind: VocabKind): string | null {
           >.
         </p>
 
-        <ul v-else class="flex flex-col gap-2">
+        <ul v-if="roots(level.kind).length > 0 || level.induced" class="flex flex-col gap-2">
           <li
             v-for="entry in roots(level.kind)"
             :key="entry.id"
@@ -270,16 +344,18 @@ function inductionKind(kind: VocabKind): string | null {
                 <p v-if="auditLine(entry)" class="text-sm text-dimmed">{{ auditLine(entry) }}</p>
               </div>
               <div class="flex shrink-0 gap-1">
-                <UButton
-                  v-if="level.kind === 'category'"
-                  size="md"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-sparkles"
-                  aria-label="Propose subcategories"
-                  :disabled="busy"
-                  @click="() => void induce('propose_subcategories', entry)"
-                />
+                <UTooltip v-if="level.kind === 'category'" :text="subcategoryBlocker(entry) ?? ''">
+                  <UButton
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-sparkles"
+                    :disabled="busy || subcategoryBlocker(entry) != null"
+                    @click="() => void induce('propose_subcategories', entry)"
+                  >
+                    Propose subcategories
+                  </UButton>
+                </UTooltip>
                 <UButton
                   v-if="level.childKind"
                   size="md"
@@ -329,8 +405,18 @@ function inductionKind(kind: VocabKind): string | null {
               </div>
             </div>
 
+            <p
+              v-if="level.kind === 'category' && children(entry, 'subcategory').length === 0"
+              class="mt-2 text-sm text-muted"
+            >
+              No subcategories — propose from the {{ rowsUnder(entry).toLocaleString() }} rows
+              classified here, or add by hand.
+            </p>
             <ul
-              v-if="level.childKind && children(entry, level.childKind).length > 0"
+              v-if="
+                level.childKind &&
+                (children(entry, level.childKind).length > 0 || level.kind === 'category')
+              "
               class="mt-2 flex flex-col gap-1 border-l border-default pl-3"
             >
               <li
@@ -380,7 +466,39 @@ function inductionKind(kind: VocabKind): string | null {
                   />
                 </div>
               </li>
+              <li v-if="level.kind === 'category'" class="flex items-start justify-between gap-3">
+                <div class="flex min-w-0 flex-col">
+                  <span class="flex items-center gap-2 text-sm text-highlighted">
+                    other
+                    <UBadge
+                      v-if="childOtherRate(entry) != null"
+                      size="sm"
+                      variant="subtle"
+                      :color="(childOtherRate(entry) ?? 0) > 0.15 ? 'warning' : 'neutral'"
+                    >
+                      {{ pct(childOtherRate(entry) ?? 0) }} of rows
+                    </UBadge>
+                  </span>
+                  <span class="line-clamp-1 text-sm text-muted">{{ OTHER_DEFINITION }}</span>
+                </div>
+              </li>
             </ul>
+          </li>
+          <li v-if="level.induced" class="rounded-lg border border-dashed border-default p-3">
+            <div class="flex min-w-0 flex-col gap-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-highlighted">other</span>
+                <UBadge
+                  v-if="rootOtherRate(level.kind) != null"
+                  size="sm"
+                  variant="subtle"
+                  :color="(rootOtherRate(level.kind) ?? 0) > 0.15 ? 'warning' : 'neutral'"
+                >
+                  {{ pct(rootOtherRate(level.kind) ?? 0) }} of rows
+                </UBadge>
+              </div>
+              <p class="text-sm text-muted">{{ OTHER_DEFINITION }}</p>
+            </div>
           </li>
         </ul>
       </section>
