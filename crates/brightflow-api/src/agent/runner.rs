@@ -380,15 +380,20 @@ async fn existing_vocabulary(
 /// can say why a proposal is not yet possible instead of letting the run fail.
 pub const MIN_SUMMARIES_FOR_INDUCTION: usize = 50;
 
-/// Shared instruction for the three summary-driven induction runs.
+/// Shared instruction for the three summary-driven induction runs. The
+/// per-entry floor is the same constant health reports against, so the
+/// prompt and the badge cannot drift apart.
 fn induction_system(level: &str, corpus: &str, cap: usize) -> String {
+    let floor = brightflow_engine::enrichment::MIN_ROWS_PER_ENTRY;
     format!(
         "You are defining {level} for a customer-insight vocabulary. Read the sample of \
          {corpus} and propose entries via define_taxonomy_category, then call done.\n\n\
          Propose AT MOST {cap} entries in total, existing ones included — if the corpus \
          needs more, group: a broader entry that covers several themes beats a longer \
-         list. Do not propose 'other'; it exists implicitly. Do not re-propose an existing \
-         entry unless its definition should change.\n\n\
+         list. Do not propose an entry that would hold fewer than {floor} of these \
+         summaries; fold it into a broader one. Do not propose 'other'; it exists \
+         implicitly. Do not re-propose an existing entry unless its definition should \
+         change.\n\n\
          Categorize by WHAT IS WRONG or WHAT IS WANTED for the user, never by tooling, \
          file format, mechanism, or how the text is written. If an entry would still make \
          sense after someone rewrote the text in different words, it is real; if it would \
@@ -576,6 +581,18 @@ mod tests {
         .unwrap();
         assert_eq!(action.kind(), "rename_taxonomy_category");
         assert_eq!(action.scope(), ("src-1", "issues"));
+    }
+
+    /// The floor in the prompt is the health constant, formatted in.
+    #[test]
+    fn induction_prompt_states_the_per_entry_floor() {
+        let prompt = induction_system("the ROOT CATEGORIES", "one-line summaries", 10);
+        let expected = format!(
+            "fewer than {} of these summaries",
+            brightflow_engine::enrichment::MIN_ROWS_PER_ENTRY
+        );
+        assert!(prompt.contains(&expected), "{prompt}");
+        assert!(prompt.contains("AT MOST 10 entries"), "{prompt}");
     }
 
     #[test]

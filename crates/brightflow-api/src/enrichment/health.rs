@@ -207,6 +207,7 @@ pub async fn vocabulary_health(
         levels,
         per_parent,
         induction_min_rows: crate::agent::runner::MIN_SUMMARIES_FOR_INDUCTION,
+        min_rows_per_entry: brightflow_engine::enrichment::MIN_ROWS_PER_ENTRY,
     }))
 }
 

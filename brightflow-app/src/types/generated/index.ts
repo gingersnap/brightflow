@@ -105,6 +105,7 @@ export type { TextExploreRow } from './TextExploreRow';
 export type { TextRun } from './TextRun';
 export type { TicketSummaryResponse } from './TicketSummaryResponse';
 export type { TimeseriesPoint } from './TimeseriesPoint';
+export type { TooSmallEntry } from './TooSmallEntry';
 export type { TrendDirection } from './TrendDirection';
 export type { TrendsRequest } from './TrendsRequest';
 export type { UnbalancedEntry } from './UnbalancedEntry';

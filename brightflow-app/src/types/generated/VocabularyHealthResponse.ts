@@ -17,4 +17,9 @@ levels: Array<VocabularyLevelHealth>, perParent: Array<VocabularyParentHealth>,
  * the UI can disable "propose" with the reason rather than start a run
  * that fails.
  */
-inductionMinRows: number, };
+inductionMinRows: number, 
+/**
+ * Fewest rows an entry should hold before it counts as a group rather
+ * than an item; entries under it appear in each level's `too_small`.
+ */
+minRowsPerEntry: number, };

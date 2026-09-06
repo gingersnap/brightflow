@@ -257,6 +257,17 @@ pub struct VocabularyLevelHealth {
     pub min_share: f64,
     /// Entries outside the 2 %–40 % balance band, with their share.
     pub unbalanced: Vec<UnbalancedEntry>,
+    /// Entries with rows but fewer than `min_rows_per_entry` — items, not
+    /// groups. Zero-row entries are reported as unbalanced instead.
+    pub too_small: Vec<TooSmallEntry>,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TooSmallEntry {
+    pub name: String,
+    pub rows: usize,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -281,6 +292,11 @@ impl From<brightflow_engine::enrichment::LevelHealth> for VocabularyLevelHealth 
                 .unbalanced
                 .into_iter()
                 .map(|(name, share)| UnbalancedEntry { name, share })
+                .collect(),
+            too_small: h
+                .too_small
+                .into_iter()
+                .map(|(name, rows)| TooSmallEntry { name, rows })
                 .collect(),
         }
     }
@@ -310,6 +326,9 @@ pub struct VocabularyHealthResponse {
     /// the UI can disable "propose" with the reason rather than start a run
     /// that fails.
     pub induction_min_rows: usize,
+    /// Fewest rows an entry should hold before it counts as a group rather
+    /// than an item; entries under it appear in each level's `too_small`.
+    pub min_rows_per_entry: usize,
 }
 
 /// Headline numbers for one mentioned subject.

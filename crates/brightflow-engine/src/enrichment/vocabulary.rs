@@ -193,6 +193,11 @@ pub struct LevelHealth {
     pub min_share: f64,
     /// Entries outside the 2 %–40 % balance band, with their share.
     pub unbalanced: Vec<(String, f64)>,
+    /// Entries with rows but fewer than [`MIN_ROWS_PER_ENTRY`], with their
+    /// count — items, not groups. Zero-row entries are not here: nothing has
+    /// been classified into them yet (they sit in `unbalanced`), and every
+    /// freshly proposed entry is zero until the next run.
+    pub too_small: Vec<(String, usize)>,
 }
 
 /// Other-rate threshold above which the vocabulary needs work.
@@ -200,6 +205,11 @@ pub const OTHER_RATE_WARN: f64 = 0.15;
 /// Balance band: nothing above 40 % or below 2 %.
 pub const BALANCE_MAX: f64 = 0.40;
 pub const BALANCE_MIN: f64 = 0.02;
+/// Absolute floor per entry: fewer rows than this is an item, not a group.
+///
+/// The band is relative, so on a small level a one-row entry can pass it.
+/// Stated to the induction prompt and reported by health.
+pub const MIN_ROWS_PER_ENTRY: usize = 5;
 
 /// Compute a level's health from `(value, row_count)` pairs.
 ///
@@ -217,6 +227,7 @@ pub fn health(kind: VocabKind, counts: &[(String, usize)]) -> LevelHealth {
     let mut max_share = 0.0_f64;
     let mut min_share: f64 = if rows == 0 { 0.0 } else { 1.0 };
     let mut unbalanced = Vec::new();
+    let mut too_small = Vec::new();
     let mut entries = 0_usize;
     for (value, n) in counts {
         if is_other(value) {
@@ -229,6 +240,9 @@ pub fn health(kind: VocabKind, counts: &[(String, usize)]) -> LevelHealth {
         if rows > 0 && !(BALANCE_MIN..=BALANCE_MAX).contains(&share) {
             unbalanced.push((value.clone(), share));
         }
+        if (1..MIN_ROWS_PER_ENTRY).contains(n) {
+            too_small.push((value.clone(), *n));
+        }
     }
     LevelHealth {
         kind,
@@ -239,6 +253,7 @@ pub fn health(kind: VocabKind, counts: &[(String, usize)]) -> LevelHealth {
         max_share,
         min_share,
         unbalanced,
+        too_small,
     }
 }
 
@@ -351,6 +366,34 @@ mod tests {
         assert!((h.min_share - 0.01).abs() < 1e-9);
         let flagged: Vec<&str> = h.unbalanced.iter().map(|(v, _)| v.as_str()).collect();
         assert_eq!(flagged, vec!["billing", "rare"]);
+        assert_eq!(h.too_small, vec![("rare".to_string(), 1)]);
+    }
+
+    /// The absolute floor is independent of the band: a 3-row entry on a
+    /// large level passes the 2 % check only if the level is small, but it
+    /// is too small either way; a zero-row entry is unused, not too small.
+    #[test]
+    fn health_flags_entries_under_the_absolute_floor() {
+        let counts = vec![
+            ("billing".to_string(), 40),
+            ("login".to_string(), 40),
+            ("tiny".to_string(), 3),
+            ("unused".to_string(), 0),
+            ("other".to_string(), 17),
+        ];
+        let h = health(VocabKind::Subcategory, &counts);
+        assert_eq!(h.too_small, vec![("tiny".to_string(), 3)]);
+        let flagged: Vec<&str> = h.unbalanced.iter().map(|(v, _)| v.as_str()).collect();
+        assert_eq!(flagged, vec!["unused"]);
+        // Exactly the floor is fine.
+        let at_floor = health(
+            VocabKind::Subcategory,
+            &[
+                ("ok".to_string(), MIN_ROWS_PER_ENTRY),
+                ("big".to_string(), 95),
+            ],
+        );
+        assert!(at_floor.too_small.is_empty());
     }
 
     #[test]
@@ -359,5 +402,6 @@ mod tests {
         assert_eq!(h.rows, 0);
         assert!(h.other_rate.abs() < f64::EPSILON);
         assert!(h.unbalanced.is_empty());
+        assert!(h.too_small.is_empty());
     }
 }

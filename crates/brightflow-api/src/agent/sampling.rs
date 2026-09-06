@@ -1,7 +1,7 @@
 //! Seeded summary sampling for the vocabulary-induction agents.
 //!
 //! Induction reads *summaries* (Call A output), never ticket bodies: a
-//! summary is ~12 tokens, so 200 of them cost less than a few dozen
+//! summary is ~12 tokens, so 500 of them cost less than a few dozen
 //! truncated bodies and describe what tickets are about rather than how
 //! they are written. Sampling is uniform and seeded so a re-run resumes the
 //! same queue instead of reshuffling it.
@@ -15,7 +15,7 @@ use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
 /// Summaries shown to the summary-driven induction runs.
-pub const INDUCTION_SAMPLE: usize = 200;
+pub const INDUCTION_SAMPLE: usize = 500;
 
 /// Deterministic — the same table always yields the same sample.
 const SAMPLE_SEED: u64 = 0x00_5a_11_9e_50_00_00_01;
