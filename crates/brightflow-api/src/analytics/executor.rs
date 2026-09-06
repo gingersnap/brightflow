@@ -178,7 +178,13 @@ fn build_agg_expr(spec: &AggSpec) -> Expr {
     }
 }
 
-/// Apply a pivot operation
+/// Apply a pivot operation: `index` stays as the leading row columns, each
+/// distinct value of `columns` becomes a column, `values` fills the cells.
+///
+/// Polars' `pivot` takes `on` (what spreads into columns) *before* `index`
+/// (what stays as rows). Passing the wire fields in their own order
+/// transposes the result, which is how this once shipped with rows and
+/// columns swapped; the test below pins the orientation.
 fn apply_pivot(
     lf: LazyFrame,
     index: Vec<String>,
@@ -194,8 +200,8 @@ fn apply_pivot(
 
     let pivoted = pivot::pivot(
         &temp_df,
-        index.iter().map(String::as_str),
-        Some([columns.as_str()]),
+        [columns.as_str()],
+        Some(index.iter().map(String::as_str)),
         Some([values.as_str()]),
         false,
         agg_expr,
@@ -325,6 +331,86 @@ pub(crate) fn dtype_to_string(dtype: &DataType) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tickets() -> LazyFrame {
+        df! {
+            "id" => [1, 2, 3, 4, 5, 6],
+            "category" => ["a", "a", "a", "b", "b", "b"],
+            "subcategory" => ["x", "x", "y", "y", "z", "z"],
+            "language" => ["en", "sv", "en", "en", "en", "sv"],
+        }
+        .unwrap()
+        .lazy()
+    }
+
+    fn names(df: &DataFrame) -> Vec<String> {
+        df.get_column_names_str()
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Rows are the index, column-field values spread across — never the
+    /// other way round.
+    #[test]
+    fn pivot_keeps_index_as_rows_and_spreads_the_column_field() {
+        let out = apply_pivot(
+            tickets(),
+            vec!["category".to_string()],
+            "subcategory".to_string(),
+            "id".to_string(),
+            Some(Aggregation::Count),
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+        assert_eq!(names(&out), vec!["category", "x", "y", "z"]);
+        assert_eq!(out.height(), 2);
+        let x = out.column("x").unwrap().u32().unwrap();
+        let y = out.column("y").unwrap().u32().unwrap();
+        // a: x=2, y=1, z=none; b: x=none, y=1, z=2
+        assert_eq!(x.get(0), Some(2));
+        assert_eq!(y.get(0), Some(1));
+        assert_eq!(x.get(1), None);
+        assert_eq!(y.get(1), Some(1));
+    }
+
+    #[test]
+    fn pivot_with_two_index_columns_keeps_both_leading() {
+        let out = apply_pivot(
+            tickets(),
+            vec!["category".to_string(), "language".to_string()],
+            "subcategory".to_string(),
+            "id".to_string(),
+            Some(Aggregation::Count),
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+        assert_eq!(names(&out), vec!["category", "language", "x", "y", "z"]);
+        assert_eq!(out.height(), 4);
+    }
+
+    /// Counting the column field itself (Columns = subcategory, Values =
+    /// count of subcategory) is what a user clicking through the buckets
+    /// naturally builds; pin what Polars does with it so the UI can rely
+    /// on it.
+    #[test]
+    fn pivot_can_count_the_column_field_itself() {
+        let out = apply_pivot(
+            tickets(),
+            vec!["category".to_string()],
+            "subcategory".to_string(),
+            "subcategory".to_string(),
+            Some(Aggregation::Count),
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+        assert_eq!(names(&out), vec!["category", "x", "y", "z"]);
+        let x = out.column("x").unwrap().u32().unwrap();
+        assert_eq!(x.get(0), Some(2));
+    }
 
     #[test]
     fn unsigned_ints_read_as_int_for_the_frontend() {
