@@ -23,7 +23,7 @@ pub fn upload_tools() -> Vec<SourceTool> {
     vec![
         SourceTool::Explore,
         SourceTool::Insights,
-        SourceTool::Textanalytics,
+        SourceTool::Textenrichment,
         SourceTool::Textexplore,
     ]
 }
@@ -35,13 +35,13 @@ pub fn connector_tools(name: &str) -> Vec<SourceTool> {
             SourceTool::Dashboard,
             SourceTool::Explore,
             SourceTool::Insights,
-            SourceTool::Textanalytics,
+            SourceTool::Textenrichment,
             SourceTool::Textexplore,
         ],
         "bluesky" => vec![
             SourceTool::Explore,
             SourceTool::Insights,
-            SourceTool::Textanalytics,
+            SourceTool::Textenrichment,
             SourceTool::Textexplore,
         ],
         _ => vec![SourceTool::Explore, SourceTool::Insights],

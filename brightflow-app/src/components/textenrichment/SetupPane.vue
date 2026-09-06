@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Setup pane: the two ticket functions above, the vocabularies below. A
+ * Setup pane: the two text functions above, the vocabularies below. A
  * table has at most one function per kind; the card for a missing kind is
  * a create form. Everything else about a function — sample test, scoped
  * run, versions, delete — lives in FunctionCard.
@@ -56,10 +56,10 @@ async function refresh(): Promise<void> {
   <div class="flex flex-col gap-8">
     <section class="flex flex-col gap-4">
       <div>
-        <h3 class="text-sm font-medium text-highlighted">Ticket functions</h3>
+        <h3 class="text-sm font-medium text-highlighted">Text functions</h3>
         <p class="text-sm text-muted">
-          Two LLM calls per ticket, run at ingestion: classification (what is this ticket?) and
-          mention extraction (what is in it?). Test on a sample before running a table.
+          Two LLM calls per row, run at ingestion: summary and classification (what is this about?)
+          and extraction (what is mentioned in it?). Test on a sample before running a table.
         </p>
       </div>
       <FunctionCard

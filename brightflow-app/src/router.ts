@@ -64,12 +64,12 @@ const router = createRouter({
       }),
     },
     {
-      path: '/:sourceId/textanalytics/:table',
-      name: 'textanalytics-table',
+      path: '/:sourceId/textenrichment/:table',
+      name: 'textenrichment-table',
       component: () => import('./components/layout/SourceLayout.vue'),
       props: (route) => ({
         sourceId: String(route.params['sourceId'] ?? ''),
-        tool: 'textanalytics' as const,
+        tool: 'textenrichment' as const,
         table: String(route.params['table'] ?? ''),
       }),
     },

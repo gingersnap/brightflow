@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Results pane: the two grains side by side. Ticket grain answers
+ * Results pane: the two grains side by side. Row grain answers
  * "billing tickets up" for operations; mention grain answers "invoice screen
  * mentioned 340 times, 78 % negative, 61 % incidental" for product. Below
  * them, the unresolved-subject queue (what the extractor named that the
@@ -102,17 +102,17 @@ async function applyMappings(): Promise<void> {
 <template>
   <div class="flex flex-col gap-8">
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-      <!-- Ticket grain -->
+      <!-- Row grain -->
       <section class="flex flex-col gap-3">
         <div>
-          <h3 class="text-sm font-medium text-highlighted">Tickets</h3>
+          <h3 class="text-sm font-medium text-highlighted">Rows</h3>
           <p class="text-sm text-muted">
             {{ tickets?.classifiedRows.toLocaleString() ?? 0 }} of
             {{ tickets?.totalRows.toLocaleString() ?? 0 }} classified
           </p>
         </div>
         <p v-if="(tickets?.categories.length ?? 0) === 0" class="text-sm text-muted">
-          Nothing classified yet — set up and run classification first.
+          Nothing classified yet — set up and run Summary and classification first.
         </p>
         <ul v-else class="flex flex-col gap-2">
           <li
@@ -143,12 +143,12 @@ async function applyMappings(): Promise<void> {
         <div>
           <h3 class="text-sm font-medium text-highlighted">Mentions</h3>
           <p class="text-sm text-muted">
-            {{ mentions?.totalMentions.toLocaleString() ?? 0 }} mentions · ranked by distinct
-            tickets, the honest count
+            {{ mentions?.totalMentions.toLocaleString() ?? 0 }} mentions · ranked by distinct rows,
+            the honest count
           </p>
         </div>
         <p v-if="(mentions?.subjects.length ?? 0) === 0" class="text-sm text-muted">
-          No mentions yet — set up and run extraction first.
+          No mentions yet — set up and run Extraction first.
         </p>
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -156,7 +156,7 @@ async function applyMappings(): Promise<void> {
               <tr class="border-b border-default text-left text-muted">
                 <th class="px-2 py-1.5 font-medium">subject</th>
                 <th class="px-2 py-1.5 font-medium">type</th>
-                <th class="px-2 py-1.5 text-right font-medium">tickets</th>
+                <th class="px-2 py-1.5 text-right font-medium">rows</th>
                 <th class="px-2 py-1.5 text-right font-medium">mentions</th>
                 <th class="px-2 py-1.5 text-right font-medium">negative</th>
                 <th class="px-2 py-1.5 text-right font-medium">incidental</th>

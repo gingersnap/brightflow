@@ -1,6 +1,6 @@
 /**
- * Text analytics: Text Explorer, the read-only vocabulary views, mention and
- * ticket summaries, and the unresolved-subject queue. Vocabulary writes go
+ * Text enrichment: Text Explorer, the read-only vocabulary views, mention and
+ * row summaries, and the unresolved-subject queue. Vocabulary writes go
  * through `actionsApi.dispatch` so human edits and agent proposals share one
  * path, one audit log, and one undo.
  */

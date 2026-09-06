@@ -61,7 +61,7 @@ export function useCommandPalette(
 
   const routeTool = computed<string | null>(() => {
     const name = typeof route.name === 'string' ? route.name : '';
-    const tableRoute = /^(?<tool>insights|explore|textanalytics|textexplore)-table$/u.exec(name);
+    const tableRoute = /^(?<tool>insights|explore|textenrichment|textexplore)-table$/u.exec(name);
     if (tableRoute) {
       return tableRoute.groups?.['tool'] ?? null;
     }
@@ -98,14 +98,14 @@ export function useCommandPalette(
     enabled: () => open.value,
   });
 
-  const isTextAnalytics = computed(() => routeTool.value === 'textanalytics' && hasScope.value);
+  const isTextEnrichment = computed(() => routeTool.value === 'textenrichment' && hasScope.value);
   const isInsights = computed(() => routeTool.value === 'insights' && hasScope.value);
 
   const { data: taxonomy } = useQuery({
     // Same key as VocabularyPanel.vue.
     key: () => ['taxonomy', scopeSourceId.value ?? '', scopeTable.value ?? ''],
     query: () => taxonomyApi.overview(scopeSourceId.value ?? '', scopeTable.value ?? ''),
-    enabled: () => open.value && isTextAnalytics.value,
+    enabled: () => open.value && isTextEnrichment.value,
   });
 
   // ── Helpers handed to the action flows ────────────────────────────────────
@@ -151,7 +151,7 @@ export function useCommandPalette(
       for (const tool of toolsForSource(source)) {
         items.push({
           label: tool.label,
-          // The source name doubles as a fuse key: "text analytics gh" finds it.
+          // The source name doubles as a fuse key: "text enrichment gh" finds it.
           suffix: source.name,
           icon: tool.icon,
           onSelect: () => {
@@ -181,7 +181,7 @@ export function useCommandPalette(
       return [];
     }
     let kinds: readonly string[] = [];
-    if (isTextAnalytics.value) {
+    if (isTextEnrichment.value) {
       kinds = VOCABULARY_KINDS;
     } else if (isInsights.value) {
       kinds = INSIGHT_KINDS;

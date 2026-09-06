@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Route-level Text analytics view: table picker on top, then three panes.
- * Setup is the vocabularies and the two ticket functions (classify, extract);
- * Results is what they materialised — ticket grain, mention grain, the
+ * Route-level Text enrichment view: table picker on top, then three panes.
+ * Setup is the vocabularies and the two text functions (classify, extract);
+ * Results is what they materialised — row grain, mention grain, the
  * unresolved-subject queue and vocabulary health; Activity is the action
  * feed where induction proposals are approved and any edit is undone.
  */
@@ -35,14 +35,14 @@ const panes: { id: Pane; label: string; icon: string }[] = [
 
 function handleSelectTable(table: SourceTable): void {
   router.push({
-    name: 'textanalytics-table',
+    name: 'textenrichment-table',
     params: { sourceId: props.sourceId, table: table.name },
   });
 }
 
 function handleAutoSelectTable(table: SourceTable): void {
   router.replace({
-    name: 'textanalytics-table',
+    name: 'textenrichment-table',
     params: { sourceId: props.sourceId, table: table.name },
   });
 }
@@ -58,7 +58,7 @@ function handleAutoSelectTable(table: SourceTable): void {
     />
 
     <div v-if="activeTable == null" class="p-6">
-      <p class="text-sm text-muted">Choose a table above to set up ticket enrichment.</p>
+      <p class="text-sm text-muted">Choose a table above to set up text enrichment.</p>
     </div>
 
     <template v-else>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * One ticket function (classify or extract): create when absent, otherwise
+ * One text function (classify or extract): create when absent, otherwise
  * edit the saved config, test on a sample, run with an explicit scope,
  * restore a version, delete. Owns the draft config; TicketFunctionEditor is
  * the form. A saved edit to a running function asks for the rerun scope the
@@ -36,7 +36,7 @@ const emit = defineEmits<{
 }>();
 
 const title = computed(() =>
-  props.kind === 'ticket_classify' ? 'Classification' : 'Mention extraction',
+  props.kind === 'ticket_classify' ? 'Summary and classification' : 'Extraction',
 );
 const defaultName = computed(() => (props.kind === 'ticket_classify' ? 'classify' : 'extract'));
 
@@ -256,7 +256,7 @@ async function remove(): Promise<void> {
       />
     </div>
     <p v-else class="mt-2 text-sm text-muted">
-      Not set up yet — every ticket in this table stays unclassified until it is.
+      Not set up yet — every row in this table stays unclassified until it is.
     </p>
 
     <UModal v-model:open="rerunChoiceOpen" title="Save changes">

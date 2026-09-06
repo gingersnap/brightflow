@@ -62,7 +62,7 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
   explore: { label: 'Explore', icon: 'i-lucide-search' },
   insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
   textexplore: { label: 'Text Explorer', icon: 'i-lucide-text-search' },
-  textanalytics: { label: 'Text analytics', icon: 'i-lucide-messages-square' },
+  textenrichment: { label: 'Text enrichment', icon: 'i-lucide-messages-square' },
   settings: { label: 'Settings', icon: 'i-lucide-settings' },
 };
 

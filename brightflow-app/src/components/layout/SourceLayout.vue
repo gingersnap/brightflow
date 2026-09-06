@@ -34,8 +34,8 @@ const UserExplorerPanel = defineAsyncComponent(
 );
 const ExploreTool = defineAsyncComponent(() => import('@/components/explore/ExploreTool.vue'));
 const InsightsView = defineAsyncComponent(() => import('@/components/insights/InsightsView.vue'));
-const TextAnalyticsView = defineAsyncComponent(
-  () => import('@/components/textanalytics/TextAnalyticsView.vue'),
+const TextEnrichmentView = defineAsyncComponent(
+  () => import('@/components/textenrichment/TextEnrichmentView.vue'),
 );
 const TextExploreTool = defineAsyncComponent(
   () => import('@/components/textexplore/TextExploreTool.vue'),
@@ -149,9 +149,9 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
       <!-- Insights -->
       <InsightsView v-else-if="activeTool === 'insights'" :source-id="sourceId" :table="table" />
 
-      <!-- Text analytics -->
-      <TextAnalyticsView
-        v-else-if="activeTool === 'textanalytics'"
+      <!-- Text enrichment -->
+      <TextEnrichmentView
+        v-else-if="activeTool === 'textenrichment'"
         :source-id="sourceId"
         :table="table"
       />

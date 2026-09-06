@@ -1,5 +1,5 @@
 /**
- * Integration tier, `textanalytics` module: Text Explorer over the committed
+ * Integration tier, `textenrichment` module: Text Explorer over the committed
  * template. `textExploreApi.search` builds its index on demand from the
  * table's real Parquet, needing no artifacts.
  *
@@ -10,7 +10,7 @@ import { beforeAll, describe, expect, test } from 'vitest';
 
 import { useIntegrationBackend } from '@/testing/withBackend';
 
-import { textExploreApi } from './textanalytics';
+import { textExploreApi } from './textenrichment';
 
 const SOURCE = 'connector:sample';
 const TABLE = 'issues';

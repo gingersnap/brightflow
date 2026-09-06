@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Slideover listing a ticket function's saved versions. Expanding a version
+ * Slideover listing a text function's saved versions. Expanding a version
  * shows its configuration (the vocabulary snapshot included, since that is
  * what a version pins), and Restore emits the old config to be saved as a
  * NEW version — history is append-only, never rewound.

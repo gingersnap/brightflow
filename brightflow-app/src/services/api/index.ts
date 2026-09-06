@@ -16,5 +16,5 @@ export {
   textExploreApi,
   ticketsApi,
   vocabularyApi,
-} from './textanalytics';
+} from './textenrichment';
 export { analyticsApi } from './webAnalytics';

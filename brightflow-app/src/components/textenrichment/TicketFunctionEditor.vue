@@ -132,15 +132,15 @@ const outputs = computed(() =>
   <div class="max-w-lg space-y-4">
     <p class="text-sm text-muted">
       <template v-if="isClassify">
-        Classifies every ticket: an English summary, the detected language, a category and
-        subcategory from this table's vocabulary, and sentiment. Writes
+        Summarises and classifies every row: an English summary, the detected language, a category
+        and subcategory from this table's vocabulary, and sentiment. Writes
         <code class="font-mono">{{ outputs.join(', ') }}</code
         >.
       </template>
       <template v-else>
         Extracts every product, competitor, pricing, service and feedback mention into
         <code class="font-mono">{{ table }}_mentions</code> and writes
-        <code class="font-mono">{{ outputs.join(', ') }}</code> on each ticket.
+        <code class="font-mono">{{ outputs.join(', ') }}</code> on each row.
       </template>
     </p>
 
@@ -293,7 +293,7 @@ const outputs = computed(() =>
            to the page this editor already sits on — see the note in the
            review if this link should scroll or simply go. -->
       <RouterLink
-        :to="{ name: 'textanalytics-table', params: { sourceId, table } }"
+        :to="{ name: 'textenrichment-table', params: { sourceId, table } }"
         class="ml-auto inline-flex items-center gap-1 text-sm text-primary-500 hover:underline"
       >
         Vocabulary

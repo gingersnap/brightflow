@@ -121,7 +121,7 @@ async function rename(entry: TaxonomyCategory): Promise<void> {
 
 async function redefine(entry: TaxonomyCategory): Promise<void> {
   const description = window.prompt(
-    'Redefine (the definition changes — every affected ticket recomputes on the next run)',
+    'Redefine (the definition changes — every affected row recomputes on the next run)',
     entry.description ?? '',
   );
   if (description == null || description.trim() === (entry.description ?? '')) {
@@ -191,7 +191,7 @@ function inductionKind(kind: VocabKind): string | null {
     <div class="flex flex-col gap-1">
       <h3 class="text-sm font-medium text-highlighted">Vocabularies</h3>
       <p class="text-sm text-muted">
-        Every closed list the enrichment resolves against. Induced lists are proposed from ticket
+        Every closed list the enrichment resolves against. Induced lists are proposed from row
         summaries and reviewed as a diff; imported lists come from your catalog. A rename is free; a
         redefinition recomputes.
       </p>
