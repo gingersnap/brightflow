@@ -322,7 +322,10 @@ pub struct MentionSubjectStats {
     /// The headline: repeated complaints and long calls inflate `mentions`.
     #[ts(type = "number")]
     pub distinct_tickets: i64,
+    /// Shares of this subject's mentions by sentiment. `mixed` and `neutral`
+    /// count toward neither, so the two do not sum to one.
     pub negative_share: f64,
+    pub positive_share: f64,
     pub incidental_share: f64,
 }
 

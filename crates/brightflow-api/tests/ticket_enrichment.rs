@@ -88,18 +88,15 @@ async fn completions(
                     "summary": "Invoice omits the VAT line for EU customers",
                     "category": "Billing",
                     "subcategory": "VAT",
-                    "sentiment_polarity": "negative",
-                    "sentiment_strength": "low"
+                    "sentiment": "negative"
                 })
             } else {
                 serde_json::json!({
                     "summary": "Password reset link expired",
                     "category": "other",
                     "subcategory": "other",
-                    // `none` was folded into `neutral`: text with no evaluative
-                    // content is neutral, and strength is always meaningful.
-                    "sentiment_polarity": "neutral",
-                    "sentiment_strength": "low"
+                    // Text with no evaluative content is neutral.
+                    "sentiment": "neutral"
                 })
             },
         ));
@@ -108,11 +105,11 @@ async fn completions(
     let mentions = if about_vat && mode == ExtractMode::Mentions {
         serde_json::json!([
             { "type": "product", "subject": "invoices page", "feedback_summary": null,
-              "feedback_category": null, "incidental": false, "polarity": "negative", "confidence": 0.9 },
+              "feedback_category": null, "incidental": false, "sentiment": "negative", "confidence": 0.9 },
             { "type": "feedback", "subject": null, "feedback_summary": "invoice screen confusing",
-              "feedback_category": "Usability", "incidental": true, "polarity": "negative", "confidence": 0.8 },
+              "feedback_category": "Usability", "incidental": true, "sentiment": "negative", "confidence": 0.8 },
             { "type": "competitor", "subject": "Unknown Corp", "feedback_summary": null,
-              "feedback_category": null, "incidental": true, "polarity": "positive", "confidence": 0.7 }
+              "feedback_category": null, "incidental": true, "sentiment": "positive", "confidence": 0.7 }
         ])
     } else {
         serde_json::json!([])
@@ -334,7 +331,8 @@ async fn classify_and_extract_materialize_columns_child_table_and_queue() {
     assert_eq!(col("subcategory")[0].as_deref(), Some("VAT"));
     assert_eq!(col("category")[1].as_deref(), Some("other"));
     assert_eq!(col("language")[0].as_deref(), Some("en"));
-    assert_eq!(col("sentiment_polarity")[1].as_deref(), Some("neutral"));
+    assert_eq!(col("sentiment")[0].as_deref(), Some("negative"));
+    assert_eq!(col("sentiment")[1].as_deref(), Some("neutral"));
     assert_eq!(col("classify__status")[2].as_deref(), Some("ok"));
     assert!(col("summary")[0]
         .as_deref()

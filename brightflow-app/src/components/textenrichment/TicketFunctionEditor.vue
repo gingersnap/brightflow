@@ -95,9 +95,7 @@ function inputLabel(name: string): string {
 }
 
 const previewNames = computed(() =>
-  isClassify.value
-    ? ['summary', 'category', 'subcategory', 'sentiment_polarity', 'sentiment_strength']
-    : ['mentions'],
+  isClassify.value ? ['summary', 'category', 'subcategory', 'sentiment'] : ['mentions'],
 );
 
 function cellValue(row: Record<string, unknown> | null | undefined, name: string): string {
@@ -123,7 +121,7 @@ function cellValue(row: Record<string, unknown> | null | undefined, name: string
 
 const outputs = computed(() =>
   isClassify.value
-    ? ['summary', 'language', 'category', 'subcategory', 'sentiment_polarity', 'sentiment_strength']
+    ? ['summary', 'language', 'category', 'subcategory', 'sentiment']
     : ['has_feedback', 'has_incidental_feedback', 'has_competitor_mention', 'mention_count'],
 );
 </script>

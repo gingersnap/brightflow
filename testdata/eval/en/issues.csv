@@ -1,4 +1,4 @@
-id,title,body,expected_category,expected_polarity,expected_mentions
+id,title,body,expected_category,expected_sentiment,expected_mentions
 1,card declined at checkout,"Payment fails with a declined card error even though the card is valid. Tried three times today.",billing,negative,
 2,invoice missing VAT line,"The generated invoice does not show the VAT breakdown for EU customers. Our accountant needs it.",billing,negative,product:Invoice screen
 3,cannot log in after password reset,"The reset link works but the new password is rejected on the login page.",authentication,negative,

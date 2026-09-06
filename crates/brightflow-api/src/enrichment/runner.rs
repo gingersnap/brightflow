@@ -16,7 +16,7 @@ use polars::prelude::*;
 
 use brightflow_engine::enrichment::mentions::{self, ExtractCell, SubjectResolver, FLAG_COLUMNS};
 use brightflow_engine::enrichment::ticket_classify::{
-    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS,
+    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS, RETIRED_COLUMNS,
 };
 use brightflow_engine::enrichment::{
     input_hash, ticket_classify_hash, ticket_extract_hash, FunctionSpec, TicketClassifySpec,
@@ -246,8 +246,7 @@ impl RunSpec {
                     "summary": cell.summary,
                     "category": ticket_classify::resolve_name(names, cell.category_id),
                     "subcategory": ticket_classify::resolve_name(names, cell.subcategory_id),
-                    "sentiment_polarity": cell.sentiment_polarity,
-                    "sentiment_strength": cell.sentiment_strength,
+                    "sentiment": cell.sentiment,
                 })
             },
             Self::TicketExtract { names, .. } => {
@@ -274,7 +273,7 @@ impl RunSpec {
                                 .feedback_category_id
                                 .map(|id| ticket_classify::resolve_name(names, id)),
                             "incidental": m.incidental,
-                            "polarity": m.polarity,
+                            "sentiment": m.sentiment,
                             "confidence": m.confidence,
                         })
                     })
@@ -292,6 +291,18 @@ impl RunSpec {
                 OUTPUT_COLUMNS.iter().map(|c| (*c).to_string()).collect()
             },
             Self::TicketExtract { .. } => FLAG_COLUMNS.iter().map(|c| (*c).to_string()).collect(),
+        }
+    }
+
+    /// Columns an earlier shape of this function wrote and the current one
+    /// does not. Materialisation drops them so a table enriched under the old
+    /// shape does not carry stale columns next to the live ones.
+    pub fn retired_columns(&self) -> Vec<String> {
+        match self {
+            Self::TicketClassify { .. } => {
+                RETIRED_COLUMNS.iter().map(|c| (*c).to_string()).collect()
+            },
+            Self::TicketExtract { .. } => Vec::new(),
         }
     }
 
@@ -862,15 +873,10 @@ pub async fn materialize(
             .map(|r| by_hash.get(r.hash.as_str()).map(|c| c.status.clone()))
             .collect();
 
-        let mut out_df = df;
-        // Drop any pre-existing columns with our names (re-materialization).
         let mut column_names: Vec<String> = run.output_columns();
+        column_names.extend(run.retired_columns());
         column_names.push(format!("{function_name}__status"));
-        for name in &column_names {
-            if out_df.column(name).is_ok() {
-                out_df = out_df.drop(name).map_err(AppError::Polars)?;
-            }
-        }
+        let mut out_df = drop_stale_columns(df, &column_names).map_err(AppError::Polars)?;
 
         let mut child: Option<ChildTable> = None;
         let columns = match run {
@@ -1062,22 +1068,30 @@ fn build_classify_columns(
                 .map(|c| ticket_classify::resolve_name(names, c.subcategory_id))
         })
         .collect();
-    let polarity: Vec<Option<String>> = cells
+    let sentiment: Vec<Option<String>> = cells
         .iter()
-        .map(|c| c.as_ref().map(|c| c.sentiment_polarity.clone()))
-        .collect();
-    let strength: Vec<Option<String>> = cells
-        .iter()
-        .map(|c| c.as_ref().map(|c| c.sentiment_strength.clone()))
+        .map(|c| c.as_ref().map(|c| c.sentiment.clone()))
         .collect();
     vec![
         Column::new(OUTPUT_COLUMNS[0].into(), summary),
         Column::new(OUTPUT_COLUMNS[1].into(), language),
         Column::new(OUTPUT_COLUMNS[2].into(), category),
         Column::new(OUTPUT_COLUMNS[3].into(), subcategory),
-        Column::new(OUTPUT_COLUMNS[4].into(), polarity),
-        Column::new(OUTPUT_COLUMNS[5].into(), strength),
+        Column::new(OUTPUT_COLUMNS[4].into(), sentiment),
     ]
+}
+
+/// Remove every column in `names` that the frame has, so re-materialisation
+/// replaces rather than duplicates: the function's current outputs, its
+/// retired ones, and its status column. Names the frame lacks are skipped.
+fn drop_stale_columns(df: DataFrame, names: &[String]) -> PolarsResult<DataFrame> {
+    let mut out = df;
+    for name in names {
+        if out.column(name).is_ok() {
+            out = out.drop(name)?;
+        }
+    }
+    Ok(out)
 }
 
 /// Full/incremental run driver: execute all cells, materialize, finish the
@@ -1494,8 +1508,7 @@ mod tests {
                 "summary": "Invoice omits VAT",
                 "category_id": 1,
                 "subcategory_id": 0,
-                "sentiment_polarity": "negative",
-                "sentiment_strength": "low",
+                "sentiment": "negative",
             })),
             None,
         ];
@@ -1513,7 +1526,28 @@ mod tests {
         assert_eq!(get(1, 1), None);
         assert_eq!(get(2, 0).as_deref(), Some("Billing"));
         assert_eq!(get(3, 0).as_deref(), Some("other"));
+        assert_eq!(get(4, 0).as_deref(), Some("negative"));
         assert_eq!(get(2, 1), None);
+        assert_eq!(cols.len(), OUTPUT_COLUMNS.len());
+    }
+
+    #[test]
+    fn retired_columns_are_dropped_with_current_ones() {
+        // A table enriched under the two-field sentiment shape keeps
+        // `sentiment_polarity` until something removes it; the retired list
+        // is that something. Unrelated columns and absent names are untouched.
+        let df = df!(
+            "title" => &["a"],
+            "sentiment" => &["neutral"],
+            "sentiment_polarity" => &["neutral"],
+            "sentiment_strength" => &["low"],
+        )
+        .unwrap();
+        let mut names: Vec<String> = OUTPUT_COLUMNS.iter().map(|c| (*c).to_string()).collect();
+        names.extend(RETIRED_COLUMNS.iter().map(|c| (*c).to_string()));
+        names.push("classify__status".to_string());
+        let out = drop_stale_columns(df, &names).unwrap();
+        assert_eq!(out.get_column_names_str(), vec!["title"]);
     }
 
     #[test]

@@ -224,8 +224,8 @@ fn value_counts(values: &[Option<String>]) -> Vec<ValueCount> {
 
 /// `GET /api/sources/{source_id}/tables/{table}/tickets/summary`
 ///
-/// Ticket grain: rows per category (with its subcategories), per sentiment
-/// polarity, and per language, from the classifier's materialised columns.
+/// Row grain: rows per category (with its subcategories), per sentiment,
+/// and per language, from the classifier's materialised columns.
 /// "billing tickets up 12 %" starts here; the time axis is the insights
 /// engine's job once these columns exist.
 pub async fn ticket_summary(
@@ -236,7 +236,7 @@ pub async fn ticket_summary(
     let df = store.read_table(&source_id, &table).await?;
     let categories = str_column(&df, OUTPUT_COLUMNS[2]).unwrap_or_default();
     let subcategories = str_column(&df, OUTPUT_COLUMNS[3]).unwrap_or_default();
-    let polarity = str_column(&df, OUTPUT_COLUMNS[4]).unwrap_or_default();
+    let sentiment = str_column(&df, OUTPUT_COLUMNS[4]).unwrap_or_default();
     let language = str_column(&df, OUTPUT_COLUMNS[1]).unwrap_or_default();
 
     let mut per_category: BTreeMap<String, (usize, Vec<Option<String>>)> = BTreeMap::new();
@@ -266,7 +266,7 @@ pub async fn ticket_summary(
         total_rows: df.height(),
         classified_rows: categories.iter().flatten().count(),
         categories: category_rows,
-        sentiment: value_counts(&polarity),
+        sentiment: value_counts(&sentiment),
         languages: value_counts(&language),
     }))
 }

@@ -15,4 +15,9 @@ subject: string, resolved: boolean, mentions: number,
 /**
  * The headline: repeated complaints and long calls inflate `mentions`.
  */
-distinctTickets: number, negativeShare: number, incidentalShare: number, };
+distinctTickets: number, 
+/**
+ * Shares of this subject's mentions by sentiment. `mixed` and `neutral`
+ * count toward neither, so the two do not sum to one.
+ */
+negativeShare: number, positiveShare: number, incidentalShare: number, };

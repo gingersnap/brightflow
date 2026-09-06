@@ -119,10 +119,7 @@ async fn concurrent_materializations_on_one_table_both_land() {
         "summary": "a summary",
         "category_id": 0,
         "subcategory_id": 0,
-        // `none` was folded into `neutral` when the polarity/strength coupling
-        // was removed; these are cached cell values, not fresh model output.
-        "sentiment_polarity": "neutral",
-        "sentiment_strength": "low",
+        "sentiment": "neutral",
     });
     let (id_a, run_a) =
         function_with_cache(&state, "classify", classify_spec(), classify_cell).await;

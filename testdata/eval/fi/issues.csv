@@ -1,4 +1,4 @@
-id,title,body,expected_category,expected_polarity,expected_mentions
+id,title,body,expected_category,expected_sentiment,expected_mentions
 1,kortti hylättiin kassalla,"Maksu epäonnistuu virheellä kortti hylätty vaikka kortti toimii muualla. Yritin kolme kertaa tänään.",billing,negative,
 2,laskulta puuttuu ALV-rivi,"Luotu lasku ei näytä arvonlisäveroa eriteltynä EU-asiakkaille. Kirjanpitäjämme tarvitsee sen.",billing,negative,product:Invoice screen
 3,kirjautuminen ei onnistu salasanan vaihdon jälkeen,"Linkki toimii mutta uusi salasana hylätään kirjautumissivulla.",authentication,negative,

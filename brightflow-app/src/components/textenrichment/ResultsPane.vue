@@ -159,6 +159,7 @@ async function applyMappings(): Promise<void> {
                 <th class="px-2 py-1.5 text-right font-medium">rows</th>
                 <th class="px-2 py-1.5 text-right font-medium">mentions</th>
                 <th class="px-2 py-1.5 text-right font-medium">negative</th>
+                <th class="px-2 py-1.5 text-right font-medium">positive</th>
                 <th class="px-2 py-1.5 text-right font-medium">incidental</th>
               </tr>
             </thead>
@@ -178,6 +179,7 @@ async function applyMappings(): Promise<void> {
                 <td class="px-2 py-1.5 text-right">{{ s.distinctTickets }}</td>
                 <td class="px-2 py-1.5 text-right text-muted">{{ s.mentions }}</td>
                 <td class="px-2 py-1.5 text-right">{{ pct(s.negativeShare) }}</td>
+                <td class="px-2 py-1.5 text-right">{{ pct(s.positiveShare) }}</td>
                 <td class="px-2 py-1.5 text-right">{{ pct(s.incidentalShare) }}</td>
               </tr>
             </tbody>

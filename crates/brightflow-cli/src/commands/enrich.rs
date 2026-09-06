@@ -46,7 +46,7 @@ pub struct EvalRow {
     pub title: String,
     pub body: String,
     pub expected_category: String,
-    pub expected_polarity: String,
+    pub expected_sentiment: String,
     /// `(type, subject)` pairs; subject empty when not applicable.
     pub expected_mentions: Vec<(String, String)>,
 }
@@ -84,7 +84,7 @@ fn read_eval_csv(path: &Path) -> Result<Vec<EvalRow>> {
     let titles = col("title")?;
     let bodies = col("body")?;
     let cats = col("expected_category")?;
-    let pols = col("expected_polarity")?;
+    let sentiments = col("expected_sentiment")?;
     let mentions = col("expected_mentions")?;
     let at = |v: &[String], i: usize| v.get(i).cloned().unwrap_or_default();
     Ok((0..df.height())
@@ -93,7 +93,7 @@ fn read_eval_csv(path: &Path) -> Result<Vec<EvalRow>> {
             title: at(&titles, i),
             body: at(&bodies, i),
             expected_category: at(&cats, i).to_lowercase(),
-            expected_polarity: at(&pols, i).to_lowercase(),
+            expected_sentiment: at(&sentiments, i).to_lowercase(),
             expected_mentions: parse_expected_mentions(&at(&mentions, i)),
         })
         .collect())
@@ -131,7 +131,7 @@ pub struct Scores {
     pub rows: usize,
     pub errors: usize,
     pub category_hits: usize,
-    pub polarity_hits: usize,
+    pub sentiment_hits: usize,
     pub precision_sum: f64,
     pub recall_sum: f64,
 }
@@ -142,11 +142,11 @@ impl Scores {
         let scored = self.rows.saturating_sub(self.errors).max(1) as f64;
         match call {
             EvalCall::A => format!(
-                "rows={} errors={} category_accuracy={:.3} polarity_accuracy={:.3}",
+                "rows={} errors={} category_accuracy={:.3} sentiment_accuracy={:.3}",
                 self.rows,
                 self.errors,
                 self.category_hits as f64 / scored,
-                self.polarity_hits as f64 / scored
+                self.sentiment_hits as f64 / scored
             ),
             EvalCall::B => format!(
                 "rows={} errors={} mention_precision={:.3} mention_recall={:.3}",
@@ -251,16 +251,16 @@ pub async fn run_eval(
                     lower_names.get(&c.category_id).cloned().unwrap_or_default()
                 };
                 let cat_ok = got_cat == row.expected_category;
-                let pol_ok = c.sentiment_polarity == row.expected_polarity;
+                let sentiment_ok = c.sentiment == row.expected_sentiment;
                 scores.category_hits += usize::from(cat_ok);
-                scores.polarity_hits += usize::from(pol_ok);
+                scores.sentiment_hits += usize::from(sentiment_ok);
                 println!(
-                    "{}\tcategory={}{}\tpolarity={}{}\tsummary={:?}",
+                    "{}\tcategory={}{}\tsentiment={}{}\tsummary={:?}",
                     row.id,
                     got_cat,
                     if cat_ok { "" } else { "✗" },
-                    c.sentiment_polarity,
-                    if pol_ok { "" } else { "✗" },
+                    c.sentiment,
+                    if sentiment_ok { "" } else { "✗" },
                     c.summary
                 );
             },
@@ -331,7 +331,7 @@ mod tests {
             rows: 4,
             errors: 0,
             category_hits: 3,
-            polarity_hits: 2,
+            sentiment_hits: 2,
             precision_sum: 2.0,
             recall_sum: 4.0,
         };

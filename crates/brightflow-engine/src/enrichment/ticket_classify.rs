@@ -24,28 +24,29 @@ use super::vocabulary::{is_other, OTHER};
 /// failed cell.
 pub const SUMMARY_MAX_WORDS: usize = 15;
 
-/// Sentiment direction, with no `none` value.
+/// The one sentiment field, shared with mention extraction so both grains
+/// speak the same four values.
 ///
-/// "No evaluative content" folds into `neutral`. A separate `none` existed only
-/// to be kept in lockstep with a `none` strength — a cross-field rule no JSON
-/// schema can express, and one the model broke on roughly a third of rows even
-/// with it spelled out in the prompt. Four values that cannot contradict a
-/// second field beat five that can.
-pub const POLARITY_VALUES: [&str; 4] = ["positive", "negative", "neutral", "mixed"];
-/// Sentiment intensity. Always meaningful now that polarity is always a real
-/// direction, so this has no `none` either and the two fields are independent.
-pub const STRENGTH_VALUES: [&str; 2] = ["low", "strong"];
+/// One field, not direction plus strength: "how forcefully" is not a
+/// judgement a model holds consistently across a corpus, so a strength
+/// column looked like signal and was not. "No evaluative content" is
+/// `neutral`; `mixed` is both directions at once and is never collapsed.
+pub const SENTIMENT_VALUES: [&str; 4] = ["neutral", "mixed", "positive", "negative"];
 
 /// Materialised columns, in table order. `language` is written from the
 /// pre-call detector even when the LLM call fails.
-pub const OUTPUT_COLUMNS: [&str; 6] = [
+pub const OUTPUT_COLUMNS: [&str; 5] = [
     "summary",
     "language",
     "category",
     "subcategory",
-    "sentiment_polarity",
-    "sentiment_strength",
+    "sentiment",
 ];
+
+/// Output columns this call used to write and no longer does. Materialisation
+/// drops these alongside the current names, so a table enriched under an
+/// older column set does not keep stale columns forever.
+pub const RETIRED_COLUMNS: [&str; 2] = ["sentiment_polarity", "sentiment_strength"];
 
 /// Key under which the runner stores the detected language in a row's
 /// rendered inputs. Deterministic from the text, so it is safe inside the
@@ -66,8 +67,8 @@ pub struct ClassifyCell {
     pub category_id: i64,
     /// 0 = `other`.
     pub subcategory_id: i64,
-    pub sentiment_polarity: String,
-    pub sentiment_strength: String,
+    /// One of [`SENTIMENT_VALUES`].
+    pub sentiment: String,
 }
 
 /// Append formatted text; writing into a `String` cannot fail.
@@ -111,13 +112,11 @@ pub fn system_prompt(spec: &TicketClassifySpec, names: &VocabNames) -> String {
          user, never by how the ticket is written. Use `other` only when no entry fits.\n\
          3. subcategory — exactly one entry from the chosen category's SUBCATEGORIES, or \
          `other` when none fits or the category is `other`.\n\
-         4. sentiment_polarity — positive | negative | neutral | mixed.\n\
+         4. sentiment — neutral | mixed | positive | negative.\n\
          \x20  neutral: flat or balanced, and also the answer when there is no evaluative \
          content at all (machine-generated text, log dumps, one-line issues).\n\
          \x20  mixed: both directions at once (\"support was great but the product is still \
-         broken\"). Never collapse mixed to neutral.\n\
-         5. sentiment_strength — low | strong. How forcefully the polarity is expressed; \
-         use `low` for flat or neutral text.\n\n",
+         broken\"). Never collapse mixed to neutral.\n\n",
     );
     out.push_str("CATEGORIES (name — definition):\n");
     for c in entries_sorted(&spec.categories) {
@@ -207,10 +206,9 @@ pub fn tool_schema(spec: &TicketClassifySpec, names: &VocabNames) -> serde_json:
             },
             "category": { "type": "string", "enum": category_names },
             "subcategory": { "type": "string", "enum": subcategory_names },
-            "sentiment_polarity": { "type": "string", "enum": POLARITY_VALUES },
-            "sentiment_strength": { "type": "string", "enum": STRENGTH_VALUES }
+            "sentiment": { "type": "string", "enum": SENTIMENT_VALUES }
         },
-        "required": ["summary", "category", "subcategory", "sentiment_polarity", "sentiment_strength"],
+        "required": ["summary", "category", "subcategory", "sentiment"],
         "additionalProperties": false
     })
 }
@@ -313,22 +311,12 @@ pub fn validate(
             })?
     };
 
-    let polarity = pick(
-        &POLARITY_VALUES,
-        get("sentiment_polarity")?,
-        "sentiment_polarity",
-    )?;
-    let strength = pick(
-        &STRENGTH_VALUES,
-        get("sentiment_strength")?,
-        "sentiment_strength",
-    )?;
+    let sentiment = pick(&SENTIMENT_VALUES, get("sentiment")?, "sentiment")?;
     Ok(ClassifyCell {
         summary,
         category_id,
         subcategory_id,
-        sentiment_polarity: polarity.to_string(),
-        sentiment_strength: strength.to_string(),
+        sentiment: sentiment.to_string(),
     })
 }
 
@@ -367,13 +355,12 @@ mod tests {
         (spec, names)
     }
 
-    fn args(cat: &str, sub: &str, pol: &str, strength: &str) -> serde_json::Value {
+    fn args(cat: &str, sub: &str, sentiment: &str) -> serde_json::Value {
         serde_json::json!({
             "summary": "Invoice omits the VAT line for EU customers",
             "category": cat,
             "subcategory": sub,
-            "sentiment_polarity": pol,
-            "sentiment_strength": strength,
+            "sentiment": sentiment,
         })
     }
 
@@ -386,6 +373,10 @@ mod tests {
         assert!(a.contains("- Billing — charges and invoices"));
         assert!(a.contains("  - VAT — missing VAT line"));
         assert!(a.contains("- other — none of the above"));
+        // One sentiment step and nothing after it: strength is gone.
+        assert!(a.contains("4. sentiment — neutral | mixed | positive | negative"));
+        assert!(!a.contains("5. "), "{a}");
+        assert!(!a.contains("strength"), "{a}");
         // Names are display only: a rename shows up without touching the spec.
         let mut renamed = names;
         renamed.insert(1, "Payments".to_string());
@@ -412,11 +403,10 @@ mod tests {
     #[test]
     fn validates_names_case_insensitively_into_ids() {
         let (spec, names) = fixture();
-        let cell = validate(&spec, &names, &args("billing", "vat", "Negative", "low")).unwrap();
+        let cell = validate(&spec, &names, &args("billing", "vat", "Negative")).unwrap();
         assert_eq!(cell.category_id, 1);
         assert_eq!(cell.subcategory_id, 3);
-        assert_eq!(cell.sentiment_polarity, "negative");
-        assert_eq!(cell.sentiment_strength, "low");
+        assert_eq!(cell.sentiment, "negative");
         assert_eq!(resolve_name(&names, cell.category_id), "Billing");
         assert_eq!(resolve_name(&names, 0), "other");
         assert_eq!(resolve_name(&names, 99), "#99");
@@ -425,49 +415,56 @@ mod tests {
     #[test]
     fn subcategory_must_belong_to_the_chosen_category() {
         let (spec, names) = fixture();
-        let err = validate(
-            &spec,
-            &names,
-            &args("Billing", "Password", "negative", "low"),
-        )
-        .unwrap_err();
+        let err = validate(&spec, &names, &args("Billing", "Password", "negative")).unwrap_err();
         assert!(err.contains("not a subcategory of 'Billing'"), "{err}");
         // other at both levels is fine; other category forces other subcategory.
-        let cell = validate(&spec, &names, &args("other", "Other", "neutral", "low")).unwrap();
+        let cell = validate(&spec, &names, &args("other", "Other", "neutral")).unwrap();
         assert_eq!((cell.category_id, cell.subcategory_id), (0, 0));
-        let billing_other =
-            validate(&spec, &names, &args("Billing", "other", "neutral", "low")).unwrap();
+        let billing_other = validate(&spec, &names, &args("Billing", "other", "neutral")).unwrap();
         assert_eq!(
             (billing_other.category_id, billing_other.subcategory_id),
             (1, 0)
         );
-        assert!(validate(&spec, &names, &args("other", "VAT", "neutral", "low")).is_err());
+        assert!(validate(&spec, &names, &args("other", "VAT", "neutral")).is_err());
     }
 
     #[test]
-    fn sentiment_fields_are_independent_and_unknown_values_are_rejected() {
+    fn every_sentiment_value_is_legal_and_old_fields_are_rejected() {
         let (spec, names) = fixture();
-        // Every polarity pairs with every strength: there is no cross-field
-        // rule left to violate, which is the point of dropping `none`.
-        for polarity in POLARITY_VALUES {
-            for strength in STRENGTH_VALUES {
-                let cell = validate(&spec, &names, &args("Billing", "VAT", polarity, strength))
-                    .unwrap_or_else(|e| panic!("{polarity}/{strength} must be legal: {e}"));
-                assert_eq!(cell.sentiment_polarity, polarity);
-                assert_eq!(cell.sentiment_strength, strength);
-            }
+        for sentiment in SENTIMENT_VALUES {
+            let cell = validate(&spec, &names, &args("Billing", "VAT", sentiment))
+                .unwrap_or_else(|e| panic!("{sentiment} must be legal: {e}"));
+            assert_eq!(cell.sentiment, sentiment);
         }
-        // `none` was a legal polarity before the fold; it is not one now.
-        assert!(validate(&spec, &names, &args("Billing", "VAT", "none", "low")).is_err());
-        assert!(validate(&spec, &names, &args("Billing", "VAT", "negative", "none")).is_err());
-        assert!(validate(&spec, &names, &args("Billing", "VAT", "angry", "low")).is_err());
-        assert!(validate(&spec, &names, &args("Shipping", "VAT", "negative", "low")).is_err());
+        // Values from the retired two-field shape are not sentiments.
+        for old in ["none", "low", "strong", "angry"] {
+            assert!(
+                validate(&spec, &names, &args("Billing", "VAT", old)).is_err(),
+                "{old}"
+            );
+        }
+        // The old field names are not accepted in place of `sentiment`.
+        let mut two_field = args("Billing", "VAT", "negative");
+        two_field.as_object_mut().unwrap().remove("sentiment");
+        two_field["sentiment_polarity"] = serde_json::json!("negative");
+        two_field["sentiment_strength"] = serde_json::json!("strong");
+        let err = validate(&spec, &names, &two_field).unwrap_err();
+        assert!(err.contains("missing field 'sentiment'"), "{err}");
+        assert!(validate(&spec, &names, &args("Shipping", "VAT", "negative")).is_err());
+    }
+
+    #[test]
+    fn retired_columns_never_overlap_current_ones() {
+        for retired in RETIRED_COLUMNS {
+            assert!(!OUTPUT_COLUMNS.contains(&retired), "{retired}");
+        }
+        assert_eq!(OUTPUT_COLUMNS[4], "sentiment");
     }
 
     #[test]
     fn summary_is_trimmed_to_the_word_cap_and_never_empty() {
         let (spec, names) = fixture();
-        let mut a = args("Billing", "VAT", "negative", "strong");
+        let mut a = args("Billing", "VAT", "negative");
         a["summary"] = serde_json::json!(format!("\"{}\"", "word ".repeat(40)));
         let cell = validate(&spec, &names, &a).unwrap();
         assert_eq!(cell.summary.split_whitespace().count(), SUMMARY_MAX_WORDS);

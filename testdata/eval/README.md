@@ -1,10 +1,10 @@
 # Per-language eval sets for `brightflow enrich eval`
 
-**Dated:** 2026-08-30. Starter sets, author-supplied and hand-labelled; extend
+**Dated:** 2026-08-30, column rename 2026-09-06. Starter sets, author-supplied and hand-labelled; extend
 them before trusting the numbers. One CSV per language, same header:
 
 ```
-id,title,body,expected_category,expected_polarity,expected_mentions
+id,title,body,expected_category,expected_sentiment,expected_mentions
 ```
 
 `expected_category` names a root category that must exist in the target

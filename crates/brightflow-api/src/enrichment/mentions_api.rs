@@ -47,10 +47,14 @@ pub fn summarize_mentions(df: &DataFrame) -> PolarsResult<Vec<MentionSubjectStat
         .with_columns([
             coalesce(&[col("subject"), col("subject_surface")]).alias("subject_key"),
             col("subject_id").is_not_null().alias("resolved"),
-            col("polarity")
+            col("sentiment")
                 .eq(lit("negative"))
                 .cast(DataType::Float64)
                 .alias("neg"),
+            col("sentiment")
+                .eq(lit("positive"))
+                .cast(DataType::Float64)
+                .alias("pos"),
             col("incidental").cast(DataType::Float64).alias("inc"),
         ])
         .filter(col("subject_key").is_not_null())
@@ -59,6 +63,7 @@ pub fn summarize_mentions(df: &DataFrame) -> PolarsResult<Vec<MentionSubjectStat
             len().alias("mentions"),
             col("ticket_id").n_unique().alias("distinct_tickets"),
             col("neg").mean().alias("negative_share"),
+            col("pos").mean().alias("positive_share"),
             col("inc").mean().alias("incidental_share"),
         ])
         .sort(
@@ -75,6 +80,7 @@ pub fn summarize_mentions(df: &DataFrame) -> PolarsResult<Vec<MentionSubjectStat
     let distinct = out.column("distinct_tickets")?.cast(&DataType::Int64)?;
     let distinct = distinct.i64()?;
     let negative = out.column("negative_share")?.f64()?;
+    let positive = out.column("positive_share")?.f64()?;
     let incidental = out.column("incidental_share")?.f64()?;
     let mut rows = Vec::with_capacity(out.height());
     for i in 0..out.height() {
@@ -85,6 +91,7 @@ pub fn summarize_mentions(df: &DataFrame) -> PolarsResult<Vec<MentionSubjectStat
             mentions: mentions.get(i).unwrap_or(0),
             distinct_tickets: distinct.get(i).unwrap_or(0),
             negative_share: negative.get(i).unwrap_or(0.0),
+            positive_share: positive.get(i).unwrap_or(0.0),
             incidental_share: incidental.get(i).unwrap_or(0.0),
         });
     }
@@ -400,7 +407,7 @@ mod tests {
             "subject_id" => &[Some(11_i64), Some(11), Some(11), None, None],
             "subject" => &[Some("Invoice screen"), Some("Invoice screen"), Some("Invoice screen"), None, None],
             "subject_surface" => &[None, None, None, Some("Unknown Corp"), None],
-            "polarity" => &["negative", "negative", "positive", "positive", "negative"],
+            "sentiment" => &["negative", "mixed", "positive", "positive", "negative"],
             "incidental" => &[true, true, false, true, true],
         )
         .unwrap();
@@ -408,7 +415,10 @@ mod tests {
         let invoice = rows.iter().find(|r| r.subject == "Invoice screen").unwrap();
         assert_eq!(invoice.mentions, 3);
         assert_eq!(invoice.distinct_tickets, 2);
-        assert!((invoice.negative_share - 2.0 / 3.0).abs() < 1e-9);
+        // Three mentions: negative, mixed, positive. Mixed counts toward
+        // neither share, which is why both are reported.
+        assert!((invoice.negative_share - 1.0 / 3.0).abs() < 1e-9);
+        assert!((invoice.positive_share - 1.0 / 3.0).abs() < 1e-9);
         assert!((invoice.incidental_share - 2.0 / 3.0).abs() < 1e-9);
         assert!(invoice.resolved);
         let corp = rows.iter().find(|r| r.subject == "Unknown Corp").unwrap();

@@ -23,7 +23,7 @@ use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::function::{TicketExtractSpec, VocabEntry};
-use super::ticket_classify::{VocabNames, POLARITY_VALUES};
+use super::ticket_classify::{VocabNames, SENTIMENT_VALUES};
 use super::vocabulary::{is_other, OTHER};
 
 /// Child-table name for a parent `table`.
@@ -51,7 +51,7 @@ pub const MENTION_COLUMNS: [&str; 11] = [
     "feedback_summary",
     "feedback_category",
     "incidental",
-    "polarity",
+    "sentiment",
     "confidence",
 ];
 
@@ -75,7 +75,10 @@ pub struct MentionCell {
     /// 0 = `other`; None when the mention is not feedback.
     pub feedback_category_id: Option<i64>,
     pub incidental: bool,
-    pub polarity: String,
+    /// The customer's attitude toward THIS subject, one of
+    /// `ticket_classify::SENTIMENT_VALUES` — the same four values as the
+    /// row-level field, so both grains read alike.
+    pub sentiment: String,
     pub confidence: f32,
 }
 
@@ -203,9 +206,10 @@ pub fn system_prompt(spec: &TicketExtractSpec, names: &VocabNames) -> String {
          - Feedback is its own row. \"The invoice screen is confusing\" is two mentions: a \
          product row for the invoice screen and a feedback row for what was said.\n\
          - Several distinct feedback points are several rows.\n\
-         - A comparison (\"X is better than Y\") is two rows with opposite polarity.\n\
-         - `polarity`: positive | negative | neutral | mixed, as the customer \
-         expressed it about THAT subject.\n\
+         - A comparison (\"X is better than Y\") is two rows with opposite sentiment.\n\
+         - `sentiment`: neutral | mixed | positive | negative, as the customer \
+         expressed it about THAT subject. A subject named without an opinion is \
+         neutral.\n\
          - `confidence`: 0 to 1.\n\
          - Most tickets contain NO incidental feedback and few mentions. An empty list is \
          a correct and common answer. Never invent a mention to fill the list.\n\n\
@@ -214,7 +218,7 @@ pub fn system_prompt(spec: &TicketExtractSpec, names: &VocabNames) -> String {
          the contact reason once no product/component is named)\n\
          2. \"Password reset link expired. Also the invoice screen is really confusing.\" → \
          [{type: feedback, feedback_summary: \"invoice screen confusing\", incidental: true, \
-         polarity: negative}] plus a product row for the invoice component when PRODUCTS \
+         sentiment: negative}] plus a product row for the invoice component when PRODUCTS \
          lists one.\n\
          3. \"Your support was great but the export is still broken and CompetitorCo \
          handles it fine.\" → a service row (positive, not incidental), a feedback row \
@@ -246,10 +250,10 @@ pub fn tool_schema(spec: &TicketExtractSpec, names: &VocabNames) -> serde_json::
                             "description": format!("{FEEDBACK_SUMMARY_MAX_WORDS} English words at most; only for type=feedback") },
                         "feedback_category": { "type": ["string", "null"], "enum": feedback_names_with_null(&feedback_names) },
                         "incidental": { "type": "boolean" },
-                        "polarity": { "type": "string", "enum": POLARITY_VALUES },
+                        "sentiment": { "type": "string", "enum": SENTIMENT_VALUES },
                         "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
                     },
-                    "required": ["type", "subject", "feedback_summary", "feedback_category", "incidental", "polarity", "confidence"],
+                    "required": ["type", "subject", "feedback_summary", "feedback_category", "incidental", "sentiment", "confidence"],
                     "additionalProperties": false
                 }
             }
@@ -333,15 +337,15 @@ pub fn validate(
             .get("incidental")
             .and_then(serde_json::Value::as_bool)
             .ok_or_else(|| format!("mention {i}: 'incidental' must be a boolean"))?;
-        let polarity = m
-            .get("polarity")
+        let sentiment = m
+            .get("sentiment")
             .and_then(|p| p.as_str())
             .map(str::trim)
-            .and_then(|p| POLARITY_VALUES.iter().find(|k| k.eq_ignore_ascii_case(p)))
+            .and_then(|p| SENTIMENT_VALUES.iter().find(|k| k.eq_ignore_ascii_case(p)))
             .ok_or_else(|| {
                 format!(
-                    "mention {i}: 'polarity' must be one of {}",
-                    POLARITY_VALUES.join(", ")
+                    "mention {i}: 'sentiment' must be one of {}",
+                    SENTIMENT_VALUES.join(", ")
                 )
             })?;
         let confidence = m
@@ -394,7 +398,7 @@ pub fn validate(
             feedback_summary,
             feedback_category_id,
             incidental,
-            polarity: (*polarity).to_string(),
+            sentiment: (*sentiment).to_string(),
             confidence,
         });
     }
@@ -420,7 +424,7 @@ pub fn build_mention_rows(
     let mut summaries: Vec<Option<String>> = Vec::new();
     let mut categories: Vec<Option<String>> = Vec::new();
     let mut incidental: Vec<bool> = Vec::new();
-    let mut polarity: Vec<String> = Vec::new();
+    let mut sentiment: Vec<String> = Vec::new();
     let mut confidence: Vec<f32> = Vec::new();
     for (row, cell) in cells.iter().enumerate() {
         let Some(cell) = cell else { continue };
@@ -434,7 +438,7 @@ pub fn build_mention_rows(
             summaries.push(m.feedback_summary.clone());
             categories.push(m.feedback_category_id.map(|id| name_of(names, id)));
             incidental.push(m.incidental);
-            polarity.push(m.polarity.clone());
+            sentiment.push(m.sentiment.clone());
             confidence.push(m.confidence);
         }
     }
@@ -450,7 +454,7 @@ pub fn build_mention_rows(
         Column::new(MENTION_COLUMNS[6].into(), summaries),
         Column::new(MENTION_COLUMNS[7].into(), categories),
         Column::new(MENTION_COLUMNS[8].into(), incidental),
-        Column::new(MENTION_COLUMNS[9].into(), polarity),
+        Column::new(MENTION_COLUMNS[9].into(), sentiment),
         Column::new(MENTION_COLUMNS[10].into(), confidence),
     ])
 }
@@ -563,7 +567,7 @@ mod tests {
             "feedback_summary": summary,
             "feedback_category": if t == "feedback" { Some("usability") } else { None },
             "incidental": true,
-            "polarity": "negative",
+            "sentiment": "negative",
             "confidence": 0.9,
         })
     }
@@ -689,13 +693,13 @@ mod tests {
             feedback_summary: None,
             feedback_category_id: None,
             incidental: true,
-            polarity: "positive".to_string(),
+            sentiment: "positive".to_string(),
             confidence: 0.8,
         };
         let neg = MentionCell {
             mention_type: "product".to_string(),
             subject_id: Some(11),
-            polarity: "negative".to_string(),
+            sentiment: "negative".to_string(),
             ..pos.clone()
         };
         let cells = vec![
