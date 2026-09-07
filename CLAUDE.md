@@ -133,6 +133,8 @@ repo-wide expectations:
 
 ## Workflow
 
+- Git: work on `main` only. Commit directly to `main` and push there; never
+  create feature branches unless explicitly asked to.
 - When debugging or testing changes, run both backend and frontend as background tasks to monitor output
 - Vite 8 built-in `server.forwardConsole` forwards browser console output to the Vite terminal
 - After Rust work is complete and debug compilation succeeds, always finish with `cargo build --release`
