@@ -84,10 +84,13 @@ const semantics = useColumnSemantics();
 const menuOpen = ref(false);
 const menuColumn = ref<ColumnInfo | null>(null);
 
-function openColumnMenu(e: MouseEvent, item: ColumnItem): void {
-  e.preventDefault();
+/**
+ * Record which column was right-clicked and let the event bubble: the
+ * menu's trigger opens it at the pointer, and only if nothing has called
+ * `preventDefault` on the event first.
+ */
+function rememberMenuColumn(item: ColumnItem): void {
   menuColumn.value = datasetStore.columnByName(item.name) ?? null;
-  menuOpen.value = menuColumn.value != null;
 }
 
 const menuItems = computed<ContextMenuItem[][]>(() => {
@@ -327,7 +330,7 @@ const sortColumnOptions = computed(() =>
                 <div
                   class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-sm transition-colors hover:bg-default active:cursor-grabbing"
                   :class="{ 'opacity-50': element.isIgnored }"
-                  @contextmenu="openColumnMenu($event, element)"
+                  @contextmenu="rememberMenuColumn(element)"
                 >
                   <UIcon
                     name="i-lucide-grip-vertical"
