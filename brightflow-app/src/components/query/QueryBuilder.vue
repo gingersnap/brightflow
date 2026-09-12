@@ -9,24 +9,30 @@
  * The column list is the semantic layer's face in Explore: it shows the
  * dataset store's visible columns (ignored ones are hidden), labelled and
  * described from their stored semantics, with an icon by role and a KPI
- * badge. A dropped column carries its role into the bucket.
+ * badge. A dropped column carries its role into the bucket. Right-clicking
+ * a column opens the semantics menu (`columnMenu.ts`); "Show ignored"
+ * reveals hidden columns greyed so one can be un-ignored.
  */
 
+import type { ContextMenuItem } from '@nuxt/ui';
 import { watchDebounced } from '@vueuse/core';
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import draggable from 'vuedraggable';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
+import { useColumnSemantics } from '@/composables/useColumnSemantics';
 import { useWsQuery } from '@/composables/useWsQuery';
 import { useDatasetStore } from '@/stores/dataset';
 import { type DroppedColumn, usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useUiStore } from '@/stores/ui';
 import type { PivotField } from '@/types';
-import type { ColumnRole } from '@/types/generated';
+import type { ColumnInfo, ColumnRole } from '@/types/generated';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 
 import BucketDropzone from '../pivot/BucketDropzone.vue';
+import { columnMenuItems } from './columnMenu';
 
 interface ColumnItem {
   name: string;
@@ -36,6 +42,7 @@ interface ColumnItem {
   label: string;
   description: string | undefined;
   isKpi: boolean;
+  isIgnored: boolean;
   isNumeric: boolean;
   isString: boolean;
 }
@@ -51,12 +58,16 @@ const summarizeOpen = computed({
   set: () => uiStore.toggleSection('summarize'),
 });
 
+const showIgnored = ref(false);
+const hasIgnored = computed(() => datasetStore.columns.some((c) => c.role === 'ignored'));
+
 // Columns for the sidebar: the visible ones, labelled from their semantics
 const columns = computed((): ColumnItem[] =>
-  datasetStore.visibleColumns.map((col) => ({
+  (showIgnored.value ? datasetStore.columns : datasetStore.visibleColumns).map((col) => ({
     description: col.description,
     dtype: col.dtype,
     id: col.name,
+    isIgnored: col.role === 'ignored',
     isKpi: col.isKpi === true,
     isNumeric: isNumericDtype(col.dtype),
     isString: isStringDtype(col.dtype),
@@ -65,6 +76,38 @@ const columns = computed((): ColumnItem[] =>
     role: col.role,
   })),
 );
+
+// ── Column context menu ──────────────────────────────────────────────────
+
+const route = useRoute();
+const semantics = useColumnSemantics();
+const menuOpen = ref(false);
+const menuColumn = ref<ColumnInfo | null>(null);
+
+function openColumnMenu(e: MouseEvent, item: ColumnItem): void {
+  e.preventDefault();
+  menuColumn.value = datasetStore.columnByName(item.name) ?? null;
+  menuOpen.value = menuColumn.value != null;
+}
+
+const menuItems = computed<ContextMenuItem[][]>(() => {
+  const column = menuColumn.value;
+  const sourceId = String(route.params['sourceId'] ?? '');
+  const table = datasetStore.name;
+  if (column == null || sourceId === '' || table == null) {
+    return [];
+  }
+  const scope = { sourceId, table };
+  return columnMenuItems(column, {
+    clearDescription: () => void semantics.clearDescription(scope, column),
+    clearLabel: () => void semantics.clearLabel(scope, column),
+    describe: () => void semantics.describe(scope, column),
+    rename: () => void semantics.rename(scope, column),
+    setKpi: (isKpi) => void semantics.setKpi(scope, column, isKpi),
+    setPolarity: (polarity) => void semantics.setPolarity(scope, column, polarity),
+    setRole: (role) => void semantics.setRole(scope, column, role),
+  });
+});
 
 const ROLE_ICONS: Record<ColumnRole, string> = {
   dimension: 'i-lucide-tag',
@@ -267,36 +310,48 @@ const sortColumnOptions = computed(() =>
     <div class="flex border-t border-default bg-muted/10">
       <!-- Column List (left side) -->
       <div class="w-48 border-r border-default bg-muted/20 p-3">
-        <div v-if="columns.length" class="max-h-48 space-y-1 overflow-y-auto">
-          <draggable
-            :list="columns"
-            :group="{ name: 'columns', pull: 'clone', put: false }"
-            :clone="cloneColumn"
-            :sort="false"
-            item-key="id"
-            class="space-y-1"
-          >
-            <template #item="{ element }">
-              <div
-                class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-sm transition-colors hover:bg-default active:cursor-grabbing"
-              >
-                <UIcon
-                  name="i-lucide-grip-vertical"
-                  class="h-3 w-3 text-muted/30 group-hover:text-muted/60"
-                />
-                <UIcon :name="getTypeIcon(element)" class="h-3 w-3 text-muted" />
-                <UTooltip :text="element.description" :disabled="!element.description">
-                  <span class="flex-1 truncate">{{ element.label }}</span>
-                </UTooltip>
-                <UBadge v-if="element.isKpi" size="md" variant="subtle" color="primary">
-                  KPI
-                </UBadge>
-              </div>
-            </template>
-          </draggable>
-        </div>
+        <UContextMenu v-model:open="menuOpen" :items="menuItems">
+          <div v-if="columns.length" class="max-h-48 space-y-1 overflow-y-auto">
+            <draggable
+              :list="columns"
+              :group="{ name: 'columns', pull: 'clone', put: false }"
+              :clone="cloneColumn"
+              :sort="false"
+              item-key="id"
+              class="space-y-1"
+            >
+              <template #item="{ element }">
+                <div
+                  class="group flex cursor-grab items-center gap-2 rounded-md bg-default/50 px-2 py-1.5 text-sm transition-colors hover:bg-default active:cursor-grabbing"
+                  :class="{ 'opacity-50': element.isIgnored }"
+                  @contextmenu="openColumnMenu($event, element)"
+                >
+                  <UIcon
+                    name="i-lucide-grip-vertical"
+                    class="h-3 w-3 text-muted/30 group-hover:text-muted/60"
+                  />
+                  <UIcon :name="getTypeIcon(element)" class="h-3 w-3 text-muted" />
+                  <UTooltip :text="element.description" :disabled="!element.description">
+                    <span class="flex-1 truncate">{{ element.label }}</span>
+                  </UTooltip>
+                  <UBadge v-if="element.isKpi" size="md" variant="subtle" color="primary">
+                    KPI
+                  </UBadge>
+                </div>
+              </template>
+            </draggable>
+          </div>
 
-        <div v-else class="py-4 text-sm text-muted/60">No columns loaded</div>
+          <div v-else class="py-4 text-sm text-muted/60">No columns loaded</div>
+        </UContextMenu>
+
+        <label
+          v-if="hasIgnored"
+          class="mt-2 flex cursor-pointer items-center gap-1.5 text-sm text-muted"
+        >
+          <USwitch v-model="showIgnored" size="xs" />
+          Show ignored
+        </label>
       </div>
 
       <!-- Buckets (right side) -->

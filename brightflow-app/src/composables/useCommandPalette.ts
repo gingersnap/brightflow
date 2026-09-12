@@ -10,6 +10,7 @@ import { useRoute, useRouter } from 'vue-router';
 import ConfirmModal from '@/components/command/ConfirmModal.vue';
 import {
   ACTION_PALETTE,
+  COLUMN_KINDS,
   type ConfirmOptions,
   INSIGHT_KINDS,
   type PaletteActionContext,
@@ -100,6 +101,7 @@ export function useCommandPalette(
 
   const isTextEnrichment = computed(() => routeTool.value === 'textenrichment' && hasScope.value);
   const isInsights = computed(() => routeTool.value === 'insights' && hasScope.value);
+  const isExplore = computed(() => routeTool.value === 'explore' && hasScope.value);
 
   const { data: taxonomy } = useQuery({
     // Same key as VocabularyTree.vue.
@@ -185,7 +187,9 @@ export function useCommandPalette(
     if (isTextEnrichment.value) {
       kinds = VOCABULARY_KINDS;
     } else if (isInsights.value) {
-      kinds = INSIGHT_KINDS;
+      kinds = [...INSIGHT_KINDS, ...COLUMN_KINDS];
+    } else if (isExplore.value) {
+      kinds = COLUMN_KINDS;
     }
     if (kinds.length === 0) {
       return [];

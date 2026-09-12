@@ -97,12 +97,19 @@ export const VOCABULARY_KINDS: readonly string[] = [
   'delete_taxonomy_category',
 ];
 
-/** Action kinds offered on the insights route. */
+/** Action kinds offered on the insights route (plus `COLUMN_KINDS`). */
 export const INSIGHT_KINDS: readonly string[] = [
   'dismiss_insight',
   'pin_insight',
   'annotate_insight',
   'suppress_target',
+];
+
+/** Column-semantic kinds, offered wherever a table is in scope. */
+export const COLUMN_KINDS: readonly string[] = [
+  'set_column_role',
+  'set_column_label',
+  'set_column_description',
   'set_kpi',
   'set_column_polarity',
 ];
@@ -144,6 +151,19 @@ const POLARITY_ICONS = {
   lower_is_better: 'i-lucide-trending-down',
   neutral: 'i-lucide-minus',
 } as const;
+
+const ROLE_OPTIONS = [
+  { icon: 'i-lucide-hash', label: 'Measure', value: 'measure' as const },
+  { icon: 'i-lucide-tag', label: 'Dimension', value: 'dimension' as const },
+  { icon: 'i-lucide-calendar', label: 'Time', value: 'time' as const },
+  { icon: 'i-lucide-user', label: 'Entity', value: 'entity' as const },
+  { icon: 'i-lucide-eye-off', label: 'Ignored', value: 'ignored' as const },
+];
+
+/** A column's shown name: its label, else its raw name. */
+function columnLabel(column: ColumnInfo): string {
+  return column.label == null || column.label === '' ? column.name : column.label;
+}
 
 // ── The registry ────────────────────────────────────────────────────────────
 
@@ -398,6 +418,102 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
             },
           };
         }),
+    }),
+  },
+
+  set_column_role: {
+    icon: 'i-lucide-shapes',
+    build: (ctx) => ({
+      placeholder: 'Set the role of which column…',
+      children: ctx.data.columns.map((column) => ({
+        label: columnLabel(column),
+        suffix: column.role ?? column.dtype,
+        icon: 'i-lucide-shapes',
+        children: ROLE_OPTIONS.map((option) => ({
+          label: option.value === column.role ? `${option.label} (current)` : option.label,
+          icon: option.icon,
+          onSelect: () => {
+            ctx.helpers.close();
+            run(() =>
+              ctx.helpers.dispatch({
+                kind: 'set_column_role',
+                source_id: ctx.sourceId,
+                table: ctx.table,
+                column: column.name,
+                role: option.value,
+              }),
+            );
+          },
+        })),
+      })),
+    }),
+  },
+
+  set_column_label: {
+    icon: 'i-lucide-pencil-line',
+    build: (ctx) => ({
+      placeholder: 'Rename which column…',
+      children: ctx.data.columns.map((column) => ({
+        label: columnLabel(column),
+        suffix: column.label == null ? column.dtype : column.name,
+        icon: 'i-lucide-pencil-line',
+        onSelect: () => {
+          ctx.helpers.close();
+          run(async () => {
+            const label = await ctx.helpers.promptText({
+              title: 'Rename column',
+              description: column.name,
+              initialValue: column.label ?? '',
+              placeholder: 'Shown instead of the column name',
+              confirmLabel: 'Rename',
+            });
+            if (label == null) {
+              return;
+            }
+            await ctx.helpers.dispatch({
+              kind: 'set_column_label',
+              source_id: ctx.sourceId,
+              table: ctx.table,
+              column: column.name,
+              label,
+            });
+          });
+        },
+      })),
+    }),
+  },
+
+  set_column_description: {
+    icon: 'i-lucide-text',
+    build: (ctx) => ({
+      placeholder: 'Describe which column…',
+      children: ctx.data.columns.map((column) => ({
+        label: columnLabel(column),
+        suffix: column.description ?? column.dtype,
+        icon: 'i-lucide-text',
+        onSelect: () => {
+          ctx.helpers.close();
+          run(async () => {
+            const description = await ctx.helpers.promptText({
+              title: 'Describe column',
+              description: columnLabel(column),
+              initialValue: column.description ?? '',
+              placeholder: 'One or two sentences',
+              confirmLabel: 'Save',
+            });
+            if (description == null) {
+              return;
+            }
+            await ctx.helpers.dispatch({
+              kind: 'set_column_description',
+              source_id: ctx.sourceId,
+              table: ctx.table,
+              column: column.name,
+              description,
+            });
+          });
+        },
+      })),
     }),
   },
 
