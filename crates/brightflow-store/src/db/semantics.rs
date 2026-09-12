@@ -524,6 +524,28 @@ impl StoreDb {
         Ok(())
     }
 
+    /// Remove one layer's table row; `true` when it existed.
+    pub async fn delete_table_opinion(
+        &self,
+        table_id: &str,
+        prov: &Provenance,
+    ) -> StoreResult<bool> {
+        let table_id = table_id.to_owned();
+        let layer = prov.layer.as_str();
+        let producer = prov.producer.clone();
+        let affected = self
+            .pool
+            .call(move |conn| {
+                execute(
+                    conn,
+                    "DELETE FROM table_semantics WHERE table_id = ? AND layer = ? AND producer = ?",
+                    params![table_id, layer, producer],
+                )
+            })
+            .await?;
+        Ok(affected > 0)
+    }
+
     /// Every layer's opinion about every column of a table.
     pub async fn column_opinions(&self, table_id: &str) -> StoreResult<Vec<ColumnOpinion>> {
         let table_id = table_id.to_owned();
@@ -1038,6 +1060,34 @@ mod tests {
             applied.columns_without_data,
             vec!["created_at".to_string(), "reactions_total".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn table_opinions_write_and_delete_per_producer() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+        let table = db.create_table("issues", "c:s1").await.expect("table");
+        let mut mine = TableOpinion::empty(user());
+        mine.time_granularity = Some(TimeGranularity::Month);
+        db.write_table_opinion(&table.id, &mine)
+            .await
+            .expect("write");
+        assert_eq!(
+            db.resolved_table(&table.id)
+                .await
+                .expect("resolved")
+                .and_then(|t| t.time_granularity),
+            Some(TimeGranularity::Month)
+        );
+        assert!(db
+            .delete_table_opinion(&table.id, &user())
+            .await
+            .expect("delete"));
+        assert!(!db
+            .delete_table_opinion(&table.id, &user())
+            .await
+            .expect("again"));
+        assert_eq!(db.resolved_table(&table.id).await.expect("resolved"), None);
     }
 
     /// The SQL `CHECK` literals are a copy of the contract crate's enums;

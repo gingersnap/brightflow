@@ -61,21 +61,19 @@ pub async fn load_table(
         .get_dataset(&id)
         .ok_or_else(|| AppError::Internal("Failed to retrieve loaded dataset".into()))?;
 
-    // Merge in the semantic overrides so Explore, the palette and the settings
-    // UIs can show current role/KPI/label/polarity state without a second fetch.
+    // Overlay the store's resolved semantics so Explore, the palette and the
+    // settings UIs show role/KPI/label/polarity, the declared datatype and
+    // who said so, without a second fetch.
     let mut columns = dataset.columns();
-    let key = crate::state::cache_key(&source_id, &name);
-    if let Some(overrides) = state.schema_overrides.get(&key) {
+    if let Some(store) = state.store() {
+        let resolved = store.resolved_columns(&source_id, &name).await?;
         for col in &mut columns {
-            if let Some(ovr) = overrides.iter().find(|o| o.column_name == col.name) {
-                col.role = ovr.role;
-                col.is_kpi = Some(ovr.is_kpi);
-                col.label.clone_from(&ovr.label);
-                col.polarity = Some(ovr.polarity);
-                col.description.clone_from(&ovr.description);
+            if let Some(r) = resolved.iter().find(|r| r.name == col.name) {
+                col.apply_resolved(r);
             }
         }
     }
+    let key = crate::state::cache_key(&source_id, &name);
     let time_granularity = state
         .settings_overrides
         .get(&key)

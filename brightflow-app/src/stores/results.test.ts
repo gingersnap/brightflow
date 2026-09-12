@@ -10,7 +10,9 @@ import type { ColumnInfo } from '@/types';
 
 import { useResultsStore } from './results';
 
-const COLS: ColumnInfo[] = [{ dtype: 'i64', isKpi: null, label: null, name: 'amount', role: null }];
+const COLS: ColumnInfo[] = [
+  { datatype: 'Integer', dtype: 'i64', isKpi: null, label: null, name: 'amount', role: null },
+];
 
 beforeEach(() => {
   setActivePinia(createPinia());

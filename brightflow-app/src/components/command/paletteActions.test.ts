@@ -28,8 +28,15 @@ function ctx(columns: ColumnInfo[], promptAnswer: string | null = null) {
 }
 
 const COLUMNS: ColumnInfo[] = [
-  { dtype: 'f64', isKpi: null, label: 'Revenue', name: 'order_total', role: 'measure' },
-  { dtype: 'string', isKpi: null, label: null, name: 'region', role: null },
+  {
+    datatype: 'Float',
+    dtype: 'f64',
+    isKpi: null,
+    label: 'Revenue',
+    name: 'order_total',
+    role: 'measure',
+  },
+  { datatype: 'String', dtype: 'string', isKpi: null, label: null, name: 'region', role: null },
 ];
 
 async function flush(): Promise<void> {

@@ -12,11 +12,13 @@
 //! deletes it, when the action created it. Rows logged before layers existed
 //! carry the old full-tuple snapshot and restore it at the user layer.
 
-use brightflow_types::{ColumnOpinion, ColumnRole, Layer, Polarity, Provenance, ResolvedColumn};
+use brightflow_types::{
+    ColumnOpinion, ColumnRole, Layer, Polarity, Provenance, ResolvedColumn, TableOpinion,
+};
 use serde_json::json;
 
 use super::table_ctx;
-use crate::actions::types::{ColumnSemanticSnapshot, UndoOp};
+use crate::actions::types::{ColumnSemanticSnapshot, TableSettingsSnapshot, UndoOp};
 use crate::actions::Actor;
 use crate::shared::AppResult;
 use crate::state::AppState;
@@ -145,6 +147,88 @@ pub(crate) async fn execute_set_column_description(
         json!({ "column": column, "description": non_blank(description) }),
         Some(restore_op(source_id, table, column, previous, prov)),
     ))
+}
+
+/// Set the table's own settings as one opinion row at the actor's layer.
+/// Fields given replace the actor's earlier values; fields left `None` keep
+/// what the actor's row already said, so a caller can change the period
+/// without restating the display name. A blank text field is stored as
+/// "" — "cleared" — so it hides a lower layer's value.
+pub(crate) async fn execute_set_table_settings(
+    state: &AppState,
+    actor: &Actor,
+    source_id: &str,
+    table: &str,
+    settings: &TableSettingsSnapshot,
+) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
+    let prov = provenance_for_actor(actor);
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    let previous = store
+        .db()
+        .table_opinions(&table_id)
+        .await?
+        .into_iter()
+        .find(|o| o.provenance.layer == prov.layer && o.provenance.producer == prov.producer);
+    let mut next = previous
+        .clone()
+        .unwrap_or_else(|| TableOpinion::empty(prov.clone()));
+    if let Some(v) = &settings.display_name {
+        next.display_name = Some(v.trim().to_string());
+    }
+    if let Some(v) = &settings.description {
+        next.description = Some(v.trim().to_string());
+    }
+    if let Some(v) = settings.time_granularity {
+        next.time_granularity = Some(v);
+    }
+    if let Some(v) = settings.comparison_periods {
+        next.comparison_periods = Some(v);
+    }
+    store.db().write_table_opinion(&table_id, &next).await?;
+    state.refresh_overrides_from_store(source_id, table).await;
+    Ok((
+        json!({
+            "displayName": next.display_name,
+            "description": next.description,
+            "timeGranularity": next.time_granularity,
+            "comparisonPeriods": next.comparison_periods,
+        }),
+        Some(UndoOp::RestoreTableSettings {
+            source_id: source_id.to_string(),
+            table: table.to_string(),
+            snapshot: previous
+                .as_ref()
+                .map(TableSettingsSnapshot::from_opinion)
+                .unwrap_or_default(),
+            provenance: prov,
+            existed: previous.is_some(),
+        }),
+    ))
+}
+
+/// Put the actor's table row back as it was, or delete it when the action
+/// created it.
+pub(crate) async fn undo_restore_table_settings(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    snapshot: &TableSettingsSnapshot,
+    provenance: &Provenance,
+    existed: bool,
+) -> AppResult<()> {
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    if existed {
+        let mut opinion = TableOpinion::empty(provenance.clone());
+        snapshot.apply_to(&mut opinion);
+        store.db().write_table_opinion(&table_id, &opinion).await?;
+    } else {
+        store
+            .db()
+            .delete_table_opinion(&table_id, provenance)
+            .await?;
+    }
+    state.refresh_overrides_from_store(source_id, table).await;
+    Ok(())
 }
 
 /// Legacy undo (rows logged before layers): restore role and KPI at the

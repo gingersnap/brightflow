@@ -24,7 +24,15 @@ function handlers(): ColumnMenuHandlers {
 }
 
 function col(extra: Partial<ColumnInfo> = {}): ColumnInfo {
-  return { dtype: 'f64', isKpi: null, label: null, name: 'revenue', role: null, ...extra };
+  return {
+    datatype: 'Float',
+    dtype: 'f64',
+    isKpi: null,
+    label: null,
+    name: 'revenue',
+    role: null,
+    ...extra,
+  };
 }
 
 function labels(groups: ContextMenuItem[][]): string[][] {

@@ -3,6 +3,7 @@ import type { ColumnRole } from "./ColumnRole";
 import type { DismissReason } from "./DismissReason";
 import type { Polarity } from "./Polarity";
 import type { SuppressKind } from "./SuppressKind";
+import type { TimeGranularity } from "./TimeGranularity";
 
 /**
  * A curation operation: a vocabulary edit, an insight verdict, or a column
@@ -22,4 +23,4 @@ aliases?: Array<string>, source_id: string, table: string, } | { "kind": "rename
 /**
  * category | feedback_category | product | competitor
  */
-vocab_kind: string, source_id: string, table: string, } | { "kind": "dismiss_insight", fingerprint: string, reason: DismissReason, source_id: string, table: string, } | { "kind": "pin_insight", fingerprint: string, pinned: boolean, source_id: string, table: string, } | { "kind": "annotate_insight", fingerprint: string, note: string, source_id: string, table: string, } | { "kind": "suppress_target", target_kind: SuppressKind, target: string, source_id: string, table: string, } | { "kind": "set_kpi", column: string, is_kpi: boolean, source_id: string, table: string, } | { "kind": "set_column_polarity", column: string, polarity: Polarity, source_id: string, table: string, } | { "kind": "set_column_role", column: string, role: ColumnRole, source_id: string, table: string, } | { "kind": "set_column_label", column: string, label?: string, source_id: string, table: string, } | { "kind": "set_column_description", column: string, description?: string, source_id: string, table: string, };
+vocab_kind: string, source_id: string, table: string, } | { "kind": "dismiss_insight", fingerprint: string, reason: DismissReason, source_id: string, table: string, } | { "kind": "pin_insight", fingerprint: string, pinned: boolean, source_id: string, table: string, } | { "kind": "annotate_insight", fingerprint: string, note: string, source_id: string, table: string, } | { "kind": "suppress_target", target_kind: SuppressKind, target: string, source_id: string, table: string, } | { "kind": "set_kpi", column: string, is_kpi: boolean, source_id: string, table: string, } | { "kind": "set_column_polarity", column: string, polarity: Polarity, source_id: string, table: string, } | { "kind": "set_column_role", column: string, role: ColumnRole, source_id: string, table: string, } | { "kind": "set_column_label", column: string, label?: string, source_id: string, table: string, } | { "kind": "set_column_description", column: string, description?: string, source_id: string, table: string, } | { "kind": "set_table_settings", display_name?: string, description?: string, time_granularity?: TimeGranularity, comparison_periods?: number, source_id: string, table: string, };

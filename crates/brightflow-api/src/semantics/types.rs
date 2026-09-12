@@ -29,7 +29,8 @@ pub struct ColumnSemanticsResponse {
     pub layers: Option<Vec<ColumnOpinion>>,
 }
 
-/// Table analysis settings (request/response)
+/// The resolved table settings. Writes go through `set_table_settings` on
+/// the action bus.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]

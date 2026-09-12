@@ -611,6 +611,27 @@ pub async fn execute_action(
             )
             .await
         },
+        Action::SetTableSettings {
+            scope: Scope { source_id, table },
+            display_name,
+            description,
+            time_granularity,
+            comparison_periods,
+        } => {
+            semantics::execute_set_table_settings(
+                state,
+                actor,
+                source_id,
+                table,
+                &crate::actions::types::TableSettingsSnapshot {
+                    display_name: display_name.clone(),
+                    description: description.clone(),
+                    time_granularity: *time_granularity,
+                    comparison_periods: *comparison_periods,
+                },
+            )
+            .await
+        },
         Action::DefineTaxonomyCategory {
             scope: Scope { source_id, table },
             name,
@@ -742,6 +763,18 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
                 snapshot,
                 provenance.as_ref(),
                 *existed,
+            )
+            .await
+        },
+        UndoOp::RestoreTableSettings {
+            source_id,
+            table,
+            snapshot,
+            provenance,
+            existed,
+        } => {
+            semantics::undo_restore_table_settings(
+                state, source_id, table, snapshot, provenance, *existed,
             )
             .await
         },

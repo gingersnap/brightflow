@@ -8,7 +8,7 @@
 //! A human clicking "rename cluster" and an agent emitting a tool call
 //! execute the exact same code path; only the recorded actor differs.
 
-use brightflow_engine::data::config::{ColumnRole, Polarity};
+use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -188,6 +188,27 @@ pub enum Action {
         #[ts(optional)]
         description: Option<String>,
     },
+    /// The table's own settings — display name, description, analysis
+    /// period and how many periods to compare — as one opinion at the
+    /// actor's layer. A field left out is "no opinion", so a producer's
+    /// value shows through; a blank string clears a text field.
+    SetTableSettings {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        #[serde(default)]
+        #[ts(optional)]
+        display_name: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        description: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        time_granularity: Option<TimeGranularity>,
+        #[serde(default)]
+        #[ts(optional)]
+        comparison_periods: Option<u32>,
+    },
 }
 
 /// One column's full semantic tuple as stored in `column_semantics`.
@@ -230,6 +251,38 @@ impl ColumnSemanticSnapshot {
     }
 }
 
+/// The four settings fields of one table opinion row, as undo writes them
+/// back.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TableSettingsSnapshot {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub time_granularity: Option<TimeGranularity>,
+    #[serde(default)]
+    pub comparison_periods: Option<u32>,
+}
+
+impl TableSettingsSnapshot {
+    pub fn from_opinion(o: &brightflow_types::TableOpinion) -> Self {
+        Self {
+            display_name: o.display_name.clone(),
+            description: o.description.clone(),
+            time_granularity: o.time_granularity,
+            comparison_periods: o.comparison_periods,
+        }
+    }
+
+    pub fn apply_to(&self, o: &mut brightflow_types::TableOpinion) {
+        o.display_name.clone_from(&self.display_name);
+        o.description.clone_from(&self.description);
+        o.time_granularity = self.time_granularity;
+        o.comparison_periods = self.comparison_periods;
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -266,6 +319,7 @@ impl Action {
             Self::SetColumnRole { .. } => "set_column_role",
             Self::SetColumnLabel { .. } => "set_column_label",
             Self::SetColumnDescription { .. } => "set_column_description",
+            Self::SetTableSettings { .. } => "set_table_settings",
         }
     }
 
@@ -286,7 +340,8 @@ impl Action {
             | Self::SetColumnPolarity { scope, .. }
             | Self::SetColumnRole { scope, .. }
             | Self::SetColumnLabel { scope, .. }
-            | Self::SetColumnDescription { scope, .. } => scope,
+            | Self::SetColumnDescription { scope, .. }
+            | Self::SetTableSettings { scope, .. } => scope,
         };
         (&scope.source_id, &scope.table)
     }
@@ -505,6 +560,15 @@ pub enum UndoOp {
         #[serde(default = "default_true")]
         existed: bool,
     },
+    /// Undo of set_table_settings: put the actor's table row back, or
+    /// delete it when the action created it.
+    RestoreTableSettings {
+        source_id: String,
+        table: String,
+        snapshot: TableSettingsSnapshot,
+        provenance: brightflow_types::Provenance,
+        existed: bool,
+    },
     /// Undo of define/rename/redefine: put an entry's name and description
     /// back, or delete it outright when it did not exist before the action.
     RestoreTaxonomyCategory {
@@ -655,6 +719,14 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "Describe column",
         "Attach a one- or two-sentence description to a column, shown as help \
          text beside its label. Omit or blank the description to clear it.",
+        true,
+    ),
+    (
+        "set_table_settings",
+        "Table settings",
+        "Set the table's display name, description, analysis period \
+         (day, week, month, quarter or year) and how many periods to compare. \
+         Give only the fields to change; a blank string clears a text field.",
         true,
     ),
 ];
@@ -871,6 +943,16 @@ mod tests {
                 },
                 column: String::new(),
                 description: None,
+            },
+            Action::SetTableSettings {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                display_name: None,
+                description: None,
+                time_granularity: None,
+                comparison_periods: None,
             },
         ];
         assert_eq!(

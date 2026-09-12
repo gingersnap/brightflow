@@ -200,8 +200,7 @@ fn api_routes() -> Router<AppState> {
         )
         .route(
             "/sources/{source_id}/tables/{name}/settings",
-            get(semantics_handlers::get_table_settings)
-                .put(semantics_handlers::upsert_table_settings),
+            get(semantics_handlers::get_table_settings),
         )
         // The source as one Ossie document, generated from the resolved views.
         .route(

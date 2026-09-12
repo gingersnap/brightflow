@@ -2,6 +2,7 @@
 import type { TimeGranularity } from "./TimeGranularity";
 
 /**
- * Table analysis settings (request/response)
+ * The resolved table settings. Writes go through `set_table_settings` on
+ * the action bus.
  */
 export type TableSettings = { displayName?: string, description?: string, timeGranularity?: TimeGranularity, comparisonPeriods?: number, };

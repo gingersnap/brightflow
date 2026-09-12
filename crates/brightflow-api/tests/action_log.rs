@@ -513,3 +513,66 @@ async fn column_semantic_actions_write_the_actors_layer_and_round_trip_through_u
     .unwrap();
     assert_eq!(resolved("id").await.description, None);
 }
+
+/// Table settings through the bus: the action writes one row at the
+/// actor's layer over whatever a producer said, and undo removes the row
+/// the action created.
+#[tokio::test]
+async fn set_table_settings_writes_the_actors_layer_and_undoes() {
+    use brightflow_types::{Layer, TimeGranularity};
+
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
+    let store = state.store().unwrap();
+    let response = dispatch_action(
+        &state,
+        Action::SetTableSettings {
+            scope: Scope {
+                source_id: SOURCE.to_string(),
+                table: TABLE.to_string(),
+            },
+            display_name: Some("  Tickets ".to_string()),
+            description: None,
+            time_granularity: Some(TimeGranularity::Month),
+            comparison_periods: None,
+        },
+        "req-settings",
+        Actor::Human {
+            user_id: "user-1".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(response.status, ActionStatus::Applied));
+    let resolved = store.resolved_table(SOURCE, TABLE).await.unwrap().unwrap();
+    assert_eq!(resolved.display_name.as_deref(), Some("Tickets"));
+    assert_eq!(resolved.time_granularity, Some(TimeGranularity::Month));
+    assert_eq!(resolved.resolved_by.map(|p| p.layer), Some(Layer::User));
+    // The engine's override follows the row.
+    let key = format!("{SOURCE}|{TABLE}");
+    assert_eq!(
+        state
+            .settings_overrides
+            .get(&key)
+            .and_then(|s| s.time_granularity),
+        Some(TimeGranularity::Month)
+    );
+
+    let row = store
+        .db()
+        .list_actions(10)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.request_id == "req-settings")
+        .unwrap();
+    let undone = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(row.id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(undone.0.status, ActionStatus::Undone));
+    assert_eq!(store.resolved_table(SOURCE, TABLE).await.unwrap(), None);
+    assert!(state.settings_overrides.get(&key).is_none());
+}

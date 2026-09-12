@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use brightflow_engine::data::config::{ColumnRole, Polarity};
+use brightflow_types::{LogicalType, Provenance};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use polars::prelude::*;
@@ -100,10 +101,10 @@ impl Dataset {
     }
 }
 
-/// Column metadata: the physical half plus the stored semantics.
+/// Column metadata: the physical half plus the resolved semantics.
 ///
-/// `name` and `dtype` are always present. The semantic fields are filled only
-/// by `load_table`, from the stored `column_semantics`, and stay `None` on
+/// `name` and `datatype` are always present. The semantic fields are filled
+/// only by `load_table`, from the store's resolved rows, and stay `None` on
 /// query results — a result column is looked up by name against the loaded
 /// table on the client.
 #[derive(Clone, Debug, Serialize, TS)]
@@ -111,7 +112,12 @@ impl Dataset {
 #[serde(rename_all = "camelCase")]
 pub struct ColumnInfo {
     pub name: String,
+    /// The engine's legacy type word (`int`, `float`, `string`, …).
+    /// Deprecated: read `datatype`. Removed once no client reads it.
     pub dtype: String,
+    /// The column's logical type: what a producer declared, else what the
+    /// physical type maps to.
+    pub datatype: LogicalType,
     /// Semantic role (if configured)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<ColumnRole>,
@@ -129,6 +135,12 @@ pub struct ColumnInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub description: Option<String>,
+    /// Who said the most about this column: the highest layer with an
+    /// opinion, so the UI can show "from GitHub connector 0.3.0" or
+    /// "edited by you".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub resolved_by: Option<Provenance>,
 }
 
 impl ColumnInfo {
@@ -138,12 +150,28 @@ impl ColumnInfo {
         Self {
             name: name.to_string(),
             dtype: crate::analytics::executor::dtype_to_string(dtype),
+            datatype: LogicalType::from_polars(dtype),
             role: None,
             is_kpi: None,
             label: None,
             polarity: None,
             description: None,
+            resolved_by: None,
         }
+    }
+
+    /// Overlay the store's resolved semantics for this column. A declared
+    /// datatype wins over the physical one; everything else fills in.
+    pub fn apply_resolved(&mut self, resolved: &brightflow_types::ResolvedColumn) {
+        if let Some(datatype) = resolved.datatype {
+            self.datatype = datatype;
+        }
+        self.role = resolved.role;
+        self.is_kpi = resolved.is_kpi;
+        self.label.clone_from(&resolved.label);
+        self.polarity = resolved.polarity;
+        self.description.clone_from(&resolved.description);
+        self.resolved_by.clone_from(&resolved.resolved_by);
     }
 }
 

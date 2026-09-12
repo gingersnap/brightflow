@@ -1,24 +1,21 @@
 //! HTTP handlers for per-table semantics: the resolved view, the layers
 //! behind it, and the table's own settings.
 //!
-//! Auth posture: session-authenticated. Column writes go through the action
-//! bus, not here. The one write left on this router, table settings, files
-//! a `user`-layer opinion and refreshes the in-memory override so the next
-//! analysis run sees it without a restart; it is the last semantic write not
-//! on the bus and is slated to move there.
+//! Auth posture: session-authenticated. Read-only: every semantic write,
+//! column or table, goes through the action bus so it is logged, attributed
+//! to a layer and undoable.
 
 use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use brightflow_types::{Layer, Provenance, TableOpinion};
 
 use crate::semantics::types::{
     ColumnSemanticsResponse, LayersQuery, SemanticModelResponse, TableSettings,
     TableSettingsResponse,
 };
 use crate::shared::AppResult;
-use crate::state::{cache_key, settings_from_resolved, AppState};
+use crate::state::AppState;
 
 /// GET /api/sources/{source_id}/tables/{name}/semantics — the resolved
 /// columns; `?layers=1` also returns every opinion row behind them.
@@ -49,53 +46,6 @@ pub async fn get_table_settings(
 ) -> AppResult<Json<TableSettingsResponse>> {
     let store = state.require_store()?;
     let resolved = store.resolved_table(&source_id, &name).await?;
-    Ok(Json(TableSettingsResponse {
-        table_name: name,
-        settings: resolved.map(TableSettings::from).unwrap_or_default(),
-    }))
-}
-
-/// PUT /api/sources/{source_id}/tables/{name}/settings — write the caller's
-/// table settings as one `user`-layer opinion.
-pub async fn upsert_table_settings(
-    State(state): State<AppState>,
-    Path((source_id, name)): Path<(String, String)>,
-    Json(req): Json<TableSettings>,
-) -> AppResult<Json<TableSettingsResponse>> {
-    let store = state.require_store()?;
-    let table = store
-        .db()
-        .get_table(&source_id, &name)
-        .await?
-        .ok_or_else(|| crate::shared::AppError::NotFound(format!("Table '{name}' not found")))?;
-    let opinion = TableOpinion {
-        provenance: Provenance {
-            layer: Layer::User,
-            producer: "user:settings".to_string(),
-            version: None,
-            hash: None,
-        },
-        updated_at: 0,
-        display_name: req.display_name,
-        description: req.description,
-        time_granularity: req.time_granularity,
-        comparison_periods: req.comparison_periods,
-        doc: None,
-        ai_context: None,
-        custom_extensions: Vec::new(),
-    };
-    store.db().write_table_opinion(&table.id, &opinion).await?;
-
-    let resolved = store.db().resolved_table(&table.id).await?;
-    let key = cache_key(&source_id, &name);
-    match resolved.as_ref().and_then(settings_from_resolved) {
-        Some(settings) => {
-            state.settings_overrides.insert(key, settings);
-        },
-        None => {
-            state.settings_overrides.remove(&key);
-        },
-    }
     Ok(Json(TableSettingsResponse {
         table_name: name,
         settings: resolved.map(TableSettings::from).unwrap_or_default(),
