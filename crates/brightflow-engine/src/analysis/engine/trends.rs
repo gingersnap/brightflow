@@ -42,7 +42,7 @@ impl AnalysisEngine {
         schema: &DataSchema,
     ) -> Result<AnalysisResult> {
         let mut queue: VecDeque<AnalysisTask> = VecDeque::new();
-        let mut tree = AnalysisTree::new();
+        let mut tree = AnalysisTree::with_labels(schema.labels.clone());
         let mut first_level_count: usize = 0;
 
         let cache = ColumnCache::new(df, schema)?;

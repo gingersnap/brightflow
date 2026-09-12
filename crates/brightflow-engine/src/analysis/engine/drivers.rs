@@ -37,7 +37,7 @@ impl AnalysisEngine {
         df: &DataFrame,
         schema: &DataSchema,
     ) -> Result<AnalysisResult> {
-        let mut tree = AnalysisTree::new();
+        let mut tree = AnalysisTree::with_labels(schema.labels.clone());
         let mut first_level_count: usize = 0;
         let mut deeper_count: usize = 0;
 

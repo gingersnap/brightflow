@@ -125,6 +125,13 @@ pub struct NodeId(pub usize);
 pub struct AnalysisTree {
     pub nodes: Vec<AnalysisNode>,
     pub roots: Vec<NodeId>,
+    /// Curated display labels by column name, from the table's resolved
+    /// semantics. Summaries name columns through these; a column without
+    /// one gets its name humanised. Not part of the wire: the client has
+    /// the same labels from the loaded table.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub labels: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -510,7 +517,8 @@ pub enum Sentiment {
     Bad,
 }
 
-/// Convert column name to human-readable label
+/// A column name as prose, for columns nobody has labelled: underscores to
+/// spaces, words capitalised. The fallback behind `AnalysisTree::label`.
 fn humanize_column(name: &str) -> String {
     name.replace('_', " ")
         .split_whitespace()
@@ -809,8 +817,15 @@ impl AnalysisType {
         }
     }
 
-    /// Generate a natural language summary
+    /// Generate a natural language summary, naming columns by their
+    /// humanised names.
     pub fn natural_summary(&self) -> String {
+        self.natural_summary_with(&humanize_column)
+    }
+
+    /// Generate a natural language summary, naming columns through `label`
+    /// (a curated label where one exists, the humanised name otherwise).
+    pub fn natural_summary_with(&self, label: &dyn Fn(&str) -> String) -> String {
         match self {
             Self::Anomaly {
                 column,
@@ -819,7 +834,7 @@ impl AnalysisType {
                 z_score,
                 ..
             } => {
-                let col = humanize_column(column);
+                let col = label(column);
                 let direction = if *z_score > 0.0 {
                     "unusually high"
                 } else {
@@ -839,8 +854,8 @@ impl AnalysisType {
                 contribution_pct,
                 ..
             } => {
-                let target = humanize_column(target_column);
-                let segment = humanize_column(segment_column);
+                let target = label(target_column);
+                let segment = label(segment_column);
                 let direction = if *change_percent > 0.0 { "up" } else { "down" };
                 let change_abs = change_percent.abs();
                 let contrib_abs = contribution_pct.abs();
@@ -865,8 +880,8 @@ impl AnalysisType {
                 r_value,
                 ..
             } => {
-                let a = humanize_column(column_a);
-                let b = humanize_column(column_b);
+                let a = label(column_a);
+                let b = label(column_b);
                 let strength = if r_value.abs() > 0.8 {
                     "strongly"
                 } else if r_value.abs() > 0.6 {
@@ -884,7 +899,7 @@ impl AnalysisType {
             Self::Trend {
                 column, direction, ..
             } => {
-                let col = humanize_column(column);
+                let col = label(column);
                 let dir = match direction {
                     TrendDirection::Increasing => "increasing",
                     TrendDirection::Decreasing => "decreasing",
@@ -900,7 +915,7 @@ impl AnalysisType {
                 change_percent,
                 ..
             } => {
-                let col = humanize_column(column);
+                let col = label(column);
                 let current = humanize_period(current_period);
                 let previous = humanize_period(previous_period);
                 let direction = if *change_percent > 0.0 {
@@ -923,7 +938,7 @@ impl AnalysisType {
                 change_percent,
                 ..
             } => {
-                let col = humanize_column(column);
+                let col = label(column);
                 let p = humanize_period(period);
                 let direction = if *change_percent > 0.0 {
                     "higher"
@@ -943,7 +958,7 @@ impl AnalysisType {
                 autocorrelation,
                 ..
             } => {
-                let col = humanize_column(column);
+                let col = label(column);
                 let strength = if autocorrelation.abs() > 0.8 {
                     "strong"
                 } else if autocorrelation.abs() > 0.6 {
@@ -962,7 +977,7 @@ impl AnalysisType {
                 let p = humanize_period(period);
                 let cols = columns
                     .iter()
-                    .map(|c| humanize_column(c))
+                    .map(|c| label(c))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let dir_word = if direction == "spike" { "Spike" } else { "Dip" };
@@ -976,7 +991,7 @@ impl AnalysisType {
                 deviation_percent,
                 ..
             } => {
-                let col = humanize_column(column);
+                let col = label(column);
                 let p = humanize_period(period);
                 let direction = if *deviation_percent > 0.0 { "+" } else { "" };
                 format!(
@@ -992,8 +1007,8 @@ impl AnalysisType {
                 top_share,
                 ..
             } => {
-                let c = humanize_column(column);
-                let s = humanize_column(segment_column);
+                let c = label(column);
+                let s = label(segment_column);
                 let (values_word, verb) = if *top_n == 1 {
                     ("value", "accounts")
                 } else {
@@ -1009,7 +1024,7 @@ impl AnalysisType {
                 current_period,
                 ..
             } => {
-                let c = humanize_column(column);
+                let c = label(column);
                 let prev = humanize_period(previous_period);
                 let curr = humanize_period(current_period);
                 format!("{c} distribution shifted from {prev} to {curr}")
@@ -1021,7 +1036,7 @@ impl AnalysisType {
                 current_period,
                 ..
             } => {
-                let s = humanize_column(segment_column);
+                let s = label(segment_column);
                 let p = humanize_period(current_period);
                 format!(
                     "{s} membership changed in {p}: {} new, {} disappeared",
@@ -1036,7 +1051,7 @@ impl AnalysisType {
                 after_mean,
                 ..
             } => {
-                let c = humanize_column(column);
+                let c = label(column);
                 let p = humanize_period(period);
                 let direction = if after_mean > before_mean {
                     "stepped up"
@@ -1057,7 +1072,7 @@ impl AnalysisType {
                 n_siblings,
                 ..
             } => {
-                let d = humanize_column(dimension);
+                let d = label(dimension);
                 let direction = if new_rank < previous_rank {
                     "climbed"
                 } else {
@@ -1074,7 +1089,7 @@ impl AnalysisType {
                 expected_share,
                 ..
             } => {
-                let d = humanize_column(dimension);
+                let d = label(dimension);
                 format!(
                     "{d} \"{value}\" holds {:.0}% of the volume — far above the {:.0}% its peers' drop-off suggests",
                     share * 100.0,
@@ -1090,7 +1105,25 @@ impl AnalysisTree {
         Self {
             nodes: Vec::new(),
             roots: Vec::new(),
+            labels: std::collections::HashMap::new(),
         }
+    }
+
+    /// A tree whose summaries name columns by these labels.
+    pub fn with_labels(labels: std::collections::HashMap<String, String>) -> Self {
+        Self {
+            labels,
+            ..Self::new()
+        }
+    }
+
+    /// The display name for a column: its curated label, else its name
+    /// humanised.
+    pub fn label(&self, column: &str) -> String {
+        self.labels
+            .get(column)
+            .cloned()
+            .unwrap_or_else(|| humanize_column(column))
     }
 
     pub fn add_root(
@@ -1116,7 +1149,7 @@ impl AnalysisTree {
         description: String,
         data: Option<NodeData>,
     ) -> NodeId {
-        let summary = analysis.natural_summary();
+        let summary = analysis.natural_summary_with(&|c| self.label(c));
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
         let node = AnalysisNode {
@@ -1187,7 +1220,7 @@ impl AnalysisTree {
         description: String,
         data: Option<NodeData>,
     ) -> NodeId {
-        let summary = analysis.natural_summary();
+        let summary = analysis.natural_summary_with(&|c| self.label(c));
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
         let parent_chain = self.nodes[parent_id.0].filter_chain.clone();
@@ -1262,6 +1295,34 @@ pub struct AnalysisResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A curated label reaches the summary; a column without one keeps the
+    /// humanised name.
+    #[test]
+    fn summaries_use_curated_labels_and_fall_back_to_humanised_names() {
+        let anomaly = |column: &str| AnalysisType::Anomaly {
+            column: column.to_string(),
+            value: 10.0,
+            mean: 2.0,
+            z_score: 3.0,
+            std_dev: 1.0,
+        };
+        let mut plain = AnalysisTree::new();
+        let unlabelled = plain.add_root(anomaly("order_total"), 0.9, String::new());
+        assert!(plain.nodes[unlabelled.0]
+            .summary
+            .starts_with("Order Total is"));
+
+        let mut labels = std::collections::HashMap::new();
+        labels.insert("order_total".to_string(), "Revenue (SEK)".to_string());
+        let mut labelled = AnalysisTree::with_labels(labels);
+        let curated = labelled.add_root(anomaly("order_total"), 0.9, String::new());
+        assert!(labelled.nodes[curated.0]
+            .summary
+            .starts_with("Revenue (SEK) is"));
+        let other = labelled.add_root(anomaly("unit_count"), 0.9, String::new());
+        assert!(labelled.nodes[other.0].summary.starts_with("Unit Count is"));
+    }
 
     #[test]
     fn humanize_period_month_week_quarter_year() {
