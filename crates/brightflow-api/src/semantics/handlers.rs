@@ -85,9 +85,14 @@ pub async fn upsert_table_settings(
 
     // Validate time_granularity if provided
     if let Some(ref g) = req.time_granularity {
-        if !["day", "week", "month", "quarter", "year"].contains(&g.as_str()) {
+        if TimeGranularity::parse(g).is_none() {
+            let allowed: Vec<&str> = TimeGranularity::ALL
+                .iter()
+                .map(|allowed| allowed.as_str())
+                .collect();
             return Err(AppError::BadRequest(format!(
-                "Invalid time_granularity '{g}'. Must be one of: day, week, month, quarter, year"
+                "Invalid time_granularity '{g}'. Must be one of: {}",
+                allowed.join(", ")
             )));
         }
     }
@@ -106,7 +111,10 @@ pub async fn upsert_table_settings(
     // Invalidate schema cache and update in-memory settings
     let key = cache_key(&source_id, &name);
     state.invalidate_schema_cache(&key);
-    let time_granularity = req.time_granularity.as_deref().and_then(parse_granularity);
+    let time_granularity = req
+        .time_granularity
+        .as_deref()
+        .and_then(TimeGranularity::parse);
     let comparison_periods = req.comparison_periods.and_then(|p| usize::try_from(p).ok());
     if time_granularity.is_some() || comparison_periods.is_some() {
         state.settings_overrides.insert(
@@ -127,49 +135,4 @@ pub async fn upsert_table_settings(
             comparison_periods: row.comparison_periods,
         },
     }))
-}
-
-fn parse_granularity(s: &str) -> Option<TimeGranularity> {
-    match s {
-        "day" => Some(TimeGranularity::Day),
-        "week" => Some(TimeGranularity::Week),
-        "month" => Some(TimeGranularity::Month),
-        "quarter" => Some(TimeGranularity::Quarter),
-        "year" => Some(TimeGranularity::Year),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_granularity_covers_every_variant_and_rejects_unknown() {
-        assert!(matches!(
-            parse_granularity("day"),
-            Some(TimeGranularity::Day)
-        ));
-        assert!(matches!(
-            parse_granularity("week"),
-            Some(TimeGranularity::Week)
-        ));
-        assert!(matches!(
-            parse_granularity("month"),
-            Some(TimeGranularity::Month)
-        ));
-        assert!(matches!(
-            parse_granularity("quarter"),
-            Some(TimeGranularity::Quarter)
-        ));
-        assert!(matches!(
-            parse_granularity("year"),
-            Some(TimeGranularity::Year)
-        ));
-        assert!(parse_granularity("fortnight").is_none());
-        assert!(
-            parse_granularity("Day").is_none(),
-            "matching is case-sensitive"
-        );
-    }
 }

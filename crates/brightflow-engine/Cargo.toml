@@ -23,6 +23,8 @@ regex = "1.12"
 blake3 = "1"
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+# JSON Schema for the semantic enums, so the action manifest can reuse them.
+schemars = "1"
 stop-words = "0.8"
 
 [lints]

@@ -573,14 +573,10 @@ pub async fn seed_column_semantics(store: &ParquetStore) {
 }
 
 fn convert_settings_row(row: &TableAnalysisSettingsRow) -> Option<TableSettingsOverride> {
-    let time_granularity = row.time_granularity.as_deref().and_then(|g| match g {
-        "day" => Some(TimeGranularity::Day),
-        "week" => Some(TimeGranularity::Week),
-        "month" => Some(TimeGranularity::Month),
-        "quarter" => Some(TimeGranularity::Quarter),
-        "year" => Some(TimeGranularity::Year),
-        _ => None,
-    });
+    let time_granularity = row
+        .time_granularity
+        .as_deref()
+        .and_then(TimeGranularity::parse);
     let comparison_periods = row.comparison_periods.and_then(|p| usize::try_from(p).ok());
 
     if time_granularity.is_none() && comparison_periods.is_none() {

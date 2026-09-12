@@ -3,6 +3,8 @@
 
 use serde_json::json;
 
+use brightflow_engine::data::config::Polarity;
+
 use super::table_ctx;
 use crate::actions::types::UndoOp;
 use crate::shared::AppResult;
@@ -37,7 +39,7 @@ pub(crate) async fn execute_set_column_polarity(
     source_id: &str,
     table: &str,
     column: &str,
-    polarity: &crate::actions::types::ColumnPolarity,
+    polarity: Polarity,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
     let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
         s.polarity = polarity.as_str().to_string();
@@ -166,8 +168,7 @@ async fn upsert_semantic_preserving(
             column_name: column.to_string(),
             role,
             is_kpi: next.is_kpi,
-            polarity: brightflow_engine::data::config::Polarity::parse(&next.polarity)
-                .unwrap_or_default(),
+            polarity: Polarity::parse(&next.polarity).unwrap_or_default(),
             label: next.label.clone(),
             description: next.description.clone(),
         });

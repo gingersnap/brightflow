@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use brightflow_engine::data::config::{ColumnRole, Polarity};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use polars::prelude::*;
@@ -80,14 +81,7 @@ impl Dataset {
             DatasetData::Uploaded(df) => df
                 .get_columns()
                 .iter()
-                .map(|col| ColumnInfo {
-                    name: col.name().to_string(),
-                    dtype: crate::analytics::executor::dtype_to_string(col.dtype()),
-                    role: None,
-                    is_kpi: None,
-                    label: None,
-                    polarity: None,
-                })
+                .map(|col| ColumnInfo::plain(col.name(), col.dtype()))
                 .collect(),
             DatasetData::Parquet { files } => {
                 if let Some(first) = files.first() {
@@ -95,14 +89,7 @@ impl Dataset {
                         if let Ok(schema) = lf.collect_schema() {
                             return schema
                                 .iter()
-                                .map(|(name, dtype)| ColumnInfo {
-                                    name: name.to_string(),
-                                    dtype: crate::analytics::executor::dtype_to_string(dtype),
-                                    role: None,
-                                    is_kpi: None,
-                                    label: None,
-                                    polarity: None,
-                                })
+                                .map(|(name, dtype)| ColumnInfo::plain(name, dtype))
                                 .collect();
                         }
                     }
@@ -113,26 +100,51 @@ impl Dataset {
     }
 }
 
-/// Column metadata
+/// Column metadata: the physical half plus the stored semantics.
+///
+/// `name` and `dtype` are always present. The semantic fields are filled only
+/// by `load_table`, from the stored `column_semantics`, and stay `None` on
+/// query results — a result column is looked up by name against the loaded
+/// table on the client.
 #[derive(Clone, Debug, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnInfo {
     pub name: String,
     pub dtype: String,
-    /// Semantic role override (if configured)
+    /// Semantic role (if configured)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub role: Option<String>,
+    pub role: Option<ColumnRole>,
     /// Whether this column is a KPI (only meaningful for measures)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_kpi: Option<bool>,
     /// Display label override
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// Measure polarity: higher_is_better | lower_is_better | neutral
+    /// Measure polarity
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub polarity: Option<String>,
+    pub polarity: Option<Polarity>,
+    /// Human-facing description, shown as help text next to the label
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub description: Option<String>,
+}
+
+impl ColumnInfo {
+    /// A column with no semantics attached — every physical schema reader
+    /// starts here.
+    pub fn plain(name: &str, dtype: &DataType) -> Self {
+        Self {
+            name: name.to_string(),
+            dtype: crate::analytics::executor::dtype_to_string(dtype),
+            role: None,
+            is_kpi: None,
+            label: None,
+            polarity: None,
+            description: None,
+        }
+    }
 }
 
 /// Summary info for a dataset

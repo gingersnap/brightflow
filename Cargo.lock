@@ -694,6 +694,7 @@ dependencies = [
  "chrono",
  "polars",
  "regex",
+ "schemars",
  "serde",
  "serde_json",
  "statrs",

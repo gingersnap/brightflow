@@ -250,14 +250,7 @@ fn json_to_lit(value: &serde_json::Value) -> AppResult<Expr> {
 fn extract_column_info(df: &DataFrame) -> Vec<ColumnInfo> {
     df.get_columns()
         .iter()
-        .map(|col| ColumnInfo {
-            name: col.name().to_string(),
-            dtype: dtype_to_string(col.dtype()),
-            role: None,
-            is_kpi: None,
-            label: None,
-            polarity: None,
-        })
+        .map(|col| ColumnInfo::plain(col.name(), col.dtype()))
         .collect()
 }
 

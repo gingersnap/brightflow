@@ -61,20 +61,25 @@ pub async fn load_table(
         .get_dataset(&id)
         .ok_or_else(|| AppError::Internal("Failed to retrieve loaded dataset".into()))?;
 
-    // Merge in the semantic overrides so the palette and settings UIs can show
-    // current role/KPI/polarity state without a second fetch.
+    // Merge in the semantic overrides so Explore, the palette and the settings
+    // UIs can show current role/KPI/label/polarity state without a second fetch.
     let mut columns = dataset.columns();
     let key = crate::state::cache_key(&source_id, &name);
     if let Some(overrides) = state.schema_overrides.get(&key) {
         for col in &mut columns {
             if let Some(ovr) = overrides.iter().find(|o| o.column_name == col.name) {
-                col.role = Some(role_str(&ovr.role).to_string());
+                col.role = Some(ovr.role);
                 col.is_kpi = Some(ovr.is_kpi);
                 col.label.clone_from(&ovr.label);
-                col.polarity = Some(ovr.polarity.as_str().to_string());
+                col.polarity = Some(ovr.polarity);
+                col.description.clone_from(&ovr.description);
             }
         }
     }
+    let time_granularity = state
+        .settings_overrides
+        .get(&key)
+        .and_then(|s| s.time_granularity);
 
     Ok(Json(LoadTableResponse {
         id,
@@ -82,18 +87,8 @@ pub async fn load_table(
         row_count: dataset.row_count(),
         column_count: dataset.column_count(),
         columns,
+        time_granularity,
     }))
-}
-
-fn role_str(role: &brightflow_engine::data::config::ColumnRole) -> &'static str {
-    use brightflow_engine::data::config::ColumnRole;
-    match role {
-        ColumnRole::Measure => "measure",
-        ColumnRole::Dimension => "dimension",
-        ColumnRole::Time => "time",
-        ColumnRole::Entity => "entity",
-        ColumnRole::Ignored => "ignored",
-    }
 }
 
 /// Get metadata for a specific dataset
@@ -366,14 +361,7 @@ pub async fn upload_dataset(
 fn column_infos(df: &DataFrame) -> Vec<session::ColumnInfo> {
     df.get_columns()
         .iter()
-        .map(|col| session::ColumnInfo {
-            name: col.name().to_string(),
-            dtype: executor::dtype_to_string(col.dtype()),
-            role: None,
-            is_kpi: None,
-            label: None,
-            polarity: None,
-        })
+        .map(|col| session::ColumnInfo::plain(col.name(), col.dtype()))
         .collect()
 }
 

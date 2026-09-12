@@ -8,6 +8,7 @@
 //! A human clicking "rename cluster" and an agent emitting a tool call
 //! execute the exact same code path; only the recorded actor differs.
 
+use brightflow_engine::data::config::Polarity;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -153,28 +154,8 @@ pub enum Action {
         #[ts(flatten)]
         scope: Scope,
         column: String,
-        polarity: ColumnPolarity,
+        polarity: Polarity,
     },
-}
-
-/// Measure polarity values (mirrors `brightflow_engine::data::config::Polarity`).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
-#[ts(export)]
-#[serde(rename_all = "snake_case")]
-pub enum ColumnPolarity {
-    HigherIsBetter,
-    LowerIsBetter,
-    Neutral,
-}
-
-impl ColumnPolarity {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::HigherIsBetter => "higher_is_better",
-            Self::LowerIsBetter => "lower_is_better",
-            Self::Neutral => "neutral",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
@@ -745,7 +726,7 @@ mod tests {
                     table: String::new(),
                 },
                 column: String::new(),
-                polarity: ColumnPolarity::HigherIsBetter,
+                polarity: Polarity::HigherIsBetter,
             },
         ];
         assert_eq!(

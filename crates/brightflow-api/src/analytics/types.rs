@@ -5,6 +5,7 @@
 //! in any order and the result depends on that order.
 
 use crate::analytics::session::ColumnInfo;
+use brightflow_engine::data::config::TimeGranularity;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -244,6 +245,11 @@ pub struct LoadTableResponse {
     pub row_count: Option<usize>,
     pub column_count: Option<usize>,
     pub columns: Vec<ColumnInfo>,
+    /// The table's configured period for time bucketing, when one is set.
+    /// Explore uses it as the default granularity of a time field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub time_granularity: Option<TimeGranularity>,
 }
 
 #[cfg(test)]

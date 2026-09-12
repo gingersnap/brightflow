@@ -554,7 +554,7 @@ pub async fn execute_action(
             column,
             polarity,
         } => {
-            semantics::execute_set_column_polarity(state, source_id, table, column, polarity).await
+            semantics::execute_set_column_polarity(state, source_id, table, column, *polarity).await
         },
         Action::DefineTaxonomyCategory {
             scope: Scope { source_id, table },
