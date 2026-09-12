@@ -3,6 +3,11 @@
 //! A query is a *sequence* of operations rather than a fixed struct of optional
 //! clauses, because the query builder lets users compose filter/group/sort/limit
 //! in any order and the result depends on that order.
+//!
+//! Derived columns (`WithColumns`) are a typed expression tree, not text: each
+//! `DerivedExpr` variant names what it computes and the executor is its only
+//! compiler. The tree grows by adding variants; it never gains a raw
+//! expression-string escape hatch.
 
 use crate::analytics::session::ColumnInfo;
 use brightflow_engine::data::config::TimeGranularity;
@@ -70,6 +75,37 @@ pub enum Operation {
 
     /// Limit number of rows returned
     Limit { n: u32 },
+
+    /// Add derived columns computed from existing ones. Placed before a
+    /// `GroupBy` or `Pivot`, the derived names can be grouped on like any
+    /// other column.
+    WithColumns { columns: Vec<DerivedColumn> },
+}
+
+/// One derived column: its output name and how it is computed.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct DerivedColumn {
+    pub name: String,
+    pub expr: DerivedExpr,
+}
+
+/// The expression behind a derived column.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+#[serde(tag = "fn", rename_all = "camelCase")]
+pub enum DerivedExpr {
+    /// The period label of a time column at a granularity, as a string in the
+    /// engine's format (`2024-03-01`, `2024-W11`, `2024-03`, `2024-Q1`,
+    /// `2024`), so Explore and the insights feed name the same week the same
+    /// way and label order is chronological. Accepts `Date`, `Datetime`, and
+    /// `String` columns holding ISO dates (the first ten characters are
+    /// parsed; anything else buckets to null).
+    Period {
+        column: String,
+        granularity: TimeGranularity,
+    },
 }
 
 /// Filter comparison operators

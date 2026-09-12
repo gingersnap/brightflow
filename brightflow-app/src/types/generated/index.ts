@@ -37,6 +37,8 @@ export type { CreateSourceRequest } from './CreateSourceRequest';
 export type { DashboardStats } from './DashboardStats';
 export type { DatasetInfo } from './DatasetInfo';
 export type { DatasetMetadataResponse } from './DatasetMetadataResponse';
+export type { DerivedColumn } from './DerivedColumn';
+export type { DerivedExpr } from './DerivedExpr';
 export type { DismissReason } from './DismissReason';
 export type { DriversRequest } from './DriversRequest';
 export type { EngineConfig } from './EngineConfig';

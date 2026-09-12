@@ -6,8 +6,11 @@
 //! (which are only file paths) queryable without loading them.
 
 use crate::analytics::session::{ColumnInfo, DatasetData};
-use crate::analytics::types::{AggSpec, Aggregation, FilterOp, Operation, Query, QueryResponse};
+use crate::analytics::types::{
+    AggSpec, Aggregation, DerivedColumn, DerivedExpr, FilterOp, Operation, Query, QueryResponse,
+};
 use crate::shared::{AppError, AppResult};
+use brightflow_engine::data::config::TimeGranularity;
 use polars::prelude::*;
 use std::time::Instant;
 
@@ -103,7 +106,76 @@ fn apply_operation(lf: LazyFrame, op: Operation) -> AppResult<LazyFrame> {
             SortMultipleOptions::default().with_order_descending(descending),
         )),
         Operation::Limit { n } => Ok(lf.limit(n)),
+        Operation::WithColumns { columns } => apply_with_columns(lf, columns),
     }
+}
+
+/// Add derived columns. The plan's schema is resolved once (no data is read)
+/// because the expression for a column depends on its dtype.
+fn apply_with_columns(mut lf: LazyFrame, columns: Vec<DerivedColumn>) -> AppResult<LazyFrame> {
+    let schema = lf.collect_schema()?;
+    let exprs = columns
+        .into_iter()
+        .map(|column| build_derived_expr(&schema, column))
+        .collect::<AppResult<Vec<Expr>>>()?;
+    Ok(lf.with_columns(exprs))
+}
+
+fn build_derived_expr(schema: &Schema, column: DerivedColumn) -> AppResult<Expr> {
+    match column.expr {
+        DerivedExpr::Period {
+            column: source,
+            granularity,
+        } => {
+            let dtype = schema.get(source.as_str()).ok_or_else(|| {
+                AppError::InvalidQuery(format!("column '{source}' not found for period"))
+            })?;
+            Ok(period_expr(&source, dtype, granularity)?.alias(column.name.as_str()))
+        },
+    }
+}
+
+/// The engine's period label for a time column at a granularity. Strings are
+/// read as ISO dates by their first ten characters, non-strict, so a value
+/// that is not a date buckets to null rather than failing the query. The
+/// label formats must stay identical to the engine's `format_period`; a test
+/// pins them against it.
+fn period_expr(column: &str, dtype: &DataType, granularity: TimeGranularity) -> AppResult<Expr> {
+    let date = match dtype {
+        DataType::String => {
+            col(column)
+                .str()
+                .slice(lit(0), lit(10))
+                .str()
+                .to_date(StrptimeOptions {
+                    format: Some("%Y-%m-%d".into()),
+                    strict: false,
+                    exact: true,
+                    cache: true,
+                })
+        },
+        DataType::Date => col(column),
+        DataType::Datetime(_, _) => col(column).cast(DataType::Date),
+        other => {
+            return Err(AppError::InvalidQuery(format!(
+                "column '{column}' has type {other}, which cannot be bucketed by period"
+            )))
+        },
+    };
+    Ok(match granularity {
+        TimeGranularity::Day => date.dt().strftime("%Y-%m-%d"),
+        // ISO week-year and week number, the same pair the engine uses.
+        TimeGranularity::Week => date.dt().strftime("%G-W%V"),
+        TimeGranularity::Month => date.dt().strftime("%Y-%m"),
+        // No strftime code for the quarter; `+` on String expressions
+        // concatenates, so no extra Polars feature is needed.
+        TimeGranularity::Quarter => {
+            date.clone().dt().year().cast(DataType::String)
+                + lit("-Q")
+                + date.dt().quarter().cast(DataType::String)
+        },
+        TimeGranularity::Year => date.dt().strftime("%Y"),
+    })
 }
 
 /// Build a filter expression
@@ -403,6 +475,171 @@ mod tests {
         assert_eq!(names(&out), vec!["category", "x", "y", "z"]);
         let x = out.column("x").unwrap().u32().unwrap();
         assert_eq!(x.get(0), Some(2));
+    }
+
+    /// ISO datetimes with and without offsets, a plain date, and junk — the
+    /// shape every time column in the product has today (all Strings).
+    fn stamps() -> LazyFrame {
+        df! {
+            "ts" => [
+                "2024-12-30T10:00:00Z",
+                "2025-01-01",
+                "2024-03-15T00:00:00+02:00",
+                "bogus",
+            ],
+            "n" => [1, 2, 3, 4],
+        }
+        .unwrap()
+        .lazy()
+    }
+
+    fn periods(lf: LazyFrame, column: &str, granularity: TimeGranularity) -> Vec<Option<String>> {
+        let out = apply_with_columns(
+            lf,
+            vec![DerivedColumn {
+                name: "p".to_string(),
+                expr: DerivedExpr::Period {
+                    column: column.to_string(),
+                    granularity,
+                },
+            }],
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+        out.column("p")
+            .unwrap()
+            .str()
+            .unwrap()
+            .into_iter()
+            .map(|v| v.map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn period_labels_strings_at_every_granularity_in_the_engine_format() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(
+            periods(stamps(), "ts", TimeGranularity::Day),
+            vec![s("2024-12-30"), s("2025-01-01"), s("2024-03-15"), None]
+        );
+        // 2024-12-30 is a Monday of ISO week 1 of 2025.
+        assert_eq!(
+            periods(stamps(), "ts", TimeGranularity::Week),
+            vec![s("2025-W01"), s("2025-W01"), s("2024-W11"), None]
+        );
+        assert_eq!(
+            periods(stamps(), "ts", TimeGranularity::Month),
+            vec![s("2024-12"), s("2025-01"), s("2024-03"), None]
+        );
+        assert_eq!(
+            periods(stamps(), "ts", TimeGranularity::Quarter),
+            vec![s("2024-Q4"), s("2025-Q1"), s("2024-Q1"), None]
+        );
+        assert_eq!(
+            periods(stamps(), "ts", TimeGranularity::Year),
+            vec![s("2024"), s("2025"), s("2024"), None]
+        );
+    }
+
+    /// A typed Date column gives the same labels as its ISO string form, and
+    /// both match what the engine writes for the same dates.
+    #[test]
+    fn period_labels_agree_between_date_columns_and_the_engine() {
+        let dated = stamps()
+            .with_column(
+                col("ts")
+                    .str()
+                    .slice(lit(0), lit(10))
+                    .str()
+                    .to_date(StrptimeOptions {
+                        format: Some("%Y-%m-%d".into()),
+                        strict: false,
+                        exact: true,
+                        cache: false,
+                    })
+                    .alias("d"),
+            )
+            .collect()
+            .unwrap();
+        for granularity in TimeGranularity::ALL {
+            let from_date = periods(dated.clone().lazy(), "d", granularity);
+            let from_string = periods(dated.clone().lazy(), "ts", granularity);
+            assert_eq!(from_date, from_string, "{granularity:?}");
+            let engine = brightflow_engine::analysis::period::get_period_labels(
+                dated.column("d").unwrap(),
+                granularity,
+            )
+            .unwrap();
+            assert_eq!(
+                from_date, engine,
+                "{granularity:?} disagrees with the engine"
+            );
+        }
+    }
+
+    #[test]
+    fn period_on_a_numeric_column_is_an_invalid_query() {
+        let err = apply_with_columns(
+            stamps(),
+            vec![DerivedColumn {
+                name: "p".to_string(),
+                expr: DerivedExpr::Period {
+                    column: "n".to_string(),
+                    granularity: TimeGranularity::Month,
+                },
+            }],
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(err, AppError::InvalidQuery(_)), "{err}");
+        let missing = apply_with_columns(
+            stamps(),
+            vec![DerivedColumn {
+                name: "p".to_string(),
+                expr: DerivedExpr::Period {
+                    column: "nope".to_string(),
+                    granularity: TimeGranularity::Month,
+                },
+            }],
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(missing, AppError::InvalidQuery(_)), "{missing}");
+    }
+
+    /// The derived name groups like any column: a month bucket before a
+    /// group-by yields one row per month.
+    #[test]
+    fn a_period_column_can_be_grouped_on() {
+        let lf = apply_with_columns(
+            stamps(),
+            vec![DerivedColumn {
+                name: "ts__month".to_string(),
+                expr: DerivedExpr::Period {
+                    column: "ts".to_string(),
+                    granularity: TimeGranularity::Month,
+                },
+            }],
+        )
+        .unwrap();
+        let out = apply_operation(
+            lf,
+            Operation::GroupBy {
+                by: vec!["ts__month".to_string()],
+                aggs: vec![AggSpec {
+                    column: "n".to_string(),
+                    function: Aggregation::Sum,
+                    alias: Some("sum".to_string()),
+                }],
+            },
+        )
+        .unwrap()
+        .sort(["ts__month"], SortMultipleOptions::default())
+        .collect()
+        .unwrap();
+        assert_eq!(out.height(), 4, "three months plus the null bucket");
+        assert_eq!(names(&out), vec!["ts__month", "sum"]);
     }
 
     #[test]
