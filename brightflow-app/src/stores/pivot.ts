@@ -8,7 +8,7 @@
  *
  * A dropped column brings its stored role along: a value field's default
  * aggregation follows the role (`sum` for a measure, `count` for anything
- * else), and only falls back to the dtype rule when the column has no role.
+ * else), and only falls back to the type rule when the column has no role.
  * A time column dropped into rows or columns is bucketed by period: it
  * starts at the table's granularity and sorts chronologically (by label,
  * ascending) instead of largest-first.
@@ -18,8 +18,8 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { AggFn, PivotField } from '@/types';
-import type { ColumnRole, TimeGranularity } from '@/types/generated';
-import { isNumericDtype } from '@/utils/dtype';
+import type { ColumnRole, LogicalType, TimeGranularity } from '@/types/generated';
+import { isNumericType } from '@/utils/dtype';
 import { DEFAULT_FIELD_SORT, type FieldSort } from '@/utils/pivotOrder';
 
 import { isTimeColumn, useDatasetStore } from './dataset';
@@ -30,16 +30,16 @@ export const TIME_FIELD_SORT: FieldSort = { by: 'label', descending: false };
 /** What a column dropped into a bucket carries with it. */
 export interface DroppedColumn {
   column: string;
-  dtype: string;
+  datatype: LogicalType;
   role?: ColumnRole | null;
 }
 
-/** Role first, dtype second: a numeric column the engine calls a dimension counts. */
+/** Role first, type second: a numeric column the engine calls a dimension counts. */
 export function defaultAggregation(field: DroppedColumn): AggFn {
   if (field.role != null) {
     return field.role === 'measure' ? 'sum' : 'count';
   }
-  return isNumericDtype(field.dtype) ? 'sum' : 'count';
+  return isNumericType(field.datatype) ? 'sum' : 'count';
 }
 
 export const usePivotStore = defineStore('pivot', () => {
@@ -74,12 +74,12 @@ export const usePivotStore = defineStore('pivot', () => {
   function headerField(field: DroppedColumn): PivotField {
     const base: PivotField = {
       column: field.column,
-      dtype: field.dtype,
+      datatype: field.datatype,
       id: crypto.randomUUID(),
       role: field.role ?? null,
       sort: { ...DEFAULT_FIELD_SORT },
     };
-    if (isTimeColumn({ dtype: field.dtype, role: field.role ?? null })) {
+    if (isTimeColumn({ datatype: field.datatype, role: field.role ?? null })) {
       base.granularity = useDatasetStore().timeGranularity;
       base.sort = { ...TIME_FIELD_SORT };
     }
@@ -131,7 +131,7 @@ export const usePivotStore = defineStore('pivot', () => {
     valueFields.value.push({
       aggregation: aggregation ?? defaultAggregation(field),
       column: field.column,
-      dtype: field.dtype,
+      datatype: field.datatype,
       id: crypto.randomUUID(),
       role: field.role ?? null,
     });

@@ -89,3 +89,34 @@ describe('set_column_label and set_column_description', () => {
     expect(cancelled.dispatch).not.toHaveBeenCalled();
   });
 });
+
+describe('set_table_settings', () => {
+  test('the period submenu dispatches only the granularity; rename prompts for a name', async () => {
+    const { context, dispatch } = ctx(COLUMNS, 'Tickets');
+    const item = ACTION_PALETTE['set_table_settings']?.build(context);
+    expect(item?.children?.map((c) => c.label)).toEqual([
+      'Analysis period',
+      'Rename table…',
+      'Describe table…',
+    ]);
+    const periods = item?.children?.[0]?.children ?? [];
+    expect(periods.map((p) => p.label)).toEqual(['Day', 'Week', 'Month', 'Quarter', 'Year']);
+    periods[2]?.onSelect?.();
+    await flush();
+    expect(dispatch).toHaveBeenCalledWith({
+      kind: 'set_table_settings',
+      source_id: 's',
+      table: 'issues',
+      time_granularity: 'month',
+    });
+
+    item?.children?.[1]?.onSelect?.();
+    await flush();
+    expect(dispatch).toHaveBeenCalledWith({
+      display_name: 'Tickets',
+      kind: 'set_table_settings',
+      source_id: 's',
+      table: 'issues',
+    });
+  });
+});

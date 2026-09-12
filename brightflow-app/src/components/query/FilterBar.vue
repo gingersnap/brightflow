@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The "Filters & Options" section of the query builder: filter chips
- * (column / operator / value, with operators chosen per column dtype) plus
+ * (column / operator / value, with operators chosen per column type) plus
  * the row limit. Changes re-run the table query through a 300ms debounce,
  * and only while connected with data loaded.
  */
@@ -17,6 +17,7 @@ import { useDatasetStore } from '@/stores/dataset';
 import { useQueryStore } from '@/stores/query';
 import { useUiStore } from '@/stores/ui';
 import type { Filter, Operator } from '@/types';
+import type { LogicalType } from '@/types/generated';
 
 const queryStore = useQueryStore();
 const datasetStore = useDatasetStore();
@@ -55,14 +56,14 @@ const columnOptions = computed(() =>
   datasetStore.visibleColumns.map((col) => ({
     label: datasetStore.labelFor(col.name),
     value: col.name,
-    dtype: col.dtype,
+    datatype: col.datatype,
   })),
 );
 
-// Get dtype for a column
-function getColumnDtype(columnName: string): string {
+// The column's logical type; an unknown column is treated as text
+function getColumnType(columnName: string): LogicalType {
   const col = datasetStore.columns.find((c) => c.name === columnName);
-  return col?.dtype ?? 'string';
+  return col?.datatype ?? 'String';
 }
 
 // Get operators for a filter's column
@@ -70,14 +71,12 @@ function getOperators(filter: Filter): Operator[] {
   if (!filter.column) {
     return [];
   }
-  const dtype = getColumnDtype(filter.column);
-  return getOperatorsForType(dtype);
+  return getOperatorsForType(getColumnType(filter.column));
 }
 
 // Handle column change
 function handleColumnChange(filterId: string, columnName: string): void {
-  const dtype = getColumnDtype(columnName);
-  const defaultOp = getDefaultOperator(dtype);
+  const defaultOp = getDefaultOperator(getColumnType(columnName));
   queryStore.updateFilter(filterId, {
     column: columnName,
     op: defaultOp,

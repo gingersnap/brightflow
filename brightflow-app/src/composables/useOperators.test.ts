@@ -1,12 +1,14 @@
 /**
  * Unit tests for the filter-operator catalogue in `useOperators.ts`.
  *
- * These pin the operator sets per normalized column type and the dtype
- * normalization that feeds them. They do not check that the backend accepts
+ * These pin the operator sets per logical type and the bucketing that
+ * feeds them. They do not check that the backend accepts
  * these operator keys — that contract belongs to an API-level test, not here.
  */
 
 import { describe, test, expect } from 'vitest';
+
+import type { LogicalType } from '@/types/generated';
 
 import { useOperators } from './useOperators';
 
@@ -19,54 +21,48 @@ const {
   operatorNeedsValue,
 } = useOperators();
 
-function keysFor(dtype: string | null | undefined): string[] {
-  return getOperatorsForType(dtype).map((op) => op.value);
+function keysFor(datatype: LogicalType | null | undefined): string[] {
+  return getOperatorsForType(datatype).map((op) => op.value);
 }
 
 describe('getOperatorsForType', () => {
   test('string columns get the universal set plus contains and in', () => {
-    expect(keysFor('string')).toEqual(['eq', 'ne', 'isNull', 'isNotNull', 'contains', 'in']);
+    expect(keysFor('String')).toEqual(['eq', 'ne', 'isNull', 'isNotNull', 'contains', 'in']);
   });
 
   test('int and float columns get the universal set plus comparisons and in', () => {
     const expected = ['eq', 'ne', 'isNull', 'isNotNull', 'gt', 'gte', 'lt', 'lte', 'in'];
-    expect(keysFor('int')).toEqual(expected);
-    expect(keysFor('float')).toEqual(expected);
+    expect(keysFor('Integer')).toEqual(expected);
+    expect(keysFor('Float')).toEqual(expected);
   });
 
   test('boolean columns get only the universal set — no contains, no in', () => {
-    expect(keysFor('boolean')).toEqual(['eq', 'ne', 'isNull', 'isNotNull']);
+    expect(keysFor('Boolean')).toEqual(['eq', 'ne', 'isNull', 'isNotNull']);
   });
 
   test('optional flags are materialized as booleans, not left undefined', () => {
-    const isNull = getOperatorsForType('string').find((op) => op.value === 'isNull');
+    const isNull = getOperatorsForType('String').find((op) => op.value === 'isNull');
     expect(isNull).toEqual({ isArray: false, label: 'is null', noValue: true, value: 'isNull' });
 
-    const eq = getOperatorsForType('string').find((op) => op.value === 'eq');
+    const eq = getOperatorsForType('String').find((op) => op.value === 'eq');
     expect(eq).toEqual({ isArray: false, label: 'equals', noValue: false, value: 'eq' });
   });
 
-  test('string dtype aliases normalize to string', () => {
-    expect(keysFor('varchar')).toEqual(keysFor('string'));
-    expect(keysFor('utf8')).toEqual(keysFor('string'));
+  test('Decimal takes the float operators', () => {
+    expect(keysFor('Decimal')).toEqual(keysFor('Float'));
   });
 
-  test('dtype matching is case-insensitive', () => {
-    expect(keysFor('BIGINT')).toEqual(keysFor('int'));
+  test('a missing type falls back to string', () => {
+    /* A column whose type the backend omitted entirely. */
+    const untyped: { datatype?: LogicalType } = {};
+
+    expect(keysFor(null)).toEqual(keysFor('String'));
+    expect(keysFor(untyped.datatype)).toEqual(keysFor('String'));
   });
 
-  test('missing or empty dtype falls back to string', () => {
-    /* A column whose dtype the backend omitted entirely. */
-    const untyped: { dtype?: string } = {};
-
-    expect(keysFor(null)).toEqual(keysFor('string'));
-    expect(keysFor(untyped.dtype)).toEqual(keysFor('string'));
-    expect(keysFor('')).toEqual(keysFor('string'));
-  });
-
-  test('unrecognized dtype falls back to string', () => {
-    /* 'date' is a real backend dtype with no normalization rule yet. */
-    expect(keysFor('date')).toEqual(keysFor('string'));
+  test('temporal types take the string operators until temporal ones exist', () => {
+    expect(keysFor('Date')).toEqual(keysFor('String'));
+    expect(keysFor('DateTimeTz')).toEqual(keysFor('String'));
   });
 });
 
@@ -123,14 +119,14 @@ describe('operatorIsArray', () => {
 
 describe('getDefaultOperator', () => {
   test('string columns default to contains', () => {
-    expect(getDefaultOperator('string')).toBe('contains');
+    expect(getDefaultOperator('String')).toBe('contains');
     expect(getDefaultOperator(null)).toBe('contains');
   });
 
   test('numeric and boolean columns default to equals', () => {
-    expect(getDefaultOperator('int')).toBe('eq');
-    expect(getDefaultOperator('float')).toBe('eq');
-    expect(getDefaultOperator('boolean')).toBe('eq');
+    expect(getDefaultOperator('Integer')).toBe('eq');
+    expect(getDefaultOperator('Float')).toBe('eq');
+    expect(getDefaultOperator('Boolean')).toBe('eq');
   });
 });
 

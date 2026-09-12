@@ -28,15 +28,15 @@ import { type DroppedColumn, usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useUiStore } from '@/stores/ui';
 import type { PivotField } from '@/types';
-import type { ColumnInfo, ColumnRole } from '@/types/generated';
-import { isNumericDtype, isStringDtype } from '@/utils/dtype';
+import type { ColumnInfo, ColumnRole, LogicalType } from '@/types/generated';
+import { isNumericType, isStringType } from '@/utils/dtype';
 
 import BucketDropzone from '../pivot/BucketDropzone.vue';
 import { columnMenuItems } from './columnMenu';
 
 interface ColumnItem {
   name: string;
-  dtype: string;
+  datatype: LogicalType;
   id: string;
   role: ColumnRole | null;
   label: string;
@@ -64,13 +64,13 @@ const hasIgnored = computed(() => datasetStore.columns.some((c) => c.role === 'i
 // Columns for the sidebar: the visible ones, labelled from their semantics
 const columns = computed((): ColumnItem[] =>
   (showIgnored.value ? datasetStore.columns : datasetStore.visibleColumns).map((col) => ({
+    datatype: col.datatype,
     description: col.description,
-    dtype: col.dtype,
     id: col.name,
     isIgnored: col.role === 'ignored',
     isKpi: col.isKpi === true,
-    isNumeric: isNumericDtype(col.dtype),
-    isString: isStringDtype(col.dtype),
+    isNumeric: isNumericType(col.datatype),
+    isString: isStringType(col.datatype),
     label: datasetStore.labelFor(col.name),
     name: col.name,
     role: col.role,
@@ -120,7 +120,7 @@ const ROLE_ICONS: Record<ColumnRole, string> = {
   time: 'i-lucide-calendar',
 };
 
-// Icon by role when the column has one, by dtype otherwise
+// Icon by role when the column has one, by type otherwise
 function getTypeIcon(col: ColumnItem): string {
   if (col.role != null) {
     return ROLE_ICONS[col.role];
@@ -170,12 +170,12 @@ watch(
           pivotStore.addRowField(valueField);
         } else {
           const stringCol = datasetStore.visibleColumns.find(
-            (c) => isStringDtype(c.dtype) && c.name !== valueField.column,
+            (c) => isStringType(c.datatype) && c.name !== valueField.column,
           );
           if (stringCol) {
             pivotStore.addRowField({
               column: stringCol.name,
-              dtype: stringCol.dtype,
+              datatype: stringCol.datatype,
               role: stringCol.role,
             });
           } else {

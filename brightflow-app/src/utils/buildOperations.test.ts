@@ -11,7 +11,7 @@ import type { PivotField } from '@/types';
 import { buildPivotOperations, fieldKey, type PivotQueryState } from './buildOperations';
 
 function field(column: string, extra: Partial<PivotField> = {}): PivotField {
-  return { column, dtype: 'string', id: column, ...extra };
+  return { column, datatype: 'String', id: column, ...extra };
 }
 
 function state(extra: Partial<PivotQueryState> = {}): PivotQueryState {
@@ -25,7 +25,7 @@ function state(extra: Partial<PivotQueryState> = {}): PivotQueryState {
     sortBy: null,
     sortDescending: false,
     sortEnabled: false,
-    valueFields: [field('revenue', { aggregation: 'sum', dtype: 'f64' })],
+    valueFields: [field('revenue', { aggregation: 'sum', datatype: 'Float' })],
     ...extra,
   };
 }

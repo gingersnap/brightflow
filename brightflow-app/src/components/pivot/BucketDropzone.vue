@@ -16,8 +16,8 @@ import draggable from 'vuedraggable';
 
 import { useDatasetStore } from '@/stores/dataset';
 import type { AggFn, PivotField } from '@/types';
-import type { ColumnRole, TimeGranularity } from '@/types/generated';
-import { isNumericDtype, isStringDtype } from '@/utils/dtype';
+import type { ColumnRole, LogicalType, TimeGranularity } from '@/types/generated';
+import { isNumericType, isStringType } from '@/utils/dtype';
 import {
   DEFAULT_FIELD_SORT,
   FIELD_SORT_OPTIONS,
@@ -34,7 +34,7 @@ interface AggregationOption {
 interface DragElement {
   column?: string;
   name?: string;
-  dtype?: string;
+  datatype?: LogicalType;
   role?: ColumnRole | null;
 }
 
@@ -102,7 +102,7 @@ function sortFromKey(key: string): FieldSort {
 const datasetStore = useDatasetStore();
 
 const emit = defineEmits<{
-  add: [field: { column: string; dtype: string; role: ColumnRole | null }];
+  add: [field: { column: string; datatype: LogicalType; role: ColumnRole | null }];
   remove: [id: string];
   reorder: [fields: PivotField[]];
   update: [id: string, updates: Partial<PivotField>];
@@ -152,16 +152,16 @@ function polarityArrow(field: PivotField): string | null {
   return null;
 }
 
-// Icon by role when the field has one, by dtype otherwise
+// Icon by role when the field has one, by type otherwise
 function getTypeIcon(field: PivotField): string {
-  const { dtype } = field;
+  const { datatype } = field;
   if (field.role != null) {
     return ROLE_ICONS[field.role];
   }
-  if (isNumericDtype(dtype)) {
+  if (isNumericType(datatype)) {
     return 'i-lucide-hash';
   }
-  if (isStringDtype(dtype)) {
+  if (isStringType(datatype)) {
     return 'i-lucide-type';
   }
   return 'i-lucide-circle-help';
@@ -182,10 +182,10 @@ function handleChange(evt: DragEvent): void {
     const addedElement = evt.added.element;
     if (addedElement) {
       const column = addedElement.column ?? addedElement.name;
-      const { dtype } = addedElement;
+      const { datatype } = addedElement;
 
-      if (column && dtype) {
-        emit('add', { column, dtype, role: addedElement.role ?? null });
+      if (column && datatype) {
+        emit('add', { column, datatype, role: addedElement.role ?? null });
       }
     }
   } else if (evt.moved) {

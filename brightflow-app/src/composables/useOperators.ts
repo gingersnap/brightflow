@@ -2,7 +2,8 @@ import type { FilterOp, Operator, OperatorDef } from '@/types';
 /**
  * Filter operators by column type
  */
-import { normalizeDtype } from '@/utils/dtype';
+import type { LogicalType } from '@/types/generated';
+import { normalizeType } from '@/utils/dtype';
 
 // Keyed by FilterOp so the record provably covers every backend operator.
 // Adding a FilterOp variant without an entry here is a type error.
@@ -34,8 +35,8 @@ function isFilterOp(key: string): key is FilterOp {
 /**
  * Get default operator for a type
  */
-function getDefaultOperator(dtype: string | null | undefined): FilterOp {
-  const normalizedType = normalizeDtype(dtype);
+function getDefaultOperator(datatype: LogicalType | null | undefined): FilterOp {
+  const normalizedType = normalizeType(datatype);
 
   switch (normalizedType) {
     case 'string': {
@@ -58,8 +59,8 @@ export function useOperators() {
   /**
    * Get available operators for a column type
    */
-  function getOperatorsForType(dtype: string | null | undefined): Operator[] {
-    const normalizedType = normalizeDtype(dtype);
+  function getOperatorsForType(datatype: LogicalType | null | undefined): Operator[] {
+    const normalizedType = normalizeType(datatype);
 
     return Object.entries(OPERATORS)
       .filter(([_key, op]) => op.types.includes(normalizedType))

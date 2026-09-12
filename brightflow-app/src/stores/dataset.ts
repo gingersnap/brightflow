@@ -8,9 +8,10 @@
  * consumers, not as a guarantee that nothing stale survives anywhere.
  *
  * Semantics arrive with the load response and are patched in place from
- * applied `set_column_*` / `set_kpi` action events (`applySemanticAction`),
- * so a rename or a role change shows without reloading the table. Every
- * Explore surface that names a column goes through `labelFor`.
+ * applied `set_column_*` / `set_kpi` / `set_table_settings` action events
+ * (`applySemanticAction`), so a rename, a role change or a new analysis
+ * period shows without reloading the table. Every Explore surface that names
+ * a column goes through `labelFor`.
  */
 
 import { defineStore } from 'pinia';
@@ -18,7 +19,7 @@ import { computed, ref } from 'vue';
 
 import type { ColumnInfo, LoadTableResponse } from '@/types';
 import type { ActionLogEntry, ColumnRole, Polarity, TimeGranularity } from '@/types/generated';
-import { isNumericDtype, isTemporalDtype } from '@/utils/dtype';
+import { isNumericType, isTemporalType } from '@/utils/dtype';
 import { humanizeColumn } from '@/utils/format';
 
 import { useUiStore } from './ui';
@@ -47,6 +48,22 @@ const SEMANTIC_KINDS = new Set([
   'set_column_polarity',
 ]);
 
+/** The `params` of a logged `set_table_settings` action. */
+interface TableSettingsParams {
+  kind: 'set_table_settings';
+  source_id: string;
+  table: string;
+  time_granularity?: TimeGranularity;
+}
+
+function isTableSettingsParams(params: unknown): params is TableSettingsParams {
+  return (
+    isRecord(params) &&
+    params['kind'] === 'set_table_settings' &&
+    typeof params['table'] === 'string'
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -64,9 +81,9 @@ function isSemanticParams(params: unknown): params is SemanticActionParams {
   );
 }
 
-/** A column is a time axis by stored role, or by typed dtype when it has none. */
-export function isTimeColumn(col: Pick<ColumnInfo, 'role' | 'dtype'>): boolean {
-  return col.role === 'time' || (col.role == null && isTemporalDtype(col.dtype));
+/** A column is a time axis by stored role, or by logical type when it has none. */
+export function isTimeColumn(col: Pick<ColumnInfo, 'role' | 'datatype'>): boolean {
+  return col.role === 'time' || (col.role == null && isTemporalType(col.datatype));
 }
 
 export const useDatasetStore = defineStore('dataset', () => {
@@ -80,7 +97,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const error = ref<string | null>(null);
 
   // Computed
-  const numericColumns = computed(() => columns.value.filter((c) => isNumericDtype(c.dtype)));
+  const numericColumns = computed(() => columns.value.filter((c) => isNumericType(c.datatype)));
 
   /** Columns Explore offers: everything not marked `ignored`. */
   const visibleColumns = computed(() => columns.value.filter((c) => c.role !== 'ignored'));
@@ -118,14 +135,29 @@ export const useDatasetStore = defineStore('dataset', () => {
   }
 
   /**
-   * Patch one column from an applied semantic action on the loaded table.
-   * Returns whether anything changed. Entries for other tables, other kinds,
-   * or non-applied statuses are ignored; an undone entry is ignored too — the
-   * undo lands as its own applied write on the row, and the reload path
-   * remains the source of truth if a frame is missed.
+   * Patch one column — or the table's analysis period — from an applied
+   * semantic action on the loaded table. Returns whether anything changed.
+   * Entries for other tables, other kinds, or non-applied statuses are
+   * ignored; an undone entry is ignored too — the undo lands as its own
+   * applied write on the row, and the reload path remains the source of
+   * truth if a frame is missed.
    */
   function applySemanticAction(entry: ActionLogEntry): boolean {
-    if (entry.status !== 'applied' || !isSemanticParams(entry.params)) {
+    if (entry.status !== 'applied') {
+      return false;
+    }
+    if (isTableSettingsParams(entry.params)) {
+      const settings = entry.params;
+      if (name.value == null || settings.table !== name.value) {
+        return false;
+      }
+      if (settings.time_granularity == null) {
+        return false;
+      }
+      timeGranularity.value = settings.time_granularity;
+      return true;
+    }
+    if (!isSemanticParams(entry.params)) {
       return false;
     }
     const params = entry.params;

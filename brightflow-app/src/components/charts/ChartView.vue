@@ -34,7 +34,7 @@ import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { ChartType } from '@/types';
 import { fieldKey } from '@/utils/buildOperations';
-import { isNumericDtype, isStringDtype } from '@/utils/dtype';
+import { isNumericType, isStringType } from '@/utils/dtype';
 import { humanizePeriod, humanizePeriodShort } from '@/utils/format';
 import { DEFAULT_FIELD_SORT, orderRows, orderSeries } from '@/utils/pivotOrder';
 
@@ -92,11 +92,11 @@ const horizontal = ref(false);
 
 // Find suitable columns for chart (from pivot or table data)
 const stringColumns = computed(() =>
-  chartColumns.value.filter((c) => isStringDtype(c.dtype)).map((c) => c.name),
+  chartColumns.value.filter((c) => isStringType(c.datatype)).map((c) => c.name),
 );
 
 const numericColumns = computed(() =>
-  chartColumns.value.filter((c) => isNumericDtype(c.dtype)).map((c) => c.name),
+  chartColumns.value.filter((c) => isNumericType(c.datatype)).map((c) => c.name),
 );
 
 const allColumnNames = computed(() => chartColumns.value.map((c) => c.name));

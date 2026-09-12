@@ -1,7 +1,8 @@
 /**
  * Unit tests for the column context menu builder: which groups appear for
- * which role, that the current role and polarity are checked, and that the
- * clear entries show only when there is something to clear.
+ * which role, that the current role and polarity are checked, that the
+ * clear entries show only when there is something to clear, and that a
+ * resolved column leads with who resolved it.
  */
 
 import type { ContextMenuItem } from '@nuxt/ui';
@@ -72,6 +73,16 @@ describe('columnMenuItems', () => {
     expect(labels(dimension)).toEqual([['Role'], ['Rename…', 'Describe…']]);
     const roleless = columnMenuItems(col(), handlers());
     expect(labels(roleless)).toEqual([['Role'], ['Rename…', 'Describe…']]);
+  });
+
+  test('a resolved column leads with a disabled attribution line', () => {
+    const column = col({
+      resolvedBy: { layer: 'declared', producer: 'connector:github', version: '0.3.0' },
+      role: 'dimension',
+    });
+    const groups = columnMenuItems(column, handlers());
+    expect(labels(groups)[0]).toEqual(['From connector github 0.3.0']);
+    expect(groups[0]?.[0]?.disabled).toBe(true);
   });
 
   test('clear entries appear only when a label or description is set', () => {

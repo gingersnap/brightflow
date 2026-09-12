@@ -9,15 +9,15 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { ColumnInfo, LoadTableResponse } from '@/types';
-import type { ActionLogEntry } from '@/types/generated';
+import type { ActionLogEntry, LogicalType } from '@/types/generated';
 
 import { isTimeColumn, useDatasetStore } from './dataset';
 
 // The UI store touches `document` on setup; this store only calls its reset.
 vi.mock('./ui', () => ({ useUiStore: () => ({ resetForNewDataset: (): void => {} }) }));
 
-function col(name: string, dtype: string, extra: Partial<ColumnInfo> = {}): ColumnInfo {
-  return { datatype: 'Opaque', dtype, isKpi: null, label: null, name, role: null, ...extra };
+function col(name: string, datatype: LogicalType, extra: Partial<ColumnInfo> = {}): ColumnInfo {
+  return { datatype, dtype: '', isKpi: null, label: null, name, role: null, ...extra };
 }
 
 function load(columns: ColumnInfo[], timeGranularity?: LoadTableResponse['timeGranularity']) {
@@ -56,9 +56,9 @@ beforeEach(() => {
 describe('visibleColumns and labels', () => {
   test('ignored columns are hidden; labels fall back to the humanised name', () => {
     const store = load([
-      col('order_total', 'f64', { label: 'Revenue', role: 'measure' }),
-      col('summary', 'string', { role: 'ignored' }),
-      col('created_at', 'string', { role: 'time' }),
+      col('order_total', 'Float', { label: 'Revenue', role: 'measure' }),
+      col('summary', 'String', { role: 'ignored' }),
+      col('created_at', 'String', { role: 'time' }),
     ]);
     expect(store.visibleColumns.map((c) => c.name)).toEqual(['order_total', 'created_at']);
     expect(store.labelFor('order_total')).toBe('Revenue');
@@ -66,27 +66,27 @@ describe('visibleColumns and labels', () => {
     expect(store.labelFor('not_a_column')).toBe('Not A Column');
   });
 
-  test('time columns come from role first, typed dtype second', () => {
+  test('time columns come from role first, logical type second', () => {
     const store = load([
-      col('created_at', 'string', { role: 'time' }),
-      col('ts', 'datetime'),
-      col('ts_as_dim', 'datetime', { role: 'dimension' }),
-      col('note', 'string'),
+      col('created_at', 'String', { role: 'time' }),
+      col('ts', 'DateTime'),
+      col('ts_as_dim', 'DateTime', { role: 'dimension' }),
+      col('note', 'String'),
     ]);
     expect(store.timeColumns.map((c) => c.name)).toEqual(['created_at', 'ts']);
-    expect(isTimeColumn({ dtype: 'date', role: null })).toBe(true);
-    expect(isTimeColumn({ dtype: 'date', role: 'dimension' })).toBe(false);
+    expect(isTimeColumn({ datatype: 'Date', role: null })).toBe(true);
+    expect(isTimeColumn({ datatype: 'Date', role: 'dimension' })).toBe(false);
   });
 
   test('the table granularity defaults to week', () => {
-    expect(load([col('a', 'string')]).timeGranularity).toBe('week');
-    expect(load([col('a', 'string')], 'month').timeGranularity).toBe('month');
+    expect(load([col('a', 'String')]).timeGranularity).toBe('week');
+    expect(load([col('a', 'String')], 'month').timeGranularity).toBe('month');
   });
 });
 
 describe('applySemanticAction', () => {
   test('patches role, label, description, KPI and polarity on the loaded table', () => {
-    const store = load([col('units', 'i64', { isKpi: true, role: 'measure' })]);
+    const store = load([col('units', 'Integer', { isKpi: true, role: 'measure' })]);
     const base = { column: 'units', source_id: 's', table: 'issues' };
 
     expect(
@@ -128,7 +128,7 @@ describe('applySemanticAction', () => {
   });
 
   test('ignores other tables, other kinds, unknown columns and non-applied entries', () => {
-    const store = load([col('units', 'i64')]);
+    const store = load([col('units', 'Integer')]);
     const base = { column: 'units', kind: 'set_column_label', label: 'X', source_id: 's' };
     expect(store.applySemanticAction(entry({ ...base, table: 'orders' }))).toBe(false);
     expect(store.applySemanticAction(entry({ ...base, table: 'issues' }, 'proposed'))).toBe(false);
@@ -139,5 +139,24 @@ describe('applySemanticAction', () => {
       store.applySemanticAction(entry({ kind: 'pin_insight', source_id: 's', table: 'issues' })),
     ).toBe(false);
     expect(store.columnByName('units')?.label).toBeNull();
+  });
+});
+
+describe('applySemanticAction for table settings', () => {
+  test('a new analysis period on the loaded table lands in the store', () => {
+    const store = load([col('created_at', 'DateTime', { role: 'time' })]);
+    const base = { kind: 'set_table_settings', source_id: 's' };
+    expect(
+      store.applySemanticAction(entry({ ...base, table: 'issues', time_granularity: 'month' })),
+    ).toBe(true);
+    expect(store.timeGranularity).toBe('month');
+    // Another table, or a settings write without a period, changes nothing.
+    expect(
+      store.applySemanticAction(entry({ ...base, table: 'other', time_granularity: 'day' })),
+    ).toBe(false);
+    expect(store.applySemanticAction(entry({ ...base, display_name: 'X', table: 'issues' }))).toBe(
+      false,
+    );
+    expect(store.timeGranularity).toBe('month');
   });
 });

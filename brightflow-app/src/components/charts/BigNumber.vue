@@ -12,7 +12,8 @@ import { computed } from 'vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
-import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
+import type { LogicalType } from '@/types/generated';
+import { isFloatType, isNumericType } from '@/utils/dtype';
 import { formatCompact, formatDecimal } from '@/utils/format';
 
 const resultsStore = useResultsStore();
@@ -21,14 +22,14 @@ const pivotStore = usePivotStore();
 interface DisplayValue {
   label: string;
   value: unknown;
-  dtype: string;
+  datatype: LogicalType;
 }
 
 interface SingleDisplay {
   type: 'single';
   label: string;
   value: unknown;
-  dtype: string;
+  datatype: LogicalType;
 }
 
 interface MultiDisplay {
@@ -41,7 +42,7 @@ interface AggregateDisplay {
   label: string;
   primary: { label: string; value: number };
   secondary: { label: string; value: number }[];
-  dtype: string;
+  datatype: LogicalType;
 }
 
 type DisplayData = SingleDisplay | MultiDisplay | AggregateDisplay | null;
@@ -60,7 +61,7 @@ const displayData = computed((): DisplayData => {
   // Find numeric columns
   const numericIndices = cols
     .map((col, idx) => ({ col, idx }))
-    .filter(({ col }) => isNumericDtype(col.dtype));
+    .filter(({ col }) => isNumericType(col.datatype));
 
   if (numericIndices.length === 0) {
     return null;
@@ -70,7 +71,7 @@ const displayData = computed((): DisplayData => {
   const firstRow = rows[0];
   if (hasPivot && rows.length === 1 && firstRow) {
     const values = numericIndices.map(({ col, idx }) => ({
-      dtype: col.dtype,
+      datatype: col.datatype,
       label: col.name,
       value: firstRow[idx],
     }));
@@ -81,7 +82,7 @@ const displayData = computed((): DisplayData => {
   const firstNumeric = numericIndices[0];
   if (rows.length === 1 && numericIndices.length === 1 && firstNumeric && firstRow) {
     return {
-      dtype: firstNumeric.col.dtype,
+      datatype: firstNumeric.col.datatype,
       label: firstNumeric.col.name,
       type: 'single',
       value: firstRow[firstNumeric.idx],
@@ -108,7 +109,7 @@ const displayData = computed((): DisplayData => {
   const max = Math.max(...values);
 
   return {
-    dtype: primaryNumeric.col.dtype,
+    datatype: primaryNumeric.col.datatype,
     label: primaryNumeric.col.name,
     primary: { label: 'Sum', value: sum },
     secondary: [
@@ -122,7 +123,7 @@ const displayData = computed((): DisplayData => {
 });
 
 // Format number for display (en-US pinned via the shared helpers)
-function formatNumber(value: unknown, dtype: string, compact = false): string {
+function formatNumber(value: unknown, datatype: LogicalType, compact = false): string {
   if (value === null || value === undefined) {
     return '—';
   }
@@ -132,12 +133,12 @@ function formatNumber(value: unknown, dtype: string, compact = false): string {
   if (compact && Math.abs(value) >= 1000) {
     return formatCompact(value);
   }
-  return formatDecimal(value, isFloatDtype(dtype) ? 2 : 0);
+  return formatDecimal(value, isFloatType(datatype) ? 2 : 0);
 }
 
 // Format large primary number
-function formatPrimary(value: unknown, dtype: string): string {
-  return formatNumber(value, dtype, true);
+function formatPrimary(value: unknown, datatype: LogicalType): string {
+  return formatNumber(value, datatype, true);
 }
 
 // Get aggregation label from pivot config
@@ -171,7 +172,7 @@ const aggregationLabel = computed((): string | null => {
     <!-- Single value display -->
     <div v-else-if="displayData.type === 'single'" class="text-center">
       <div class="mb-2 text-6xl font-bold text-default tabular-nums">
-        {{ formatPrimary(displayData.value, displayData.dtype) }}
+        {{ formatPrimary(displayData.value, displayData.datatype) }}
       </div>
       <div class="text-lg text-muted">
         {{ aggregationLabel || displayData.label }}
@@ -182,7 +183,7 @@ const aggregationLabel = computed((): string | null => {
     <div v-else-if="displayData.type === 'multi'" class="flex flex-wrap justify-center gap-8">
       <div v-for="(item, idx) in displayData.values" :key="idx" class="px-6 text-center">
         <div class="mb-2 text-5xl font-bold text-default tabular-nums">
-          {{ formatPrimary(item.value, item.dtype) }}
+          {{ formatPrimary(item.value, item.datatype) }}
         </div>
         <div class="text-sm text-muted">{{ item.label }}</div>
       </div>
@@ -193,7 +194,7 @@ const aggregationLabel = computed((): string | null => {
       <!-- Primary metric -->
       <div class="mb-8">
         <div class="mb-2 text-6xl font-bold text-default tabular-nums">
-          {{ formatPrimary(displayData.primary.value, displayData.dtype) }}
+          {{ formatPrimary(displayData.primary.value, displayData.datatype) }}
         </div>
         <div class="text-lg text-muted">
           {{ displayData.primary.label }} of {{ displayData.label }}
@@ -204,7 +205,7 @@ const aggregationLabel = computed((): string | null => {
       <div class="flex justify-center gap-8">
         <div v-for="(item, idx) in displayData.secondary" :key="idx" class="px-4 text-center">
           <div class="text-2xl font-semibold text-default tabular-nums">
-            {{ formatNumber(item.value, displayData.dtype) }}
+            {{ formatNumber(item.value, displayData.datatype) }}
           </div>
           <div class="mt-1 text-sm text-muted">{{ item.label }}</div>
         </div>

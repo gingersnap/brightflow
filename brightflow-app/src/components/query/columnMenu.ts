@@ -1,15 +1,16 @@
 /**
  * The column context menu's items, as a pure function of the column's
- * stored semantics: a role picker with the current role checked, KPI and
- * polarity for measures only, rename and describe, and clear entries that
- * appear only when there is something to clear. The component that shows
- * the menu supplies the handlers; nothing here dispatches.
+ * resolved semantics: who they come from as a leading hint, a role picker
+ * with the current role checked, KPI and polarity for measures only, rename
+ * and describe, and clear entries that appear only when there is something
+ * to clear. The component that shows the menu supplies the handlers; nothing
+ * here dispatches.
  */
 
 import type { ContextMenuItem } from '@nuxt/ui';
 
 import type { ColumnInfo, ColumnRole, Polarity } from '@/types/generated';
-import { POLARITY_LABELS, ROLE_LABELS } from '@/utils/semanticLabels';
+import { POLARITY_LABELS, provenanceLabel, ROLE_LABELS } from '@/utils/semanticLabels';
 
 export interface ColumnMenuHandlers {
   setRole: (role: ColumnRole) => void;
@@ -45,6 +46,17 @@ export function columnMenuItems(
   const isMeasure = column.role === 'measure';
   const isKpi = column.isKpi === true;
   const polarity = column.polarity ?? 'neutral';
+
+  const hintGroup: ContextMenuItem[] =
+    column.resolvedBy == null
+      ? []
+      : [
+          {
+            disabled: true,
+            icon: 'i-lucide-info',
+            label: provenanceLabel(column.resolvedBy),
+          },
+        ];
 
   const roleGroup: ContextMenuItem[] = [
     {
@@ -106,5 +118,5 @@ export function columnMenuItems(
     });
   }
 
-  return [roleGroup, measureGroup, textGroup].filter((group) => group.length > 0);
+  return [hintGroup, roleGroup, measureGroup, textGroup].filter((group) => group.length > 0);
 }

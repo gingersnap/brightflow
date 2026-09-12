@@ -1,63 +1,58 @@
 /**
- * Backend dtype normalization, shared by every component that branches on
- * column type.
+ * Predicates over the column's logical type, shared by every component that
+ * branches on type.
  *
- * One alias list (Polars i64/f64/utf8, SQL-ish names, and the loose 'number')
- * so call sites cannot drift into partial copies — two live bugs came from
- * hand-copied lists that missed i64/f64. `isStringDtype` matches explicit
- * string aliases only, while `normalizeDtype` falls back to 'string' for
- * unknown dtypes (the operator picker's historical behavior); date-like
- * columns therefore get string operators without being offered as text
- * columns. `isTemporalDtype` names the backend's date/datetime dtypes so a
- * column can be recognised as a time axis even when it has no stored role.
+ * `LogicalType` is the contract crate's ten-value vocabulary, generated from
+ * Rust, so there is nothing to normalise: a column is `Integer` or it is not.
+ * `normalizeType` folds the ten into the four buckets the filter-operator
+ * catalogue is keyed by; temporal types fall in the string bucket there
+ * because no temporal operators exist yet. `isStringType` matches `String`
+ * only, so a date column is never offered where a text column is required.
  */
 
-export type NormalizedDtype = 'int' | 'float' | 'string' | 'boolean';
+import type { LogicalType } from '@/types/generated';
 
-const INT_ALIASES = new Set(['int', 'integer', 'bigint', 'i64', 'i32', 'number']);
-const FLOAT_ALIASES = new Set(['float', 'double', 'decimal', 'f64', 'f32']);
-const STRING_ALIASES = new Set(['string', 'str', 'text', 'varchar', 'utf8']);
-const BOOL_ALIASES = new Set(['bool', 'boolean']);
-const TEMPORAL_ALIASES = new Set(['date', 'datetime']);
+export type NormalizedType = 'int' | 'float' | 'string' | 'boolean';
 
-/** Normalize a backend dtype; unknown or missing dtypes fall back to 'string'. */
-export function normalizeDtype(dtype: string | null | undefined): NormalizedDtype {
-  if (dtype == null || dtype === '') {
-    return 'string';
-  }
-  const t = dtype.toLowerCase();
-  if (INT_ALIASES.has(t)) {
+const FLOAT_TYPES: ReadonlySet<LogicalType> = new Set<LogicalType>(['Float', 'Decimal']);
+const TEMPORAL_TYPES: ReadonlySet<LogicalType> = new Set<LogicalType>([
+  'Date',
+  'Time',
+  'DateTime',
+  'DateTimeTz',
+]);
+
+/** Fold a logical type into the operator catalogue's buckets; missing falls back to string. */
+export function normalizeType(datatype: LogicalType | null | undefined): NormalizedType {
+  if (datatype === 'Integer') {
     return 'int';
   }
-  if (FLOAT_ALIASES.has(t)) {
+  if (datatype != null && FLOAT_TYPES.has(datatype)) {
     return 'float';
   }
-  if (BOOL_ALIASES.has(t)) {
+  if (datatype === 'Boolean') {
     return 'boolean';
   }
   return 'string';
 }
 
-/** Int or float (includes the loose 'number' alias). */
-export function isNumericDtype(dtype: string | null | undefined): boolean {
-  const t = normalizeDtype(dtype);
+/** Integer, Float or Decimal. */
+export function isNumericType(datatype: LogicalType | null | undefined): boolean {
+  const t = normalizeType(datatype);
   return t === 'int' || t === 'float';
 }
 
-/** Float only — used to pick decimal formatting. */
-export function isFloatDtype(dtype: string | null | undefined): boolean {
-  return normalizeDtype(dtype) === 'float';
+/** Float or Decimal — used to pick decimal formatting. */
+export function isFloatType(datatype: LogicalType | null | undefined): boolean {
+  return datatype != null && FLOAT_TYPES.has(datatype);
 }
 
-/** The backend's typed date/datetime dtypes (ISO strings are not included). */
-export function isTemporalDtype(dtype: string | null | undefined): boolean {
-  return dtype != null && TEMPORAL_ALIASES.has(dtype.toLowerCase());
+/** Date, Time, DateTime or DateTimeTz. */
+export function isTemporalType(datatype: LogicalType | null | undefined): boolean {
+  return datatype != null && TEMPORAL_TYPES.has(datatype);
 }
 
-/**
- * Explicitly string-typed only (no unknown-dtype fallback), so date/datetime
- * columns are not offered where a text column is required.
- */
-export function isStringDtype(dtype: string | null | undefined): boolean {
-  return dtype != null && STRING_ALIASES.has(dtype.toLowerCase());
+/** `String` only, so a temporal column is not offered where text is required. */
+export function isStringType(datatype: LogicalType | null | undefined): boolean {
+  return datatype === 'String';
 }

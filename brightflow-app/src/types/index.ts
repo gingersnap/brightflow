@@ -9,6 +9,7 @@ import type {
   Aggregation as AggFn,
   ColumnRole,
   FilterOp,
+  LogicalType,
   SourceTool,
   TimeGranularity,
   UnifiedSource,
@@ -109,7 +110,7 @@ export interface QuerySections {
 export interface PivotField {
   id: string;
   column: string;
-  dtype: string;
+  datatype: LogicalType;
   /** The column's stored role at the time it was dropped, if any. */
   role?: ColumnRole | null;
   /**

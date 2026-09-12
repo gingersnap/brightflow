@@ -11,6 +11,7 @@ import type {
   ColumnInfo,
   DismissReason,
   TaxonomyCategory,
+  TimeGranularity,
 } from '@/types/generated';
 
 /**
@@ -105,13 +106,22 @@ export const INSIGHT_KINDS: readonly string[] = [
   'suppress_target',
 ];
 
-/** Column-semantic kinds, offered wherever a table is in scope. */
+/** Column- and table-semantic kinds, offered wherever a table is in scope. */
 export const COLUMN_KINDS: readonly string[] = [
   'set_column_role',
   'set_column_label',
   'set_column_description',
   'set_kpi',
   'set_column_polarity',
+  'set_table_settings',
+];
+
+const GRANULARITY_OPTIONS: { label: string; value: TimeGranularity }[] = [
+  { label: 'Day', value: 'day' },
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' },
+  { label: 'Quarter', value: 'quarter' },
+  { label: 'Year', value: 'year' },
 ];
 
 // ── Shared pickers ──────────────────────────────────────────────────────────
@@ -372,7 +382,7 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
           placeholder: 'Suppress which column…',
           children: ctx.data.columns.map((column) => ({
             label: column.label ?? column.name,
-            suffix: column.dtype,
+            suffix: column.datatype,
             icon: 'i-lucide-columns-3',
             onSelect: () => {
               ctx.helpers.close();
@@ -402,7 +412,7 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
           const isKpi = column.isKpi ?? false;
           return {
             label: `${isKpi ? 'Unset' : 'Set'} KPI: ${column.label ?? column.name}`,
-            suffix: column.dtype,
+            suffix: column.datatype,
             icon: 'i-lucide-target',
             onSelect: () => {
               ctx.helpers.close();
@@ -427,7 +437,7 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
       placeholder: 'Set the role of which column…',
       children: ctx.data.columns.map((column) => ({
         label: columnLabel(column),
-        suffix: column.role ?? column.dtype,
+        suffix: column.role ?? column.datatype,
         icon: 'i-lucide-shapes',
         children: ROLE_OPTIONS.map((option) => ({
           label: option.value === column.role ? `${option.label} (current)` : option.label,
@@ -455,7 +465,7 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
       placeholder: 'Rename which column…',
       children: ctx.data.columns.map((column) => ({
         label: columnLabel(column),
-        suffix: column.label == null ? column.dtype : column.name,
+        suffix: column.label == null ? column.datatype : column.name,
         icon: 'i-lucide-pencil-line',
         onSelect: () => {
           ctx.helpers.close();
@@ -489,7 +499,7 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
       placeholder: 'Describe which column…',
       children: ctx.data.columns.map((column) => ({
         label: columnLabel(column),
-        suffix: column.description ?? column.dtype,
+        suffix: column.description ?? column.datatype,
         icon: 'i-lucide-text',
         onSelect: () => {
           ctx.helpers.close();
@@ -517,6 +527,83 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
     }),
   },
 
+  set_table_settings: {
+    icon: 'i-lucide-settings-2',
+    build: (ctx) => ({
+      placeholder: 'Table settings…',
+      children: [
+        {
+          icon: 'i-lucide-calendar-range',
+          label: 'Analysis period',
+          placeholder: 'Bucket the time axis by…',
+          children: GRANULARITY_OPTIONS.map((option) => ({
+            icon: 'i-lucide-calendar-range',
+            label: option.label,
+            onSelect: () => {
+              ctx.helpers.close();
+              run(() =>
+                ctx.helpers.dispatch({
+                  kind: 'set_table_settings',
+                  source_id: ctx.sourceId,
+                  table: ctx.table,
+                  time_granularity: option.value,
+                }),
+              );
+            },
+          })),
+        },
+        {
+          icon: 'i-lucide-pencil-line',
+          label: 'Rename table…',
+          onSelect: () => {
+            ctx.helpers.close();
+            run(async () => {
+              const displayName = await ctx.helpers.promptText({
+                title: 'Rename table',
+                description: ctx.table,
+                placeholder: 'Shown instead of the table name',
+                confirmLabel: 'Rename',
+              });
+              if (displayName == null) {
+                return;
+              }
+              await ctx.helpers.dispatch({
+                kind: 'set_table_settings',
+                source_id: ctx.sourceId,
+                table: ctx.table,
+                display_name: displayName,
+              });
+            });
+          },
+        },
+        {
+          icon: 'i-lucide-text',
+          label: 'Describe table…',
+          onSelect: () => {
+            ctx.helpers.close();
+            run(async () => {
+              const description = await ctx.helpers.promptText({
+                title: 'Describe table',
+                description: ctx.table,
+                placeholder: 'What one row of this table is',
+                confirmLabel: 'Save',
+              });
+              if (description == null) {
+                return;
+              }
+              await ctx.helpers.dispatch({
+                kind: 'set_table_settings',
+                source_id: ctx.sourceId,
+                table: ctx.table,
+                description,
+              });
+            });
+          },
+        },
+      ],
+    }),
+  },
+
   set_column_polarity: {
     icon: 'i-lucide-arrow-up-down',
 
@@ -533,7 +620,7 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
           ];
           return {
             label: column.label ?? column.name,
-            suffix: current === 'neutral' ? column.dtype : current.replaceAll('_', ' '),
+            suffix: current === 'neutral' ? column.datatype : current.replaceAll('_', ' '),
             icon: 'i-lucide-arrow-up-down',
             children: options.map((option) => ({
               label: option.value === current ? `${option.label} (current)` : option.label,

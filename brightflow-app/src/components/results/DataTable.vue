@@ -14,6 +14,7 @@ import { computed, h, ref } from 'vue';
 
 import { useDatasetStore } from '@/stores/dataset';
 import { useResultsStore } from '@/stores/results';
+import type { LogicalType } from '@/types/generated';
 import { formatNumber } from '@/utils/format';
 
 const resultsStore = useResultsStore();
@@ -62,23 +63,24 @@ const tableData = computed(() =>
   resultsStore.table.rows.map((row, index) => {
     const obj: Record<string, unknown> = { _index: index };
     resultsStore.table.columns.forEach((col, i) => {
-      obj[col.name] = formatCell(row[i], col.dtype);
+      obj[col.name] = formatCell(row[i], col.datatype);
     });
     return obj;
   }),
 );
 
-function formatCell(value: unknown, dtype: string): string {
+function formatCell(value: unknown, datatype: LogicalType): string {
   if (value === null || value === undefined) {
     return '—';
   }
 
-  switch (dtype) {
-    case 'int':
-    case 'float': {
+  switch (datatype) {
+    case 'Integer':
+    case 'Float':
+    case 'Decimal': {
       return formatNumber(Number(value));
     }
-    case 'string': {
+    case 'String': {
       // Truncate long strings
       const str = String(value);
       return str.length > 100 ? `${str.slice(0, 100)}...` : str;

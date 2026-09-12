@@ -15,8 +15,9 @@ import EmptyState from '@/components/common/EmptyState.vue';
 import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
+import type { LogicalType } from '@/types/generated';
 import { fieldKey } from '@/utils/buildOperations';
-import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
+import { isFloatType, isNumericType } from '@/utils/dtype';
 import { formatDecimal } from '@/utils/format';
 import { DEFAULT_FIELD_SORT, orderRows } from '@/utils/pivotOrder';
 
@@ -26,7 +27,7 @@ const datasetStore = useDatasetStore();
 
 interface ColumnInfo {
   name: string | undefined;
-  dtype: string | undefined;
+  datatype: LogicalType | undefined;
 }
 
 interface PivotRow {
@@ -51,7 +52,7 @@ const pivotData = computed((): PivotData | null => {
   const columns = resultsStore.pivot.columns;
   const rows = resultsStore.pivot.rows;
   const colNames = columns.map((c) => c.name);
-  const colTypes = columns.map((c) => c.dtype);
+  const colTypes = columns.map((c) => c.datatype);
 
   // The first N columns are the index (row labels)
   // The remaining columns are the pivoted values
@@ -83,7 +84,7 @@ const pivotData = computed((): PivotData | null => {
   const order = orderRows({ rows, indexIdx: indexColIndices, valueIdx: valueColIndices, sorts });
 
   return {
-    indexColumns: indexColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
+    indexColumns: indexColIndices.map((i) => ({ name: colNames[i], datatype: colTypes[i] })),
     rows: order.map((rowIdx) => {
       const row = rows[rowIdx] ?? [];
       return {
@@ -92,7 +93,7 @@ const pivotData = computed((): PivotData | null => {
         dataValues: valueColIndices.map((i) => row[i]),
       };
     }),
-    valueColumns: valueColIndices.map((i) => ({ name: colNames[i], dtype: colTypes[i] })),
+    valueColumns: valueColIndices.map((i) => ({ name: colNames[i], datatype: colTypes[i] })),
   };
 });
 
@@ -299,13 +300,13 @@ function getCellStyle(value: unknown, colIdx: number): Record<string, string> {
 }
 
 // Format cell value (en-US pinned via formatDecimal, like every other surface)
-function formatValue(value: unknown, dtype: string | undefined): string {
+function formatValue(value: unknown, datatype: LogicalType | undefined): string {
   if (value === null || value === undefined) {
     return '—';
   }
   if (typeof value === 'number') {
     // Integers print bare unless the column is float-typed.
-    if (!isFloatDtype(dtype) && Number.isInteger(value)) {
+    if (!isFloatType(datatype) && Number.isInteger(value)) {
       return formatDecimal(value, 0);
     }
     return formatDecimal(value, pivotStore.decimalPlaces);
@@ -314,11 +315,8 @@ function formatValue(value: unknown, dtype: string | undefined): string {
 }
 
 // Check if a value is numeric
-function isNumeric(dtype: string | undefined): boolean {
-  if (!dtype) {
-    return false;
-  }
-  return isNumericDtype(dtype);
+function isNumeric(datatype: LogicalType | undefined): boolean {
+  return isNumericType(datatype);
 }
 </script>
 
@@ -400,10 +398,10 @@ function isNumeric(dtype: string | undefined): boolean {
                 :key="'subtotal-' + idx"
                 class="border-b border-default px-3 py-2 text-right font-semibold tabular-nums"
                 :class="{
-                  'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype),
+                  'font-mono': isNumeric(pivotData.valueColumns[idx]?.datatype),
                 }"
               >
-                {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
+                {{ formatValue(value, pivotData.valueColumns[idx]?.datatype) }}
               </td>
               <!-- Empty cells if subtotals disabled -->
               <td
@@ -429,7 +427,7 @@ function isNumeric(dtype: string | undefined): boolean {
                   class="border-b border-default/50 px-3 py-2"
                   :class="{ 'pl-8': idx === 0 && row.level > 0 }"
                 >
-                  {{ formatValue(value, pivotData.indexColumns[idx + row.level]?.dtype) }}
+                  {{ formatValue(value, pivotData.indexColumns[idx + row.level]?.datatype) }}
                 </td>
               </template>
               <template v-else>
@@ -438,7 +436,7 @@ function isNumeric(dtype: string | undefined): boolean {
                   :key="'idx-' + idx"
                   class="border-b border-default/50 px-3 py-2 font-medium"
                 >
-                  {{ formatValue(value, pivotData.indexColumns[idx]?.dtype) }}
+                  {{ formatValue(value, pivotData.indexColumns[idx]?.datatype) }}
                 </td>
               </template>
 
@@ -448,11 +446,11 @@ function isNumeric(dtype: string | undefined): boolean {
                 :key="'val-' + idx"
                 class="border-b border-default/50 px-3 py-2 text-right tabular-nums"
                 :class="{
-                  'font-mono': isNumeric(pivotData.valueColumns[idx]?.dtype),
+                  'font-mono': isNumeric(pivotData.valueColumns[idx]?.datatype),
                 }"
                 :style="getCellStyle(value, idx)"
               >
-                {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
+                {{ formatValue(value, pivotData.valueColumns[idx]?.datatype) }}
               </td>
             </tr>
           </template>
@@ -470,7 +468,7 @@ function isNumeric(dtype: string | undefined): boolean {
               :key="'total-' + idx"
               class="border-t-2 border-primary/30 px-3 py-2 text-right font-mono tabular-nums"
             >
-              {{ formatValue(value, pivotData.valueColumns[idx]?.dtype) }}
+              {{ formatValue(value, pivotData.valueColumns[idx]?.datatype) }}
             </td>
           </tr>
         </tbody>
