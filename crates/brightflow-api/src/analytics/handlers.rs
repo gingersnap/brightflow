@@ -263,6 +263,11 @@ async fn ingest_csv_as_source(
         .db()
         .register_source(&source_id, "upload", filename, Some(&meta))
         .await?;
+    // Nobody describes an upload, so the detector gives it its base layer.
+    if let Err(e) = crate::semantics::detect::declare_detected(store, &source_id, &table).await {
+        tracing::warn!("detection for '{source_id}/{table}' failed: {e}");
+    }
+    state.refresh_overrides_from_store(&source_id, &table).await;
     state.refresh_table_index().await;
 
     let columns: Vec<String> = df

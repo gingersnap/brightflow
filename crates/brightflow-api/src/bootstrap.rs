@@ -178,6 +178,20 @@ pub(crate) async fn start_scheduler(
         .set_post_sync_hook(Arc::new(move |source_id: String, table: String| {
             let sync_state = hook_state.clone();
             Box::pin(async move {
+                // A connector that declared nothing still gets a base layer.
+                if let Some(sync_store) = sync_state.store() {
+                    match crate::semantics::detect::declare_detected_if_undescribed(
+                        sync_store, &source_id, &table,
+                    )
+                    .await
+                    {
+                        Ok(_) => {},
+                        Err(e) => tracing::warn!("detection for '{source_id}/{table}' failed: {e}"),
+                    }
+                }
+                sync_state
+                    .refresh_overrides_from_store(&source_id, &table)
+                    .await;
                 crate::enrichment::post_sync(sync_state.clone(), source_id.clone(), table.clone())
                     .await;
                 crate::insights::auto::post_sync(sync_state, source_id, table).await;

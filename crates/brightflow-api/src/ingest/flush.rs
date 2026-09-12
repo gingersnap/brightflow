@@ -149,6 +149,17 @@ impl FlushTask {
                 .await
             {
                 tracing::error!("Failed to register flushed file in catalog: {e}");
+            } else {
+                let web_source = brightflow_core::web_source_id(source_id);
+                if let Err(e) = crate::semantics::detect::declare_detected_if_undescribed(
+                    store,
+                    &web_source,
+                    &table_name,
+                )
+                .await
+                {
+                    tracing::warn!("detection for '{web_source}/{table_name}' failed: {e}");
+                }
             }
         }
 

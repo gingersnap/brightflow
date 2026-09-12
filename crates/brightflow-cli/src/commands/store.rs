@@ -117,6 +117,8 @@ pub(crate) async fn handle_store_command(cmd: StoreCommands) -> Result<()> {
             let info = store
                 .ingest_parquet(&source, &table, &source_file, Some(options))
                 .await?;
+            // The detector gives the table its base semantic layer.
+            brightflow_api::semantics::detect::declare_detected(&store, &source, &table).await?;
 
             println!("Ingested into table '{}/{}'", info.source_id, info.name);
             println!("Version: {}", info.version);

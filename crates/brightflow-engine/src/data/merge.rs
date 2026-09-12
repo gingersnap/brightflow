@@ -50,6 +50,14 @@ pub fn build_schema(
         if ovr.polarity != Polarity::Neutral {
             schema.polarity.insert(name.clone(), ovr.polarity);
         }
+        if let Some(label) = ovr.label.as_deref().filter(|l| !l.is_empty()) {
+            schema.labels.insert(name.clone(), label.to_string());
+        }
+        if let Some(description) = ovr.description.as_deref().filter(|d| !d.is_empty()) {
+            schema
+                .descriptions
+                .insert(name.clone(), description.to_string());
+        }
 
         // No stated role: detection's placement stands, but a KPI flag on a
         // detected measure still counts.
@@ -68,6 +76,7 @@ pub fn build_schema(
         schema.kpi_columns.retain(|c| c != name);
         schema.dimension_columns.retain(|c| c != name);
         schema.time_columns.retain(|c| c != name);
+        schema.entity_columns.retain(|c| c != name);
         if schema.time_column.as_deref() == Some(name) {
             schema.time_column = None;
         }
@@ -88,7 +97,10 @@ pub fn build_schema(
                     schema.time_column = Some(name.clone());
                 }
             },
-            ColumnRole::Entity | ColumnRole::Ignored => {
+            ColumnRole::Entity => {
+                schema.entity_columns.push(name.clone());
+            },
+            ColumnRole::Ignored => {
                 // Not added to any analysis list
             },
         }
