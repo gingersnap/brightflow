@@ -5,7 +5,13 @@
 // Import generated types used in interfaces below
 import type { FieldSort } from '@/utils/pivotOrder';
 
-import type { Aggregation as AggFn, FilterOp, SourceTool, UnifiedSource } from './generated';
+import type {
+  Aggregation as AggFn,
+  ColumnRole,
+  FilterOp,
+  SourceTool,
+  UnifiedSource,
+} from './generated';
 
 // Re-export generated types from Rust backend
 export type { ColumnInfo, Operation, QueryResponse, WsServerMessage } from './generated';
@@ -103,6 +109,8 @@ export interface PivotField {
   id: string;
   column: string;
   dtype: string;
+  /** The column's stored role at the time it was dropped, if any. */
+  role?: ColumnRole | null;
   aggregation?: AggFn;
   /** Row and column fields: their display order (see `utils/pivotOrder`). */
   sort?: FieldSort;

@@ -28,6 +28,7 @@ import '@/services/echarts';
 import VChart from 'vue-echarts';
 
 import { useChartColors } from '@/composables/useChartColors';
+import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
@@ -48,6 +49,7 @@ import { stackedRowSeries } from './stackedRows';
 const resultsStore = useResultsStore();
 const uiStore = useUiStore();
 const pivotStore = usePivotStore();
+const datasetStore = useDatasetStore();
 const colors = useChartColors();
 // `other`, null and folded series wear the muted text colour at every level.
 const mutedVar = useCssVar('--ui-text-muted', document.documentElement, { observe: true });
@@ -508,8 +510,14 @@ const chartOption = computed(() => {
     case 'scatter': {
       return {
         ...baseOption,
-        xAxis: { type: 'value' as const, name: xAxis.value },
-        yAxis: { type: 'value' as const, name: firstYAxis },
+        xAxis: {
+          type: 'value' as const,
+          name: xAxis.value == null ? undefined : datasetStore.labelFor(xAxis.value),
+        },
+        yAxis: {
+          type: 'value' as const,
+          name: firstYAxis == null ? undefined : datasetStore.labelFor(firstYAxis),
+        },
         series: [
           {
             type: 'scatter' as const,

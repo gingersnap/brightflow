@@ -5,14 +5,34 @@
  * resulting headers), which is why buckets are arrays rather than sets. Row
  * and column fields carry their own sort, the way Excel's do; a new field
  * starts largest-first, and the table and chart both order by it.
+ *
+ * A dropped column brings its stored role along: a value field's default
+ * aggregation follows the role (`sum` for a measure, `count` for anything
+ * else), and only falls back to the dtype rule when the column has no role.
  */
 
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { AggFn, PivotField } from '@/types';
+import type { ColumnRole } from '@/types/generated';
 import { isNumericDtype } from '@/utils/dtype';
 import { DEFAULT_FIELD_SORT, type FieldSort } from '@/utils/pivotOrder';
+
+/** What a column dropped into a bucket carries with it. */
+export interface DroppedColumn {
+  column: string;
+  dtype: string;
+  role?: ColumnRole | null;
+}
+
+/** Role first, dtype second: a numeric column the engine calls a dimension counts. */
+export function defaultAggregation(field: DroppedColumn): AggFn {
+  if (field.role != null) {
+    return field.role === 'measure' ? 'sum' : 'count';
+  }
+  return isNumericDtype(field.dtype) ? 'sum' : 'count';
+}
 
 export const usePivotStore = defineStore('pivot', () => {
   // === Bucket State ===
@@ -42,16 +62,17 @@ export const usePivotStore = defineStore('pivot', () => {
 
   // === Actions ===
 
-  function addRowField(column: string, dtype: string): void {
+  function addRowField(field: DroppedColumn): void {
     // Check if already added
-    if (rowFields.value.some((f) => f.column === column)) {
+    if (rowFields.value.some((f) => f.column === field.column)) {
       return;
     }
 
     rowFields.value.push({
-      column,
-      dtype,
+      column: field.column,
+      dtype: field.dtype,
       id: crypto.randomUUID(),
+      role: field.role ?? null,
       sort: { ...DEFAULT_FIELD_SORT },
     });
   }
@@ -72,13 +93,14 @@ export const usePivotStore = defineStore('pivot', () => {
     rowFields.value = newOrder;
   }
 
-  function addColumnField(column: string, dtype: string): void {
+  function addColumnField(field: DroppedColumn): void {
     // Only allow one column field (Metabase behavior)
     columnFields.value = [
       {
-        column,
-        dtype,
+        column: field.column,
+        dtype: field.dtype,
         id: crypto.randomUUID(),
+        role: field.role ?? null,
         sort: { ...DEFAULT_FIELD_SORT },
       },
     ];
@@ -88,17 +110,13 @@ export const usePivotStore = defineStore('pivot', () => {
     columnFields.value = columnFields.value.filter((f) => f.id !== id);
   }
 
-  function addValueField(column: string, dtype: string, aggregation: AggFn | null = null): void {
-    // Choose default aggregation based on type
-    // Numeric types default to sum, strings default to count
-    const isNumeric = isNumericDtype(dtype);
-    const defaultAgg: AggFn = isNumeric ? 'sum' : 'count';
-
+  function addValueField(field: DroppedColumn, aggregation: AggFn | null = null): void {
     valueFields.value.push({
-      aggregation: aggregation ?? defaultAgg,
-      column,
-      dtype,
+      aggregation: aggregation ?? defaultAggregation(field),
+      column: field.column,
+      dtype: field.dtype,
       id: crypto.randomUUID(),
+      role: field.role ?? null,
     });
   }
 

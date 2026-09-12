@@ -2,18 +2,22 @@
 /**
  * Plain table view of query results. Adapts the store's columnar rows to
  * UTable's object shape, formatting at transform time (locale numbers,
- * strings truncated at 100 chars). The context menu offers clipboard copy of
- * a column name or cell value; richer actions are deferred (see below).
+ * strings truncated at 100 chars). Headers show the column's stored label
+ * (the raw name stays the column id and what the context menu copies). The
+ * context menu offers clipboard copy of a column name or cell value; richer
+ * actions are deferred (see below).
  */
 
 import type { ContextMenuItem, TableColumn } from '@nuxt/ui';
 import { useClipboard } from '@vueuse/core';
 import { computed, h, ref } from 'vue';
 
+import { useDatasetStore } from '@/stores/dataset';
 import { useResultsStore } from '@/stores/results';
 import { formatNumber } from '@/utils/format';
 
 const resultsStore = useResultsStore();
+const datasetStore = useDatasetStore();
 
 type RowData = Record<string, unknown>;
 
@@ -47,7 +51,7 @@ const tableColumns = computed<TableColumn<RowData>[]>(() =>
             openMenu(e, { colName: col.name });
           },
         },
-        col.name,
+        datasetStore.labelFor(col.name),
       ),
     id: col.name,
   })),

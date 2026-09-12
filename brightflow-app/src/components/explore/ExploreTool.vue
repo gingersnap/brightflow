@@ -6,9 +6,13 @@
  * the table, and seeds the results grid over REST before the WebSocket path
  * takes over. Until a table is chosen the downstream sections render inert
  * and greyed out instead of being hidden.
+ *
+ * Applied column-semantic actions arrive over the WebSocket as action events
+ * and are patched into the dataset store, so a rename or role change made
+ * here or anywhere else shows without reloading the table.
  */
 
-import { ref, watch } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import FilterBar from '@/components/query/FilterBar.vue';
@@ -16,6 +20,7 @@ import QueryBuilder from '@/components/query/QueryBuilder.vue';
 import ResultsPanel from '@/components/results/ResultsPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { datasetApi, tableApi } from '@/services/api';
+import { isActionEvent } from '@/services/wsGuards';
 import { resetAllStores } from '@/stores';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
@@ -37,6 +42,13 @@ const resultsStore = useResultsStore();
 const uiStore = useUiStore();
 
 const loadingTable = ref(false);
+
+const stopSemanticEvents = connectionStore.onMessage('actionEvent', (payload) => {
+  if (isActionEvent(payload)) {
+    datasetStore.applySemanticAction(payload.entry);
+  }
+});
+onBeforeUnmount(stopSemanticEvents);
 
 async function loadTable(name: string): Promise<void> {
   loadingTable.value = true;

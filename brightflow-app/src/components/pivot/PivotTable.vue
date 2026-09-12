@@ -6,11 +6,13 @@
  * multiple row fields, rows are grouped client-side by the first index
  * column, with subtotals accumulated per group. Rows and groups follow each
  * row field's sort (`utils/pivotOrder`), the same order the chart uses.
+ * Headers show each column's stored label.
  */
 
 import { computed } from 'vue';
 
 import EmptyState from '@/components/common/EmptyState.vue';
+import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
@@ -19,6 +21,7 @@ import { DEFAULT_FIELD_SORT, orderRows } from '@/utils/pivotOrder';
 
 const pivotStore = usePivotStore();
 const resultsStore = useResultsStore();
+const datasetStore = useDatasetStore();
 
 interface ColumnInfo {
   name: string | undefined;
@@ -352,7 +355,7 @@ function isNumeric(dtype: string | undefined): boolean {
               :key="'idx-' + col.name"
               class="border-b border-default bg-muted/50 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted uppercase"
             >
-              {{ col.name }}
+              {{ col.name == null ? '' : datasetStore.labelFor(col.name) }}
             </th>
 
             <!-- Value column headers -->
@@ -361,7 +364,7 @@ function isNumeric(dtype: string | undefined): boolean {
               :key="'val-' + col.name"
               class="border-b border-default bg-muted/50 px-3 py-2 text-right text-xs font-semibold tracking-wide text-muted uppercase"
             >
-              {{ col.name }}
+              {{ col.name == null ? '' : datasetStore.labelFor(col.name) }}
             </th>
           </tr>
         </thead>

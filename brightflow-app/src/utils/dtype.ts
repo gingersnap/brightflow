@@ -8,7 +8,8 @@
  * string aliases only, while `normalizeDtype` falls back to 'string' for
  * unknown dtypes (the operator picker's historical behavior); date-like
  * columns therefore get string operators without being offered as text
- * columns.
+ * columns. `isTemporalDtype` names the backend's date/datetime dtypes so a
+ * column can be recognised as a time axis even when it has no stored role.
  */
 
 export type NormalizedDtype = 'int' | 'float' | 'string' | 'boolean';
@@ -17,6 +18,7 @@ const INT_ALIASES = new Set(['int', 'integer', 'bigint', 'i64', 'i32', 'number']
 const FLOAT_ALIASES = new Set(['float', 'double', 'decimal', 'f64', 'f32']);
 const STRING_ALIASES = new Set(['string', 'str', 'text', 'varchar', 'utf8']);
 const BOOL_ALIASES = new Set(['bool', 'boolean']);
+const TEMPORAL_ALIASES = new Set(['date', 'datetime']);
 
 /** Normalize a backend dtype; unknown or missing dtypes fall back to 'string'. */
 export function normalizeDtype(dtype: string | null | undefined): NormalizedDtype {
@@ -45,6 +47,11 @@ export function isNumericDtype(dtype: string | null | undefined): boolean {
 /** Float only — used to pick decimal formatting. */
 export function isFloatDtype(dtype: string | null | undefined): boolean {
   return normalizeDtype(dtype) === 'float';
+}
+
+/** The backend's typed date/datetime dtypes (ISO strings are not included). */
+export function isTemporalDtype(dtype: string | null | undefined): boolean {
+  return dtype != null && TEMPORAL_ALIASES.has(dtype.toLowerCase());
 }
 
 /**

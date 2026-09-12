@@ -5,13 +5,17 @@
  * a dropped column is stripped back out of the local list and re-emitted as
  * an `add` event for the store to apply, and reorders are emitted whole.
  * Value chips carry an aggregation select; row and column chips carry the
- * field's sort (largest first by default) — both emit `update`.
+ * field's sort (largest first by default) — both emit `update`. Chips are
+ * labelled through the dataset store, and a value chip shows its column's
+ * polarity arrow when one is stored.
  */
 
 import { ref, watch } from 'vue';
 import draggable from 'vuedraggable';
 
+import { useDatasetStore } from '@/stores/dataset';
 import type { AggFn, PivotField } from '@/types';
+import type { ColumnRole } from '@/types/generated';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 import {
   DEFAULT_FIELD_SORT,
@@ -30,6 +34,7 @@ interface DragElement {
   column?: string;
   name?: string;
   dtype?: string;
+  role?: ColumnRole | null;
 }
 
 interface DragEvent {
@@ -85,8 +90,10 @@ function sortFromKey(key: string): FieldSort {
   return FIELD_SORT_OPTIONS.find((o) => sortKey(o.value) === key)?.value ?? DEFAULT_FIELD_SORT;
 }
 
+const datasetStore = useDatasetStore();
+
 const emit = defineEmits<{
-  add: [field: { column: string; dtype: string }];
+  add: [field: { column: string; dtype: string; role: ColumnRole | null }];
   remove: [id: string];
   reorder: [fields: PivotField[]];
   update: [id: string, updates: Partial<PivotField>];
@@ -116,9 +123,32 @@ function canAcceptMore(): boolean {
   return props.fields.length < props.maxItems;
 }
 
-// Get icon for field type
+const ROLE_ICONS: Record<ColumnRole, string> = {
+  dimension: 'i-lucide-tag',
+  entity: 'i-lucide-user',
+  ignored: 'i-lucide-eye-off',
+  measure: 'i-lucide-hash',
+  time: 'i-lucide-calendar',
+};
+
+/** `↑` when higher is better, `↓` when lower is; nothing when neutral or unset. */
+function polarityArrow(field: PivotField): string | null {
+  const polarity = datasetStore.columnByName(field.column)?.polarity;
+  if (polarity === 'higher_is_better') {
+    return '↑';
+  }
+  if (polarity === 'lower_is_better') {
+    return '↓';
+  }
+  return null;
+}
+
+// Icon by role when the field has one, by dtype otherwise
 function getTypeIcon(field: PivotField): string {
   const { dtype } = field;
+  if (field.role != null) {
+    return ROLE_ICONS[field.role];
+  }
   if (isNumericDtype(dtype)) {
     return 'i-lucide-hash';
   }
@@ -146,7 +176,7 @@ function handleChange(evt: DragEvent): void {
       const { dtype } = addedElement;
 
       if (column && dtype) {
-        emit('add', { column, dtype });
+        emit('add', { column, dtype, role: addedElement.role ?? null });
       }
     }
   } else if (evt.moved) {
@@ -185,7 +215,14 @@ function handleChange(evt: DragEvent): void {
           <UIcon name="i-lucide-grip-vertical" class="h-3 w-3 text-muted/50" />
           <UIcon :name="getTypeIcon(element)" class="h-3.5 w-3.5 flex-shrink-0 text-muted" />
           <span class="flex-1 truncate text-sm text-default">
-            {{ element.column }}
+            {{ datasetStore.labelFor(element.column) }}
+          </span>
+          <span
+            v-if="showAggregation && polarityArrow(element)"
+            class="text-sm text-muted"
+            :title="datasetStore.columnByName(element.column)?.polarity"
+          >
+            {{ polarityArrow(element) }}
           </span>
 
           <!-- Aggregation selector for values bucket -->

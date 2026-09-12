@@ -5,7 +5,13 @@
 
 import { describe, expect, test } from 'vitest';
 
-import { isFloatDtype, isNumericDtype, isStringDtype, normalizeDtype } from './dtype';
+import {
+  isFloatDtype,
+  isNumericDtype,
+  isStringDtype,
+  isTemporalDtype,
+  normalizeDtype,
+} from './dtype';
 
 describe('normalizeDtype', () => {
   test('maps aliases to their buckets', () => {
@@ -48,5 +54,15 @@ describe('isStringDtype', () => {
     // A datetime column must not be offered as a text column.
     expect(isStringDtype('datetime')).toBe(false);
     expect(isStringDtype(null)).toBe(false);
+  });
+});
+
+describe('isTemporalDtype', () => {
+  test('matches the typed date dtypes only', () => {
+    expect(isTemporalDtype('date')).toBe(true);
+    expect(isTemporalDtype('Datetime')).toBe(true);
+    expect(isTemporalDtype('string')).toBe(false);
+    expect(isTemporalDtype('duration')).toBe(false);
+    expect(isTemporalDtype(null)).toBe(false);
   });
 });

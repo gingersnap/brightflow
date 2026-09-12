@@ -5,6 +5,11 @@
  * (columns require rows; a lone value field auto-adds a row) so the store
  * never holds an un-runnable config, and changes auto-execute through a
  * 300ms debounce — there is no run button.
+ *
+ * The column list is the semantic layer's face in Explore: it shows the
+ * dataset store's visible columns (ignored ones are hidden), labelled and
+ * described from their stored semantics, with an icon by role and a KPI
+ * badge. A dropped column carries its role into the bucket.
  */
 
 import { watchDebounced } from '@vueuse/core';
@@ -14,10 +19,11 @@ import draggable from 'vuedraggable';
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useWsQuery } from '@/composables/useWsQuery';
 import { useDatasetStore } from '@/stores/dataset';
-import { usePivotStore } from '@/stores/pivot';
+import { type DroppedColumn, usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useUiStore } from '@/stores/ui';
 import type { PivotField } from '@/types';
+import type { ColumnRole } from '@/types/generated';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 
 import BucketDropzone from '../pivot/BucketDropzone.vue';
@@ -26,6 +32,10 @@ interface ColumnItem {
   name: string;
   dtype: string;
   id: string;
+  role: ColumnRole | null;
+  label: string;
+  description: string | undefined;
+  isKpi: boolean;
   isNumeric: boolean;
   isString: boolean;
 }
@@ -41,18 +51,34 @@ const summarizeOpen = computed({
   set: () => uiStore.toggleSection('summarize'),
 });
 
-// Columns for the sidebar
+// Columns for the sidebar: the visible ones, labelled from their semantics
 const columns = computed((): ColumnItem[] =>
-  datasetStore.columns.map((col) => ({
-    ...col,
+  datasetStore.visibleColumns.map((col) => ({
+    description: col.description,
+    dtype: col.dtype,
     id: col.name,
+    isKpi: col.isKpi === true,
     isNumeric: isNumericDtype(col.dtype),
     isString: isStringDtype(col.dtype),
+    label: datasetStore.labelFor(col.name),
+    name: col.name,
+    role: col.role,
   })),
 );
 
-// Get icon for column type
+const ROLE_ICONS: Record<ColumnRole, string> = {
+  dimension: 'i-lucide-tag',
+  entity: 'i-lucide-user',
+  ignored: 'i-lucide-eye-off',
+  measure: 'i-lucide-hash',
+  time: 'i-lucide-calendar',
+};
+
+// Icon by role when the column has one, by dtype otherwise
 function getTypeIcon(col: ColumnItem): string {
+  if (col.role != null) {
+    return ROLE_ICONS[col.role];
+  }
   if (col.isNumeric) {
     return 'i-lucide-hash';
   }
@@ -83,7 +109,7 @@ watch(
       const colField = pivotStore.columnFields[0];
       if (colField) {
         pivotStore.removeColumnField(colField.id);
-        pivotStore.addRowField(colField.column, colField.dtype);
+        pivotStore.addRowField(colField);
       }
       return;
     }
@@ -95,15 +121,19 @@ watch(
         const aggFunc = valueField.aggregation ?? 'count';
 
         if (aggFunc === 'count') {
-          pivotStore.addRowField(valueField.column, valueField.dtype);
+          pivotStore.addRowField(valueField);
         } else {
-          const stringCol = datasetStore.columns.find(
+          const stringCol = datasetStore.visibleColumns.find(
             (c) => isStringDtype(c.dtype) && c.name !== valueField.column,
           );
           if (stringCol) {
-            pivotStore.addRowField(stringCol.name, stringCol.dtype);
+            pivotStore.addRowField({
+              column: stringCol.name,
+              dtype: stringCol.dtype,
+              role: stringCol.role,
+            });
           } else {
-            pivotStore.addRowField(valueField.column, valueField.dtype);
+            pivotStore.addRowField(valueField);
           }
         }
       }
@@ -132,22 +162,17 @@ watchDebounced(
   { debounce: 300, deep: true },
 );
 
-interface FieldParam {
-  column: string;
-  dtype: string;
-}
-
 // Bucket handlers
-function handleAddRow(field: FieldParam): void {
-  pivotStore.addRowField(field.column, field.dtype);
+function handleAddRow(field: DroppedColumn): void {
+  pivotStore.addRowField(field);
 }
 
-function handleAddColumn(field: FieldParam): void {
-  pivotStore.addColumnField(field.column, field.dtype);
+function handleAddColumn(field: DroppedColumn): void {
+  pivotStore.addColumnField(field);
 }
 
-function handleAddValue(field: FieldParam): void {
-  pivotStore.addValueField(field.column, field.dtype);
+function handleAddValue(field: DroppedColumn): void {
+  pivotStore.addValueField(field);
 }
 
 function handleReorderRows(newOrder: PivotField[]): void {
@@ -180,8 +205,8 @@ function toggleSortDirection() {
 
 // Column options for sort
 const sortColumnOptions = computed(() =>
-  datasetStore.columns.map((col) => ({
-    label: col.name,
+  datasetStore.visibleColumns.map((col) => ({
+    label: datasetStore.labelFor(col.name),
     value: col.name,
   })),
 );
@@ -260,7 +285,12 @@ const sortColumnOptions = computed(() =>
                   class="h-3 w-3 text-muted/30 group-hover:text-muted/60"
                 />
                 <UIcon :name="getTypeIcon(element)" class="h-3 w-3 text-muted" />
-                <span class="flex-1 truncate">{{ element.name }}</span>
+                <UTooltip :text="element.description" :disabled="!element.description">
+                  <span class="flex-1 truncate">{{ element.label }}</span>
+                </UTooltip>
+                <UBadge v-if="element.isKpi" size="md" variant="subtle" color="primary">
+                  KPI
+                </UBadge>
               </div>
             </template>
           </draggable>

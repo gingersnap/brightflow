@@ -50,10 +50,10 @@ watchDebounced(
   { debounce: 300, deep: true },
 );
 
-// Column options for dropdown
+// Column options for dropdown: visible columns, shown by label
 const columnOptions = computed(() =>
-  datasetStore.columns.map((col) => ({
-    label: col.name,
+  datasetStore.visibleColumns.map((col) => ({
+    label: datasetStore.labelFor(col.name),
     value: col.name,
     dtype: col.dtype,
   })),
