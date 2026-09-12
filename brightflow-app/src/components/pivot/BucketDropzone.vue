@@ -219,26 +219,15 @@ function handleChange(evt: DragEvent): void {
     >
       <template #item="{ element }">
         <div
-          class="group mb-1 flex cursor-grab items-center gap-2 rounded-md border border-default bg-default px-2 py-1.5 transition-colors hover:border-primary/50 active:cursor-grabbing"
+          class="group mb-1 flex cursor-grab flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-default bg-default px-2 py-1.5 transition-colors hover:border-primary/50 active:cursor-grabbing"
         >
           <UIcon name="i-lucide-grip-vertical" class="h-3 w-3 text-muted/50" />
           <UIcon :name="getTypeIcon(element)" class="h-3.5 w-3.5 flex-shrink-0 text-muted" />
-          <span class="flex-1 truncate text-sm text-default">
+          <!-- The label keeps a minimum width; the controls wrap under it
+               when the chip is too narrow to hold both. -->
+          <span class="min-w-20 flex-1 truncate text-sm text-default">
             {{ datasetStore.labelFor(element.column) }}
           </span>
-
-          <!-- Period selector for bucketed time fields -->
-          <USelectMenu
-            v-if="element.granularity != null"
-            :model-value="element.granularity"
-            :items="granularityItems"
-            value-key="value"
-            size="xs"
-            class="w-22"
-            @update:model-value="
-              (g: TimeGranularity) => emit('update', element.id, { granularity: g })
-            "
-          />
           <span
             v-if="showAggregation && polarityArrow(element)"
             class="text-sm text-muted"
@@ -247,37 +236,52 @@ function handleChange(evt: DragEvent): void {
             {{ polarityArrow(element) }}
           </span>
 
-          <!-- Aggregation selector for values bucket -->
-          <USelectMenu
-            v-if="showAggregation"
-            :model-value="element.aggregation"
-            :items="aggregations"
-            value-key="value"
-            size="xs"
-            class="w-20"
-            @update:model-value="(val: AggFn) => emit('update', element.id, { aggregation: val })"
-          />
+          <div class="ml-auto flex items-center gap-1">
+            <!-- Period selector for bucketed time fields -->
+            <USelectMenu
+              v-if="element.granularity != null"
+              :model-value="element.granularity"
+              :items="granularityItems"
+              value-key="value"
+              size="xs"
+              class="w-22"
+              @update:model-value="
+                (g: TimeGranularity) => emit('update', element.id, { granularity: g })
+              "
+            />
 
-          <!-- Sort selector for row/column buckets -->
-          <USelectMenu
-            v-if="showSort"
-            :model-value="sortKey(sortOf(element))"
-            :items="sortItems"
-            value-key="value"
-            size="xs"
-            class="w-28"
-            @update:model-value="
-              (key: string) => emit('update', element.id, { sort: sortFromKey(key) })
-            "
-          />
+            <!-- Aggregation selector for values bucket -->
+            <USelectMenu
+              v-if="showAggregation"
+              :model-value="element.aggregation"
+              :items="aggregations"
+              value-key="value"
+              size="xs"
+              class="w-20"
+              @update:model-value="(val: AggFn) => emit('update', element.id, { aggregation: val })"
+            />
 
-          <!-- Remove button -->
-          <button
-            class="rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 hover:bg-muted"
-            @click.stop="emit('remove', element.id)"
-          >
-            <UIcon name="i-lucide-x" class="h-3.5 w-3.5 text-muted hover:text-default" />
-          </button>
+            <!-- Sort selector for row/column buckets -->
+            <USelectMenu
+              v-if="showSort"
+              :model-value="sortKey(sortOf(element))"
+              :items="sortItems"
+              value-key="value"
+              size="xs"
+              class="w-28"
+              @update:model-value="
+                (key: string) => emit('update', element.id, { sort: sortFromKey(key) })
+              "
+            />
+
+            <!-- Remove button -->
+            <button
+              class="rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 hover:bg-muted"
+              @click.stop="emit('remove', element.id)"
+            >
+              <UIcon name="i-lucide-x" class="h-3.5 w-3.5 text-muted hover:text-default" />
+            </button>
+          </div>
         </div>
       </template>
 
