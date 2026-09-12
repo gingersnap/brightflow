@@ -352,3 +352,130 @@ async fn vocabulary_actions_enforce_hierarchy_and_log_the_user() {
         expected.iter().map(key).collect::<Vec<_>>()
     );
 }
+
+/// Column semantics through the public bus: a first-time write starts from
+/// the detected role rather than a fixed default, a role change clears the
+/// KPI flag, a blank label clears, and undo restores the whole tuple.
+#[tokio::test]
+async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo() {
+    use brightflow_engine::data::config::ColumnRole;
+
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
+    let store = state.store().unwrap();
+    let table = store.db().get_table(SOURCE, TABLE).await.unwrap().unwrap();
+    let scope = || Scope {
+        source_id: SOURCE.to_string(),
+        table: TABLE.to_string(),
+    };
+    let human = || Actor::Human {
+        user_id: "user-1".to_string(),
+    };
+    let semantic = |rows: Vec<brightflow_store::ColumnSemanticRow>, column: &str| {
+        rows.into_iter().find(|r| r.column_name == column).unwrap()
+    };
+
+    // Flagging an unseeded string column as KPI must not declare it a measure:
+    // the detector calls `title` a dimension, so that is the seeded role.
+    dispatch_action(
+        &state,
+        Action::SetKpi {
+            scope: scope(),
+            column: "title".to_string(),
+            is_kpi: true,
+        },
+        "req-kpi-title",
+        human(),
+    )
+    .await
+    .unwrap();
+    let rows1 = store.db().get_column_semantics(&table.id).await.unwrap();
+    let title = semantic(rows1, "title");
+    assert_eq!(title.role, "dimension");
+    assert!(title.is_kpi);
+
+    // A numeric high-cardinality column seeds as a measure and takes a label.
+    dispatch_action(
+        &state,
+        Action::SetColumnLabel {
+            scope: scope(),
+            column: "id".to_string(),
+            label: Some("  Ticket id ".to_string()),
+        },
+        "req-label-id",
+        human(),
+    )
+    .await
+    .unwrap();
+    let rows2 = store.db().get_column_semantics(&table.id).await.unwrap();
+    let id = semantic(rows2, "id");
+    assert_eq!(id.role, "measure");
+    assert_eq!(id.label.as_deref(), Some("Ticket id"));
+
+    // Moving the KPI column off `measure` clears the flag; the log row
+    // carries a full-tuple undo.
+    let response = dispatch_action(
+        &state,
+        Action::SetColumnRole {
+            scope: scope(),
+            column: "title".to_string(),
+            role: ColumnRole::Entity,
+        },
+        "req-role-title",
+        human(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(response.status, ActionStatus::Applied));
+    let rows3 = store.db().get_column_semantics(&table.id).await.unwrap();
+    let title_after_role = semantic(rows3, "title");
+    assert_eq!(title_after_role.role, "entity");
+    assert!(!title_after_role.is_kpi, "a non-measure cannot stay a KPI");
+
+    // The in-memory override the engine and load_table read follows the row.
+    let key = format!("{SOURCE}|{TABLE}");
+    let live = state
+        .schema_overrides
+        .get(&key)
+        .map(|v| v.value().clone())
+        .unwrap_or_default();
+    let live_title = live.iter().find(|o| o.column_name == "title").unwrap();
+    assert_eq!(live_title.role, ColumnRole::Entity);
+
+    // Undo puts role AND the KPI flag back.
+    let row = store
+        .db()
+        .list_actions(10)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.request_id == "req-role-title")
+        .unwrap();
+    let undone = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(row.id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(undone.0.status, ActionStatus::Undone));
+    let rows4 = store.db().get_column_semantics(&table.id).await.unwrap();
+    let title_after_undo = semantic(rows4, "title");
+    assert_eq!(title_after_undo.role, "dimension");
+    assert!(title_after_undo.is_kpi);
+
+    // A blank description clears rather than storing whitespace.
+    dispatch_action(
+        &state,
+        Action::SetColumnDescription {
+            scope: scope(),
+            column: "id".to_string(),
+            description: Some("   ".to_string()),
+        },
+        "req-desc-id",
+        human(),
+    )
+    .await
+    .unwrap();
+    let rows5 = store.db().get_column_semantics(&table.id).await.unwrap();
+    assert_eq!(semantic(rows5, "id").description, None);
+}

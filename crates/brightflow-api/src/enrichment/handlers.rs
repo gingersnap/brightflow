@@ -323,8 +323,10 @@ pub async fn delete_function(
 }
 
 /// Drop the function's materialised columns (outputs plus `{fn}__status`)
-/// from its table. Returns how many were present. A no-op for kinds this
-/// runner does not materialise.
+/// from its table, along with the semantics rows the run wrote for them, so
+/// a column that no longer exists cannot linger as a label in Explore.
+/// Returns how many were present. A no-op for kinds this runner does not
+/// materialise.
 async fn drop_output_columns(
     state: &AppState,
     store: &ParquetStore,
@@ -360,10 +362,14 @@ async fn drop_output_columns(
         store
             .replace_table_data(&table_row.source_id, &table_row.name, out_df, None)
             .await?;
-        state.invalidate_schema_cache(&crate::state::cache_key(
-            &table_row.source_id,
-            &table_row.name,
-        ));
+        let key = crate::state::cache_key(&table_row.source_id, &table_row.name);
+        for name in &names {
+            store
+                .db()
+                .delete_column_semantic(&table_row.id, name)
+                .await?;
+            state.remove_column_override(&key, name);
+        }
     }
     Ok(dropped)
 }

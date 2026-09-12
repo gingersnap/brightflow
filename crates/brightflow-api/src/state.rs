@@ -11,7 +11,6 @@ use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
 use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
 use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
-use brightflow_engine::data::schema::DataSchema;
 use brightflow_scheduler::Scheduler;
 use brightflow_store::{ColumnSemanticRow, ParquetStore, TableAnalysisSettingsRow, TableInfo};
 use dashmap::DashMap;
@@ -30,8 +29,6 @@ pub struct AppState {
     pub table_index: Arc<RwLock<Vec<TableInfo>>>,
     /// Reference to the Parquet store for lazy loading
     store: Option<Arc<ParquetStore>>,
-    /// Schema cache keyed by table name (invalidated on override changes)
-    pub schemas: Arc<DashMap<String, DataSchema>>,
     /// Column semantic overrides keyed by table name
     pub schema_overrides: Arc<DashMap<String, Vec<ColumnOverride>>>,
     /// Table analysis settings overrides keyed by table name
@@ -92,7 +89,6 @@ impl AppState {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(Vec::new())),
             store: None,
-            schemas: Arc::new(DashMap::new()),
             schema_overrides: Arc::new(DashMap::new()),
             settings_overrides: Arc::new(DashMap::new()),
             text_indexes: Arc::new(DashMap::new()),
@@ -189,9 +185,27 @@ impl AppState {
         }
     }
 
-    /// Invalidate the cached schema for a composite key (call after override mutations).
-    pub fn invalidate_schema_cache(&self, key: &str) {
-        self.schemas.remove(key);
+    /// Replace one column's in-memory semantic override for a table (keyed by
+    /// `cache_key`), so the next analysis run and the next `load_table` see a
+    /// write without a restart. Every writer of `column_semantics` calls this
+    /// after its row lands; the database stays the source of truth.
+    pub fn set_column_override(&self, key: &str, ovr: ColumnOverride) {
+        let mut overrides = self
+            .schema_overrides
+            .get(key)
+            .map(|v| v.value().clone())
+            .unwrap_or_default();
+        overrides.retain(|o| o.column_name != ovr.column_name);
+        overrides.push(ovr);
+        self.schema_overrides.insert(key.to_string(), overrides);
+    }
+
+    /// Forget one column's in-memory override — the inverse of
+    /// `set_column_override`, for columns that were dropped from the table.
+    pub fn remove_column_override(&self, key: &str, column: &str) {
+        if let Some(mut overrides) = self.schema_overrides.get_mut(key) {
+            overrides.retain(|o| o.column_name != column);
+        }
     }
 
     /// Get a reference to the Parquet store

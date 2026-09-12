@@ -556,6 +556,33 @@ pub async fn execute_action(
         } => {
             semantics::execute_set_column_polarity(state, source_id, table, column, *polarity).await
         },
+        Action::SetColumnRole {
+            scope: Scope { source_id, table },
+            column,
+            role,
+        } => semantics::execute_set_column_role(state, source_id, table, column, *role).await,
+        Action::SetColumnLabel {
+            scope: Scope { source_id, table },
+            column,
+            label,
+        } => {
+            semantics::execute_set_column_label(state, source_id, table, column, label.as_deref())
+                .await
+        },
+        Action::SetColumnDescription {
+            scope: Scope { source_id, table },
+            column,
+            description,
+        } => {
+            semantics::execute_set_column_description(
+                state,
+                source_id,
+                table,
+                column,
+                description.as_deref(),
+            )
+            .await
+        },
         Action::DefineTaxonomyCategory {
             scope: Scope { source_id, table },
             name,
@@ -671,6 +698,14 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             column,
             polarity,
         } => semantics::undo_restore_polarity(state, source_id, table, column, polarity).await,
+        UndoOp::RestoreColumnSemantic {
+            source_id,
+            table,
+            column,
+            snapshot,
+        } => {
+            semantics::undo_restore_column_semantic(state, source_id, table, column, snapshot).await
+        },
         UndoOp::RestoreTaxonomyCategory {
             category_id,
             delete_row,

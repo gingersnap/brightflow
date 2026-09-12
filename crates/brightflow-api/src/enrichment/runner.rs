@@ -910,7 +910,6 @@ pub async fn materialize(
                 if let Some((rows, unresolved)) = child {
                     let child_name = mentions::mentions_table_name(table_name);
                     write_child_table(store, source_id, &child_name, rows).await?;
-                    state.invalidate_schema_cache(&crate::state::cache_key(source_id, &child_name));
                     if let Err(e) = store
                         .db()
                         .sync_unresolved_subjects(
@@ -932,7 +931,6 @@ pub async fn materialize(
         }
     }
 
-    state.invalidate_schema_cache(&crate::state::cache_key(source_id, table_name));
     Ok(())
 }
 

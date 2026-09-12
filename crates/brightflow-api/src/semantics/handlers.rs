@@ -108,9 +108,8 @@ pub async fn upsert_table_settings(
         )
         .await?;
 
-    // Invalidate schema cache and update in-memory settings
+    // Update the in-memory settings so the next analysis run sees them.
     let key = cache_key(&source_id, &name);
-    state.invalidate_schema_cache(&key);
     let time_granularity = req
         .time_granularity
         .as_deref()

@@ -8,7 +8,7 @@
 //! A human clicking "rename cluster" and an agent emitting a tool call
 //! execute the exact same code path; only the recorded actor differs.
 
-use brightflow_engine::data::config::Polarity;
+use brightflow_engine::data::config::{ColumnRole, Polarity};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -156,6 +156,51 @@ pub enum Action {
         column: String,
         polarity: Polarity,
     },
+    /// Declare what a column is for: a measure to aggregate, a dimension to
+    /// slice by, the time axis, an entity id, or ignored. Explore hides
+    /// ignored columns and buckets time columns; the engine analyses by role.
+    SetColumnRole {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        column: String,
+        role: ColumnRole,
+    },
+    /// Give a column a human-facing name. `None` (or blank) clears it and the
+    /// UI falls back to the humanised column name.
+    SetColumnLabel {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        column: String,
+        #[serde(default)]
+        #[ts(optional)]
+        label: Option<String>,
+    },
+    /// Describe a column in one or two sentences, shown as help text beside
+    /// its label. `None` (or blank) clears it.
+    SetColumnDescription {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        column: String,
+        #[serde(default)]
+        #[ts(optional)]
+        description: Option<String>,
+    },
+}
+
+/// One column's full semantic tuple as stored in `column_semantics`.
+///
+/// What the semantic executors snapshot before a mutation and what their
+/// undo writes back; also the shape a first-time write is seeded from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ColumnSemanticSnapshot {
+    pub role: ColumnRole,
+    pub is_kpi: bool,
+    pub polarity: Polarity,
+    pub label: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
@@ -191,6 +236,9 @@ impl Action {
             Self::SuppressTarget { .. } => "suppress_target",
             Self::SetKpi { .. } => "set_kpi",
             Self::SetColumnPolarity { .. } => "set_column_polarity",
+            Self::SetColumnRole { .. } => "set_column_role",
+            Self::SetColumnLabel { .. } => "set_column_label",
+            Self::SetColumnDescription { .. } => "set_column_description",
         }
     }
 
@@ -208,7 +256,10 @@ impl Action {
             | Self::AnnotateInsight { scope, .. }
             | Self::SuppressTarget { scope, .. }
             | Self::SetKpi { scope, .. }
-            | Self::SetColumnPolarity { scope, .. } => scope,
+            | Self::SetColumnPolarity { scope, .. }
+            | Self::SetColumnRole { scope, .. }
+            | Self::SetColumnLabel { scope, .. }
+            | Self::SetColumnDescription { scope, .. } => scope,
         };
         (&scope.source_id, &scope.table)
     }
@@ -413,6 +464,15 @@ pub enum UndoOp {
         column: String,
         polarity: String,
     },
+    /// Undo of set_column_role / label / description: put the whole previous
+    /// tuple back. One op for the three because each of them may touch more
+    /// than its own field (a role change can clear the KPI flag).
+    RestoreColumnSemantic {
+        source_id: String,
+        table: String,
+        column: String,
+        snapshot: ColumnSemanticSnapshot,
+    },
     /// Undo of define/rename/redefine: put an entry's name and description
     /// back, or delete it outright when it did not exist before the action.
     RestoreTaxonomyCategory {
@@ -539,6 +599,30 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "Declare whether rising values of a measure are good news \
          (higher_is_better), bad news (lower_is_better), or neither (neutral). \
          Findings about the measure are then framed as good or bad.",
+        true,
+    ),
+    (
+        "set_column_role",
+        "Set column role",
+        "Declare what a column is for: measure (a number to aggregate), \
+         dimension (a category to slice by), time (the time axis), entity \
+         (an identifier such as a user or account), or ignored (hidden from \
+         analysis and from Explore). Setting a KPI column to anything but \
+         measure also clears its KPI flag.",
+        true,
+    ),
+    (
+        "set_column_label",
+        "Rename column",
+        "Give a column a short human-facing name shown everywhere instead of \
+         its raw name. Omit or blank the label to clear it.",
+        true,
+    ),
+    (
+        "set_column_description",
+        "Describe column",
+        "Attach a one- or two-sentence description to a column, shown as help \
+         text beside its label. Omit or blank the description to clear it.",
         true,
     ),
 ];
@@ -727,6 +811,30 @@ mod tests {
                 },
                 column: String::new(),
                 polarity: Polarity::HigherIsBetter,
+            },
+            Action::SetColumnRole {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                column: String::new(),
+                role: ColumnRole::Dimension,
+            },
+            Action::SetColumnLabel {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                column: String::new(),
+                label: None,
+            },
+            Action::SetColumnDescription {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                column: String::new(),
+                description: None,
             },
         ];
         assert_eq!(
