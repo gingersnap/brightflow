@@ -582,6 +582,43 @@ impl StoreDb {
         Ok(())
     }
 
+    /// Insert semantics rows only for columns that have none yet, in one
+    /// transaction. Returns how many were inserted. This is how a process
+    /// that *derives* a column (enrichment) declares what it means without
+    /// overwriting what a person has since said about it.
+    pub async fn insert_column_semantics_if_absent(
+        &self,
+        table_id: &str,
+        rows: &[ColumnSemanticRow],
+    ) -> StoreResult<u64> {
+        let table_id = table_id.to_owned();
+        let rows = rows.to_vec();
+        let inserted = self
+            .pool
+            .transaction(move |tx| {
+                let mut stmt = tx.prepare(
+                    r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, polarity, label, description)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT (table_id, column_name) DO NOTHING",
+                )?;
+                let mut inserted = 0_u64;
+                for row in &rows {
+                    inserted += stmt.execute(params![
+                        table_id,
+                        row.column_name,
+                        row.role,
+                        row.is_kpi,
+                        row.polarity,
+                        row.label,
+                        row.description
+                    ])? as u64;
+                }
+                Ok(inserted)
+            })
+            .await?;
+        Ok(inserted)
+    }
+
     pub async fn delete_column_semantic(
         &self,
         table_id: &str,
@@ -780,6 +817,68 @@ mod tests {
             tmp.path().join("litehouse.db").display()
         );
         StoreDb::new(&db_url).await.expect("failed to open db")
+    }
+
+    fn semantic(
+        table_id: &str,
+        column: &str,
+        role: &str,
+        label: Option<&str>,
+    ) -> ColumnSemanticRow {
+        ColumnSemanticRow {
+            table_id: table_id.to_string(),
+            column_name: column.to_string(),
+            role: role.to_string(),
+            is_kpi: false,
+            polarity: "neutral".to_string(),
+            label: label.map(str::to_string),
+            description: None,
+            updated_at: String::new(),
+        }
+    }
+
+    /// Insert-if-absent never touches an existing row: a second call inserts
+    /// nothing and an edited label survives.
+    #[tokio::test]
+    async fn insert_column_semantics_if_absent_leaves_existing_rows_alone() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+        let table = db.create_table("issues", "c:s1").await.expect("table");
+
+        let rows = vec![
+            semantic(&table.id, "category", "dimension", Some("Category")),
+            semantic(&table.id, "summary", "ignored", Some("Summary")),
+        ];
+        assert_eq!(
+            db.insert_column_semantics_if_absent(&table.id, &rows)
+                .await
+                .expect("insert"),
+            2
+        );
+        db.upsert_column_semantic(
+            &table.id,
+            "category",
+            "dimension",
+            false,
+            "neutral",
+            Some("Problem area"),
+            None,
+        )
+        .await
+        .expect("edit");
+
+        assert_eq!(
+            db.insert_column_semantics_if_absent(&table.id, &rows)
+                .await
+                .expect("second insert"),
+            0
+        );
+        let stored = db.get_column_semantics(&table.id).await.expect("rows");
+        let category = stored
+            .iter()
+            .find(|r| r.column_name == "category")
+            .expect("category row");
+        assert_eq!(category.label.as_deref(), Some("Problem area"));
     }
 
     /// Values must come deduplicated (many files share a partition value),

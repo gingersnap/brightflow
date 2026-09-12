@@ -185,6 +185,27 @@ impl AppState {
         }
     }
 
+    /// Re-read one table's semantics rows from the store and replace its
+    /// in-memory overrides. For writers that land several rows at once
+    /// (enrichment materialisation); single-column writers use
+    /// `set_column_override`.
+    pub async fn refresh_overrides_from_store(&self, source_id: &str, table_name: &str) {
+        let Some(store) = &self.store else {
+            return;
+        };
+        match store.get_column_semantics(source_id, table_name).await {
+            Ok(rows) => {
+                let overrides: Vec<ColumnOverride> =
+                    rows.iter().filter_map(convert_semantic_row).collect();
+                self.schema_overrides
+                    .insert(cache_key(source_id, table_name), overrides);
+            },
+            Err(e) => tracing::warn!(
+                "Failed to refresh column semantics for '{source_id}/{table_name}': {e}"
+            ),
+        }
+    }
+
     /// Replace one column's in-memory semantic override for a table (keyed by
     /// `cache_key`), so the next analysis run and the next `load_table` see a
     /// write without a restart. Every writer of `column_semantics` calls this

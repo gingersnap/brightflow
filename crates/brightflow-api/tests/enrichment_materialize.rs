@@ -146,3 +146,67 @@ async fn concurrent_materializations_on_one_table_both_land() {
     assert!(df.column("classify__status").is_ok());
     assert!(df.column("extract__status").is_ok());
 }
+
+/// Materialisation declares what its columns mean — but only where nobody
+/// has said anything yet: a label a person set survives a re-run.
+#[tokio::test]
+async fn materialize_declares_output_semantics_without_overwriting_edits() {
+    let ws = copy_template().unwrap();
+    let state = state_with_table(&ws).await;
+    let store = Arc::clone(state.store().unwrap());
+    let table = store.db().get_table(SOURCE, TABLE).await.unwrap().unwrap();
+
+    let classify_cell = serde_json::json!({
+        "summary": "a summary",
+        "category_id": 0,
+        "subcategory_id": 0,
+        "sentiment": "neutral",
+    });
+    let (id, run) = function_with_cache(&state, "classify", classify_spec(), classify_cell).await;
+    materialize(&state, &store, SOURCE, TABLE, &id, "classify", &run)
+        .await
+        .unwrap();
+
+    let rows = store.db().get_column_semantics(&table.id).await.unwrap();
+    let find = |name: &str| rows.iter().find(|r| r.column_name == name).unwrap();
+    assert_eq!(find("summary").role, "ignored");
+    assert_eq!(find("summary").label.as_deref(), Some("Summary"));
+    assert_eq!(find("category").role, "dimension");
+    assert!(find("sentiment").description.is_some());
+    assert_eq!(find("classify__status").role, "ignored");
+
+    // The in-memory overrides Explore reads follow the rows.
+    let live = state
+        .schema_overrides
+        .get(&format!("{SOURCE}|{TABLE}"))
+        .map(|v| v.value().clone())
+        .unwrap_or_default();
+    assert!(live
+        .iter()
+        .any(|o| o.column_name == "category" && o.label.as_deref() == Some("Category")));
+
+    // A person renames the column; a second materialisation keeps the name.
+    store
+        .db()
+        .upsert_column_semantic(
+            &table.id,
+            "category",
+            "dimension",
+            false,
+            "neutral",
+            Some("Problem area"),
+            None,
+        )
+        .await
+        .unwrap();
+    materialize(&state, &store, SOURCE, TABLE, &id, "classify", &run)
+        .await
+        .unwrap();
+    let after_rerun = store.db().get_column_semantics(&table.id).await.unwrap();
+    let category = after_rerun
+        .iter()
+        .find(|r| r.column_name == "category")
+        .unwrap();
+    assert_eq!(category.label.as_deref(), Some("Problem area"));
+    assert_eq!(category.description, None);
+}

@@ -6,6 +6,12 @@
 //! one cell shape — `(input_hash → value_json)` under a spec hash — and differ
 //! only in how a row becomes messages and how a value becomes columns, which
 //! is what [`RunSpec`] dispatches on.
+//!
+//! Materialisation also declares what its columns mean: after the parquet
+//! rewrite lands it inserts `column_semantics` rows for the output columns
+//! that have none yet. The rows are written after the data, not with it
+//! (`replace_table_data` is not one transaction), and a failure there is
+//! logged, never propagated — the data is in, and the next run retries.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -14,18 +20,23 @@ use std::time::{Duration, Instant};
 use futures::StreamExt;
 use polars::prelude::*;
 
-use brightflow_engine::enrichment::mentions::{self, ExtractCell, SubjectResolver, FLAG_COLUMNS};
+use brightflow_engine::data::config::ColumnRole;
+use brightflow_engine::enrichment::mentions::{
+    self, ExtractCell, SubjectResolver, FLAG_COLUMNS, FLAG_SEMANTICS,
+};
 use brightflow_engine::enrichment::ticket_classify::{
-    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS, RETIRED_COLUMNS,
+    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS, OUTPUT_SEMANTICS,
+    RETIRED_COLUMNS,
 };
 use brightflow_engine::enrichment::{
-    input_hash, ticket_classify_hash, ticket_extract_hash, FunctionSpec, TicketClassifySpec,
-    TicketExtractSpec,
+    input_hash, ticket_classify_hash, ticket_extract_hash, FunctionSpec, OutputSemantic,
+    TicketClassifySpec, TicketExtractSpec,
 };
 use brightflow_engine::nlp::detect_language;
 use brightflow_llm::{
     chat_with_backoff, ChatClient, ChatMessage, ChatOptions, ChatOutcome, RetryPolicy, ToolDef,
 };
+use brightflow_store::ColumnSemanticRow;
 use brightflow_store::ParquetStore;
 
 use crate::shared::{AppError, AppResult};
@@ -291,6 +302,14 @@ impl RunSpec {
                 OUTPUT_COLUMNS.iter().map(|c| (*c).to_string()).collect()
             },
             Self::TicketExtract { .. } => FLAG_COLUMNS.iter().map(|c| (*c).to_string()).collect(),
+        }
+    }
+
+    /// What each output column means, in `output_columns` order.
+    pub fn output_semantics(&self) -> &'static [OutputSemantic] {
+        match self {
+            Self::TicketClassify { .. } => &OUTPUT_SEMANTICS,
+            Self::TicketExtract { .. } => &FLAG_SEMANTICS,
         }
     }
 
@@ -907,6 +926,16 @@ pub async fn materialize(
             .await
         {
             Ok(()) => {
+                declare_output_semantics(
+                    state,
+                    store,
+                    source_id,
+                    table_name,
+                    &table_row.id,
+                    function_name,
+                    run,
+                )
+                .await;
                 if let Some((rows, unresolved)) = child {
                     let child_name = mentions::mentions_table_name(table_name);
                     write_child_table(store, source_id, &child_name, rows).await?;
@@ -978,6 +1007,61 @@ fn parent_id_column(df: &DataFrame, table_name: &str) -> Column {
         },
         Column::clone,
     )
+}
+
+/// Declare the meaning of the columns this run just materialised: one
+/// `column_semantics` row per output column plus the `{fn}__status` column
+/// as `ignored`, inserted only where no row exists, then the in-memory
+/// overrides refreshed so Explore sees labels without a restart. Failure is
+/// logged, not returned — see the module header.
+async fn declare_output_semantics(
+    state: &AppState,
+    store: &ParquetStore,
+    source_id: &str,
+    table_name: &str,
+    table_id: &str,
+    function_name: &str,
+    run: &RunSpec,
+) {
+    let row = |name: &str, role: ColumnRole, label: Option<&str>, description: Option<&str>| {
+        ColumnSemanticRow {
+            table_id: table_id.to_string(),
+            column_name: name.to_string(),
+            role: role.as_str().to_string(),
+            is_kpi: false,
+            polarity: "neutral".to_string(),
+            label: label.map(str::to_string),
+            description: description.map(str::to_string),
+            updated_at: String::new(),
+        }
+    };
+    let mut rows: Vec<ColumnSemanticRow> = run
+        .output_semantics()
+        .iter()
+        .map(|s| row(s.name, s.role, Some(s.label), Some(s.description)))
+        .collect();
+    rows.push(row(
+        &format!("{function_name}__status"),
+        ColumnRole::Ignored,
+        None,
+        Some("Per-row outcome of the enrichment run; bookkeeping, not data."),
+    ));
+    match store
+        .db()
+        .insert_column_semantics_if_absent(table_id, &rows)
+        .await
+    {
+        Ok(_) => {
+            state
+                .refresh_overrides_from_store(source_id, table_name)
+                .await;
+        },
+        Err(e) => {
+            tracing::warn!(
+                "could not declare output semantics for '{source_id}/{table_name}': {e}"
+            );
+        },
+    }
 }
 
 /// Write the whole child table: replace when it exists, create otherwise.

@@ -25,6 +25,8 @@ use serde::{Deserialize, Serialize};
 use super::function::{TicketExtractSpec, VocabEntry};
 use super::ticket_classify::{VocabNames, SENTIMENT_VALUES};
 use super::vocabulary::{is_other, OTHER};
+use super::OutputSemantic;
+use crate::data::config::ColumnRole;
 
 /// Child-table name for a parent `table`.
 pub fn mentions_table_name(table: &str) -> String {
@@ -61,6 +63,37 @@ pub const FLAG_COLUMNS: [&str; 4] = [
     "has_incidental_feedback",
     "has_competitor_mention",
     "mention_count",
+];
+
+/// The meaning of each parent-row flag, in `FLAG_COLUMNS` order.
+pub const FLAG_SEMANTICS: [OutputSemantic; 4] = [
+    OutputSemantic {
+        name: "has_feedback",
+        role: ColumnRole::Dimension,
+        label: "Has feedback",
+        description: "Whether the ticket contains at least one piece of feedback about \
+                      the product or service.",
+    },
+    OutputSemantic {
+        name: "has_incidental_feedback",
+        role: ColumnRole::Dimension,
+        label: "Has incidental feedback",
+        description: "Whether the ticket contains feedback that is not the reason the \
+                      customer wrote in.",
+    },
+    OutputSemantic {
+        name: "has_competitor_mention",
+        role: ColumnRole::Dimension,
+        label: "Mentions a competitor",
+        description: "Whether the ticket names a competitor.",
+    },
+    OutputSemantic {
+        name: "mention_count",
+        role: ColumnRole::Measure,
+        label: "Mention count",
+        description: "How many products, competitors, prices, services or pieces of \
+                      feedback the ticket mentions.",
+    },
 ];
 
 /// One validated mention. The cache's `value_json` is `{"mentions": [..]}`.
@@ -721,5 +754,15 @@ mod tests {
         assert_eq!(subj.get(1), Some("Invoice screen"));
         assert_eq!(df.get_column_names().len(), MENTION_COLUMNS.len());
         assert_eq!(mentions_table_name("issues"), "issues_mentions");
+    }
+
+    /// The semantics list and the flag list are two views of one thing.
+    #[test]
+    fn flag_semantics_name_exactly_the_flag_columns() {
+        let declared: Vec<&str> = FLAG_SEMANTICS.iter().map(|s| s.name).collect();
+        assert_eq!(declared, FLAG_COLUMNS.to_vec());
+        for s in &FLAG_SEMANTICS {
+            assert!(!s.label.trim().is_empty() && !s.description.trim().is_empty());
+        }
     }
 }
