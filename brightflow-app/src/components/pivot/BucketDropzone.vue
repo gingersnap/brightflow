@@ -5,9 +5,10 @@
  * a dropped column is stripped back out of the local list and re-emitted as
  * an `add` event for the store to apply, and reorders are emitted whole.
  * Value chips carry an aggregation select; row and column chips carry the
- * field's sort (largest first by default) — both emit `update`. Chips are
- * labelled through the dataset store, and a value chip shows its column's
- * polarity arrow when one is stored.
+ * field's sort (largest first by default) — both emit `update`. A time
+ * field's chip also carries its period select. Chips are labelled through
+ * the dataset store, and a value chip shows its column's polarity arrow
+ * when one is stored.
  */
 
 import { ref, watch } from 'vue';
@@ -15,7 +16,7 @@ import draggable from 'vuedraggable';
 
 import { useDatasetStore } from '@/stores/dataset';
 import type { AggFn, PivotField } from '@/types';
-import type { ColumnRole } from '@/types/generated';
+import type { ColumnRole, TimeGranularity } from '@/types/generated';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
 import {
   DEFAULT_FIELD_SORT,
@@ -81,6 +82,14 @@ const props = withDefaults(
 
 // USelectMenu compares by value-key, so the options are keyed by a string.
 const sortItems = FIELD_SORT_OPTIONS.map((o) => ({ label: o.label, value: sortKey(o.value) }));
+
+const granularityItems: { label: string; value: TimeGranularity }[] = [
+  { label: 'Day', value: 'day' },
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' },
+  { label: 'Quarter', value: 'quarter' },
+  { label: 'Year', value: 'year' },
+];
 
 function sortOf(field: PivotField): FieldSort {
   return field.sort ?? DEFAULT_FIELD_SORT;
@@ -217,6 +226,19 @@ function handleChange(evt: DragEvent): void {
           <span class="flex-1 truncate text-sm text-default">
             {{ datasetStore.labelFor(element.column) }}
           </span>
+
+          <!-- Period selector for bucketed time fields -->
+          <USelectMenu
+            v-if="element.granularity != null"
+            :model-value="element.granularity"
+            :items="granularityItems"
+            value-key="value"
+            size="xs"
+            class="w-22"
+            @update:model-value="
+              (g: TimeGranularity) => emit('update', element.id, { granularity: g })
+            "
+          />
           <span
             v-if="showAggregation && polarityArrow(element)"
             class="text-sm text-muted"

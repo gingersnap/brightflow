@@ -33,7 +33,9 @@ import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { ChartType } from '@/types';
+import { fieldKey } from '@/utils/buildOperations';
 import { isNumericDtype, isStringDtype } from '@/utils/dtype';
+import { humanizePeriod, humanizePeriodShort } from '@/utils/format';
 import { DEFAULT_FIELD_SORT, orderRows, orderSeries } from '@/utils/pivotOrder';
 
 import {
@@ -107,10 +109,18 @@ const yAxes = ref<string[]>([]);
 const rowFieldIdx = computed(() =>
   usingPivot.value
     ? pivotStore.rowFields
-        .map((f) => allColumnNames.value.indexOf(f.column))
+        .map((f) => allColumnNames.value.indexOf(fieldKey(f)))
         .filter((i) => i !== -1)
     : [],
 );
+
+/** The X axis is a bucketed time field: its labels are period strings. */
+const xIsPeriod = computed(() => usingPivot.value && pivotStore.rowFields[0]?.granularity != null);
+
+/** Axis tick: compact period when bucketed, the raw value otherwise. */
+function xTick(value: string): string {
+  return xIsPeriod.value ? humanizePeriodShort(value) : value;
+}
 const hasColumnField = computed(() => usingPivot.value && pivotStore.columnFields.length > 0);
 
 /** The three stacking states of the header comment (`flat` = no stacking). */
@@ -218,7 +228,8 @@ function pct(share: number): string {
 /** Tooltip over a stack: every non-zero segment with its share of the bar. */
 function stackTooltip(params: unknown): string {
   const list = (Array.isArray(params) ? params : [params]) as Param[];
-  const head = list[0]?.axisValueLabel ?? '';
+  const rawHead = list[0]?.axisValueLabel ?? '';
+  const head = xIsPeriod.value ? humanizePeriod(rawHead) : rawHead;
   const rows: { name: string; value: number }[] = [];
   for (const p of list) {
     if (isSegment(p.data)) {
@@ -292,14 +303,14 @@ const chartOption = computed(() => {
             data,
             // Largest first reads top-down; ECharts draws category 0 at the bottom.
             inverse: true,
-            axisLabel: { width: 140, overflow: 'truncate' as const },
+            axisLabel: { width: 140, overflow: 'truncate' as const, formatter: xTick },
           },
         }
       : {
           xAxis: {
             type: 'category' as const,
             data,
-            axisLabel: { rotate: data.length > 10 ? 45 : 0 },
+            axisLabel: { rotate: data.length > 10 ? 45 : 0, formatter: xTick },
           },
           yAxis: { type: 'value' as const },
         };
@@ -476,6 +487,7 @@ const chartOption = computed(() => {
           type: 'category' as const,
           data: xData,
           boundaryGap: false,
+          axisLabel: { formatter: xTick },
         },
         yAxis: { type: 'value' as const },
         series: buildSeries('line'),

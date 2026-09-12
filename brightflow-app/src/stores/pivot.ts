@@ -9,15 +9,23 @@
  * A dropped column brings its stored role along: a value field's default
  * aggregation follows the role (`sum` for a measure, `count` for anything
  * else), and only falls back to the dtype rule when the column has no role.
+ * A time column dropped into rows or columns is bucketed by period: it
+ * starts at the table's granularity and sorts chronologically (by label,
+ * ascending) instead of largest-first.
  */
 
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
 import type { AggFn, PivotField } from '@/types';
-import type { ColumnRole } from '@/types/generated';
+import type { ColumnRole, TimeGranularity } from '@/types/generated';
 import { isNumericDtype } from '@/utils/dtype';
 import { DEFAULT_FIELD_SORT, type FieldSort } from '@/utils/pivotOrder';
+
+import { isTimeColumn, useDatasetStore } from './dataset';
+
+/** Chronological: what a time axis means. */
+export const TIME_FIELD_SORT: FieldSort = { by: 'label', descending: false };
 
 /** What a column dropped into a bucket carries with it. */
 export interface DroppedColumn {
@@ -62,19 +70,36 @@ export const usePivotStore = defineStore('pivot', () => {
 
   // === Actions ===
 
-  function addRowField(field: DroppedColumn): void {
-    // Check if already added
-    if (rowFields.value.some((f) => f.column === field.column)) {
-      return;
-    }
-
-    rowFields.value.push({
+  /** A row or column field for a dropped column; time columns get a period. */
+  function headerField(field: DroppedColumn): PivotField {
+    const base: PivotField = {
       column: field.column,
       dtype: field.dtype,
       id: crypto.randomUUID(),
       role: field.role ?? null,
       sort: { ...DEFAULT_FIELD_SORT },
-    });
+    };
+    if (isTimeColumn({ dtype: field.dtype, role: field.role ?? null })) {
+      base.granularity = useDatasetStore().timeGranularity;
+      base.sort = { ...TIME_FIELD_SORT };
+    }
+    return base;
+  }
+
+  function addRowField(field: DroppedColumn): void {
+    // Check if already added
+    if (rowFields.value.some((f) => f.column === field.column)) {
+      return;
+    }
+    rowFields.value.push(headerField(field));
+  }
+
+  /** Change a time field's period; a no-op on fields without one. */
+  function setFieldGranularity(id: string, granularity: TimeGranularity): void {
+    const field = [...rowFields.value, ...columnFields.value].find((f) => f.id === id);
+    if (field?.granularity != null) {
+      field.granularity = granularity;
+    }
   }
 
   /** Change a row or column field's display order. */
@@ -95,15 +120,7 @@ export const usePivotStore = defineStore('pivot', () => {
 
   function addColumnField(field: DroppedColumn): void {
     // Only allow one column field (Metabase behavior)
-    columnFields.value = [
-      {
-        column: field.column,
-        dtype: field.dtype,
-        id: crypto.randomUUID(),
-        role: field.role ?? null,
-        sort: { ...DEFAULT_FIELD_SORT },
-      },
-    ];
+    columnFields.value = [headerField(field)];
   }
 
   function removeColumnField(id: string): void {
@@ -210,6 +227,7 @@ export const usePivotStore = defineStore('pivot', () => {
 
     // Actions
     setFieldSort,
+    setFieldGranularity,
     addRowField,
     removeRowField,
     reorderRowFields,

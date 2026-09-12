@@ -15,8 +15,8 @@ import { usePivotStore } from '@/stores/pivot';
 import { filterOperations, useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
-import type { AggFn } from '@/types';
 import type { Operation } from '@/types/generated';
+import { buildPivotOperations } from '@/utils/buildOperations';
 
 /**
  * WebSocket query execution composable
@@ -108,80 +108,25 @@ export function useWsQuery() {
   }
 
   /**
-   * Build operations based on current configuration
+   * Build operations based on current configuration: the pivot chain when a
+   * pivot is configured (regardless of view mode), else the query store's.
    */
   function buildOperations(): Operation[] {
-    // If pivot is configured, use pivot operation (regardless of view mode)
-    if (pivotStore.isConfigured) {
-      const ops: Operation[] = [];
-
-      // Add any filters from query store
-      if (queryStore.sections.filter.enabled) {
-        ops.push(...filterOperations(queryStore.filters));
-      }
-
-      // Add pivot operation
-      if (pivotStore.valueFields.length > 0) {
-        const valueField = pivotStore.valueFields[0];
-        if (!valueField) {
-          return ops;
-        }
-
-        const rowCols = pivotStore.rowFields.map((f) => f.column);
-        const colField =
-          pivotStore.columnFields.length > 0 ? (pivotStore.columnFields[0]?.column ?? null) : null;
-        const aggFunc: AggFn = valueField.aggregation ?? 'count';
-
-        // Determine the best operation based on configuration
-        if (rowCols.length === 0 && colField == null) {
-          return ops;
-        }
-
-        if (colField == null) {
-          // Only rows, no column pivot - use groupBy
-          ops.push({
-            aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
-            by: rowCols,
-            type: 'groupBy',
-          });
-        } else if (rowCols.length === 0) {
-          // Only columns (no rows) - group by the column field
-          ops.push({
-            aggs: [{ column: valueField.column, function: aggFunc, alias: aggFunc }],
-            by: [colField],
-            type: 'groupBy',
-          });
-        } else {
-          // Full pivot with both rows and columns
-          ops.push({
-            agg: aggFunc,
-            columns: colField,
-            index: rowCols,
-            type: 'pivot',
-            values: valueField.column,
-          });
-        }
-      }
-
-      // Add sort
-      if (queryStore.sections.sort.enabled && queryStore.sortBy != null) {
-        ops.push({
-          by: queryStore.sortBy,
-          descending: queryStore.sortDescending,
-          type: 'sort',
-        });
-      }
-
-      // Add limit
-      if (queryStore.sections.limit.enabled && queryStore.limit > 0) {
-        ops.push({ n: queryStore.limit, type: 'limit' });
-      }
-
-      return ops;
+    if (!pivotStore.isConfigured) {
+      return queryStore.operations;
     }
-
-    // Default: use query store operations
-    return queryStore.operations;
+    return buildPivotOperations({
+      columnFields: pivotStore.columnFields,
+      filters: queryStore.filters,
+      filtersEnabled: queryStore.sections.filter.enabled,
+      limit: queryStore.limit,
+      limitEnabled: queryStore.sections.limit.enabled,
+      rowFields: pivotStore.rowFields,
+      sortBy: queryStore.sortBy,
+      sortDescending: queryStore.sortDescending,
+      sortEnabled: queryStore.sections.sort.enabled,
+      valueFields: pivotStore.valueFields,
+    });
   }
 
   /**

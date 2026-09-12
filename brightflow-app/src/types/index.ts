@@ -10,6 +10,7 @@ import type {
   ColumnRole,
   FilterOp,
   SourceTool,
+  TimeGranularity,
   UnifiedSource,
 } from './generated';
 
@@ -111,6 +112,11 @@ export interface PivotField {
   dtype: string;
   /** The column's stored role at the time it was dropped, if any. */
   role?: ColumnRole | null;
+  /**
+   * Time fields in the row or column bucket: the period they are bucketed
+   * into. Set when a time column is dropped; absent on every other field.
+   */
+  granularity?: TimeGranularity;
   aggregation?: AggFn;
   /** Row and column fields: their display order (see `utils/pivotOrder`). */
   sort?: FieldSort;

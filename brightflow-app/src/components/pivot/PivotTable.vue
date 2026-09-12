@@ -15,6 +15,7 @@ import EmptyState from '@/components/common/EmptyState.vue';
 import { useDatasetStore } from '@/stores/dataset';
 import { usePivotStore } from '@/stores/pivot';
 import { useResultsStore } from '@/stores/results';
+import { fieldKey } from '@/utils/buildOperations';
 import { isFloatDtype, isNumericDtype } from '@/utils/dtype';
 import { formatDecimal } from '@/utils/format';
 import { DEFAULT_FIELD_SORT, orderRows } from '@/utils/pivotOrder';
@@ -54,7 +55,7 @@ const pivotData = computed((): PivotData | null => {
 
   // The first N columns are the index (row labels)
   // The remaining columns are the pivoted values
-  const indexCols = new Set(pivotStore.rowFields.map((f) => f.column));
+  const indexCols = new Set(pivotStore.rowFields.map(fieldKey));
 
   // Determine which columns are index vs values
   const indexColIndices: number[] = [];

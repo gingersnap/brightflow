@@ -188,8 +188,8 @@ watch(
 // Auto-execute when configuration changes (debounced; cleans up on unmount)
 watchDebounced(
   () => [
-    pivotStore.rowFields.map((f) => f.column),
-    pivotStore.columnFields.map((f) => f.column),
+    pivotStore.rowFields.map((f) => `${f.column}:${f.granularity}`),
+    pivotStore.columnFields.map((f) => `${f.column}:${f.granularity}`),
     pivotStore.valueFields.map((f) => `${f.column}:${f.aggregation}`),
     queryStore.filters.map((f) => `${f.column}:${f.op}:${f.value}`),
     queryStore.sections.filter.enabled,
@@ -222,10 +222,13 @@ function handleReorderRows(newOrder: PivotField[]): void {
   pivotStore.reorderRowFields(newOrder);
 }
 
-/** Row/column chips only ever update their sort. */
-function handleFieldSort(id: string, updates: Partial<PivotField>): void {
+/** Row/column chips update their sort or, for time fields, their period. */
+function handleFieldUpdate(id: string, updates: Partial<PivotField>): void {
   if (updates.sort != null) {
     pivotStore.setFieldSort(id, updates.sort);
+  }
+  if (updates.granularity != null) {
+    pivotStore.setFieldGranularity(id, updates.granularity);
   }
 }
 
@@ -366,7 +369,7 @@ const sortColumnOptions = computed(() =>
             @add="handleAddRow"
             @remove="pivotStore.removeRowField"
             @reorder="handleReorderRows"
-            @update="handleFieldSort"
+            @update="handleFieldUpdate"
           />
 
           <div class="relative">
@@ -389,7 +392,7 @@ const sortColumnOptions = computed(() =>
               disabled-message="Add rows first"
               @add="handleAddColumn"
               @remove="pivotStore.removeColumnField"
-              @update="handleFieldSort"
+              @update="handleFieldUpdate"
             />
           </div>
 
