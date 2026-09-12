@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 longbow = { path = "../../../longbow" }
+brightflow-types = { path = "../brightflow-types" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

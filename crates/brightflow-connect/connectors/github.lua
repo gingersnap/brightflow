@@ -1,8 +1,15 @@
 --[[ @longbow
 name = "github"
-version = "0.2.0"
+version = "0.3.0"
 description = "GitHub repository, issues, PRs, and contributors"
 ]]
+
+-- Each endpoint declares its columns next to the `map` that produces them:
+-- `datatype` is one of the ten logical types Longbow writes Parquet with
+-- (timestamps become real timestamps, not text), and `brightflow` carries the
+-- analysis role, KPI flag and display defaults Brightflow files under this
+-- connector's name. A person's later edit in Brightflow wins over these; a
+-- re-sync only refreshes what this file says.
 
 return function(p)
     -- Config: single "owner/repo" slug
@@ -48,6 +55,40 @@ return function(p)
     p.endpoint("repository", {
         path = "/repos/" .. owner .. "/" .. repo,
         primary_key = {"id"},
+        description = "The repository itself: one row, refreshed on every sync",
+        columns = {
+            id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            name = { datatype = "String", brightflow = { role = "ignored" } },
+            full_name = { datatype = "String", brightflow = { role = "ignored" } },
+            description = { datatype = "String", brightflow = { role = "ignored" } },
+            owner_login = { datatype = "String", brightflow = { role = "dimension" } },
+            owner_id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            private = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            fork = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            created_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            updated_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            pushed_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            stargazers_count = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true, label = "Stars" } },
+            watchers_count = { datatype = "Integer", brightflow = { role = "measure", label = "Watchers" } },
+            forks_count = { datatype = "Integer", brightflow = { role = "measure", label = "Forks" } },
+            open_issues_count = { datatype = "Integer", brightflow = { role = "measure", label = "Open issues" } },
+            language = { datatype = "String", brightflow = { role = "dimension" } },
+            topics = { datatype = "String", description = "Comma-joined topic list", brightflow = { role = "ignored" } },
+            default_branch = { datatype = "String", brightflow = { role = "dimension" } },
+            has_issues = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            has_projects = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            has_wiki = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            archived = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            disabled = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            visibility = { datatype = "String", brightflow = { role = "dimension" } },
+            size = { datatype = "Integer", description = "Repository size in kilobytes", brightflow = { role = "measure" } },
+            subscribers_count = { datatype = "Integer", brightflow = { role = "measure", label = "Subscribers" } },
+            network_count = { datatype = "Integer", brightflow = { role = "measure" } },
+        },
+        brightflow = {
+            display_name = "Repository",
+            doc = { id = "id", title = "full_name", body = "description", timestamp = "updated_at" },
+        },
         map = function(r)
             return {
                 id = r.id,
@@ -92,6 +133,38 @@ return function(p)
             sort = "updated",
             direction = "desc",
             since = cursors.issues,  -- nil if no cursor (fetches all)
+        },
+        description = "Issues and pull requests of the repository, one row each; "
+            .. "`is_pull_request` tells them apart",
+        columns = {
+            id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            number = { datatype = "Integer", brightflow = { role = "ignored" } },
+            title = { datatype = "String", brightflow = { role = "ignored" } },
+            body = { datatype = "String", brightflow = { role = "ignored" } },
+            state = { datatype = "String", description = "open or closed", brightflow = { role = "dimension" } },
+            state_reason = { datatype = "String", description = "Why it was closed: completed, not_planned, reopened", brightflow = { role = "dimension" } },
+            user_login = { datatype = "String", description = "Who opened it", brightflow = { role = "dimension", label = "Author" } },
+            user_id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            assignee_logins = { datatype = "String", description = "Comma-joined assignee logins", brightflow = { role = "ignored" } },
+            label_names = { datatype = "String", description = "Comma-joined label names", brightflow = { role = "dimension", label = "Labels" } },
+            milestone_title = { datatype = "String", brightflow = { role = "ignored" } },
+            milestone_number = { datatype = "Integer", brightflow = { role = "ignored" } },
+            comments = { datatype = "Integer", description = "Number of comments", brightflow = { role = "measure", is_kpi = true } },
+            is_pull_request = { datatype = "Boolean", description = "True for a pull request, false for an issue", brightflow = { role = "dimension" } },
+            created_at = { datatype = "DateTimeTz", description = "When it was opened", brightflow = { role = "time", label = "Opened" } },
+            updated_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            closed_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            author_association = { datatype = "String", description = "The author's relation to the repository: OWNER, MEMBER, CONTRIBUTOR, NONE", brightflow = { role = "dimension" } },
+            locked = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            active_lock_reason = { datatype = "String", brightflow = { role = "ignored" } },
+            reactions_total = { datatype = "Integer", description = "Total emoji reactions", brightflow = { role = "measure", is_kpi = true, label = "Reactions" } },
+            html_url = { datatype = "String", brightflow = { role = "ignored" } },
+        },
+        brightflow = {
+            display_name = "Issues",
+            time_granularity = "week",
+            comparison_periods = 4,
+            doc = { id = "id", number = "number", title = "title", body = "body", timestamp = "created_at", url_template = "{html_url}" },
         },
         map = function(r)
             -- Extract assignee logins
@@ -152,6 +225,46 @@ return function(p)
             sort = "updated",
             direction = "desc",
             since = cursors.pull_requests,  -- nil if no cursor (fetches all)
+        },
+        description = "Pull requests with review and diff statistics",
+        columns = {
+            id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            number = { datatype = "Integer", brightflow = { role = "ignored" } },
+            title = { datatype = "String", brightflow = { role = "ignored" } },
+            body = { datatype = "String", brightflow = { role = "ignored" } },
+            state = { datatype = "String", description = "open or closed", brightflow = { role = "dimension" } },
+            user_login = { datatype = "String", brightflow = { role = "dimension", label = "Author" } },
+            user_id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            draft = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            head_ref = { datatype = "String", brightflow = { role = "ignored" } },
+            head_sha = { datatype = "String", brightflow = { role = "ignored" } },
+            base_ref = { datatype = "String", description = "Target branch", brightflow = { role = "dimension" } },
+            base_sha = { datatype = "String", brightflow = { role = "ignored" } },
+            merged = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            mergeable = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            merged_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            merged_by_login = { datatype = "String", brightflow = { role = "dimension", label = "Merged by" } },
+            merge_commit_sha = { datatype = "String", brightflow = { role = "ignored" } },
+            commits = { datatype = "Integer", brightflow = { role = "measure" } },
+            additions = { datatype = "Integer", description = "Lines added", brightflow = { role = "measure", is_kpi = true } },
+            deletions = { datatype = "Integer", description = "Lines removed", brightflow = { role = "measure", is_kpi = true } },
+            changed_files = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true } },
+            review_comments = { datatype = "Integer", brightflow = { role = "measure" } },
+            comments = { datatype = "Integer", brightflow = { role = "measure" } },
+            label_names = { datatype = "String", description = "Comma-joined label names", brightflow = { role = "dimension", label = "Labels" } },
+            reviewer_logins = { datatype = "String", description = "Comma-joined requested reviewers", brightflow = { role = "ignored" } },
+            milestone_title = { datatype = "String", brightflow = { role = "ignored" } },
+            created_at = { datatype = "DateTimeTz", description = "When it was opened", brightflow = { role = "time", label = "Opened" } },
+            updated_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            closed_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            author_association = { datatype = "String", brightflow = { role = "dimension" } },
+            html_url = { datatype = "String", brightflow = { role = "ignored" } },
+        },
+        brightflow = {
+            display_name = "Pull requests",
+            time_granularity = "week",
+            comparison_periods = 4,
+            doc = { id = "id", number = "number", title = "title", body = "body", timestamp = "created_at", url_template = "{html_url}" },
         },
         map = function(r)
             -- Extract requested reviewer logins
@@ -218,6 +331,20 @@ return function(p)
             per_page = 100,
             anon = "false",
         },
+        description = "Contributors to the repository with their commit counts",
+        columns = {
+            id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            login = { datatype = "String", brightflow = { role = "dimension" } },
+            type = { datatype = "String", description = "User or Bot", brightflow = { role = "dimension" } },
+            contributions = { datatype = "Integer", description = "Commits to the default branch", brightflow = { role = "measure", is_kpi = true } },
+            avatar_url = { datatype = "String", brightflow = { role = "ignored" } },
+            html_url = { datatype = "String", brightflow = { role = "ignored" } },
+            site_admin = { datatype = "Boolean", brightflow = { role = "dimension" } },
+        },
+        brightflow = {
+            display_name = "Contributors",
+            doc = { id = "id", title = "login", url_template = "{html_url}" },
+        },
         map = function(r)
             return {
                 id = r.id,
@@ -241,6 +368,28 @@ return function(p)
             sort = "updated",
             direction = "desc",
             since = cursors.issue_comments,  -- nil if no cursor (fetches all)
+        },
+        description = "Comments on issues and pull requests",
+        columns = {
+            id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            issue_number = { datatype = "Integer", description = "The issue or pull request this comment belongs to", brightflow = { role = "ignored" } },
+            user_login = { datatype = "String", brightflow = { role = "dimension", label = "Author" } },
+            user_id = { datatype = "Integer", brightflow = { role = "ignored" } },
+            body = { datatype = "String", brightflow = { role = "ignored" } },
+            created_at = { datatype = "DateTimeTz", description = "When it was posted", brightflow = { role = "time", label = "Posted" } },
+            updated_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            author_association = { datatype = "String", brightflow = { role = "dimension" } },
+            reactions_total = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true, label = "Reactions" } },
+            html_url = { datatype = "String", brightflow = { role = "ignored" } },
+        },
+        relationships = {
+            issue = { to = "issues", from_columns = { "issue_number" }, to_columns = { "number" } },
+        },
+        brightflow = {
+            display_name = "Issue comments",
+            time_granularity = "week",
+            comparison_periods = 4,
+            doc = { id = "id", body = "body", timestamp = "created_at", url_template = "{html_url}" },
         },
         map = function(r)
             -- Extract issue number from issue_url

@@ -4,8 +4,19 @@
 //! loaded from a custom directory — so adding or patching one never requires
 //! a Rust rebuild of the connector itself. On a name collision, discovery
 //! keeps the builtin and skips the custom file.
+//!
+//! This is where a connector's *declaration* stops being opaque. Longbow
+//! hands back the endpoint keys it does not interpret as JSON; this crate
+//! parses them into a typed `TableDeclaration` (the connector-author shape,
+//! see `brightflow_types::declaration`) and attaches the run's provenance —
+//! connector name, version, source hash — so the store can file the rows
+//! under the right producer. A declaration that does not parse is an error
+//! naming the endpoint, because a connector author wrote it and should see
+//! it; it fails a dry run too, which is the cheap place to find out.
 
 pub use longbow;
+
+use brightflow_types::{Provenance, TableDeclaration};
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -108,10 +119,20 @@ pub struct RunOptions {
 /// Result of running a connector
 #[derive(Debug, Clone)]
 pub struct ConnectorResult {
+    /// The connector's identity from its frontmatter, plus its source hash.
+    pub meta: longbow::pipeline::ConnectorMeta,
     pub endpoints: Vec<EndpointResultInfo>,
     pub dry_run: bool,
     pub output_path: String,
     pub duration_ms: u64,
+}
+
+impl ConnectorResult {
+    /// The provenance every declaration from this run is filed under:
+    /// `connector:{name}` at the frontmatter version, with the source hash.
+    pub fn provenance(&self) -> Provenance {
+        provenance_for(&self.meta)
+    }
 }
 
 /// Per-endpoint metadata from a connector run
@@ -124,6 +145,56 @@ pub struct EndpointResultInfo {
     pub cursor_field: Option<String>,
     pub cursor_value: Option<String>,
     pub duration_ms: u64,
+    /// What the connector declared about this table, typed. `None` when the
+    /// endpoint declared nothing. The dataset's `source` is a placeholder
+    /// here (the endpoint name); the store sets the real one on apply.
+    pub declaration: Option<TableDeclaration>,
+    /// Values Longbow nulled because they did not fit their declared type.
+    pub type_errors: u64,
+}
+
+/// `connector:{name}` at the frontmatter version, with the source hash. A
+/// connector without a frontmatter name is `connector:unnamed`.
+fn provenance_for(meta: &longbow::pipeline::ConnectorMeta) -> Provenance {
+    let mut prov = Provenance::declared(format!(
+        "connector:{}",
+        meta.name.as_deref().unwrap_or("unnamed")
+    ))
+    .with_hash(meta.source_hash.clone());
+    if let Some(version) = &meta.version {
+        prov = prov.with_version(version.clone());
+    }
+    prov
+}
+
+/// Parse an endpoint's pass-through JSON into a typed declaration. The
+/// endpoint name stands in for the dataset `source` until the store knows
+/// the source id.
+fn parse_declaration(
+    name: &str,
+    primary_key: &[String],
+    cursor_field: Option<&str>,
+    declaration: Option<serde_json::Value>,
+) -> Result<Option<TableDeclaration>> {
+    let Some(value) = declaration else {
+        return Ok(None);
+    };
+    let decl = TableDeclaration::from_endpoint_json(
+        name,
+        name,
+        primary_key.to_vec(),
+        cursor_field.map(str::to_string),
+        value,
+    )
+    .map_err(|e| ConnectError(format!("endpoint `{name}`: invalid declaration: {e}")))?;
+    if let Err(violations) = decl.validate() {
+        let list: Vec<String> = violations.iter().map(ToString::to_string).collect();
+        return Err(ConnectError(format!(
+            "endpoint `{name}`: declaration is not well formed: {}",
+            list.join("; ")
+        )));
+    }
+    Ok(Some(decl))
 }
 
 /// Filter pipeline endpoints if --only is specified
@@ -136,13 +207,14 @@ fn apply_endpoint_filter(pipeline: &mut longbow::pipeline::Pipeline, only: Optio
     }
 }
 
-/// Build a dry-run result from a pipeline (no execution happened)
-fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> ConnectorResult {
-    ConnectorResult {
-        endpoints: pipeline
-            .endpoints
-            .iter()
-            .map(|e| EndpointResultInfo {
+/// Build a dry-run result from a pipeline (no execution happened). The
+/// declarations are still parsed, so a dry run catches a malformed one.
+fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> Result<ConnectorResult> {
+    let endpoints = pipeline
+        .endpoints
+        .iter()
+        .map(|e| {
+            Ok(EndpointResultInfo {
                 name: e.name.clone(),
                 parquet_path: None,
                 rows: 0,
@@ -150,8 +222,19 @@ fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> ConnectorResu
                 cursor_field: e.cursor_field.clone(),
                 cursor_value: None,
                 duration_ms: 0,
+                declaration: parse_declaration(
+                    &e.name,
+                    &e.primary_key,
+                    e.cursor_field.as_deref(),
+                    e.declaration.clone(),
+                )?,
+                type_errors: 0,
             })
-            .collect(),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ConnectorResult {
+        meta: pipeline.meta.clone(),
+        endpoints,
         dry_run: true,
         output_path: pipeline
             .output
@@ -159,7 +242,7 @@ fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> ConnectorResu
             .map(|o| o.path.clone())
             .unwrap_or_default(),
         duration_ms: 0,
-    }
+    })
 }
 
 /// Map a Longbow `RunResult` into our `ConnectorResult`
@@ -167,12 +250,18 @@ fn map_run_result(
     run_result: longbow::RunResult,
     output_path: String,
     dry_run: bool,
-) -> ConnectorResult {
-    ConnectorResult {
-        endpoints: run_result
-            .endpoints
-            .into_iter()
-            .map(|ep| EndpointResultInfo {
+) -> Result<ConnectorResult> {
+    let endpoints = run_result
+        .endpoints
+        .into_iter()
+        .map(|ep| {
+            let declaration = parse_declaration(
+                &ep.name,
+                &ep.primary_key,
+                ep.cursor_field.as_deref(),
+                ep.declaration,
+            )?;
+            Ok(EndpointResultInfo {
                 name: ep.name,
                 parquet_path: ep.parquet_path,
                 rows: ep.rows,
@@ -180,12 +269,18 @@ fn map_run_result(
                 cursor_field: ep.cursor_field,
                 cursor_value: ep.cursor_value,
                 duration_ms: ep.duration_ms,
+                declaration,
+                type_errors: ep.type_errors,
             })
-            .collect(),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ConnectorResult {
+        meta: run_result.meta,
+        endpoints,
         dry_run,
         output_path,
         duration_ms: run_result.duration_ms,
-    }
+    })
 }
 
 /// Run a connector with the given configuration (file-based config).
@@ -212,7 +307,7 @@ pub async fn run_connector(
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
     if options.dry_run {
-        return Ok(build_dry_run_result(&pipeline));
+        return build_dry_run_result(&pipeline);
     }
 
     let output_path = pipeline
@@ -226,7 +321,7 @@ pub async fn run_connector(
         .await
         .map_err(|e| ConnectError(format!("Pipeline execution failed: {e}")))?;
 
-    Ok(map_run_result(run_result, output_path, false))
+    map_run_result(run_result, output_path, false)
 }
 
 /// Run a connector with config passed directly as JSON (no file I/O).
@@ -288,7 +383,7 @@ async fn run_connector_impl(
     apply_endpoint_filter(&mut pipeline, options.only.as_ref());
 
     if options.dry_run {
-        return Ok(build_dry_run_result(&pipeline));
+        return build_dry_run_result(&pipeline);
     }
 
     let output_path = pipeline
@@ -302,7 +397,7 @@ async fn run_connector_impl(
         .await
         .map_err(|e| ConnectError(format!("Pipeline execution failed: {e}")))?;
 
-    Ok(map_run_result(run_result, output_path, false))
+    map_run_result(run_result, output_path, false)
 }
 
 /// List available built-in connectors (embedded at compile time).
@@ -459,7 +554,7 @@ mod tests {
 
     #[test]
     fn dry_run_result_carries_endpoint_shape_with_zeroed_execution_fields() {
-        let result = build_dry_run_result(&two_endpoint_pipeline());
+        let result = build_dry_run_result(&two_endpoint_pipeline()).unwrap();
 
         assert!(result.dry_run);
         assert_eq!(result.output_path, "/data/out");
@@ -492,7 +587,7 @@ mod tests {
             end
             "#,
         );
-        let result = build_dry_run_result(&pipeline);
+        let result = build_dry_run_result(&pipeline).unwrap();
         assert_eq!(result.output_path, "");
     }
 
@@ -510,11 +605,13 @@ mod tests {
                 cursor_field: Some("updated_at".to_string()),
                 cursor_value: Some("2026-08-01T00:00:00Z".to_string()),
                 duration_ms: 7,
+                declaration: None,
+                type_errors: 3,
             }],
             duration_ms: 123,
         };
 
-        let result = map_run_result(run_result, "/data/out".to_string(), false);
+        let result = map_run_result(run_result, "/data/out".to_string(), false).unwrap();
 
         assert!(!result.dry_run);
         assert_eq!(result.output_path, "/data/out");
@@ -528,6 +625,154 @@ mod tests {
         assert_eq!(ep.cursor_field.as_deref(), Some("updated_at"));
         assert_eq!(ep.cursor_value.as_deref(), Some("2026-08-01T00:00:00Z"));
         assert_eq!(ep.duration_ms, 7);
+        assert_eq!(ep.type_errors, 3);
+        assert!(ep.declaration.is_none());
+    }
+
+    #[test]
+    fn a_declared_endpoint_parses_into_a_typed_declaration_with_provenance() {
+        let pipeline = pipeline_from_lua(
+            r#"
+            --[[ @longbow
+            name = "github"
+            version = "0.3.0"
+            ]]
+            return function(p)
+                p.output(output.parquet({ path = "/data/out" }))
+                p.endpoint("issues", {
+                    path = "/issues",
+                    primary_key = { "id" },
+                    cursor_field = "updated_at",
+                    description = "Issues and pull requests",
+                    columns = {
+                        id = { datatype = "Integer", brightflow = { role = "ignored" } },
+                        created_at = { datatype = "DateTime" },
+                        reactions_total = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true } },
+                    },
+                    relationships = { { to = "repository", from_columns = { "id" }, to_columns = { "id" } } },
+                    brightflow = { time_granularity = "week", comparison_periods = 4 },
+                })
+            end
+            "#,
+        );
+        let result = build_dry_run_result(&pipeline).unwrap();
+        let prov = result.provenance();
+        assert_eq!(prov.producer, "connector:github");
+        assert_eq!(prov.version.as_deref(), Some("0.3.0"));
+        assert!(prov.hash.is_some());
+
+        let decl = result.endpoints[0].declaration.as_ref().unwrap();
+        assert_eq!(decl.name, "issues");
+        assert_eq!(decl.primary_key, ["id"]);
+        assert_eq!(decl.cursor_field.as_deref(), Some("updated_at"));
+        let ds = decl.dataset.as_ref().unwrap();
+        assert_eq!(ds.description.as_deref(), Some("Issues and pull requests"));
+        assert_eq!(
+            ds.field("created_at").unwrap().datatype,
+            Some(brightflow_types::LogicalType::DateTime)
+        );
+        assert_eq!(
+            ds.field("reactions_total")
+                .unwrap()
+                .brightflow()
+                .unwrap()
+                .is_kpi,
+            Some(true)
+        );
+        assert_eq!(
+            ds.brightflow().unwrap().time_granularity,
+            Some(brightflow_types::TimeGranularity::Week)
+        );
+        assert_eq!(decl.relationships[0].from, "issues");
+        assert_eq!(decl.relationships[0].to, "repository");
+    }
+
+    /// Every builtin connector's declarations parse and validate: the
+    /// cheapest place to catch a typo in a datatype or a key that names a
+    /// column the map does not produce.
+    #[test]
+    fn every_builtin_connector_declares_well_formed_tables() {
+        let lua = longbow::runtime::create_lua_runtime().unwrap();
+        let configs = [
+            (
+                "github",
+                serde_json::json!({"repo": "o/r", "token": "t", "output_path": "/tmp/x"}),
+            ),
+            (
+                "bluesky",
+                serde_json::json!({"mode": "actor", "actor": "a.bsky.social", "identifier": "i", "token": "p", "output_path": "/tmp/x"}),
+            ),
+            (
+                "bluesky",
+                serde_json::json!({"mode": "keyword", "query": "q", "identifier": "i", "token": "p", "output_path": "/tmp/x"}),
+            ),
+        ];
+        for (name, config) in configs {
+            let source = get_builtin_connector_source(name).unwrap();
+            let pipeline =
+                longbow::pipeline::load_connector_from_source(&lua, source, config).unwrap();
+            let result = build_dry_run_result(&pipeline).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(result.provenance().producer, format!("connector:{name}"));
+            for ep in &result.endpoints {
+                let decl = ep
+                    .declaration
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{name}/{}: no declaration", ep.name));
+                let ds = decl.dataset.as_ref().unwrap();
+                assert!(!ds.fields.is_empty(), "{name}/{}: no columns", ep.name);
+                // Every declared column names a datatype, so Longbow types it.
+                for f in &ds.fields {
+                    assert!(
+                        f.datatype.is_some(),
+                        "{name}/{}/{}: no datatype",
+                        ep.name,
+                        f.name
+                    );
+                }
+                // The primary key columns are declared.
+                for key in &ep.primary_key {
+                    assert!(
+                        ds.field(key).is_some(),
+                        "{name}/{}: key {key} not declared",
+                        ep.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_malformed_declaration_fails_naming_the_endpoint() {
+        let pipeline = pipeline_from_lua(
+            r#"
+            return function(p)
+                p.output(output.parquet({ path = "/data/out" }))
+                p.endpoint("stars", {
+                    path = "/stars",
+                    columns = { when = { datatype = "Timestamp" } },
+                })
+            end
+            "#,
+        );
+        let err = build_dry_run_result(&pipeline).unwrap_err();
+        assert!(err.0.contains("endpoint `stars`"), "{err}");
+        assert!(err.0.contains("Timestamp"), "{err}");
+
+        let bad_key = pipeline_from_lua(
+            r#"
+            return function(p)
+                p.output(output.parquet({ path = "/data/out" }))
+                p.endpoint("stars", {
+                    path = "/stars",
+                    primary_key = { "ghost" },
+                    columns = { id = { datatype = "Integer" } },
+                })
+            end
+            "#,
+        );
+        let key_err = build_dry_run_result(&bad_key).unwrap_err();
+        assert!(key_err.0.contains("not well formed"), "{key_err}");
+        assert!(key_err.0.contains("ghost"), "{key_err}");
     }
 
     #[test]
@@ -537,7 +782,7 @@ mod tests {
             endpoints: vec![],
             duration_ms: 0,
         };
-        let result = map_run_result(run_result, String::new(), true);
+        let result = map_run_result(run_result, String::new(), true).unwrap();
         assert!(result.dry_run);
         assert!(result.endpoints.is_empty());
     }

@@ -1,8 +1,12 @@
 --[[ @longbow
 name = "bluesky"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bluesky posts and profile snapshots (authenticated via App Password)"
 ]]
+
+-- Each endpoint declares its columns next to the `map` that produces them
+-- (see the github connector for the shape). Timestamps are declared so they
+-- land as real timestamps; a missing value is nil, not "", so it is null.
 
 -- Flatten a Bluesky `postView` into a Parquet row. `is_repost` is supplied by
 -- the caller (true for feedViewPost items whose reason is reasonRepost).
@@ -58,14 +62,22 @@ local function flatten_post(pv, is_repost)
         external_uri = rec.embed.external.uri
     end
 
+    -- The record key is the last path segment of the AT-URI; with the
+    -- author's handle it makes the bsky.app permalink. A handle can be
+    -- missing on hydrated views, in which case the DID serves in the URL.
+    local rkey = pv.uri and pv.uri:match("/([^/]+)$") or ""
+    local handle = author.handle
+    if handle == nil or handle == "" then handle = author.did or "" end
+
     return {
         uri = pv.uri,
         cid = pv.cid,
         author_did = author.did or "",
-        author_handle = author.handle or "",
+        author_handle = handle,
+        rkey = rkey,
         text = rec.text or "",
-        created_at = rec.createdAt or "",
-        indexed_at = pv.indexedAt or "",
+        created_at = rec.createdAt,
+        indexed_at = pv.indexedAt,
         lang = lang,
         reply_count = pv.replyCount or 0,
         repost_count = pv.repostCount or 0,
@@ -165,6 +177,35 @@ return function(p)
                 since = cursors.posts,          -- server-side filter on sortAt (≈ indexedAt)
                 limit = 100,
             },
+        description = "Posts, one row each; `is_repost` marks reposts in the author feed",
+        columns = {
+            uri = { datatype = "String", description = "AT-URI of the post; the row key", brightflow = { role = "ignored" } },
+            cid = { datatype = "String", brightflow = { role = "ignored" } },
+            author_did = { datatype = "String", brightflow = { role = "ignored" } },
+            author_handle = { datatype = "String", description = "Author handle, or DID when the handle is unknown", brightflow = { role = "dimension", label = "Author" } },
+            rkey = { datatype = "String", brightflow = { role = "ignored" } },
+            text = { datatype = "String", brightflow = { role = "ignored" } },
+            created_at = { datatype = "DateTimeTz", description = "When the post was written", brightflow = { role = "time", label = "Posted" } },
+            indexed_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            lang = { datatype = "String", description = "First declared language code", brightflow = { role = "dimension", label = "Language" } },
+            reply_count = { datatype = "Integer", brightflow = { role = "measure", label = "Replies" } },
+            repost_count = { datatype = "Integer", brightflow = { role = "measure", label = "Reposts" } },
+            like_count = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true, label = "Likes" } },
+            quote_count = { datatype = "Integer", brightflow = { role = "measure", label = "Quotes" } },
+            is_reply = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            is_repost = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            hashtags = { datatype = "String", description = "Comma-joined hashtags", brightflow = { role = "ignored" } },
+            mentions = { datatype = "String", description = "Comma-joined mentioned DIDs", brightflow = { role = "ignored" } },
+            external_uri = { datatype = "String", brightflow = { role = "ignored" } },
+            has_image = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            has_video = { datatype = "Boolean", brightflow = { role = "dimension" } },
+        },
+        brightflow = {
+            display_name = "Posts",
+            time_granularity = "week",
+            comparison_periods = 4,
+            doc = { id = "uri", body = "text", timestamp = "created_at", url_template = "https://bsky.app/profile/{author_handle}/post/{rkey}" },
+        },
             map = function(post)
                 return flatten_post(post, false)
             end,
@@ -187,6 +228,35 @@ return function(p)
                 filter = "posts_with_replies",          -- default; includes reposts
                 limit = 100,
             },
+        description = "Posts, one row each; `is_repost` marks reposts in the author feed",
+        columns = {
+            uri = { datatype = "String", description = "AT-URI of the post; the row key", brightflow = { role = "ignored" } },
+            cid = { datatype = "String", brightflow = { role = "ignored" } },
+            author_did = { datatype = "String", brightflow = { role = "ignored" } },
+            author_handle = { datatype = "String", description = "Author handle, or DID when the handle is unknown", brightflow = { role = "dimension", label = "Author" } },
+            rkey = { datatype = "String", brightflow = { role = "ignored" } },
+            text = { datatype = "String", brightflow = { role = "ignored" } },
+            created_at = { datatype = "DateTimeTz", description = "When the post was written", brightflow = { role = "time", label = "Posted" } },
+            indexed_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+            lang = { datatype = "String", description = "First declared language code", brightflow = { role = "dimension", label = "Language" } },
+            reply_count = { datatype = "Integer", brightflow = { role = "measure", label = "Replies" } },
+            repost_count = { datatype = "Integer", brightflow = { role = "measure", label = "Reposts" } },
+            like_count = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true, label = "Likes" } },
+            quote_count = { datatype = "Integer", brightflow = { role = "measure", label = "Quotes" } },
+            is_reply = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            is_repost = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            hashtags = { datatype = "String", description = "Comma-joined hashtags", brightflow = { role = "ignored" } },
+            mentions = { datatype = "String", description = "Comma-joined mentioned DIDs", brightflow = { role = "ignored" } },
+            external_uri = { datatype = "String", brightflow = { role = "ignored" } },
+            has_image = { datatype = "Boolean", brightflow = { role = "dimension" } },
+            has_video = { datatype = "Boolean", brightflow = { role = "dimension" } },
+        },
+        brightflow = {
+            display_name = "Posts",
+            time_granularity = "week",
+            comparison_periods = 4,
+            doc = { id = "uri", body = "text", timestamp = "created_at", url_template = "https://bsky.app/profile/{author_handle}/post/{rkey}" },
+        },
             map = function(item)
                 local post = item.post
                 local is_repost = item.reason
@@ -202,6 +272,25 @@ return function(p)
             headers = appview_headers,
             primary_key = {"did", "snapshot_date"},
             params = { actor = actor },
+            description = "One row per UTC day with the account's follower and post counts",
+            columns = {
+                did = { datatype = "String", brightflow = { role = "ignored" } },
+                handle = { datatype = "String", brightflow = { role = "dimension" } },
+                display_name = { datatype = "String", brightflow = { role = "ignored" } },
+                description = { datatype = "String", brightflow = { role = "ignored" } },
+                followers_count = { datatype = "Integer", brightflow = { role = "measure", is_kpi = true, label = "Followers" } },
+                follows_count = { datatype = "Integer", brightflow = { role = "measure", label = "Following" } },
+                posts_count = { datatype = "Integer", brightflow = { role = "measure", label = "Posts" } },
+                indexed_at = { datatype = "DateTimeTz", is_time = false, brightflow = { role = "ignored" } },
+                created_at = { datatype = "DateTimeTz", is_time = false, description = "When the account was created", brightflow = { role = "ignored" } },
+                snapshot_date = { datatype = "Date", description = "The UTC day this snapshot was taken", brightflow = { role = "time", label = "Day" } },
+            },
+            brightflow = {
+                display_name = "Profile snapshots",
+                time_granularity = "day",
+                comparison_periods = 7,
+                doc = { id = "did", title = "handle", body = "description", timestamp = "snapshot_date" },
+            },
             map = function(r)
                 return {
                     did = r.did,
@@ -211,8 +300,8 @@ return function(p)
                     followers_count = r.followersCount or 0,
                     follows_count = r.followsCount or 0,
                     posts_count = r.postsCount or 0,
-                    indexed_at = r.indexedAt or "",
-                    created_at = r.createdAt or "",
+                    indexed_at = r.indexedAt,
+                    created_at = r.createdAt,
                     snapshot_date = os.date("!%Y-%m-%d"),
                 }
             end,
