@@ -866,6 +866,18 @@ pub async fn materialize(
         if df.height() == 0 {
             return Ok(());
         }
+        let frame_columns: Vec<String> = df
+            .get_column_names()
+            .into_iter()
+            .map(ToString::to_string)
+            .collect();
+        let display = crate::enrichment::display::DocDisplay::resolve(
+            store,
+            source_id,
+            table_name,
+            &frame_columns,
+        )
+        .await?;
         let inputs = prepare_run_inputs(&df, run)?;
         let mut hashes: Vec<String> = inputs.iter().map(|r| r.hash.clone()).collect();
         hashes.sort_unstable();
@@ -906,7 +918,7 @@ pub async fn materialize(
                 names, resolver, ..
             } => {
                 let cells = extract_cells(&values_per_row, resolver);
-                let id_column = parent_id_column(&out_df, table_name);
+                let id_column = parent_id_column(&out_df, &display.id_column);
                 let rows = mentions::build_mention_rows(&id_column, &cells, names)
                     .map_err(AppError::Polars)?;
                 child = Some((rows, mentions::unresolved_surfaces(&cells)));
@@ -943,6 +955,7 @@ pub async fn materialize(
                             source_id,
                             table_name,
                             &child_name,
+                            &display.id_column,
                             function_name,
                         )
                         .await;
@@ -1002,10 +1015,9 @@ fn extract_cells(
         .collect()
 }
 
-/// The parent's id column, per the table's display convention; a row index
+/// The parent's id column, per the table's resolved display; a row index
 /// when the table has none, so the child table still keys to something.
-fn parent_id_column(df: &DataFrame, table_name: &str) -> Column {
-    let id_column = crate::enrichment::display::DocDisplay::for_table(table_name).id_column;
+fn parent_id_column(df: &DataFrame, id_column: &str) -> Column {
     df.column(id_column).map_or_else(
         |_| {
             let idx: Vec<i64> = (0..df.height())
@@ -1088,9 +1100,9 @@ async fn declare_child_semantics(
     source_id: &str,
     parent: &str,
     child: &str,
+    parent_id: &str,
     function_name: &str,
 ) {
-    let parent_id = crate::enrichment::display::DocDisplay::for_table(parent).id_column;
     let dim = |name: &str, description: &str| {
         Field::column(name)
             .with_description(description)

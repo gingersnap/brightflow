@@ -293,6 +293,25 @@ async fn execute_sync(
             .map_err(|e| format!("Connector execution failed: {e}"))?
     };
 
+    // 6. The store learns which connector, at which version, makes this
+    // source's tables. Registered before the merges so a table's producer is
+    // known from its first row.
+    let source_id = brightflow_core::connector_source_id(connector_id);
+    let provenance = result.provenance();
+    if let Err(e) = store
+        .db()
+        .register_source_with_producer(
+            &source_id,
+            "connector",
+            &config.name,
+            None,
+            Some(&provenance),
+        )
+        .await
+    {
+        warn!("could not register source '{source_id}': {e}");
+    }
+
     // 7. For each endpoint result, merge parquet into table
     let output_dir = PathBuf::from(&result.output_path);
     let mut total_rows: i64 = 0;
@@ -306,8 +325,6 @@ async fn execute_sync(
             );
             continue;
         }
-
-        let source_id = brightflow_core::connector_source_id(connector_id);
 
         let metrics = store
             .merge_parquet(
@@ -326,6 +343,12 @@ async fn execute_sync(
             "Merged {}: {} inserted, {} updated",
             ep_result.name, metrics.rows_inserted, metrics.rows_updated
         );
+        if ep_result.type_errors > 0 {
+            warn!(
+                "{}: {} values did not fit their declared type and were written as null",
+                ep_result.name, ep_result.type_errors
+            );
+        }
 
         // 8. Update sync_state with cursor from result
         db.upsert_sync_state(
@@ -345,6 +368,11 @@ async fn execute_sync(
         }
     }
 
+    // 8b. Data before meaning: with every table merged, the connector's
+    // declarations land under its provenance. A declaration problem is
+    // logged, never a failed sync — the rows are already in.
+    apply_declarations(store, &source_id, &result).await;
+
     // 9. Update sync run as completed
     let endpoint_names: Vec<&str> = result.endpoints.iter().map(|e| e.name.as_str()).collect();
     let endpoints_json = serde_json::to_string(&endpoint_names)?;
@@ -354,6 +382,52 @@ async fn execute_sync(
     info!("Sync run {run_id} completed: {total_rows} total rows");
 
     Ok(())
+}
+
+/// Apply every endpoint's declaration under the run's provenance. Two
+/// passes: a relationship whose target table is declared by a later endpoint
+/// is skipped the first time round and picked up on the second, so endpoint
+/// order in the connector never matters.
+async fn apply_declarations(
+    store: &ParquetStore,
+    source_id: &str,
+    result: &brightflow_connect::ConnectorResult,
+) {
+    let provenance = result.provenance();
+    let mut retry: Vec<&brightflow_connect::EndpointResultInfo> = Vec::new();
+    for ep in &result.endpoints {
+        let Some(decl) = &ep.declaration else {
+            continue;
+        };
+        match store.apply_declaration(source_id, decl, &provenance).await {
+            Ok(applied) => {
+                if !applied.columns_without_data.is_empty() {
+                    info!(
+                        "{}: declared columns not in the data: {}",
+                        ep.name,
+                        applied.columns_without_data.join(", ")
+                    );
+                }
+                if !applied.relationships_skipped.is_empty() {
+                    retry.push(ep);
+                }
+            },
+            Err(e) => warn!("{}: declaration not applied: {e}", ep.name),
+        }
+    }
+    for ep in retry {
+        if let Some(decl) = &ep.declaration {
+            match store.apply_declaration(source_id, decl, &provenance).await {
+                Ok(applied) if !applied.relationships_skipped.is_empty() => info!(
+                    "{}: relationships to tables this source does not have: {}",
+                    ep.name,
+                    applied.relationships_skipped.join(", ")
+                ),
+                Ok(_) => {},
+                Err(e) => warn!("{}: declaration not applied: {e}", ep.name),
+            }
+        }
+    }
 }
 
 /// Whether a job is due, given the raw `started_at` of its most recent run.
@@ -538,5 +612,106 @@ mod tests {
     fn inflight_key_prefers_job_id() {
         assert_eq!(inflight_key(Some("job-1"), "github"), "job-1");
         assert_eq!(inflight_key(None, "github"), "github");
+    }
+
+    /// Declarations land under the connector's provenance after the merges,
+    /// and a relationship to a table declared by a later endpoint is picked
+    /// up on the second pass.
+    #[tokio::test]
+    async fn apply_declarations_files_rows_under_the_connector_and_retries_relationships() {
+        use brightflow_connect::{ConnectorResult, EndpointResultInfo};
+        use brightflow_types::{Layer, TableDeclaration};
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let store = ParquetStore::new(
+            tmp.path().join("store"),
+            &format!(
+                "sqlite:{}?mode=rwc",
+                tmp.path().join("litehouse.db").display()
+            ),
+        )
+        .await
+        .expect("store");
+        // The tables exist (the merges ran); only their meaning is missing.
+        store
+            .db()
+            .create_table("issue_comments", "connector:c1")
+            .await
+            .expect("table");
+        store
+            .db()
+            .create_table("issues", "connector:c1")
+            .await
+            .expect("table");
+
+        let endpoint = |name: &str, json: serde_json::Value| EndpointResultInfo {
+            name: name.to_string(),
+            parquet_path: None,
+            rows: 0,
+            primary_key: vec!["id".to_string()],
+            cursor_field: None,
+            cursor_value: None,
+            duration_ms: 0,
+            declaration: Some(
+                TableDeclaration::from_endpoint_json(name, name, vec!["id".into()], None, json)
+                    .expect("declaration"),
+            ),
+            type_errors: 0,
+        };
+        let result = ConnectorResult {
+            meta: brightflow_connect::longbow::pipeline::ConnectorMeta {
+                name: Some("github".to_string()),
+                version: Some("0.3.0".to_string()),
+                description: None,
+                source_hash: "abc".to_string(),
+            },
+            // Comments come first: their relationship targets a table whose
+            // declaration has not been applied yet.
+            endpoints: vec![
+                endpoint(
+                    "issue_comments",
+                    serde_json::json!({
+                        "columns": {"id": {"datatype": "Integer"}, "issue_number": {"datatype": "Integer"}},
+                        "relationships": {"issue": {"to": "issues", "from_columns": ["issue_number"], "to_columns": ["number"]}}
+                    }),
+                ),
+                endpoint(
+                    "issues",
+                    serde_json::json!({
+                        "columns": {"id": {"datatype": "Integer"}, "number": {"datatype": "Integer"},
+                                    "created_at": {"datatype": "DateTimeTz", "brightflow": {"role": "time"}}}
+                    }),
+                ),
+            ],
+            dry_run: false,
+            output_path: String::new(),
+            duration_ms: 0,
+        };
+
+        apply_declarations(&store, "connector:c1", &result).await;
+
+        let issues = store
+            .resolved_columns("connector:c1", "issues")
+            .await
+            .expect("resolved");
+        let created = issues
+            .iter()
+            .find(|c| c.name == "created_at")
+            .expect("created_at");
+        assert_eq!(
+            created.resolved_by.as_ref().map(|p| (
+                p.layer,
+                p.producer.as_str(),
+                p.version.as_deref()
+            )),
+            Some((Layer::Declared, "connector:github", Some("0.3.0")))
+        );
+        let rels = store
+            .db()
+            .relationships_for_source("connector:c1")
+            .await
+            .expect("rels");
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].relationship.to, "issues");
     }
 }

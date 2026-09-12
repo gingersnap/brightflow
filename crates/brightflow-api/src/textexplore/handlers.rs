@@ -9,7 +9,7 @@ use axum::{
     Json,
 };
 
-use crate::enrichment::display::{bluesky_post_url, DocDisplay, UrlSpec};
+use crate::enrichment::display::DocDisplay;
 use crate::shared::{derive_title, read_i64_at, read_id_at, read_string_at, AppResult};
 use crate::state::AppState;
 use crate::textexplore::highlight::{contains_term, highlight_runs, snippet_runs};
@@ -40,7 +40,14 @@ pub async fn search(
     let whole_word = body.whole_word;
 
     let index = get_or_build(&state, &source_id, &table).await?;
-    let display = DocDisplay::for_table(&table);
+    let store = state.require_store()?;
+    let columns: Vec<String> = index
+        .df
+        .get_column_names()
+        .into_iter()
+        .map(ToString::to_string)
+        .collect();
+    let display = DocDisplay::resolve(store, &source_id, &table, &columns).await?;
 
     let response = tokio::task::spawn_blocking(move || {
         build_response(&index, &display, &includes, &excludes, whole_word, limit)
@@ -161,29 +168,25 @@ fn render_row(
     whole_word: bool,
 ) -> TextExploreRow {
     let df = &index.df;
-    let id = read_id_at(df, display.id_column, row).unwrap_or_default();
+    let id = read_id_at(df, &display.id_column, row).unwrap_or_default();
     let number = display
         .number_column
+        .as_deref()
         .and_then(|col| read_i64_at(df, col, row));
     let raw_body = display
         .body_column
+        .as_deref()
         .and_then(|col| read_string_at(df, col, row));
-    let title_text = match display.title_column {
+    let title_text = match display.title_column.as_deref() {
         Some(col) => read_string_at(df, col, row),
         None => raw_body.as_deref().map(derive_title),
     }
     .unwrap_or_default();
-    let html_url = match display.url {
-        UrlSpec::Column(col) => read_string_at(df, col, row),
-        UrlSpec::BlueskyPost => {
-            let uri = read_string_at(df, "uri", row).unwrap_or_default();
-            let handle = read_string_at(df, "author_handle", row);
-            let did = read_string_at(df, "author_did", row);
-            bluesky_post_url(&uri, handle.as_deref(), did.as_deref())
-        },
-        UrlSpec::None => None,
-    };
-    let timestamp = read_string_at(df, display.timestamp_column, row);
+    let html_url = display.url_at(df, row);
+    let timestamp = display
+        .timestamp_column
+        .as_deref()
+        .and_then(|col| read_string_at(df, col, row));
 
     TextExploreRow {
         id,
@@ -228,6 +231,12 @@ mod tests {
         build_index(df, 1, vec!["title".to_string(), "body".to_string()])
     }
 
+    fn issues_display() -> DocDisplay {
+        DocDisplay::infer(
+            &["id", "number", "title", "body", "html_url", "created_at"].map(String::from),
+        )
+    }
+
     fn terms(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| (*s).to_string()).collect()
     }
@@ -235,7 +244,7 @@ mod tests {
     #[test]
     fn include_and_exclude_filtering() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         let resp = build_response(&index, &display, &terms(&["panic"]), &[], false, 50);
         assert_eq!(resp.total_rows, 4);
         assert_eq!(resp.matched_rows, 2);
@@ -260,7 +269,7 @@ mod tests {
     #[test]
     fn exclude_only_is_valid() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         let resp = build_response(&index, &display, &[], &terms(&["panic"]), false, 50);
         assert_eq!(resp.matched_rows, 2);
     }
@@ -268,7 +277,7 @@ mod tests {
     #[test]
     fn empty_filter_returns_corpus_widget() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         let resp = build_response(&index, &display, &[], &[], false, 50);
         assert_eq!(resp.matched_rows, 4);
         assert!(resp.distinctive.is_empty());
@@ -281,7 +290,7 @@ mod tests {
     #[test]
     fn limit_pages_results() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         let resp = build_response(&index, &display, &[], &[], false, 2);
         assert_eq!(resp.matched_rows, 4);
         assert_eq!(resp.rows.len(), 2);
@@ -290,7 +299,7 @@ mod tests {
     #[test]
     fn filter_terms_dropped_from_widget() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         let resp = build_response(&index, &display, &terms(&["parser"]), &[], false, 50);
         assert!(resp.common.iter().all(|w| w.term != "parser"));
         assert!(resp.distinctive.iter().all(|w| w.term != "parser"));
@@ -299,7 +308,7 @@ mod tests {
     #[test]
     fn phrase_terms_match_across_words() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         let resp = build_response(&index, &display, &terms(&["dark mode"]), &[], false, 50);
         assert_eq!(resp.matched_rows, 1);
         assert_eq!(resp.rows[0].id, "2");
@@ -308,7 +317,7 @@ mod tests {
     #[test]
     fn whole_word_filter() {
         let index = issues_index();
-        let display = DocDisplay::for_table("issues");
+        let display = issues_display();
         // "read" is a substring of "readme" only.
         let substring = build_response(&index, &display, &terms(&["read"]), &[], false, 50);
         assert_eq!(substring.matched_rows, 1);

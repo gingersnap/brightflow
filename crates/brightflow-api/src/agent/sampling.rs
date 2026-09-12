@@ -73,8 +73,13 @@ pub async fn summary_sample(
 ) -> AppResult<Vec<SummaryDoc>> {
     let store = state.require_store()?;
     let df = store.read_table(source_id, table).await?;
-    let display = DocDisplay::for_table(table);
-    let ids = read_row_ids(&df, display.id_column).ok_or_else(|| {
+    let columns: Vec<String> = df
+        .get_column_names()
+        .into_iter()
+        .map(ToString::to_string)
+        .collect();
+    let display = DocDisplay::resolve(store, source_id, table, &columns).await?;
+    let ids = read_row_ids(&df, &display.id_column).ok_or_else(|| {
         AppError::BadRequest(format!(
             "table '{table}' has no readable id column '{}'",
             display.id_column
