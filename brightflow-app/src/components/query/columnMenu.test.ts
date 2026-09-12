@@ -27,7 +27,6 @@ function handlers(): ColumnMenuHandlers {
 function col(extra: Partial<ColumnInfo> = {}): ColumnInfo {
   return {
     datatype: 'Float',
-    dtype: 'f64',
     isKpi: null,
     label: null,
     name: 'revenue',

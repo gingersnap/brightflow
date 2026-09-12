@@ -363,36 +363,6 @@ fn anyvalue_to_json(val: &AnyValue<'_>) -> serde_json::Value {
     }
 }
 
-/// Convert Polars DataType to the display string the frontend keys off.
-///
-/// Unsigned ints deliberately map to "int": consumers (column pickers, the
-/// query builder) only distinguish int/float/string/time-ish, and a separate
-/// "uint" would silently fall out of every numeric check.
-pub(crate) fn dtype_to_string(dtype: &DataType) -> String {
-    match dtype {
-        DataType::Boolean => "bool",
-        DataType::Int8
-        | DataType::Int16
-        | DataType::Int32
-        | DataType::Int64
-        | DataType::UInt8
-        | DataType::UInt16
-        | DataType::UInt32
-        | DataType::UInt64 => "int",
-        DataType::Float32 | DataType::Float64 => "float",
-        DataType::String => "string",
-        DataType::Datetime(_, _) => "datetime",
-        DataType::Date => "date",
-        DataType::Time => "time",
-        DataType::Duration(_) => "duration",
-        DataType::Null => "null",
-        DataType::List(_) => "list",
-        DataType::Struct(_) => "struct",
-        _ => "unknown",
-    }
-    .to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,16 +610,5 @@ mod tests {
         .unwrap();
         assert_eq!(out.height(), 4, "three months plus the null bucket");
         assert_eq!(names(&out), vec!["ts__month", "sum"]);
-    }
-
-    #[test]
-    fn unsigned_ints_read_as_int_for_the_frontend() {
-        assert_eq!(dtype_to_string(&DataType::UInt64), "int");
-        assert_eq!(dtype_to_string(&DataType::Int32), "int");
-        assert_eq!(dtype_to_string(&DataType::Float32), "float");
-        assert_eq!(
-            dtype_to_string(&DataType::Categorical(None, CategoricalOrdering::default())),
-            "unknown"
-        );
     }
 }

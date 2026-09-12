@@ -17,7 +17,7 @@ import { isTimeColumn, useDatasetStore } from './dataset';
 vi.mock('./ui', () => ({ useUiStore: () => ({ resetForNewDataset: (): void => {} }) }));
 
 function col(name: string, datatype: LogicalType, extra: Partial<ColumnInfo> = {}): ColumnInfo {
-  return { datatype, dtype: '', isKpi: null, label: null, name, role: null, ...extra };
+  return { datatype, isKpi: null, label: null, name, role: null, ...extra };
 }
 
 function load(columns: ColumnInfo[], timeGranularity?: LoadTableResponse['timeGranularity']) {

@@ -14,11 +14,6 @@ import type { Provenance } from "./Provenance";
  */
 export type ColumnInfo = { name: string, 
 /**
- * The engine's legacy type word (`int`, `float`, `string`, …).
- * Deprecated: read `datatype`. Removed once no client reads it.
- */
-dtype: string, 
-/**
  * The column's logical type: what a producer declared, else what the
  * physical type maps to.
  */

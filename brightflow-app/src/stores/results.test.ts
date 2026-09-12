@@ -11,7 +11,7 @@ import type { ColumnInfo } from '@/types';
 import { useResultsStore } from './results';
 
 const COLS: ColumnInfo[] = [
-  { datatype: 'Integer', dtype: 'i64', isKpi: null, label: null, name: 'amount', role: null },
+  { datatype: 'Integer', isKpi: null, label: null, name: 'amount', role: null },
 ];
 
 beforeEach(() => {

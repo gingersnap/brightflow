@@ -112,9 +112,6 @@ impl Dataset {
 #[serde(rename_all = "camelCase")]
 pub struct ColumnInfo {
     pub name: String,
-    /// The engine's legacy type word (`int`, `float`, `string`, …).
-    /// Deprecated: read `datatype`. Removed once no client reads it.
-    pub dtype: String,
     /// The column's logical type: what a producer declared, else what the
     /// physical type maps to.
     pub datatype: LogicalType,
@@ -149,7 +146,6 @@ impl ColumnInfo {
     pub fn plain(name: &str, dtype: &DataType) -> Self {
         Self {
             name: name.to_string(),
-            dtype: crate::analytics::executor::dtype_to_string(dtype),
             datatype: LogicalType::from_polars(dtype),
             role: None,
             is_kpi: None,
