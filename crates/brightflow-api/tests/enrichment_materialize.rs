@@ -147,10 +147,13 @@ async fn concurrent_materializations_on_one_table_both_land() {
     assert!(df.column("extract__status").is_ok());
 }
 
-/// Materialisation declares what its columns mean — but only where nobody
-/// has said anything yet: a label a person set survives a re-run.
+/// Materialisation declares what its columns mean as the function's own
+/// `declared`-layer rows. A person's edit above that layer survives a
+/// re-run, and the function's description still shows through beneath it.
 #[tokio::test]
 async fn materialize_declares_output_semantics_without_overwriting_edits() {
+    use brightflow_types::{ColumnRole, Layer};
+
     let ws = copy_template().unwrap();
     let state = state_with_table(&ws).await;
     let store = Arc::clone(state.store().unwrap());
@@ -167,13 +170,20 @@ async fn materialize_declares_output_semantics_without_overwriting_edits() {
         .await
         .unwrap();
 
-    let rows = store.db().get_column_semantics(&table.id).await.unwrap();
-    let find = |name: &str| rows.iter().find(|r| r.column_name == name).unwrap();
-    assert_eq!(find("summary").role, "ignored");
+    let resolved = store.resolved_columns(SOURCE, TABLE).await.unwrap();
+    let find = |name: &str| resolved.iter().find(|r| r.name == name).unwrap();
+    assert_eq!(find("summary").role, Some(ColumnRole::Ignored));
     assert_eq!(find("summary").label.as_deref(), Some("Summary"));
-    assert_eq!(find("category").role, "dimension");
+    assert_eq!(find("category").role, Some(ColumnRole::Dimension));
     assert!(find("sentiment").description.is_some());
-    assert_eq!(find("classify__status").role, "ignored");
+    assert_eq!(find("classify__status").role, Some(ColumnRole::Ignored));
+    assert_eq!(
+        find("category")
+            .resolved_by
+            .as_ref()
+            .map(|p| (p.layer, p.producer.as_str())),
+        Some((Layer::Declared, "enrichment:classify"))
+    );
 
     // The in-memory overrides Explore reads follow the rows.
     let live = state
@@ -185,28 +195,38 @@ async fn materialize_declares_output_semantics_without_overwriting_edits() {
         .iter()
         .any(|o| o.column_name == "category" && o.label.as_deref() == Some("Category")));
 
-    // A person renames the column; a second materialisation keeps the name.
-    store
-        .db()
-        .upsert_column_semantic(
-            &table.id,
-            "category",
-            "dimension",
-            false,
-            "neutral",
-            Some("Problem area"),
-            None,
-        )
-        .await
-        .unwrap();
+    // A person renames the column at the user layer; a second
+    // materialisation keeps the name and the function's description.
+    rename_category(&store, &table.id).await;
     materialize(&state, &store, SOURCE, TABLE, &id, "classify", &run)
         .await
         .unwrap();
-    let after_rerun = store.db().get_column_semantics(&table.id).await.unwrap();
-    let category = after_rerun
-        .iter()
-        .find(|r| r.column_name == "category")
-        .unwrap();
+    let after_rerun = store.resolved_columns(SOURCE, TABLE).await.unwrap();
+    let category = after_rerun.iter().find(|r| r.name == "category").unwrap();
     assert_eq!(category.label.as_deref(), Some("Problem area"));
-    assert_eq!(category.description, None);
+    assert!(category.description.is_some());
+    assert_eq!(
+        category.resolved_by.as_ref().map(|p| p.layer),
+        Some(Layer::User)
+    );
+}
+
+/// A person's rename of `category`, written at the user layer.
+async fn rename_category(store: &ParquetStore, table_id: &str) {
+    use brightflow_types::{ColumnOpinion, Layer, Provenance};
+    let mut edit = ColumnOpinion::empty(
+        "category",
+        Provenance {
+            layer: Layer::User,
+            producer: "user:1".to_string(),
+            version: None,
+            hash: None,
+        },
+    );
+    edit.ext.label = Some("Problem area".to_string());
+    store
+        .db()
+        .write_column_opinion(table_id, &edit)
+        .await
+        .unwrap();
 }

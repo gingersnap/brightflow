@@ -194,13 +194,40 @@ pub enum Action {
 ///
 /// What the semantic executors snapshot before a mutation and what their
 /// undo writes back; also the shape a first-time write is seeded from.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ColumnSemanticSnapshot {
-    pub role: ColumnRole,
-    pub is_kpi: bool,
-    pub polarity: Polarity,
+    #[serde(default)]
+    pub role: Option<ColumnRole>,
+    #[serde(default)]
+    pub is_kpi: Option<bool>,
+    #[serde(default)]
+    pub polarity: Option<Polarity>,
+    #[serde(default)]
     pub label: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
+}
+
+impl ColumnSemanticSnapshot {
+    /// The undoable fields of one opinion row.
+    pub fn from_opinion(o: &brightflow_types::ColumnOpinion) -> Self {
+        Self {
+            role: o.ext.role,
+            is_kpi: o.ext.is_kpi,
+            polarity: o.ext.polarity,
+            label: o.ext.label.clone(),
+            description: o.description.clone(),
+        }
+    }
+
+    /// Write the snapshot's fields onto an opinion row.
+    pub fn apply_to(&self, o: &mut brightflow_types::ColumnOpinion) {
+        o.ext.role = self.role;
+        o.ext.is_kpi = self.is_kpi;
+        o.ext.polarity = self.polarity;
+        o.ext.label.clone_from(&self.label);
+        o.description.clone_from(&self.description);
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, JsonSchema, PartialEq, Eq)]
@@ -464,14 +491,19 @@ pub enum UndoOp {
         column: String,
         polarity: String,
     },
-    /// Undo of set_column_role / label / description: put the whole previous
-    /// tuple back. One op for the three because each of them may touch more
-    /// than its own field (a role change can clear the KPI flag).
+    /// Undo of every column-semantic action: put the actor's opinion row
+    /// back as it was, or delete it when the action created it. Rows logged
+    /// before layers existed have no `provenance` and restore at the user
+    /// layer.
     RestoreColumnSemantic {
         source_id: String,
         table: String,
         column: String,
         snapshot: ColumnSemanticSnapshot,
+        #[serde(default)]
+        provenance: Option<brightflow_types::Provenance>,
+        #[serde(default = "default_true")]
+        existed: bool,
     },
     /// Undo of define/rename/redefine: put an entry's name and description
     /// back, or delete it outright when it did not exist before the action.
@@ -626,6 +658,10 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
 ];
+
+const fn default_true() -> bool {
+    true
+}
 
 #[cfg(test)]
 mod tests {

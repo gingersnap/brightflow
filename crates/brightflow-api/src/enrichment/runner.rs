@@ -36,8 +36,8 @@ use brightflow_engine::nlp::detect_language;
 use brightflow_llm::{
     chat_with_backoff, ChatClient, ChatMessage, ChatOptions, ChatOutcome, RetryPolicy, ToolDef,
 };
-use brightflow_store::ColumnSemanticRow;
 use brightflow_store::ParquetStore;
+use brightflow_types::{ColumnExt, Dataset, Field, Provenance, Relationship, TableDeclaration};
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -926,19 +926,27 @@ pub async fn materialize(
             .await
         {
             Ok(()) => {
-                declare_output_semantics(
-                    state,
-                    store,
-                    source_id,
-                    table_name,
-                    &table_row.id,
-                    function_name,
-                    run,
-                )
-                .await;
+                declare_output_semantics(state, store, source_id, table_name, function_name, run)
+                    .await;
                 if let Some((rows, unresolved)) = child {
                     let child_name = mentions::mentions_table_name(table_name);
                     write_child_table(store, source_id, &child_name, rows).await?;
+                    if store
+                        .db()
+                        .get_table(source_id, &child_name)
+                        .await?
+                        .is_some()
+                    {
+                        declare_child_semantics(
+                            state,
+                            store,
+                            source_id,
+                            table_name,
+                            &child_name,
+                            function_name,
+                        )
+                        .await;
+                    }
                     if let Err(e) = store
                         .db()
                         .sync_unresolved_subjects(
@@ -1009,46 +1017,47 @@ fn parent_id_column(df: &DataFrame, table_name: &str) -> Column {
     )
 }
 
-/// Declare the meaning of the columns this run just materialised: one
-/// `column_semantics` row per output column plus the `{fn}__status` column
-/// as `ignored`, inserted only where no row exists, then the in-memory
-/// overrides refreshed so Explore sees labels without a restart. Failure is
-/// logged, not returned — see the module header.
+/// Declare the meaning of the columns this run just materialised, as this
+/// function's own `declared`-layer rows: one per output column plus the
+/// `{fn}__status` column as `ignored`. A person's edit above that layer is
+/// untouched; a re-run replaces only these rows. Then the in-memory
+/// overrides are refreshed so Explore sees labels without a restart. Failure
+/// is logged, not returned — see the module header.
 async fn declare_output_semantics(
     state: &AppState,
     store: &ParquetStore,
     source_id: &str,
     table_name: &str,
-    table_id: &str,
     function_name: &str,
     run: &RunSpec,
 ) {
-    let row = |name: &str, role: ColumnRole, label: Option<&str>, description: Option<&str>| {
-        ColumnSemanticRow {
-            table_id: table_id.to_string(),
-            column_name: name.to_string(),
-            role: role.as_str().to_string(),
-            is_kpi: false,
-            polarity: "neutral".to_string(),
-            label: label.map(str::to_string),
-            description: description.map(str::to_string),
-            updated_at: String::new(),
+    let field = |name: &str, role: ColumnRole, label: Option<&str>, description: &str| {
+        let mut ext = ColumnExt::role(role);
+        if let Some(label) = label {
+            ext = ext.with_label(label);
         }
+        Field::column(name)
+            .with_description(description)
+            .with_brightflow(&ext)
     };
-    let mut rows: Vec<ColumnSemanticRow> = run
+    let mut dataset = Dataset::new(table_name, format!("{source_id}/{table_name}"));
+    dataset.fields = run
         .output_semantics()
         .iter()
-        .map(|s| row(s.name, s.role, Some(s.label), Some(s.description)))
+        .map(|s| field(s.name, s.role, Some(s.label), s.description))
         .collect();
-    rows.push(row(
+    dataset.fields.push(field(
         &format!("{function_name}__status"),
         ColumnRole::Ignored,
         None,
-        Some("Per-row outcome of the enrichment run; bookkeeping, not data."),
+        "Per-row outcome of the enrichment run; bookkeeping, not data.",
     ));
+    let decl = TableDeclaration {
+        dataset: Some(dataset),
+        ..TableDeclaration::new(table_name)
+    };
     match store
-        .db()
-        .insert_column_semantics_if_absent(table_id, &rows)
+        .apply_declaration(source_id, &decl, &enrichment_provenance(function_name))
         .await
     {
         Ok(_) => {
@@ -1060,6 +1069,88 @@ async fn declare_output_semantics(
             tracing::warn!(
                 "could not declare output semantics for '{source_id}/{table_name}': {e}"
             );
+        },
+    }
+}
+
+/// The layer and producer an enrichment function's declarations are filed
+/// under. Version-less on purpose: identity is the function, and the store
+/// replaces a producer's rows wholesale on every apply.
+fn enrichment_provenance(function_name: &str) -> Provenance {
+    Provenance::declared(format!("enrichment:{function_name}"))
+}
+
+/// Declare the mentions child table: what each of its columns means and
+/// the join back to the parent row. Applied after the child exists.
+async fn declare_child_semantics(
+    state: &AppState,
+    store: &ParquetStore,
+    source_id: &str,
+    parent: &str,
+    child: &str,
+    function_name: &str,
+) {
+    let parent_id = crate::enrichment::display::DocDisplay::for_table(parent).id_column;
+    let dim = |name: &str, description: &str| {
+        Field::column(name)
+            .with_description(description)
+            .with_brightflow(&ColumnExt::role(ColumnRole::Dimension))
+    };
+    let ignored =
+        |name: &str| Field::column(name).with_brightflow(&ColumnExt::role(ColumnRole::Ignored));
+    let mut dataset = Dataset::new(child, format!("{source_id}/{child}"));
+    dataset.description = Some(format!(
+        "One row per mention the extractor found in `{parent}`: a product, competitor, price, service or piece of feedback."
+    ));
+    dataset.fields = vec![
+        Field::column(mentions::MENTION_COLUMNS[0])
+            .with_description("The parent row this mention was found in")
+            .with_brightflow(&ColumnExt::role(ColumnRole::Entity)),
+        ignored("mention_idx"),
+        dim("type", "product, competitor, pricing, service or feedback"),
+        ignored("subject_id"),
+        dim(
+            "subject",
+            "The resolved vocabulary entry the mention is about",
+        ),
+        ignored("subject_surface"),
+        ignored("feedback_summary"),
+        dim(
+            "feedback_category",
+            "The feedback vocabulary entry, when the mention is feedback",
+        ),
+        dim(
+            "incidental",
+            "Whether the mention is beside the point of the ticket",
+        ),
+        dim(
+            "sentiment",
+            "positive, neutral, negative or mixed, for this mention",
+        ),
+        Field::column("confidence")
+            .with_description("The model's confidence in the mention, 0 to 1")
+            .with_brightflow(&ColumnExt::role(ColumnRole::Measure)),
+    ];
+    let decl = TableDeclaration {
+        dataset: Some(dataset),
+        relationships: vec![Relationship {
+            name: format!("{child}_parent"),
+            from: child.to_string(),
+            to: parent.to_string(),
+            from_columns: vec![mentions::MENTION_COLUMNS[0].to_string()],
+            to_columns: vec![parent_id.to_string()],
+            ai_context: None,
+            custom_extensions: Vec::new(),
+        }],
+        ..TableDeclaration::new(child)
+    };
+    match store
+        .apply_declaration(source_id, &decl, &enrichment_provenance(function_name))
+        .await
+    {
+        Ok(_) => state.refresh_overrides_from_store(source_id, child).await,
+        Err(e) => {
+            tracing::warn!("could not declare child semantics for '{source_id}/{child}': {e}");
         },
     }
 }

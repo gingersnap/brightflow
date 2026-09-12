@@ -35,6 +35,19 @@ impl Actor {
         }
     }
 
+    /// The actor a logged row was written by, for executing that row.
+    fn from_log_row(row: &brightflow_store::ActionLogRow) -> Self {
+        match row.agent_run_id {
+            Some(run_id) if row.actor_type == "agent" => Self::Agent {
+                run_id,
+                auto_apply: true,
+            },
+            _ => Self::Human {
+                user_id: row.user_id.clone().unwrap_or_default(),
+            },
+        }
+    }
+
     fn agent_run_id(&self) -> Option<i64> {
         match self {
             Self::Human { .. } => None,
@@ -176,7 +189,8 @@ async fn execute_and_record_quiet(
     let store = std::sync::Arc::clone(store);
     let log_id = row.id;
     let now = chrono::Utc::now().timestamp();
-    match execute_action(state, &action).await {
+    let actor = Actor::from_log_row(&row);
+    match execute_action(state, &actor, &action).await {
         Ok((result, undo)) => {
             let undo_json = undo
                 .map(|u| serde_json::to_string(&u))
@@ -520,6 +534,7 @@ pub async fn undo(
 /// their undos, and a new `Action` variant fails to compile until it has one.
 pub async fn execute_action(
     state: &AppState,
+    actor: &Actor,
     action: &Action,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
     use crate::actions::exec::{insights, semantics, taxonomy};
@@ -548,26 +563,38 @@ pub async fn execute_action(
             scope: Scope { source_id, table },
             column,
             is_kpi,
-        } => semantics::execute_set_kpi(state, source_id, table, column, *is_kpi).await,
+        } => semantics::execute_set_kpi(state, actor, source_id, table, column, *is_kpi).await,
         Action::SetColumnPolarity {
             scope: Scope { source_id, table },
             column,
             polarity,
         } => {
-            semantics::execute_set_column_polarity(state, source_id, table, column, *polarity).await
+            semantics::execute_set_column_polarity(
+                state, actor, source_id, table, column, *polarity,
+            )
+            .await
         },
         Action::SetColumnRole {
             scope: Scope { source_id, table },
             column,
             role,
-        } => semantics::execute_set_column_role(state, source_id, table, column, *role).await,
+        } => {
+            semantics::execute_set_column_role(state, actor, source_id, table, column, *role).await
+        },
         Action::SetColumnLabel {
             scope: Scope { source_id, table },
             column,
             label,
         } => {
-            semantics::execute_set_column_label(state, source_id, table, column, label.as_deref())
-                .await
+            semantics::execute_set_column_label(
+                state,
+                actor,
+                source_id,
+                table,
+                column,
+                label.as_deref(),
+            )
+            .await
         },
         Action::SetColumnDescription {
             scope: Scope { source_id, table },
@@ -576,6 +603,7 @@ pub async fn execute_action(
         } => {
             semantics::execute_set_column_description(
                 state,
+                actor,
                 source_id,
                 table,
                 column,
@@ -703,8 +731,19 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             table,
             column,
             snapshot,
+            provenance,
+            existed,
         } => {
-            semantics::undo_restore_column_semantic(state, source_id, table, column, snapshot).await
+            semantics::undo_restore_column_semantic(
+                state,
+                source_id,
+                table,
+                column,
+                snapshot,
+                provenance.as_ref(),
+                *existed,
+            )
+            .await
         },
         UndoOp::RestoreTaxonomyCategory {
             category_id,

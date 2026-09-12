@@ -8,6 +8,7 @@
 )]
 
 use polars::prelude::*;
+use std::sync::Arc;
 
 use brightflow_api::actions::types::{Action, ActionStatus, Scope};
 use brightflow_api::actions::{dispatch_action, Actor};
@@ -353,17 +354,17 @@ async fn vocabulary_actions_enforce_hierarchy_and_log_the_user() {
     );
 }
 
-/// Column semantics through the public bus: a first-time write starts from
-/// the detected role rather than a fixed default, a role change clears the
-/// KPI flag, a blank label clears, and undo restores the whole tuple.
+/// Column semantics through the public bus: every action writes one row at
+/// the actor's own layer, a role change clears the KPI flag, a blank label
+/// clears, and undo puts the actor's row back — or removes it when the
+/// action created it.
 #[tokio::test]
-async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo() {
-    use brightflow_engine::data::config::ColumnRole;
+async fn column_semantic_actions_write_the_actors_layer_and_round_trip_through_undo() {
+    use brightflow_types::{ColumnRole, Layer};
 
     let ws = copy_template().unwrap();
     let state = state_with_planted_table(&ws).await;
     let store = state.store().unwrap();
-    let table = store.db().get_table(SOURCE, TABLE).await.unwrap().unwrap();
     let scope = || Scope {
         source_id: SOURCE.to_string(),
         table: TABLE.to_string(),
@@ -371,12 +372,21 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
     let human = || Actor::Human {
         user_id: "user-1".to_string(),
     };
-    let semantic = |rows: Vec<brightflow_store::ColumnSemanticRow>, column: &str| {
-        rows.into_iter().find(|r| r.column_name == column).unwrap()
+    let resolved = |column: &str| {
+        let handle = Arc::clone(store);
+        let wanted = column.to_string();
+        async move {
+            handle
+                .resolved_columns(SOURCE, TABLE)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|c| c.name == wanted)
+                .unwrap()
+        }
     };
 
-    // Flagging an unseeded string column as KPI must not declare it a measure:
-    // the detector calls `title` a dimension, so that is the seeded role.
+    // Flagging a column as KPI states only that: the row carries no role.
     dispatch_action(
         &state,
         Action::SetKpi {
@@ -389,12 +399,18 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
     )
     .await
     .unwrap();
-    let rows1 = store.db().get_column_semantics(&table.id).await.unwrap();
-    let title = semantic(rows1, "title");
-    assert_eq!(title.role, "dimension");
-    assert!(title.is_kpi);
+    let title = resolved("title").await;
+    assert_eq!(title.is_kpi, Some(true));
+    assert_eq!(title.role, None);
+    assert_eq!(
+        title
+            .resolved_by
+            .as_ref()
+            .map(|p| (p.layer, p.producer.as_str())),
+        Some((Layer::User, "user:user-1"))
+    );
 
-    // A numeric high-cardinality column seeds as a measure and takes a label.
+    // A label is trimmed.
     dispatch_action(
         &state,
         Action::SetColumnLabel {
@@ -407,13 +423,10 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
     )
     .await
     .unwrap();
-    let rows2 = store.db().get_column_semantics(&table.id).await.unwrap();
-    let id = semantic(rows2, "id");
-    assert_eq!(id.role, "measure");
-    assert_eq!(id.label.as_deref(), Some("Ticket id"));
+    assert_eq!(resolved("id").await.label.as_deref(), Some("Ticket id"));
 
     // Moving the KPI column off `measure` clears the flag; the log row
-    // carries a full-tuple undo.
+    // carries the previous row for undo.
     let response = dispatch_action(
         &state,
         Action::SetColumnRole {
@@ -427,10 +440,10 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
     .await
     .unwrap();
     assert!(matches!(response.status, ActionStatus::Applied));
-    let rows3 = store.db().get_column_semantics(&table.id).await.unwrap();
-    let title_after_role = semantic(rows3, "title");
-    assert_eq!(title_after_role.role, "entity");
-    assert!(!title_after_role.is_kpi, "a non-measure cannot stay a KPI");
+    assert_eq!(response.result["kpiCleared"], true);
+    let title_after_role = resolved("title").await;
+    assert_eq!(title_after_role.role, Some(ColumnRole::Entity));
+    assert_eq!(title_after_role.is_kpi, Some(false));
 
     // The in-memory override the engine and load_table read follows the row.
     let key = format!("{SOURCE}|{TABLE}");
@@ -440,9 +453,9 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
         .map(|v| v.value().clone())
         .unwrap_or_default();
     let live_title = live.iter().find(|o| o.column_name == "title").unwrap();
-    assert_eq!(live_title.role, ColumnRole::Entity);
+    assert_eq!(live_title.role, Some(ColumnRole::Entity));
 
-    // Undo puts role AND the KPI flag back.
+    // Undo puts the row back as it was: KPI set, no role.
     let row = store
         .db()
         .list_actions(10)
@@ -458,10 +471,32 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
     .await
     .unwrap();
     assert!(matches!(undone.0.status, ActionStatus::Undone));
-    let rows4 = store.db().get_column_semantics(&table.id).await.unwrap();
-    let title_after_undo = semantic(rows4, "title");
-    assert_eq!(title_after_undo.role, "dimension");
-    assert!(title_after_undo.is_kpi);
+    let title_after_undo = resolved("title").await;
+    assert_eq!(title_after_undo.role, None);
+    assert_eq!(title_after_undo.is_kpi, Some(true));
+
+    // Undoing the action that created a row removes the row.
+    let label_row = store
+        .db()
+        .list_actions(10)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.request_id == "req-label-id")
+        .unwrap();
+    let undone_label = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(label_row.id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(undone_label.0.status, ActionStatus::Undone));
+    assert!(store
+        .resolved_columns(SOURCE, TABLE)
+        .await
+        .unwrap()
+        .iter()
+        .all(|c| c.name != "id"));
 
     // A blank description clears rather than storing whitespace.
     dispatch_action(
@@ -476,6 +511,5 @@ async fn column_semantic_actions_seed_from_detection_and_round_trip_through_undo
     )
     .await
     .unwrap();
-    let rows5 = store.db().get_column_semantics(&table.id).await.unwrap();
-    assert_eq!(semantic(rows5, "id").description, None);
+    assert_eq!(resolved("id").await.description, None);
 }

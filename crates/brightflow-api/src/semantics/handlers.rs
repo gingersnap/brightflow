@@ -1,137 +1,114 @@
-//! HTTP handlers for per-table column semantics and analysis settings.
+//! HTTP handlers for per-table semantics: the resolved view, the layers
+//! behind it, and the table's own settings.
 //!
-//! Auth posture: session-authenticated. Writes here change how every subsequent
-//! analysis interprets a table, so they update both SQLite and the in-memory
-//! override caches on `AppState` — a write that only hit the database would take
-//! effect at the next restart and look like it had been ignored.
+//! Auth posture: session-authenticated. Column writes go through the action
+//! bus, not here. The one write left on this router, table settings, files
+//! a `user`-layer opinion and refreshes the in-memory override so the next
+//! analysis run sees it without a restart; it is the last semantic write not
+//! on the bus and is slated to move there.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
+use brightflow_types::{Layer, Provenance, TableOpinion};
 
 use crate::semantics::types::{
-    ColumnSemantic, ColumnSemanticsResponse, TableSettings, TableSettingsResponse,
+    ColumnSemanticsResponse, LayersQuery, SemanticModelResponse, TableSettings,
+    TableSettingsResponse,
 };
-use crate::shared::{AppError, AppResult};
-use crate::state::{cache_key, AppState};
+use crate::shared::AppResult;
+use crate::state::{cache_key, settings_from_resolved, AppState};
 
-use brightflow_engine::data::config::TimeGranularity;
-use brightflow_engine::data::merge::TableSettingsOverride;
-
-/// GET /api/sources/{source_id}/tables/{name}/semantics — list all overrides for a table
+/// GET /api/sources/{source_id}/tables/{name}/semantics — the resolved
+/// columns; `?layers=1` also returns every opinion row behind them.
 pub async fn list_semantics(
     State(state): State<AppState>,
     Path((source_id, name)): Path<(String, String)>,
+    Query(query): Query<LayersQuery>,
 ) -> AppResult<Json<ColumnSemanticsResponse>> {
     let store = state.require_store()?;
-
-    let rows = store.get_column_semantics(&source_id, &name).await?;
-
-    let columns: Vec<ColumnSemantic> = rows
-        .into_iter()
-        .map(|r| ColumnSemantic {
-            column_name: r.column_name,
-            role: r.role,
-            is_kpi: r.is_kpi,
-            polarity: r.polarity,
-            label: r.label,
-            description: r.description,
-        })
-        .collect();
-
+    let columns = store.resolved_columns(&source_id, &name).await?;
+    let layers = if query.layers.unwrap_or(false) {
+        Some(store.column_opinions(&source_id, &name).await?)
+    } else {
+        None
+    };
     Ok(Json(ColumnSemanticsResponse {
         table_name: name,
         columns,
+        layers,
     }))
 }
-/// GET /api/sources/{source_id}/tables/{name}/settings — get table analysis settings
+
+/// GET /api/sources/{source_id}/tables/{name}/settings — the resolved table
+/// settings.
 pub async fn get_table_settings(
     State(state): State<AppState>,
     Path((source_id, name)): Path<(String, String)>,
 ) -> AppResult<Json<TableSettingsResponse>> {
     let store = state.require_store()?;
-
-    let row = store.get_table_settings(&source_id, &name).await?;
-
-    let settings = row.map_or_else(
-        || TableSettings {
-            display_name: None,
-            description: None,
-            time_granularity: None,
-            comparison_periods: None,
-        },
-        |r| TableSettings {
-            display_name: r.display_name,
-            description: r.description,
-            time_granularity: r.time_granularity,
-            comparison_periods: r.comparison_periods,
-        },
-    );
-
+    let resolved = store.resolved_table(&source_id, &name).await?;
     Ok(Json(TableSettingsResponse {
         table_name: name,
-        settings,
+        settings: resolved.map(TableSettings::from).unwrap_or_default(),
     }))
 }
 
-/// PUT /api/sources/{source_id}/tables/{name}/settings — upsert settings
+/// PUT /api/sources/{source_id}/tables/{name}/settings — write the caller's
+/// table settings as one `user`-layer opinion.
 pub async fn upsert_table_settings(
     State(state): State<AppState>,
     Path((source_id, name)): Path<(String, String)>,
     Json(req): Json<TableSettings>,
 ) -> AppResult<Json<TableSettingsResponse>> {
     let store = state.require_store()?;
+    let table = store
+        .db()
+        .get_table(&source_id, &name)
+        .await?
+        .ok_or_else(|| crate::shared::AppError::NotFound(format!("Table '{name}' not found")))?;
+    let opinion = TableOpinion {
+        provenance: Provenance {
+            layer: Layer::User,
+            producer: "user:settings".to_string(),
+            version: None,
+            hash: None,
+        },
+        updated_at: 0,
+        display_name: req.display_name,
+        description: req.description,
+        time_granularity: req.time_granularity,
+        comparison_periods: req.comparison_periods,
+        doc: None,
+        ai_context: None,
+        custom_extensions: Vec::new(),
+    };
+    store.db().write_table_opinion(&table.id, &opinion).await?;
 
-    // Validate time_granularity if provided
-    if let Some(ref g) = req.time_granularity {
-        if TimeGranularity::parse(g).is_none() {
-            let allowed: Vec<&str> = TimeGranularity::ALL
-                .iter()
-                .map(|allowed| allowed.as_str())
-                .collect();
-            return Err(AppError::BadRequest(format!(
-                "Invalid time_granularity '{g}'. Must be one of: {}",
-                allowed.join(", ")
-            )));
-        }
-    }
-
-    let row = store
-        .upsert_table_settings(
-            &source_id,
-            &name,
-            req.display_name.as_deref(),
-            req.description.as_deref(),
-            req.time_granularity.as_deref(),
-            req.comparison_periods,
-        )
-        .await?;
-
-    // Update the in-memory settings so the next analysis run sees them.
+    let resolved = store.db().resolved_table(&table.id).await?;
     let key = cache_key(&source_id, &name);
-    let time_granularity = req
-        .time_granularity
-        .as_deref()
-        .and_then(TimeGranularity::parse);
-    let comparison_periods = req.comparison_periods.and_then(|p| usize::try_from(p).ok());
-    if time_granularity.is_some() || comparison_periods.is_some() {
-        state.settings_overrides.insert(
-            key,
-            TableSettingsOverride {
-                time_granularity,
-                comparison_periods,
-            },
-        );
+    match resolved.as_ref().and_then(settings_from_resolved) {
+        Some(settings) => {
+            state.settings_overrides.insert(key, settings);
+        },
+        None => {
+            state.settings_overrides.remove(&key);
+        },
     }
-
     Ok(Json(TableSettingsResponse {
         table_name: name,
-        settings: TableSettings {
-            display_name: row.display_name,
-            description: row.description,
-            time_granularity: row.time_granularity,
-            comparison_periods: row.comparison_periods,
-        },
+        settings: resolved.map(TableSettings::from).unwrap_or_default(),
     }))
+}
+
+/// GET /api/sources/{source_id}/semantic-model — the source as one Ossie
+/// document, from the resolved views. Generated, never stored.
+pub async fn export_semantic_model(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+) -> AppResult<Json<SemanticModelResponse>> {
+    let store = state.require_store()?;
+    let model = store.export_model(&source_id).await?;
+    Ok(Json(SemanticModelResponse::new(model)))
 }

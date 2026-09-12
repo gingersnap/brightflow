@@ -1,132 +1,154 @@
-//! Column-semantics actions: role, KPI flag, polarity, label and description,
-//! with field-preserving upserts so a mutation never wipes the fields it did
-//! not touch.
+//! Column-semantics actions: role, KPI flag, polarity, label and description.
 //!
-//! A column with no `column_semantics` row is seeded from what the engine's
-//! detector says about it before the mutation applies, so flagging a string
-//! column as KPI cannot silently declare it a measure.
+//! Every action writes one *opinion row* at the actor's own layer — `user`
+//! for a person, `agent` for an LLM run — touching only the field it names.
+//! The store resolves that row over whatever a connector, an enrichment
+//! function or the detector declared beneath it, so a person who renames a
+//! column keeps the connector's description, and a connector re-declaring on
+//! the next sync cannot overwrite the rename. There is no seeding from
+//! detection here any more: the detector is a producer with its own layer.
+//!
+//! Undo puts the actor's row back exactly as it was before the action — or
+//! deletes it, when the action created it. Rows logged before layers existed
+//! carry the old full-tuple snapshot and restore it at the user layer.
 
-use brightflow_engine::data::config::{ColumnRole, Polarity};
-use brightflow_engine::data::merge::ColumnOverride;
-use brightflow_engine::data::schema::{detect_schema, DataSchema};
-use polars::prelude::*;
+use brightflow_types::{ColumnOpinion, ColumnRole, Layer, Polarity, Provenance, ResolvedColumn};
 use serde_json::json;
 
 use super::table_ctx;
 use crate::actions::types::{ColumnSemanticSnapshot, UndoOp};
-use crate::shared::{AppError, AppResult};
-use crate::state::cache_key;
+use crate::actions::Actor;
+use crate::shared::AppResult;
 use crate::state::AppState;
 
-/// Rows the role detector samples when a column has no stored semantics yet.
-/// Enough for the detector's cardinality rule to settle; small enough that a
-/// first-time write on a large table stays interactive.
-const DETECT_SAMPLE_ROWS: u32 = 10_000;
+/// The producer a legacy (pre-layer) undo row restores into.
+const LEGACY_PRODUCER: &str = "user:legacy";
+
+/// The layer and producer an actor's edits are filed under.
+pub(crate) fn provenance_for_actor(actor: &Actor) -> Provenance {
+    match actor {
+        Actor::Human { user_id } => Provenance {
+            layer: Layer::User,
+            producer: format!("user:{user_id}"),
+            version: None,
+            hash: None,
+        },
+        Actor::Agent { run_id, .. } => Provenance {
+            layer: Layer::Agent,
+            producer: format!("agent:{run_id}"),
+            version: None,
+            hash: None,
+        },
+    }
+}
 
 pub(crate) async fn execute_set_kpi(
     state: &AppState,
+    actor: &Actor,
     source_id: &str,
     table: &str,
     column: &str,
     is_kpi: bool,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.is_kpi = is_kpi;
+    let (previous, prov) = mutate_opinion(state, actor, source_id, table, column, |o| {
+        o.ext.is_kpi = Some(is_kpi);
     })
     .await?;
     Ok((
         json!({ "column": column, "isKpi": is_kpi }),
-        Some(UndoOp::RestoreKpi {
-            source_id: source_id.to_string(),
-            table: table.to_string(),
-            column: column.to_string(),
-            role: previous.role.as_str().to_string(),
-            is_kpi: previous.is_kpi,
-        }),
+        Some(restore_op(source_id, table, column, previous, prov)),
     ))
 }
 
 pub(crate) async fn execute_set_column_polarity(
     state: &AppState,
+    actor: &Actor,
     source_id: &str,
     table: &str,
     column: &str,
     polarity: Polarity,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.polarity = polarity;
+    let (previous, prov) = mutate_opinion(state, actor, source_id, table, column, |o| {
+        o.ext.polarity = Some(polarity);
     })
     .await?;
     Ok((
         json!({ "column": column, "polarity": polarity.as_str() }),
-        Some(UndoOp::RestorePolarity {
-            source_id: source_id.to_string(),
-            table: table.to_string(),
-            column: column.to_string(),
-            polarity: previous.polarity.as_str().to_string(),
-        }),
+        Some(restore_op(source_id, table, column, previous, prov)),
     ))
 }
 
-/// A KPI is a measure by definition, so moving a KPI column to any other
-/// role clears the flag rather than leaving a KPI dimension behind.
+/// A KPI is a measure by definition, so moving a column to any other role
+/// also says "not a KPI" at this layer, rather than leaving a lower layer's
+/// KPI flag showing through on a dimension.
 pub(crate) async fn execute_set_column_role(
     state: &AppState,
+    actor: &Actor,
     source_id: &str,
     table: &str,
     column: &str,
     role: ColumnRole,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.role = role;
+    let was_kpi = resolved_column(state, source_id, table, column)
+        .await?
+        .and_then(|c| c.is_kpi)
+        .unwrap_or(false);
+    let (previous, prov) = mutate_opinion(state, actor, source_id, table, column, |o| {
+        o.ext.role = Some(role);
         if role != ColumnRole::Measure {
-            s.is_kpi = false;
+            o.ext.is_kpi = Some(false);
         }
     })
     .await?;
-    let kpi_cleared = previous.is_kpi && role != ColumnRole::Measure;
+    let kpi_cleared = was_kpi && role != ColumnRole::Measure;
     Ok((
         json!({ "column": column, "role": role.as_str(), "kpiCleared": kpi_cleared }),
-        Some(restore_op(source_id, table, column, previous)),
+        Some(restore_op(source_id, table, column, previous, prov)),
     ))
 }
 
 pub(crate) async fn execute_set_column_label(
     state: &AppState,
+    actor: &Actor,
     source_id: &str,
     table: &str,
     column: &str,
     label: Option<&str>,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    let label = non_blank(label);
-    let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.label.clone_from(&label);
+    // A blank label is stored as "" — "cleared" — so it also hides a lower
+    // layer's label; `None` would mean "no opinion" and let it through.
+    let stored = trimmed(label);
+    let (previous, prov) = mutate_opinion(state, actor, source_id, table, column, |o| {
+        o.ext.label = Some(stored.clone());
     })
     .await?;
     Ok((
-        json!({ "column": column, "label": label }),
-        Some(restore_op(source_id, table, column, previous)),
+        json!({ "column": column, "label": non_blank(label) }),
+        Some(restore_op(source_id, table, column, previous, prov)),
     ))
 }
 
 pub(crate) async fn execute_set_column_description(
     state: &AppState,
+    actor: &Actor,
     source_id: &str,
     table: &str,
     column: &str,
     description: Option<&str>,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    let description = non_blank(description);
-    let previous = upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.description.clone_from(&description);
+    let stored = trimmed(description);
+    let (previous, prov) = mutate_opinion(state, actor, source_id, table, column, |o| {
+        o.description = Some(stored.clone());
     })
     .await?;
     Ok((
-        json!({ "column": column, "description": description }),
-        Some(restore_op(source_id, table, column, previous)),
+        json!({ "column": column, "description": non_blank(description) }),
+        Some(restore_op(source_id, table, column, previous, prov)),
     ))
 }
 
+/// Legacy undo (rows logged before layers): restore role and KPI at the
+/// user layer.
 pub(crate) async fn undo_restore_kpi(
     state: &AppState,
     source_id: &str,
@@ -135,16 +157,15 @@ pub(crate) async fn undo_restore_kpi(
     role: &str,
     is_kpi: bool,
 ) -> AppResult<()> {
-    let role = ColumnRole::parse(role)
-        .ok_or_else(|| AppError::BadRequest(format!("unknown stored role '{role}'")))?;
-    upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.role = role;
-        s.is_kpi = is_kpi;
+    let role = ColumnRole::parse(role);
+    write_opinion(state, &legacy_provenance(), source_id, table, column, |o| {
+        o.ext.role = role;
+        o.ext.is_kpi = Some(is_kpi);
     })
-    .await?;
-    Ok(())
+    .await
 }
 
+/// Legacy undo: restore polarity at the user layer.
 pub(crate) async fn undo_restore_polarity(
     state: &AppState,
     source_id: &str,
@@ -152,44 +173,75 @@ pub(crate) async fn undo_restore_polarity(
     column: &str,
     polarity: &str,
 ) -> AppResult<()> {
-    let polarity = Polarity::parse(polarity)
-        .ok_or_else(|| AppError::BadRequest(format!("unknown stored polarity '{polarity}'")))?;
-    upsert_semantic_preserving(state, source_id, table, column, |s| {
-        s.polarity = polarity;
+    let polarity = Polarity::parse(polarity);
+    write_opinion(state, &legacy_provenance(), source_id, table, column, |o| {
+        o.ext.polarity = polarity;
     })
-    .await?;
-    Ok(())
+    .await
 }
 
+/// Put the actor's row back as it was: rewrite it from the snapshot, or
+/// delete it when the action created it.
 pub(crate) async fn undo_restore_column_semantic(
     state: &AppState,
     source_id: &str,
     table: &str,
     column: &str,
     snapshot: &ColumnSemanticSnapshot,
+    provenance: Option<&Provenance>,
+    existed: bool,
 ) -> AppResult<()> {
-    upsert_semantic_preserving(state, source_id, table, column, |s| {
-        *s = snapshot.clone();
-    })
-    .await?;
+    let prov = provenance.cloned().unwrap_or_else(legacy_provenance);
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    if existed {
+        let mut opinion = ColumnOpinion::empty(column, prov);
+        snapshot.apply_to(&mut opinion);
+        store.db().write_column_opinion(&table_id, &opinion).await?;
+    } else {
+        store
+            .db()
+            .delete_column_opinion(&table_id, column, &prov)
+            .await?;
+    }
+    state.refresh_overrides_from_store(source_id, table).await;
     Ok(())
+}
+
+fn legacy_provenance() -> Provenance {
+    Provenance {
+        layer: Layer::User,
+        producer: LEGACY_PRODUCER.to_string(),
+        version: None,
+        hash: None,
+    }
 }
 
 fn restore_op(
     source_id: &str,
     table: &str,
     column: &str,
-    snapshot: ColumnSemanticSnapshot,
+    previous: Option<ColumnOpinion>,
+    prov: Provenance,
 ) -> UndoOp {
     UndoOp::RestoreColumnSemantic {
         source_id: source_id.to_string(),
         table: table.to_string(),
         column: column.to_string(),
-        snapshot,
+        snapshot: previous
+            .as_ref()
+            .map(ColumnSemanticSnapshot::from_opinion)
+            .unwrap_or_default(),
+        provenance: Some(prov),
+        existed: previous.is_some(),
     }
 }
 
-/// Trim free text; blank means "clear".
+/// Trim free text; blank becomes the empty string.
+fn trimmed(value: Option<&str>) -> String {
+    value.map(str::trim).unwrap_or_default().to_string()
+}
+
+/// Trim free text; blank means "none" in the response.
 fn non_blank(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -197,179 +249,113 @@ fn non_blank(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Mutate one column's semantics while PRESERVING every field the mutation
-/// does not touch, then refresh the in-memory override so the next analysis
-/// run and the next `load_table` see the change without a restart.
-///
-/// A column with no row yet starts from the detected snapshot, not from a
-/// fixed default. Every semantic execute and undo comes through here.
-///
-/// Returns the PREVIOUS snapshot for undo capture.
-async fn upsert_semantic_preserving(
+async fn resolved_column(
     state: &AppState,
     source_id: &str,
     table: &str,
     column: &str,
-    mutate: impl FnOnce(&mut ColumnSemanticSnapshot),
-) -> AppResult<ColumnSemanticSnapshot> {
-    let (store, table_id) = table_ctx(state, source_id, table).await?;
-    let semantics = store.db().get_column_semantics(&table_id).await?;
-    let stored = semantics.iter().find(|r| r.column_name == column);
-    let previous = match stored {
-        Some(r) => ColumnSemanticSnapshot {
-            role: ColumnRole::parse(&r.role)
-                .ok_or_else(|| AppError::Internal(format!("unknown stored role '{}'", r.role)))?,
-            is_kpi: r.is_kpi,
-            polarity: Polarity::parse(&r.polarity).unwrap_or_default(),
-            label: r.label.clone(),
-            description: r.description.clone(),
-        },
-        None => ColumnSemanticSnapshot {
-            role: detected_role(&store, source_id, table, column).await?,
-            is_kpi: false,
-            polarity: Polarity::Neutral,
-            label: None,
-            description: None,
-        },
-    };
-    let mut next = previous.clone();
-    mutate(&mut next);
-    store
-        .db()
-        .upsert_column_semantic(
-            &table_id,
-            column,
-            next.role.as_str(),
-            next.is_kpi,
-            next.polarity.as_str(),
-            next.label.as_deref(),
-            next.description.as_deref(),
-        )
-        .await?;
-
-    state.set_column_override(
-        &cache_key(source_id, table),
-        ColumnOverride {
-            column_name: column.to_string(),
-            role: next.role,
-            is_kpi: next.is_kpi,
-            polarity: next.polarity,
-            label: next.label.clone(),
-            description: next.description.clone(),
-        },
-    );
-    Ok(previous)
+) -> AppResult<Option<ResolvedColumn>> {
+    let store = state.require_store()?;
+    Ok(store
+        .resolved_columns(source_id, table)
+        .await?
+        .into_iter()
+        .find(|c| c.name == column))
 }
 
-/// What the engine's detector would call this column, from a sample of the
-/// table. The column must exist in the table's schema.
-async fn detected_role(
-    store: &brightflow_store::ParquetStore,
+/// Mutate the actor's opinion row for one column, creating it if absent,
+/// then refresh the in-memory overrides so the next analysis run and the
+/// next `load_table` see the change. Returns the row as it was before (for
+/// undo) and the provenance it was written under.
+async fn mutate_opinion(
+    state: &AppState,
+    actor: &Actor,
     source_id: &str,
     table: &str,
     column: &str,
-) -> AppResult<ColumnRole> {
-    let files = store.get_table_parquet_paths(source_id, table).await?;
-    let column = column.to_string();
-    tokio::task::spawn_blocking(move || {
-        let df = LazyFrame::scan_parquet_files(files.into(), ScanArgsParquet::default())?
-            .limit(DETECT_SAMPLE_ROWS)
-            .collect()?;
-        let dtype = df
-            .column(&column)
-            .map_err(|_| AppError::NotFound(format!("column '{column}' not in table")))?
-            .dtype()
-            .clone();
-        let schema = detect_schema(&df).map_err(|e| AppError::Internal(e.to_string()))?;
-        Ok(role_from_detected(&schema, &column, &dtype))
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("role detection task failed: {e}")))?
+    mutate: impl FnOnce(&mut ColumnOpinion),
+) -> AppResult<(Option<ColumnOpinion>, Provenance)> {
+    let prov = provenance_for_actor(actor);
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    let previous = store.db().column_opinion(&table_id, column, &prov).await?;
+    let mut next = previous
+        .clone()
+        .unwrap_or_else(|| ColumnOpinion::empty(column, prov.clone()));
+    mutate(&mut next);
+    store.db().write_column_opinion(&table_id, &next).await?;
+    state.refresh_overrides_from_store(source_id, table).await;
+    Ok((previous, prov))
 }
 
-/// Map the detector's column lists back to one column's role. The detector
-/// records a name-based time guess in `time_column` separately from the
-/// dtype-based `time_columns`; both count as `Time` here. Columns the
-/// detector left out of every list fall back on dtype.
-fn role_from_detected(schema: &DataSchema, column: &str, dtype: &DataType) -> ColumnRole {
-    let is = |names: &[String]| names.iter().any(|n| n == column);
-    if schema.time_column.as_deref() == Some(column) || is(&schema.time_columns) {
-        ColumnRole::Time
-    } else if is(&schema.measure_columns) {
-        ColumnRole::Measure
-    } else if is(&schema.dimension_columns) {
-        ColumnRole::Dimension
-    } else if dtype.is_primitive_numeric() {
-        ColumnRole::Measure
-    } else if dtype.is_temporal() {
-        ColumnRole::Time
-    } else {
-        ColumnRole::Dimension
-    }
+async fn write_opinion(
+    state: &AppState,
+    prov: &Provenance,
+    source_id: &str,
+    table: &str,
+    column: &str,
+    mutate: impl FnOnce(&mut ColumnOpinion),
+) -> AppResult<()> {
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    let mut next = store
+        .db()
+        .column_opinion(&table_id, column, prov)
+        .await?
+        .unwrap_or_else(|| ColumnOpinion::empty(column, prov.clone()));
+    mutate(&mut next);
+    store.db().write_column_opinion(&table_id, &next).await?;
+    state.refresh_overrides_from_store(source_id, table).await;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn schema(measures: &[&str], dims: &[&str], times: &[&str], time: Option<&str>) -> DataSchema {
-        let v = |xs: &[&str]| xs.iter().map(|s| (*s).to_string()).collect();
-        DataSchema {
-            measure_columns: v(measures),
-            kpi_columns: Vec::new(),
-            dimension_columns: v(dims),
-            time_columns: v(times),
-            time_column: time.map(str::to_string),
-            time_granularity: brightflow_engine::data::config::TimeGranularity::default(),
-            polarity: std::collections::HashMap::default(),
-        }
+    #[test]
+    fn actors_map_to_their_own_layer() {
+        let human = provenance_for_actor(&Actor::Human {
+            user_id: "u1".into(),
+        });
+        assert_eq!(human.layer, Layer::User);
+        assert_eq!(human.producer, "user:u1");
+        let agent = provenance_for_actor(&Actor::Agent {
+            run_id: 7,
+            auto_apply: true,
+        });
+        assert_eq!(agent.layer, Layer::Agent);
+        assert_eq!(agent.producer, "agent:7");
     }
 
     #[test]
-    fn detected_role_follows_the_detector_lists() {
-        let s = schema(
-            &["revenue"],
-            &["region", "order_date"],
-            &[],
-            Some("order_date"),
-        );
-        assert_eq!(
-            role_from_detected(&s, "revenue", &DataType::Float64),
-            ColumnRole::Measure
-        );
-        assert_eq!(
-            role_from_detected(&s, "region", &DataType::String),
-            ColumnRole::Dimension
-        );
-        // A string column the detector guessed as the time axis by name is
-        // Time, even though the detector also lists it as a dimension.
-        assert_eq!(
-            role_from_detected(&s, "order_date", &DataType::String),
-            ColumnRole::Time
-        );
-    }
-
-    #[test]
-    fn detected_role_falls_back_on_dtype_for_unlisted_columns() {
-        let s = schema(&[], &[], &[], None);
-        assert_eq!(
-            role_from_detected(&s, "flag", &DataType::Boolean),
-            ColumnRole::Dimension
-        );
-        assert_eq!(
-            role_from_detected(&s, "n", &DataType::Int64),
-            ColumnRole::Measure
-        );
-        assert_eq!(
-            role_from_detected(&s, "when", &DataType::Date),
-            ColumnRole::Time
-        );
-    }
-
-    #[test]
-    fn non_blank_trims_and_clears() {
+    fn trimming_and_blank_handling() {
+        assert_eq!(trimmed(Some("  Revenue ")), "Revenue");
+        assert_eq!(trimmed(Some("   ")), "");
+        assert_eq!(trimmed(None), "");
         assert_eq!(non_blank(Some("  Revenue ")), Some("Revenue".to_string()));
         assert_eq!(non_blank(Some("   ")), None);
-        assert_eq!(non_blank(None), None);
+    }
+
+    #[test]
+    fn restore_op_records_whether_the_row_existed() {
+        let prov = provenance_for_actor(&Actor::Human {
+            user_id: "u1".into(),
+        });
+        let created = restore_op("s", "t", "c", None, prov.clone());
+        assert!(matches!(
+            created,
+            UndoOp::RestoreColumnSemantic { existed: false, .. }
+        ));
+        let mut row = ColumnOpinion::empty("c", prov.clone());
+        row.ext.label = Some("L".into());
+        let edited = restore_op("s", "t", "c", Some(row), prov);
+        match edited {
+            UndoOp::RestoreColumnSemantic {
+                existed, snapshot, ..
+            } => {
+                assert!(existed);
+                assert_eq!(snapshot.label.as_deref(), Some("L"));
+            },
+            _ => panic!("wrong op"),
+        }
     }
 }

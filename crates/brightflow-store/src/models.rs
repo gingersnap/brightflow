@@ -3,9 +3,11 @@
 //! These are rusqlite row mappings, not domain types: they stay stringly-typed
 //! (status/role/polarity as TEXT) so the schema in migrations is the single
 //! source of truth and a migration cannot silently disagree with an enum here.
-//! Parsing into richer types happens at the call sites that need it. The
-//! `impl_from_row!` blocks at the bottom are what make the 1:1 mirroring
-//! load-bearing: each field is read from the column of the same name.
+//! The semantic rows convert to and from the contract crate's types in
+//! `db::semantics`, the one place a stored string becomes an enum; everything
+//! else parses at the call site that needs it. The `impl_from_row!` blocks at
+//! the bottom are what make the 1:1 mirroring load-bearing: each field is
+//! read from the column of the same name.
 
 use serde::{Deserialize, Serialize};
 
@@ -55,28 +57,89 @@ pub struct FileColumnStatRow {
     pub null_count: Option<i64>,
 }
 
-/// Column-level semantic override (user-defined role for insights analysis)
+/// One layer's opinion about one column: a row of `column_semantics`, keyed
+/// by (table, column, layer, producer). Every semantic field is nullable —
+/// NULL is "no opinion at this layer".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnSemanticRow {
     pub table_id: String,
     pub column_name: String,
-    pub role: String,
-    pub is_kpi: bool,
+    /// 'detected' | 'declared' | 'agent' | 'user'
+    pub layer: String,
+    pub producer: String,
+    pub producer_version: Option<String>,
+    pub producer_hash: Option<String>,
+    /// One of the ten logical types, as spelled by `LogicalType::as_str`.
+    pub datatype: Option<String>,
+    pub is_time: Option<bool>,
+    /// 'measure' | 'dimension' | 'time' | 'entity' | 'ignored'
+    pub role: Option<String>,
+    pub is_kpi: Option<bool>,
     /// 'higher_is_better' | 'lower_is_better' | 'neutral'
-    pub polarity: String,
+    pub polarity: Option<String>,
     pub label: Option<String>,
     pub description: Option<String>,
+    pub ai_context_json: Option<String>,
+    pub extensions_json: Option<String>,
     pub updated_at: String,
 }
 
-/// Table-level analysis settings override
+/// One layer's opinion about a table: a row of `table_semantics`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TableAnalysisSettingsRow {
+pub struct TableSemanticsRow {
     pub table_id: String,
+    pub layer: String,
+    pub producer: String,
+    pub producer_version: Option<String>,
+    pub producer_hash: Option<String>,
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub time_granularity: Option<String>,
-    pub comparison_periods: Option<i32>,
+    pub comparison_periods: Option<i64>,
+    pub doc_json: Option<String>,
+    pub ai_context_json: Option<String>,
+    pub extensions_json: Option<String>,
+    pub updated_at: String,
+}
+
+/// One many-to-one relationship between two tables of a source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelationshipRow {
+    pub id: i64,
+    pub source_id: String,
+    pub name: String,
+    pub from_table_id: String,
+    pub to_table_id: String,
+    /// JSON array of column names.
+    pub from_columns_json: String,
+    pub to_columns_json: String,
+    pub layer: String,
+    pub producer: String,
+    pub producer_version: Option<String>,
+    pub ai_context_json: Option<String>,
+    pub extensions_json: Option<String>,
+    pub updated_at: String,
+}
+
+/// One named metric over one table. `expr_json` is the structured
+/// `MetricExpr`; `sql` is its rendered ANSI form, kept for export only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricRow {
+    pub id: i64,
+    pub table_id: String,
+    pub name: String,
+    pub expr_json: String,
+    pub sql: String,
+    pub datatype: Option<String>,
+    pub description: Option<String>,
+    pub is_kpi: Option<bool>,
+    pub polarity: Option<String>,
+    pub format: Option<String>,
+    pub layer: String,
+    pub producer: String,
+    pub producer_version: Option<String>,
+    pub ai_context_json: Option<String>,
+    pub extensions_json: Option<String>,
     pub updated_at: String,
 }
 
@@ -207,7 +270,8 @@ pub struct UnresolvedSubjectRow {
     pub mapped_to: Option<i64>,
 }
 
-/// One registered connector-less source.
+/// One registered source: an upload, a connector, or a web site. The
+/// producer columns say which connector at which version made its tables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceRow {
     pub source_id: String,
@@ -215,6 +279,9 @@ pub struct SourceRow {
     pub kind: String,
     pub name: String,
     pub meta_json: Option<String>,
+    pub producer: Option<String>,
+    pub producer_version: Option<String>,
+    pub producer_hash: Option<String>,
     pub created_at: String,
 }
 
@@ -328,19 +395,67 @@ crate::impl_from_row!(FileColumnStatRow {
 crate::impl_from_row!(ColumnSemanticRow {
     table_id,
     column_name,
+    layer,
+    producer,
+    producer_version,
+    producer_hash,
+    datatype,
+    is_time,
     role,
     is_kpi,
     polarity,
     label,
     description,
+    ai_context_json,
+    extensions_json,
     updated_at,
 });
-crate::impl_from_row!(TableAnalysisSettingsRow {
+crate::impl_from_row!(TableSemanticsRow {
     table_id,
+    layer,
+    producer,
+    producer_version,
+    producer_hash,
     display_name,
     description,
     time_granularity,
     comparison_periods,
+    doc_json,
+    ai_context_json,
+    extensions_json,
+    updated_at,
+});
+crate::impl_from_row!(RelationshipRow {
+    id,
+    source_id,
+    name,
+    from_table_id,
+    to_table_id,
+    from_columns_json,
+    to_columns_json,
+    layer,
+    producer,
+    producer_version,
+    ai_context_json,
+    extensions_json,
+    updated_at,
+});
+crate::impl_from_row!(MetricRow {
+    id,
+    table_id,
+    name,
+    expr_json,
+    sql,
+    datatype,
+    description,
+    is_kpi,
+    polarity,
+    format,
+    layer,
+    producer,
+    producer_version,
+    ai_context_json,
+    extensions_json,
     updated_at,
 });
 crate::impl_from_row!(InsightHistoryRow {
@@ -432,6 +547,9 @@ crate::impl_from_row!(SourceRow {
     kind,
     name,
     meta_json,
+    producer,
+    producer_version,
+    producer_hash,
     created_at
 });
 crate::impl_from_row!(EnrichmentFunctionRow {

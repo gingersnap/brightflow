@@ -43,14 +43,15 @@ pub(crate) mod table;
 pub use error::{StoreError, StoreResult};
 // Downstream crates use SQLite through these re-exports (including `rusqlite`
 // itself) so the whole workspace shares one driver version by construction.
+pub use db::{AppliedDeclaration, StoredMetric, StoredRelationship};
 pub use deadpool_sqlite::rusqlite;
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use migrate::{migrate, MigrateError, Migration};
 pub use models::{
     ActionLogRow, AgentRunRow, ColumnSemanticRow, EnrichmentCacheRow, EnrichmentFunctionRow,
     EnrichmentFunctionVersionRow, EnrichmentRunRow, FileColumnStatRow, InsightHistoryRow,
-    InsightRunRow, InsightStateRow, InsightSuppressionRow, SourceRow, TableAnalysisSettingsRow,
-    TableRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
+    InsightRunRow, InsightStateRow, InsightSuppressionRow, MetricRow, RelationshipRow, SourceRow,
+    TableRow, TableSemanticsRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
 };
 pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};
@@ -487,108 +488,55 @@ impl ParquetStore {
     }
 
     // =====================================================
-    // Column Semantics (high-level, resolves table name → id)
+    // Semantics (high-level, resolves table name → id)
     // =====================================================
 
-    /// Get column semantics overrides for a table by (source_id, name).
-    pub async fn get_column_semantics(
+    /// Apply a producer's declaration for `(source_id, table_name)`.
+    pub async fn apply_declaration(
         &self,
         source_id: &str,
-        table_name: &str,
-    ) -> StoreResult<Vec<ColumnSemanticRow>> {
-        let table_id = self.table_id(source_id, table_name).await?;
-        self.db.get_column_semantics(&table_id).await
+        decl: &brightflow_types::TableDeclaration,
+        prov: &brightflow_types::Provenance,
+    ) -> StoreResult<AppliedDeclaration> {
+        self.db.apply_declaration(source_id, decl, prov).await
     }
 
-    /// Upsert a single column semantic override by (source_id, table name).
-    #[allow(clippy::too_many_arguments)]
-    pub async fn upsert_column_semantic(
+    /// The resolved view of a table's columns.
+    pub async fn resolved_columns(
         &self,
         source_id: &str,
         table_name: &str,
-        column_name: &str,
-        role: &str,
-        is_kpi: bool,
-        polarity: &str,
-        label: Option<&str>,
-        description: Option<&str>,
-    ) -> StoreResult<ColumnSemanticRow> {
+    ) -> StoreResult<Vec<brightflow_types::ResolvedColumn>> {
         let table_id = self.table_id(source_id, table_name).await?;
-        self.db
-            .upsert_column_semantic(
-                &table_id,
-                column_name,
-                role,
-                is_kpi,
-                polarity,
-                label,
-                description,
-            )
-            .await
+        self.db.resolved_columns(&table_id).await
     }
 
-    /// Batch upsert column semantics for a table by (source_id, name).
-    pub async fn upsert_column_semantics_batch(
+    /// The resolved view of a table's own semantics.
+    pub async fn resolved_table(
         &self,
         source_id: &str,
         table_name: &str,
-        rows: &[ColumnSemanticRow],
-    ) -> StoreResult<()> {
+    ) -> StoreResult<Option<brightflow_types::ResolvedTable>> {
         let table_id = self.table_id(source_id, table_name).await?;
-        self.db.upsert_column_semantics_batch(&table_id, rows).await
+        self.db.resolved_table(&table_id).await
     }
 
-    /// Delete a single column semantic override by (source_id, table name).
-    pub async fn delete_column_semantic(
+    /// Every layer's opinion about a table's columns.
+    pub async fn column_opinions(
         &self,
         source_id: &str,
         table_name: &str,
-        column_name: &str,
-    ) -> StoreResult<bool> {
+    ) -> StoreResult<Vec<brightflow_types::ColumnOpinion>> {
         let table_id = self.table_id(source_id, table_name).await?;
-        self.db.delete_column_semantic(&table_id, column_name).await
+        self.db.column_opinions(&table_id).await
     }
 
-    /// Delete all column semantic overrides for a table by (source_id, name).
-    pub async fn delete_all_column_semantics(
+    /// The whole source as an Ossie-shaped model.
+    pub async fn export_model(
         &self,
         source_id: &str,
-        table_name: &str,
-    ) -> StoreResult<u64> {
-        let table_id = self.table_id(source_id, table_name).await?;
-        self.db.delete_all_column_semantics(&table_id).await
-    }
-
-    /// Get table analysis settings by (source_id, table name).
-    pub async fn get_table_settings(
-        &self,
-        source_id: &str,
-        table_name: &str,
-    ) -> StoreResult<Option<TableAnalysisSettingsRow>> {
-        let table_id = self.table_id(source_id, table_name).await?;
-        self.db.get_table_settings(&table_id).await
-    }
-
-    /// Upsert table analysis settings by (source_id, table name).
-    pub async fn upsert_table_settings(
-        &self,
-        source_id: &str,
-        table_name: &str,
-        display_name: Option<&str>,
-        description: Option<&str>,
-        time_granularity: Option<&str>,
-        comparison_periods: Option<i32>,
-    ) -> StoreResult<TableAnalysisSettingsRow> {
-        let table_id = self.table_id(source_id, table_name).await?;
-        self.db
-            .upsert_table_settings(
-                &table_id,
-                display_name,
-                description,
-                time_granularity,
-                comparison_periods,
-            )
-            .await
+    ) -> StoreResult<brightflow_types::SemanticModel> {
+        self.db.export_model(source_id).await
     }
 
     /// Get the internal StoreDb (for seeding operations that need direct access).

@@ -49,6 +49,10 @@ pub enum StoreError {
         found: i64,
     },
 
+    /// A producer's declaration failed the contract crate's validation.
+    #[error("Invalid declaration: {0}")]
+    InvalidDeclaration(String),
+
     /// Other error
     #[error("{0}")]
     Other(String),

@@ -56,8 +56,11 @@ const columnNames = computed(() => {
   const info = (tableIndex.value ?? []).find(
     (t) => t.source_id === props.sourceId && t.name === props.table,
   );
-  const schema = info?.schema as { fields?: { name?: string }[] } | null;
-  return (schema?.fields ?? [])
+  const schema = info?.schema as {
+    columns?: { name?: string }[];
+    fields?: { name?: string }[];
+  } | null;
+  return (schema?.columns ?? schema?.fields ?? [])
     .map((f) => f.name)
     .filter((n): n is string => typeof n === 'string');
 });

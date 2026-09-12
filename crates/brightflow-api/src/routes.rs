@@ -203,6 +203,11 @@ fn api_routes() -> Router<AppState> {
             get(semantics_handlers::get_table_settings)
                 .put(semantics_handlers::upsert_table_settings),
         )
+        // The source as one Ossie document, generated from the resolved views.
+        .route(
+            "/sources/{source_id}/semantic-model",
+            get(semantics_handlers::export_semantic_model),
+        )
         // Text Explorer (no-LLM text filtering + words widget)
         .route(
             "/sources/{source_id}/tables/{table}/textexplore/search",

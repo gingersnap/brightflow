@@ -34,12 +34,15 @@ pub(crate) fn table_columns(schema_json: Option<&str>) -> Vec<String> {
     schema_json
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
         .and_then(|v| {
-            v.get("fields").and_then(|f| f.as_array()).map(|fields| {
-                fields
-                    .iter()
-                    .filter_map(|f| f.get("name").and_then(|n| n.as_str()).map(String::from))
-                    .collect()
-            })
+            v.get("columns")
+                .or_else(|| v.get("fields"))
+                .and_then(|f| f.as_array())
+                .map(|fields| {
+                    fields
+                        .iter()
+                        .filter_map(|f| f.get("name").and_then(|n| n.as_str()).map(String::from))
+                        .collect()
+                })
         })
         .unwrap_or_default()
 }

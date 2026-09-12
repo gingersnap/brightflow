@@ -363,10 +363,11 @@ async fn drop_output_columns(
             .replace_table_data(&table_row.source_id, &table_row.name, out_df, None)
             .await?;
         let key = crate::state::cache_key(&table_row.source_id, &table_row.name);
+        let prov = brightflow_types::Provenance::declared(format!("enrichment:{}", row.name));
         for name in &names {
             store
                 .db()
-                .delete_column_semantic(&table_row.id, name)
+                .delete_column_opinion(&table_row.id, name, &prov)
                 .await?;
             state.remove_column_override(&key, name);
         }

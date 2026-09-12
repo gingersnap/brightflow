@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
+brightflow-types = { path = "../brightflow-types", features = ["polars"] }
 tokio = { workspace = true }
 polars = { workspace = true, features = ["semi_anti_join"] }
 serde = { workspace = true }

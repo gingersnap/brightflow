@@ -9,11 +9,13 @@ use polars::prelude::*;
 use crate::data::config::{ColumnRole, Polarity, TimeGranularity};
 use crate::data::schema::{detect_schema, DataSchema};
 
-/// A user-provided column role override (from SQLite or API request).
+/// One column's resolved semantics, as the caller read them from the store.
+/// `role: None` means nobody has said what the column is for, so detection
+/// places it and only the other fields apply.
 #[derive(Debug, Clone)]
 pub struct ColumnOverride {
     pub column_name: String,
-    pub role: ColumnRole,
+    pub role: Option<ColumnRole>,
     pub is_kpi: bool,
     pub polarity: Polarity,
     pub label: Option<String>,
@@ -45,6 +47,22 @@ pub fn build_schema(
     for ovr in overrides {
         let name = &ovr.column_name;
 
+        if ovr.polarity != Polarity::Neutral {
+            schema.polarity.insert(name.clone(), ovr.polarity);
+        }
+
+        // No stated role: detection's placement stands, but a KPI flag on a
+        // detected measure still counts.
+        let Some(role) = ovr.role else {
+            if ovr.is_kpi
+                && schema.measure_columns.contains(name)
+                && !schema.kpi_columns.contains(name)
+            {
+                schema.kpi_columns.push(name.clone());
+            }
+            continue;
+        };
+
         // Remove from all current lists
         schema.measure_columns.retain(|c| c != name);
         schema.kpi_columns.retain(|c| c != name);
@@ -54,11 +72,7 @@ pub fn build_schema(
             schema.time_column = None;
         }
 
-        if ovr.polarity != Polarity::Neutral {
-            schema.polarity.insert(name.clone(), ovr.polarity);
-        }
-
-        match ovr.role {
+        match role {
             ColumnRole::Measure => {
                 schema.measure_columns.push(name.clone());
                 if ovr.is_kpi {

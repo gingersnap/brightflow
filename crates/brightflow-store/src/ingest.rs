@@ -414,19 +414,12 @@ fn write_parquet(df: &DataFrame, path: &Path) -> StoreResult<()> {
     Ok(())
 }
 
-/// Convert a Polars Schema to a JSON value for storage
+/// The stored `schema_json`: the contract crate's `TableSchema` (logical
+/// type per column, with the Polars spelling kept as `physical` when the
+/// logical type does not name it exactly).
 pub(crate) fn schema_to_json(schema: &Schema) -> serde_json::Value {
-    let fields: Vec<serde_json::Value> = schema
-        .iter_fields()
-        .map(|field| {
-            serde_json::json!({
-                "name": field.name.as_str(),
-                "type": format!("{}", field.dtype),
-                "nullable": true
-            })
-        })
-        .collect();
-    serde_json::json!({ "fields": fields })
+    serde_json::to_value(brightflow_types::TableSchema::from_polars_schema(schema))
+        .unwrap_or_else(|_| serde_json::json!({ "columns": [] }))
 }
 
 /// Helper to concatenate DataFrames with schema alignment.

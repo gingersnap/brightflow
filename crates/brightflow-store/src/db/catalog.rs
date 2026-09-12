@@ -1,13 +1,10 @@
-//! Catalog queries: tables, their files and stats, partitions, column
-//! semantics, analysis settings, and registered upload sources — the
-//! "what data exists and what does it mean" half of the store.
+//! Catalog queries: tables, their files and stats, partitions, and registered
+//! sources — the "what data exists" half of the store. What it *means* lives
+//! next door in `semantics.rs`.
 
 use super::StoreDb;
 use crate::error::StoreResult;
-use crate::models::{
-    ColumnSemanticRow, ColumnStatRow, FileColumnStatRow, SourceRow, TableAnalysisSettingsRow,
-    TableFileRow, TableRow,
-};
+use crate::models::{ColumnStatRow, FileColumnStatRow, SourceRow, TableFileRow, TableRow};
 use crate::row::{execute, fetch_all, fetch_one, fetch_optional};
 use crate::scan::ScanFilter;
 use rusqlite::{params, params_from_iter};
@@ -485,249 +482,10 @@ impl StoreDb {
     }
 
     // =====================================================
-    // Column Semantics CRUD
+    // Registered sources (uploads, connectors, web sites)
     // =====================================================
 
-    pub async fn get_column_semantics(
-        &self,
-        table_id: &str,
-    ) -> StoreResult<Vec<ColumnSemanticRow>> {
-        let table_id = table_id.to_owned();
-        let rows = self
-            .pool
-            .call(move |conn| {
-                fetch_all::<ColumnSemanticRow, _>(
-                    conn,
-                    "SELECT * FROM column_semantics WHERE table_id = ? ORDER BY column_name",
-                    params![table_id],
-                )
-            })
-            .await?;
-        Ok(rows)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn upsert_column_semantic(
-        &self,
-        table_id: &str,
-        column_name: &str,
-        role: &str,
-        is_kpi: bool,
-        polarity: &str,
-        label: Option<&str>,
-        description: Option<&str>,
-    ) -> StoreResult<ColumnSemanticRow> {
-        let table_id = table_id.to_owned();
-        let column_name = column_name.to_owned();
-        let role = role.to_owned();
-        let polarity = polarity.to_owned();
-        let label = label.map(ToOwned::to_owned);
-        let description = description.map(ToOwned::to_owned);
-        let row = self
-            .pool
-            .call(move |conn| {
-                fetch_one::<ColumnSemanticRow, _>(
-                    conn,
-                    r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, polarity, label, description)
-                      VALUES (?, ?, ?, ?, ?, ?, ?)
-                      ON CONFLICT (table_id, column_name) DO UPDATE SET
-                        role = excluded.role,
-                        is_kpi = excluded.is_kpi,
-                        polarity = excluded.polarity,
-                        label = excluded.label,
-                        description = excluded.description,
-                        updated_at = datetime('now')
-                      RETURNING *",
-                    params![table_id, column_name, role, is_kpi, polarity, label, description],
-                )
-            })
-            .await?;
-        Ok(row)
-    }
-
-    pub async fn upsert_column_semantics_batch(
-        &self,
-        table_id: &str,
-        rows: &[ColumnSemanticRow],
-    ) -> StoreResult<()> {
-        let table_id = table_id.to_owned();
-        let rows = rows.to_vec();
-        self.pool
-            .transaction(move |tx| {
-                let mut stmt = tx.prepare(
-                    r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, polarity, label, description)
-                      VALUES (?, ?, ?, ?, ?, ?, ?)
-                      ON CONFLICT (table_id, column_name) DO UPDATE SET
-                        role = excluded.role,
-                        is_kpi = excluded.is_kpi,
-                        polarity = excluded.polarity,
-                        label = excluded.label,
-                        description = excluded.description,
-                        updated_at = datetime('now')",
-                )?;
-                for row in &rows {
-                    stmt.execute(params![
-                        table_id,
-                        row.column_name,
-                        row.role,
-                        row.is_kpi,
-                        row.polarity,
-                        row.label,
-                        row.description
-                    ])?;
-                }
-                Ok(())
-            })
-            .await?;
-        Ok(())
-    }
-
-    /// Insert semantics rows only for columns that have none yet, in one
-    /// transaction. Returns how many were inserted. This is how a process
-    /// that *derives* a column (enrichment) declares what it means without
-    /// overwriting what a person has since said about it.
-    pub async fn insert_column_semantics_if_absent(
-        &self,
-        table_id: &str,
-        rows: &[ColumnSemanticRow],
-    ) -> StoreResult<u64> {
-        let table_id = table_id.to_owned();
-        let rows = rows.to_vec();
-        let inserted = self
-            .pool
-            .transaction(move |tx| {
-                let mut stmt = tx.prepare(
-                    r"INSERT INTO column_semantics (table_id, column_name, role, is_kpi, polarity, label, description)
-                      VALUES (?, ?, ?, ?, ?, ?, ?)
-                      ON CONFLICT (table_id, column_name) DO NOTHING",
-                )?;
-                let mut inserted = 0_u64;
-                for row in &rows {
-                    inserted += stmt.execute(params![
-                        table_id,
-                        row.column_name,
-                        row.role,
-                        row.is_kpi,
-                        row.polarity,
-                        row.label,
-                        row.description
-                    ])? as u64;
-                }
-                Ok(inserted)
-            })
-            .await?;
-        Ok(inserted)
-    }
-
-    pub async fn delete_column_semantic(
-        &self,
-        table_id: &str,
-        column_name: &str,
-    ) -> StoreResult<bool> {
-        let table_id = table_id.to_owned();
-        let column_name = column_name.to_owned();
-        let affected = self
-            .pool
-            .call(move |conn| {
-                execute(
-                    conn,
-                    "DELETE FROM column_semantics WHERE table_id = ? AND column_name = ?",
-                    params![table_id, column_name],
-                )
-            })
-            .await?;
-        Ok(affected > 0)
-    }
-
-    pub async fn delete_all_column_semantics(&self, table_id: &str) -> StoreResult<u64> {
-        let table_id = table_id.to_owned();
-        let affected = self
-            .pool
-            .call(move |conn| {
-                execute(
-                    conn,
-                    "DELETE FROM column_semantics WHERE table_id = ?",
-                    params![table_id],
-                )
-            })
-            .await?;
-        Ok(affected)
-    }
-
-    /// Check if any column_semantics rows exist for any table.
-    pub async fn has_any_column_semantics(&self) -> StoreResult<bool> {
-        let row = self
-            .pool
-            .call(|conn| fetch_one::<(i64,), _>(conn, "SELECT COUNT(*) FROM column_semantics", []))
-            .await?;
-        Ok(row.0 > 0)
-    }
-
-    // =====================================================
-    // Table Analysis Settings CRUD
-    // =====================================================
-
-    pub async fn get_table_settings(
-        &self,
-        table_id: &str,
-    ) -> StoreResult<Option<TableAnalysisSettingsRow>> {
-        let table_id = table_id.to_owned();
-        let row = self
-            .pool
-            .call(move |conn| {
-                fetch_optional::<TableAnalysisSettingsRow, _>(
-                    conn,
-                    "SELECT * FROM table_analysis_settings WHERE table_id = ?",
-                    params![table_id],
-                )
-            })
-            .await?;
-        Ok(row)
-    }
-
-    pub async fn upsert_table_settings(
-        &self,
-        table_id: &str,
-        display_name: Option<&str>,
-        description: Option<&str>,
-        time_granularity: Option<&str>,
-        comparison_periods: Option<i32>,
-    ) -> StoreResult<TableAnalysisSettingsRow> {
-        let table_id = table_id.to_owned();
-        let display_name = display_name.map(ToOwned::to_owned);
-        let description = description.map(ToOwned::to_owned);
-        let time_granularity = time_granularity.map(ToOwned::to_owned);
-        let row = self
-            .pool
-            .call(move |conn| {
-                fetch_one::<TableAnalysisSettingsRow, _>(
-                    conn,
-                    r"INSERT INTO table_analysis_settings (table_id, display_name, description, time_granularity, comparison_periods)
-                      VALUES (?, ?, ?, ?, ?)
-                      ON CONFLICT (table_id) DO UPDATE SET
-                        display_name = excluded.display_name,
-                        description = excluded.description,
-                        time_granularity = excluded.time_granularity,
-                        comparison_periods = excluded.comparison_periods,
-                        updated_at = datetime('now')
-                      RETURNING *",
-                    params![
-                        table_id,
-                        display_name,
-                        description,
-                        time_granularity,
-                        comparison_periods
-                    ],
-                )
-            })
-            .await?;
-        Ok(row)
-    }
-
-    // =====================================================
-    // Registered sources (connector-less: CSV uploads)
-    // =====================================================
-
+    /// Register a source with no producer (an upload).
     pub async fn register_source(
         &self,
         source_id: &str,
@@ -735,22 +493,42 @@ impl StoreDb {
         name: &str,
         meta_json: Option<&str>,
     ) -> StoreResult<SourceRow> {
+        self.register_source_with_producer(source_id, kind, name, meta_json, None)
+            .await
+    }
+
+    /// Register a source and the producer that makes its tables (a connector
+    /// at a version). Re-registering updates name, meta and producer.
+    pub async fn register_source_with_producer(
+        &self,
+        source_id: &str,
+        kind: &str,
+        name: &str,
+        meta_json: Option<&str>,
+        producer: Option<&brightflow_types::Provenance>,
+    ) -> StoreResult<SourceRow> {
         let source_id = source_id.to_owned();
         let kind = kind.to_owned();
         let name = name.to_owned();
         let meta_json = meta_json.map(ToOwned::to_owned);
+        let producer_name = producer.map(|p| p.producer.clone());
+        let producer_version = producer.and_then(|p| p.version.clone());
+        let producer_hash = producer.and_then(|p| p.hash.clone());
         let row = self
             .pool
             .call(move |conn| {
                 fetch_one::<SourceRow, _>(
                     conn,
-                    r"INSERT INTO sources (source_id, kind, name, meta_json)
-                      VALUES (?, ?, ?, ?)
+                    r"INSERT INTO sources (source_id, kind, name, meta_json, producer, producer_version, producer_hash)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT (source_id) DO UPDATE SET
                         name = excluded.name,
-                        meta_json = excluded.meta_json
+                        meta_json = excluded.meta_json,
+                        producer = COALESCE(excluded.producer, sources.producer),
+                        producer_version = COALESCE(excluded.producer_version, sources.producer_version),
+                        producer_hash = COALESCE(excluded.producer_hash, sources.producer_hash)
                       RETURNING *",
-                    params![source_id, kind, name, meta_json],
+                    params![source_id, kind, name, meta_json, producer_name, producer_version, producer_hash],
                 )
             })
             .await?;
@@ -817,68 +595,6 @@ mod tests {
             tmp.path().join("litehouse.db").display()
         );
         StoreDb::new(&db_url).await.expect("failed to open db")
-    }
-
-    fn semantic(
-        table_id: &str,
-        column: &str,
-        role: &str,
-        label: Option<&str>,
-    ) -> ColumnSemanticRow {
-        ColumnSemanticRow {
-            table_id: table_id.to_string(),
-            column_name: column.to_string(),
-            role: role.to_string(),
-            is_kpi: false,
-            polarity: "neutral".to_string(),
-            label: label.map(str::to_string),
-            description: None,
-            updated_at: String::new(),
-        }
-    }
-
-    /// Insert-if-absent never touches an existing row: a second call inserts
-    /// nothing and an edited label survives.
-    #[tokio::test]
-    async fn insert_column_semantics_if_absent_leaves_existing_rows_alone() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
-        let table = db.create_table("issues", "c:s1").await.expect("table");
-
-        let rows = vec![
-            semantic(&table.id, "category", "dimension", Some("Category")),
-            semantic(&table.id, "summary", "ignored", Some("Summary")),
-        ];
-        assert_eq!(
-            db.insert_column_semantics_if_absent(&table.id, &rows)
-                .await
-                .expect("insert"),
-            2
-        );
-        db.upsert_column_semantic(
-            &table.id,
-            "category",
-            "dimension",
-            false,
-            "neutral",
-            Some("Problem area"),
-            None,
-        )
-        .await
-        .expect("edit");
-
-        assert_eq!(
-            db.insert_column_semantics_if_absent(&table.id, &rows)
-                .await
-                .expect("second insert"),
-            0
-        );
-        let stored = db.get_column_semantics(&table.id).await.expect("rows");
-        let category = stored
-            .iter()
-            .find(|r| r.column_name == "category")
-            .expect("category row");
-        assert_eq!(category.label.as_deref(), Some("Problem area"));
     }
 
     /// Values must come deduplicated (many files share a partition value),

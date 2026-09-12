@@ -68,7 +68,7 @@ pub async fn load_table(
     if let Some(overrides) = state.schema_overrides.get(&key) {
         for col in &mut columns {
             if let Some(ovr) = overrides.iter().find(|o| o.column_name == col.name) {
-                col.role = Some(ovr.role);
+                col.role = ovr.role;
                 col.is_kpi = Some(ovr.is_kpi);
                 col.label.clone_from(&ovr.label);
                 col.polarity = Some(ovr.polarity);

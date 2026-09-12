@@ -1,7 +1,7 @@
 //! The store's SQLite pool and its metadata queries, grouped by domain.
 //!
 //! `StoreDb` is one struct over one pool; the query methods live in
-//! per-domain files (catalog, insights, actions, curation, agent,
+//! per-domain files (catalog, semantics, insights, actions, curation, agent,
 //! enrichment) purely for navigability. Every method is still a
 //! self-contained named query, so there is exactly one *directory* to look
 //! at for "what does the store persist", and the migrations directory stays
@@ -13,6 +13,9 @@ mod catalog;
 mod curation;
 mod enrichment;
 mod insights;
+mod semantics;
+
+pub use semantics::{AppliedDeclaration, StoredMetric, StoredRelationship};
 
 use crate::error::StoreResult;
 use crate::migration;
@@ -49,6 +52,7 @@ static MIGRATIONS: &[Migration] = &[
     migration!(24, "024_unresolved_subjects"),
     migration!(25, "025_ticket_function_kinds"),
     migration!(26, "026_drop_embedding_tables"),
+    migration!(27, "027_layered_semantics"),
 ];
 
 #[derive(Clone, Debug)]

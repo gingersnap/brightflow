@@ -9,10 +9,10 @@ use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
-use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
 use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
 use brightflow_scheduler::Scheduler;
-use brightflow_store::{ColumnSemanticRow, ParquetStore, TableAnalysisSettingsRow, TableInfo};
+use brightflow_store::{ParquetStore, TableInfo};
+use brightflow_types::{ResolvedColumn, ResolvedTable};
 use dashmap::DashMap;
 use polars::prelude::*;
 use std::path::Path;
@@ -120,12 +120,11 @@ impl AppState {
         )
     }
 
-    /// Load column semantic overrides from SQLite into memory (DashMaps).
+    /// Load every table's resolved semantics from the store into memory.
     pub async fn load_overrides_from_store(&self) {
         let Some(store) = &self.store else {
             return;
         };
-
         let tables = match store.list_tables().await {
             Ok(t) => t,
             Err(e) => {
@@ -133,75 +132,42 @@ impl AppState {
                 return;
             },
         };
-
         for table_ref in tables {
-            let key = cache_key(&table_ref.source_id, &table_ref.name);
-
-            match store
-                .get_column_semantics(&table_ref.source_id, &table_ref.name)
-                .await
-            {
-                Ok(rows) if !rows.is_empty() => {
-                    let overrides: Vec<ColumnOverride> =
-                        rows.iter().filter_map(convert_semantic_row).collect();
-                    let kpi_count = overrides.iter().filter(|o| o.is_kpi).count();
-                    tracing::info!(
-                        "Loaded {} column overrides for '{}/{}' ({} KPIs)",
-                        overrides.len(),
-                        table_ref.source_id,
-                        table_ref.name,
-                        kpi_count,
-                    );
-                    self.schema_overrides.insert(key.clone(), overrides);
-                },
-                Ok(_) => {},
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to load column semantics for '{}/{}': {e}",
-                        table_ref.source_id,
-                        table_ref.name
-                    );
-                },
-            }
-
-            match store
-                .get_table_settings(&table_ref.source_id, &table_ref.name)
-                .await
-            {
-                Ok(Some(row)) => {
-                    if let Some(settings) = convert_settings_row(&row) {
-                        self.settings_overrides.insert(key, settings);
-                    }
-                },
-                Ok(None) => {},
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to load table settings for '{}/{}': {e}",
-                        table_ref.source_id,
-                        table_ref.name
-                    );
-                },
-            }
+            self.refresh_overrides_from_store(&table_ref.source_id, &table_ref.name)
+                .await;
         }
     }
 
-    /// Re-read one table's semantics rows from the store and replace its
-    /// in-memory overrides. For writers that land several rows at once
-    /// (enrichment materialisation); single-column writers use
-    /// `set_column_override`.
+    /// Re-read one table's resolved semantics from the store and replace its
+    /// in-memory overrides — columns and table settings both. Every writer of
+    /// semantic rows calls this after its rows land; the database stays the
+    /// source of truth.
     pub async fn refresh_overrides_from_store(&self, source_id: &str, table_name: &str) {
         let Some(store) = &self.store else {
             return;
         };
-        match store.get_column_semantics(source_id, table_name).await {
-            Ok(rows) => {
+        let key = cache_key(source_id, table_name);
+        match store.resolved_columns(source_id, table_name).await {
+            Ok(columns) => {
                 let overrides: Vec<ColumnOverride> =
-                    rows.iter().filter_map(convert_semantic_row).collect();
-                self.schema_overrides
-                    .insert(cache_key(source_id, table_name), overrides);
+                    columns.iter().map(override_from_resolved).collect();
+                self.schema_overrides.insert(key.clone(), overrides);
             },
             Err(e) => tracing::warn!(
                 "Failed to refresh column semantics for '{source_id}/{table_name}': {e}"
+            ),
+        }
+        match store.resolved_table(source_id, table_name).await {
+            Ok(resolved) => match resolved.as_ref().and_then(settings_from_resolved) {
+                Some(settings) => {
+                    self.settings_overrides.insert(key, settings);
+                },
+                None => {
+                    self.settings_overrides.remove(&key);
+                },
+            },
+            Err(e) => tracing::warn!(
+                "Failed to refresh table settings for '{source_id}/{table_name}': {e}"
             ),
         }
     }
@@ -408,218 +374,27 @@ pub(crate) fn cache_key(source_id: &str, table_name: &str) -> String {
     format!("{source_id}|{table_name}")
 }
 
-/// Convert a `ColumnSemanticRow` to a `ColumnOverride`.
-fn convert_semantic_row(row: &ColumnSemanticRow) -> Option<ColumnOverride> {
-    let Some(role) = ColumnRole::parse(&row.role) else {
-        tracing::warn!(
-            "Unknown column role '{}' for '{}'",
-            row.role,
-            row.column_name
-        );
-        return None;
-    };
-    let polarity = Polarity::parse(&row.polarity).unwrap_or_else(|| {
-        tracing::warn!(
-            "Unknown polarity '{}' for '{}' — treating as neutral",
-            row.polarity,
-            row.column_name
-        );
-        Polarity::Neutral
-    });
-    Some(ColumnOverride {
-        column_name: row.column_name.clone(),
-        role,
-        is_kpi: row.is_kpi,
-        polarity,
-        label: row.label.clone(),
-        description: row.description.clone(),
-    })
-}
-
-/// Seed known TOML schema data into SQLite if `column_semantics` is empty.
-pub async fn seed_column_semantics(store: &ParquetStore) {
-    // Only seed if we have tables but no semantics yet
-    let has_semantics = store.db().has_any_column_semantics().await.unwrap_or(true);
-    if has_semantics {
-        return;
-    }
-
-    let tables = store.list_tables().await.unwrap_or_default();
-    if tables.is_empty() {
-        return;
-    }
-
-    let table_names: Vec<String> = tables.iter().map(|t| t.name.clone()).collect();
-    tracing::info!(
-        "Seeding column semantics for {} tables: {:?}",
-        table_names.len(),
-        table_names
-    );
-
-    // Define seed data for known GitHub tables
-    #[allow(clippy::type_complexity)]
-    let seed_data: &[(&str, &[(&str, &str, bool)], &str, i32)] = &[
-        // (table_name, [(column, role, is_kpi)], time_granularity, comparison_periods)
-        (
-            "issues",
-            &[
-                ("created_at", "time", false),
-                ("comments", "measure", true),
-                ("reactions_total", "measure", true),
-                ("state", "dimension", false),
-                ("author_association", "dimension", false),
-                ("user_login", "dimension", false),
-                ("label_names", "dimension", false),
-                ("is_pull_request", "dimension", false),
-                ("locked", "dimension", false),
-                ("state_reason", "dimension", false),
-                ("id", "ignored", false),
-                ("number", "ignored", false),
-                ("title", "ignored", false),
-                ("body", "ignored", false),
-                ("html_url", "ignored", false),
-                ("updated_at", "ignored", false),
-                ("closed_at", "ignored", false),
-                ("user_id", "ignored", false),
-                ("assignee_logins", "ignored", false),
-                ("milestone_number", "ignored", false),
-                ("milestone_title", "ignored", false),
-                ("active_lock_reason", "ignored", false),
-            ],
-            "week",
-            4,
-        ),
-        (
-            "pull_requests",
-            &[
-                ("created_at", "time", false),
-                ("additions", "measure", true),
-                ("deletions", "measure", true),
-                ("changed_files", "measure", true),
-                ("commits", "measure", false),
-                ("comments", "measure", false),
-                ("review_comments", "measure", false),
-                ("state", "dimension", false),
-                ("draft", "dimension", false),
-                ("author_association", "dimension", false),
-                ("user_login", "dimension", false),
-                ("base_ref", "dimension", false),
-                ("merged_by_login", "dimension", false),
-                ("label_names", "dimension", false),
-                ("id", "ignored", false),
-                ("number", "ignored", false),
-                ("title", "ignored", false),
-                ("body", "ignored", false),
-                ("html_url", "ignored", false),
-                ("updated_at", "ignored", false),
-                ("closed_at", "ignored", false),
-                ("merged_at", "ignored", false),
-                ("head_ref", "ignored", false),
-                ("head_sha", "ignored", false),
-                ("base_sha", "ignored", false),
-                ("merge_commit_sha", "ignored", false),
-                ("milestone_title", "ignored", false),
-                ("reviewer_logins", "ignored", false),
-                ("user_id", "ignored", false),
-            ],
-            "week",
-            4,
-        ),
-        (
-            "issue_comments",
-            &[
-                ("created_at", "time", false),
-                ("reactions_total", "measure", true),
-                ("author_association", "dimension", false),
-                ("user_login", "dimension", false),
-                ("id", "ignored", false),
-                ("issue_number", "ignored", false),
-                ("body", "ignored", false),
-                ("html_url", "ignored", false),
-                ("updated_at", "ignored", false),
-                ("user_id", "ignored", false),
-            ],
-            "week",
-            4,
-        ),
-    ];
-
-    let db = store.db();
-
-    // Seed data is keyed by table name only; apply each preset to every matching
-    // (source_id, table_name) pair so two GitHub presets both get sensible defaults.
-    let seed_map: std::collections::HashMap<&str, (_, _, _)> = seed_data
-        .iter()
-        .map(|(name, columns, granularity, periods)| (*name, (*columns, *granularity, *periods)))
-        .collect();
-
-    for table_ref in &tables {
-        let Some((columns, granularity, periods)) = seed_map.get(table_ref.name.as_str()) else {
-            continue;
-        };
-        let Ok(Some(table)) = db.get_table(&table_ref.source_id, &table_ref.name).await else {
-            continue;
-        };
-
-        let rows: Vec<ColumnSemanticRow> = columns
-            .iter()
-            .map(|(col, role, is_kpi)| ColumnSemanticRow {
-                table_id: table.id.clone(),
-                column_name: (*col).to_string(),
-                role: (*role).to_string(),
-                is_kpi: *is_kpi,
-                polarity: "neutral".to_string(),
-                label: None,
-                description: None,
-                updated_at: String::new(),
-            })
-            .collect();
-
-        if let Err(e) = db.upsert_column_semantics_batch(&table.id, &rows).await {
-            tracing::warn!(
-                "Failed to seed column semantics for '{}/{}': {e}",
-                table_ref.source_id,
-                table_ref.name
-            );
-            continue;
-        }
-
-        if let Err(e) = db
-            .upsert_table_settings(&table.id, None, None, Some(*granularity), Some(*periods))
-            .await
-        {
-            tracing::warn!(
-                "Failed to seed table settings for '{}/{}': {e}",
-                table_ref.source_id,
-                table_ref.name
-            );
-            continue;
-        }
-
-        tracing::info!(
-            "Seeded {} column overrides for '{}/{}' (granularity={}, periods={})",
-            columns.len(),
-            table_ref.source_id,
-            table_ref.name,
-            granularity,
-            periods
-        );
+/// The engine's view of one resolved column.
+pub(crate) fn override_from_resolved(column: &ResolvedColumn) -> ColumnOverride {
+    ColumnOverride {
+        column_name: column.name.clone(),
+        role: column.role,
+        is_kpi: column.is_kpi.unwrap_or(false),
+        polarity: column.polarity.unwrap_or_default(),
+        label: column.label.clone(),
+        description: column.description.clone(),
     }
 }
 
-fn convert_settings_row(row: &TableAnalysisSettingsRow) -> Option<TableSettingsOverride> {
-    let time_granularity = row
-        .time_granularity
-        .as_deref()
-        .and_then(TimeGranularity::parse);
-    let comparison_periods = row.comparison_periods.and_then(|p| usize::try_from(p).ok());
-
-    if time_granularity.is_none() && comparison_periods.is_none() {
+/// The engine's view of a resolved table's analysis settings; `None` when
+/// nothing analysis-relevant is set.
+pub(crate) fn settings_from_resolved(table: &ResolvedTable) -> Option<TableSettingsOverride> {
+    let comparison_periods = table.comparison_periods.map(|p| p as usize);
+    if table.time_granularity.is_none() && comparison_periods.is_none() {
         return None;
     }
-
     Some(TableSettingsOverride {
-        time_granularity,
+        time_granularity: table.time_granularity,
         comparison_periods,
     })
 }
