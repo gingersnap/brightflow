@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 brightflow-core = { path = "../brightflow-core" }
+brightflow-types = { path = "../brightflow-types", features = ["polars"] }
 brightflow-store = { path = "../brightflow-store" }
 brightflow-connect = { path = "../brightflow-connect" }
 brightflow-engine = { path = "../brightflow-engine" }

@@ -1,0 +1,35 @@
+[package]
+name = "brightflow-types"
+version = "0.1.0"
+edition = "2021"
+description = "The contract between Longbow, Litehouse and the tools: logical types, the ingest declaration, the Ossie-shaped semantic model, Brightflow's extension vocabulary, and provenance. Types and validation only."
+
+[lib]
+name = "brightflow_types"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Conversions between `LogicalType` and Polars `DataType`, for the store and
+# the engine. Off by default so a producer that only writes Parquet (Longbow)
+# never compiles Polars.
+polars = ["dep:polars"]
+# Conversions between `LogicalType` and arrow-rs `DataType`, for Longbow.
+arrow = ["dep:arrow-schema"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+schemars = "1"
+polars = { workspace = true, optional = true }
+arrow-schema = { version = "54", optional = true }
+
+[dev-dependencies]
+# Ossie conformance test only: validates an exported document against the
+# vendored `tests/fixtures/ossie-schema.json`.
+jsonschema = { version = "0.56", default-features = false }
+
+[lints]
+workspace = true

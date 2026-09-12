@@ -11,6 +11,9 @@
 
 use crate::analytics::session::ColumnInfo;
 use brightflow_engine::data::config::TimeGranularity;
+// Shared with the metric vocabulary in the contract crate: one spelling of
+// the aggregation functions and filter operators on every wire.
+pub use brightflow_types::{Aggregation, FilterOp};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -108,23 +111,6 @@ pub enum DerivedExpr {
     },
 }
 
-/// Filter comparison operators
-#[derive(Debug, Clone, Copy, Deserialize, TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub enum FilterOp {
-    Eq,
-    Ne,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    Contains,
-    In,
-    IsNull,
-    IsNotNull,
-}
-
 /// Aggregation specification for GroupBy
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
@@ -136,22 +122,6 @@ pub struct AggSpec {
     /// Optional output column name
     #[serde(default)]
     pub alias: Option<String>,
-}
-
-/// Aggregation functions
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub enum Aggregation {
-    Count,
-    Sum,
-    Avg,
-    Min,
-    Max,
-    Median,
-    Std,
-    First,
-    Last,
 }
 
 /// Query execution response

@@ -9,6 +9,8 @@ name = "brightflow_engine"
 path = "src/lib.rs"
 
 [dependencies]
+# The contract crate: role/polarity/granularity and the semantic model.
+brightflow-types = { path = "../brightflow-types", features = ["polars"] }
 # Pre-call language identification for ticket enrichment (nlp::language).
 whatlang = "0.16"
 polars = { workspace = true }
@@ -23,8 +25,6 @@ regex = "1.12"
 blake3 = "1"
 tracing = { workspace = true }
 ts-rs = { workspace = true }
-# JSON Schema for the semantic enums, so the action manifest can reuse them.
-schemars = "1"
 stop-words = "0.8"
 
 [lints]

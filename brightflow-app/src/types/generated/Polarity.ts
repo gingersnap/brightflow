@@ -4,7 +4,5 @@
  * Which direction of movement in a measure is good news.
  *
  * Rising churn is not rising revenue; display code keys off this.
- * Display-only in v1 — scoring deliberately ignores it (hook point:
- * `scoring::kpi_boost_for`).
  */
 export type Polarity = "higher_is_better" | "lower_is_better" | "neutral";
