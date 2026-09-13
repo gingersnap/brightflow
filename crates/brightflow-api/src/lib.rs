@@ -34,6 +34,7 @@ pub mod connect;
 pub mod enrichment;
 pub mod ingest;
 pub mod insights;
+pub mod jobs;
 pub mod llm;
 pub mod product_analytics;
 pub mod routes;

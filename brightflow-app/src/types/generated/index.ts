@@ -75,6 +75,8 @@ export type { ImportVocabularyResponse } from './ImportVocabularyResponse';
 export type { InsightRunResponse } from './InsightRunResponse';
 export type { InsightsComputedPayload } from './InsightsComputedPayload';
 export type { InsightsResponse } from './InsightsResponse';
+export type { JobKind } from './JobKind';
+export type { Job } from './Job';
 export type { Layer } from './Layer';
 export type { LlmProviderResponse } from './LlmProviderResponse';
 export type { LlmTestResponse } from './LlmTestResponse';

@@ -194,6 +194,21 @@ impl StoreDb {
         Ok(row)
     }
 
+    /// The most recent runs across every table, newest first.
+    pub async fn list_recent_insight_runs(&self, limit: i64) -> StoreResult<Vec<InsightRunRow>> {
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<InsightRunRow, _>(
+                    conn,
+                    "SELECT * FROM insight_runs ORDER BY computed_at DESC, id DESC LIMIT ?",
+                    params![limit],
+                )
+            })
+            .await?;
+        Ok(rows)
+    }
+
     /// Latest run per table of a source (badge hydration).
     pub async fn latest_insight_runs_for_source(
         &self,

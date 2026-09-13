@@ -5,9 +5,17 @@
 
 import { describe, expect, test } from 'vitest';
 
-import type { ActionLogEntry, AgentRunResponse } from '@/types/generated';
+import type { ActionLogEntry, AgentRunResponse, Job } from '@/types/generated';
 
-import { groupFeed, kindLabel, pendingIn, scopeOf, splitDetail } from './activityGroups';
+import {
+  groupFeed,
+  itemTime,
+  kindLabel,
+  mergeJobs,
+  pendingIn,
+  scopeOf,
+  splitDetail,
+} from './activityGroups';
 
 function entry(id: number, status: string, agentRunId?: number): ActionLogEntry {
   return {
@@ -85,5 +93,37 @@ describe('splitDetail and pendingIn', () => {
   test('kind labels read as prose with a fallback', () => {
     expect(kindLabel('describe_table')).toBe('Describe table');
     expect(kindLabel('some_new_kind')).toBe('some new kind');
+  });
+});
+
+function job(id: string, kind: Job['kind'], finishedAt: number | null): Job {
+  return {
+    cancellable: false,
+    id,
+    kind,
+    label: kind,
+    startedAt: finishedAt == null ? 990 : finishedAt - 10,
+    status: finishedAt == null ? 'running' : 'completed',
+    ...(finishedAt == null ? {} : { finishedAt }),
+  };
+}
+
+describe('mergeJobs', () => {
+  test('places finished jobs by finish time and leaves running and agent runs out', () => {
+    const items = groupFeed([entry(9, 'applied'), entry(5, 'applied', 1)], new Map());
+    // Ids count down from 1000 in the fixture: entry 9 is at 991, entry 5 at 995.
+    const merged = mergeJobs(items, [
+      job('sync', 'connector_sync', 993),
+      job('run', 'agent_run', 999),
+      job('live', 'enrichment_run', null),
+      job('old', 'insight_run', 100),
+    ]);
+    expect(merged.map((i) => (i.kind === 'job' ? `job:${i.job.id}` : i.kind))).toEqual([
+      'run',
+      'job:sync',
+      'entry',
+      'job:old',
+    ]);
+    expect(merged.map((item) => itemTime(item))).toEqual([995, 993, 991, 100]);
   });
 });

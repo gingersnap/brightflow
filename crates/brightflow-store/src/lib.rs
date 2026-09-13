@@ -56,7 +56,8 @@ pub use migrate::{migrate, MigrateError, Migration};
 // return them (`db::AppliedDeclaration` and friends live on `db`).
 pub use models::{
     ActionLogRow, AgentRunRow, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentRunRow,
-    InsightHistoryRow, InsightRunRow, TableRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
+    InsightHistoryRow, InsightRunRow, RecentEnrichmentRunRow, TableRow, TaxonomyCategoryRow,
+    UnresolvedSubjectRow,
 };
 pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};

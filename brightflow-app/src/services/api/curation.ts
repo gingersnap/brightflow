@@ -12,6 +12,7 @@ import type {
   BulkApproveResponse,
   BulkRejectResponse,
   BulkUndoResponse,
+  Job,
   PendingCount,
 } from '@/types/generated';
 
@@ -38,6 +39,11 @@ export const actionsApi = {
     api.post<ActionResponse>(`/api/actions/${id}/reject`),
   undo: (id: number): Promise<ActionResponse | null> =>
     api.post<ActionResponse>(`/api/actions/${id}/undo`),
+};
+
+// Every background run as one list, for Activity's Running jobs tab.
+export const jobsApi = {
+  list: (limit = 50): Promise<Job[] | null> => api.get<Job[]>(`/api/jobs?limit=${limit}`),
 };
 
 // Agent runs: LLM curation through the same action layer

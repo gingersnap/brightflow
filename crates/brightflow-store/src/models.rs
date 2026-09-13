@@ -368,6 +368,27 @@ pub struct EnrichmentRunRow {
     pub finished_at: Option<String>,
 }
 
+/// One enrichment run with the function and table it ran for, as the
+/// jobs list needs it: the run's own columns plus the names the joins add.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentEnrichmentRunRow {
+    pub id: String,
+    pub function_id: String,
+    pub function_name: String,
+    pub source_id: String,
+    pub table_name: String,
+    /// 'sample' | 'full' | 'incremental'
+    pub mode: String,
+    /// 'running' | 'completed' | 'failed' | 'cancelled'
+    pub status: String,
+    pub rows_total: i64,
+    pub rows_done: i64,
+    pub rows_failed: i64,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub finished_at: Option<String>,
+}
+
 /// One cached per-cell enrichment result. Errors are cached too so a full
 /// re-run doesn't hammer the provider with known-bad rows; `scope=failed`
 /// clears them first.
@@ -614,6 +635,21 @@ crate::impl_from_row!(EnrichmentRunRow {
     completion_tokens,
     cached_tokens,
     total_tokens,
+    error,
+    created_at,
+    finished_at,
+});
+crate::impl_from_row!(RecentEnrichmentRunRow {
+    id,
+    function_id,
+    function_name,
+    source_id,
+    table_name,
+    mode,
+    status,
+    rows_total,
+    rows_done,
+    rows_failed,
     error,
     created_at,
     finished_at,

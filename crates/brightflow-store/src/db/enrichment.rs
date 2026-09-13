@@ -5,6 +5,7 @@ use super::StoreDb;
 use crate::error::StoreResult;
 use crate::models::{
     EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentFunctionVersionRow, EnrichmentRunRow,
+    RecentEnrichmentRunRow,
 };
 use crate::row::{execute, fetch_all, fetch_one, fetch_optional};
 use rusqlite::params;
@@ -346,6 +347,32 @@ impl StoreDb {
             })
             .await?;
         Ok(())
+    }
+
+    /// The most recent runs across every function, newest first, each
+    /// with the function's name and the table it belongs to.
+    pub async fn list_recent_enrichment_runs(
+        &self,
+        limit: i64,
+    ) -> StoreResult<Vec<RecentEnrichmentRunRow>> {
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<RecentEnrichmentRunRow, _>(
+                    conn,
+                    r"SELECT r.id, r.function_id, f.name AS function_name,
+                             t.source_id, t.name AS table_name,
+                             r.mode, r.status, r.rows_total, r.rows_done, r.rows_failed,
+                             r.error, r.created_at, r.finished_at
+                      FROM enrichment_runs r
+                      JOIN enrichment_functions f ON f.id = r.function_id
+                      JOIN tables t ON t.id = f.table_id
+                      ORDER BY r.created_at DESC, r.id DESC LIMIT ?",
+                    params![limit],
+                )
+            })
+            .await?;
+        Ok(rows)
     }
 
     pub async fn get_enrichment_run(&self, id: &str) -> StoreResult<Option<EnrichmentRunRow>> {

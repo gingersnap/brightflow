@@ -1,29 +1,31 @@
 <script setup lang="ts">
 /**
- * Curation audit trail: every action — human or agent — in one feed. A
- * person's actions are rows; an agent run's actions collapse into one card
- * with the run's note and per-run approve/reject (`RunCard`). Per-entry
- * approve/reject/undo live on the row. The bulk "Accept all" is the one
- * guarded path; see approveAll for what it confirms and deliberately does
- * not promise.
+ * The log: every action — human or agent — and every background job once
+ * it finished, in one order. A person's actions are rows; an agent run's
+ * actions collapse into one card with the run's note (`RunCard`); a
+ * finished sync, enrichment or insight run is a job row placed by the time
+ * it finished, so it sits next to what it caused. Per-entry
+ * approve/reject/undo live on the row and appear only when there is
+ * something to decide. The bulk "Accept all" is the one guarded path; see
+ * approveAll for what it confirms and deliberately does not promise.
  *
- * The runs behind the cards come from the runs list, refetched on every
- * pushed `agentRun` frame so a finishing run's note appears without a
- * reload; a run older than the list's window still groups, without its
- * header details.
+ * The runs behind the cards and the finished jobs come from their lists,
+ * refetched on every pushed `agentRun` or `insightsComputed` frame; a run
+ * older than the list's window still groups, without its header details.
  */
 
 import { useQuery } from '@pinia/colada';
 import { computed, onBeforeUnmount, ref } from 'vue';
 
 import ActionRow from '@/components/actions/ActionRow.vue';
+import JobRow from '@/components/actions/JobRow.vue';
 import RunCard from '@/components/actions/RunCard.vue';
 import { useCuration } from '@/composables/useCuration';
-import { agentApi } from '@/services/api';
+import { agentApi, jobsApi } from '@/services/api';
 import { useConnectionStore } from '@/stores/connection';
 import type { AgentRunResponse } from '@/types/generated';
 
-import { groupFeed } from './activityGroups';
+import { type FeedItem, groupFeed, mergeJobs } from './activityGroups';
 
 /** Runs fetched for the cards; the feed holds 100 entries, so this covers it. */
 const RUNS_WINDOW = 200;
@@ -40,10 +42,20 @@ const { data: runList } = useQuery({
   key: () => ['agent-runs-for-feed', runsTick.value, curation.store.resyncTick],
   query: async () => (await agentApi.list(RUNS_WINDOW)) ?? [],
 });
+const { data: jobList } = useQuery({
+  key: () => ['jobs-for-log', runsTick.value, curation.store.resyncTick],
+  query: async () => (await jobsApi.list(100)) ?? [],
+});
 const stopRunEvents = connection.onMessage('agentRun', () => {
   runsTick.value += 1;
 });
-onBeforeUnmount(stopRunEvents);
+const stopInsightEvents = connection.onMessage('insightsComputed', () => {
+  runsTick.value += 1;
+});
+onBeforeUnmount(() => {
+  stopRunEvents();
+  stopInsightEvents();
+});
 
 const runsById = computed(() => {
   const map = new Map<number, AgentRunResponse>();
@@ -53,7 +65,23 @@ const runsById = computed(() => {
   return map;
 });
 
-const items = computed(() => groupFeed(entries.value, runsById.value));
+const items = computed(() =>
+  mergeJobs(groupFeed(entries.value, runsById.value), jobList.value ?? []),
+);
+
+function itemKey(item: FeedItem): string {
+  switch (item.kind) {
+    case 'run': {
+      return `run-${item.runId}`;
+    }
+    case 'job': {
+      return `job-${item.job.kind}-${item.job.id}`;
+    }
+    case 'entry': {
+      return `entry-${item.entry.id}`;
+    }
+  }
+}
 
 /**
  * Bulk approve. Confirms first, because this applies every pending proposal at
@@ -93,8 +121,10 @@ async function approveAll(): Promise<void> {
   <div class="flex h-full flex-col">
     <div class="flex items-start justify-between gap-3 border-b border-default px-4 py-3">
       <div class="min-w-0">
-        <h2 class="text-sm font-semibold text-highlighted">Activity</h2>
-        <p class="text-sm text-muted">Every curation action — by you or an agent.</p>
+        <h2 class="text-sm font-semibold text-highlighted">Logs</h2>
+        <p class="text-sm text-muted">
+          Every action by you or an agent, and every job that finished.
+        </p>
       </div>
       <UButton
         v-if="pending > 0"
@@ -117,15 +147,16 @@ async function approveAll(): Promise<void> {
       {{ curation.store.lastError }}
     </p>
     <div class="flex-1 overflow-y-auto">
-      <p v-if="entries.length === 0" class="p-4 text-sm text-muted">No actions yet.</p>
+      <p v-if="items.length === 0" class="p-4 text-sm text-muted">Nothing has happened yet.</p>
       <ul v-else class="divide-y divide-default">
-        <li v-for="item in items" :key="item.kind === 'run' ? `run-${item.runId}` : item.entry.id">
+        <li v-for="item in items" :key="itemKey(item)">
           <RunCard
             v-if="item.kind === 'run'"
             :run-id="item.runId"
             :run="item.run"
             :entries="item.entries"
           />
+          <JobRow v-else-if="item.kind === 'job'" :job="item.job" />
           <ActionRow v-else :entry="item.entry" />
         </li>
       </ul>

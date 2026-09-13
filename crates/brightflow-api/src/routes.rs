@@ -181,6 +181,8 @@ fn api_routes() -> Router<AppState> {
             delete(llm_handlers::delete_provider),
         )
         .route("/llm/providers/{id}/test", post(llm_handlers::test_provider))
+        // Every background run as one list (Activity's Running jobs tab)
+        .route("/jobs", get(crate::jobs::list_jobs))
         .route(
             "/agent/runs",
             get(agent_handlers::list_runs).post(agent_handlers::start_run),

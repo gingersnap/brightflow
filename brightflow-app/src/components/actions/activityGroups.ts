@@ -6,12 +6,44 @@
  * runs list; the components render what these return.
  */
 
-import type { ActionLogEntry, AgentRunResponse } from '@/types/generated';
+import type { ActionLogEntry, AgentRunResponse, Job } from '@/types/generated';
 
-/** One card in the feed: a person's action on its own, or a run with its entries. */
+/**
+ * One card in the feed: a person's action on its own, a run with its
+ * entries, or a background job that finished.
+ */
 export type FeedItem =
   | { kind: 'entry'; entry: ActionLogEntry }
-  | { kind: 'run'; runId: number; run: AgentRunResponse | null; entries: ActionLogEntry[] };
+  | { kind: 'run'; runId: number; run: AgentRunResponse | null; entries: ActionLogEntry[] }
+  | { kind: 'job'; job: Job };
+
+/** When an item happened, for ordering: a run card by its newest entry. */
+export function itemTime(item: FeedItem): number {
+  switch (item.kind) {
+    case 'entry': {
+      return item.entry.createdAt;
+    }
+    case 'run': {
+      return item.entries[0]?.createdAt ?? 0;
+    }
+    case 'job': {
+      return item.job.finishedAt ?? item.job.startedAt;
+    }
+  }
+}
+
+/**
+ * Finished jobs take their place in the log by the time they finished, so a
+ * connector sync sits just above the re-declaration it caused. Running jobs
+ * belong to the other tab and are left out; an agent run's completion is
+ * left out too, since its card already stands for it.
+ */
+export function mergeJobs(items: FeedItem[], jobs: Job[]): FeedItem[] {
+  const finished: FeedItem[] = jobs
+    .filter((job) => job.status !== 'running' && job.kind !== 'agent_run')
+    .map((job) => ({ job, kind: 'job' }));
+  return [...items, ...finished].toSorted((a, b) => itemTime(b) - itemTime(a));
+}
 
 /**
  * Group the feed (newest first) by run. A run's card takes the position of

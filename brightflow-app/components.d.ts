@@ -46,6 +46,8 @@ declare module 'vue' {
     InsightHistoryPanel: typeof import('./src/components/insights/InsightHistoryPanel.vue')['default']
     InsightsPanel: typeof import('./src/components/insights/InsightsPanel.vue')['default']
     InsightsView: typeof import('./src/components/insights/InsightsView.vue')['default']
+    JobRow: typeof import('./src/components/actions/JobRow.vue')['default']
+    JobsPanel: typeof import('./src/components/actions/JobsPanel.vue')['default']
     LlmSettings: typeof import('./src/components/settings/LlmSettings.vue')['default']
     LoginPage: typeof import('./src/components/auth/LoginPage.vue')['default']
     MembershipRenderer: typeof import('./src/components/insights/renderers/MembershipRenderer.vue')['default']
