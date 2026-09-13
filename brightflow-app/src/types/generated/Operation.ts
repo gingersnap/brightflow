@@ -5,6 +5,6 @@ import type { DerivedColumn } from "./DerivedColumn";
 import type { FilterOp } from "./FilterOp";
 
 /**
- * Each operation transforms the DataFrame
+ * Each operation transforms the frame it receives.
  */
 export type Operation = { "type": "filter", column: string, op: FilterOp, value: unknown, } | { "type": "select", columns: Array<string>, } | { "type": "groupBy", by: Array<string>, aggs: Array<AggSpec>, } | { "type": "pivot", index: Array<string>, columns: string, values: string, agg: Aggregation | null, } | { "type": "sort", by: string, descending: boolean, } | { "type": "limit", n: number, } | { "type": "withColumns", columns: Array<DerivedColumn>, };

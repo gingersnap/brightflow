@@ -1,19 +1,16 @@
-//! Wire types for the query API: the `Query` operation chain and its response.
+//! Wire types for the query API: a `Query` (an operation chain over a
+//! loaded dataset) and its response.
 //!
-//! A query is a *sequence* of operations rather than a fixed struct of optional
-//! clauses, because the query builder lets users compose filter/group/sort/limit
-//! in any order and the result depends on that order.
-//!
-//! Derived columns (`WithColumns`) are a typed expression tree, not text: each
-//! `DerivedExpr` variant names what it computes and the executor is its only
-//! compiler. The tree grows by adding variants; it never gains a raw
-//! expression-string escape hatch.
+//! The chain itself is the contract crate's operations language
+//! (`brightflow_types::ops`), shared with model recipes and the action
+//! manifest; this module adds only the session-bound wrapper and the
+//! response and WebSocket frames.
 
 use crate::analytics::session::ColumnInfo;
-use brightflow_engine::data::config::TimeGranularity;
-// Shared with the metric vocabulary in the contract crate: one spelling of
-// the aggregation functions and filter operators on every wire.
-pub use brightflow_types::{Aggregation, FilterOp};
+// One spelling of the chain, the aggregation functions and the filter
+// operators on every wire.
+use brightflow_types::TimeGranularity;
+pub use brightflow_types::{AggSpec, Aggregation, DerivedColumn, DerivedExpr, FilterOp, Operation};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -38,90 +35,6 @@ pub struct Query {
 
 fn default_dataset_id() -> String {
     "default".to_string()
-}
-
-/// Each operation transforms the DataFrame
-#[derive(Debug, Clone, Deserialize, TS)]
-#[ts(export)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum Operation {
-    /// Filter rows by column condition
-    Filter {
-        column: String,
-        op: FilterOp,
-        #[serde(default)]
-        #[ts(type = "unknown")]
-        value: serde_json::Value,
-    },
-
-    /// Select specific columns
-    Select { columns: Vec<String> },
-
-    /// Group by columns with aggregations
-    GroupBy { by: Vec<String>, aggs: Vec<AggSpec> },
-
-    /// Pivot table transformation
-    Pivot {
-        index: Vec<String>,
-        columns: String,
-        values: String,
-        #[serde(default)]
-        agg: Option<Aggregation>,
-    },
-
-    /// Sort by column(s)
-    Sort {
-        by: String,
-        #[serde(default)]
-        descending: bool,
-    },
-
-    /// Limit number of rows returned
-    Limit { n: u32 },
-
-    /// Add derived columns computed from existing ones. Placed before a
-    /// `GroupBy` or `Pivot`, the derived names can be grouped on like any
-    /// other column.
-    WithColumns { columns: Vec<DerivedColumn> },
-}
-
-/// One derived column: its output name and how it is computed.
-#[derive(Debug, Clone, Deserialize, TS)]
-#[ts(export)]
-#[serde(rename_all = "camelCase")]
-pub struct DerivedColumn {
-    pub name: String,
-    pub expr: DerivedExpr,
-}
-
-/// The expression behind a derived column.
-#[derive(Debug, Clone, Deserialize, TS)]
-#[ts(export)]
-#[serde(tag = "fn", rename_all = "camelCase")]
-pub enum DerivedExpr {
-    /// The period label of a time column at a granularity, as a string in the
-    /// engine's format (`2024-03-01`, `2024-W11`, `2024-03`, `2024-Q1`,
-    /// `2024`), so Explore and the insights feed name the same week the same
-    /// way and label order is chronological. Accepts `Date`, `Datetime`, and
-    /// `String` columns holding ISO dates (the first ten characters are
-    /// parsed; anything else buckets to null).
-    Period {
-        column: String,
-        granularity: TimeGranularity,
-    },
-}
-
-/// Aggregation specification for GroupBy
-#[derive(Debug, Clone, Deserialize, TS)]
-#[ts(export)]
-pub struct AggSpec {
-    /// Column to aggregate ("*" for count)
-    pub column: String,
-    /// Aggregation function
-    pub function: Aggregation,
-    /// Optional output column name
-    #[serde(default)]
-    pub alias: Option<String>,
 }
 
 /// Query execution response

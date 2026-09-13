@@ -89,6 +89,7 @@ export type { MetricExpr } from './MetricExpr';
 export type { MetricExt } from './MetricExt';
 export type { MetricFilter } from './MetricFilter';
 export type { Metric } from './Metric';
+export type { ModelRecipe } from './ModelRecipe';
 export type { NamedSeries } from './NamedSeries';
 export type { NodeData } from './NodeData';
 export type { NodeId } from './NodeId';

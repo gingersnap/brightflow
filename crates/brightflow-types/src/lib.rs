@@ -23,8 +23,8 @@
 //! does not use.
 //!
 //! A type enters this crate only once it crosses a second boundary. The
-//! operations language (filter, group, pivot) is the next candidate and is
-//! deliberately not here yet.
+//! operations language (see [`ops`]) crossed its second when a model's recipe
+//! became a stored, versioned chain that an agent can also emit.
 //!
 //! Some functions exist for producers outside this workspace rather than
 //! for any caller in it: the [`LogicalType`] conversions to and from Polars
@@ -38,6 +38,7 @@ pub mod datatype;
 pub mod declaration;
 pub mod ext;
 pub mod import;
+pub mod ops;
 pub mod provenance;
 pub mod resolved;
 pub mod semantic;
@@ -51,6 +52,9 @@ pub use ext::{
     MetricFilter, Polarity, TimeGranularity, BRIGHTFLOW_VENDOR,
 };
 pub use import::{declarations_of, parse_model};
+pub use ops::{
+    AggSpec, DerivedColumn, DerivedExpr, ModelRecipe, Operation, RecipeError, RECIPE_VERSION,
+};
 pub use provenance::{Layer, Provenance};
 pub use resolved::{
     resolve_columns, resolve_table, ColumnOpinion, ResolvedColumn, ResolvedTable, TableOpinion,

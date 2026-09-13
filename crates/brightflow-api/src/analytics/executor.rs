@@ -10,7 +10,7 @@ use crate::analytics::types::{
     AggSpec, Aggregation, DerivedColumn, DerivedExpr, FilterOp, Operation, Query, QueryResponse,
 };
 use crate::shared::{AppError, AppResult};
-use brightflow_engine::data::config::TimeGranularity;
+use brightflow_types::TimeGranularity;
 use polars::prelude::*;
 use std::time::Instant;
 
