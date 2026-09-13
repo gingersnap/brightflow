@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ActionRow: typeof import('./src/components/actions/ActionRow.vue')['default']
     ActiveRunBar: typeof import('./src/components/textenrichment/ActiveRunBar.vue')['default']
     ActivityFeed: typeof import('./src/components/actions/ActivityFeed.vue')['default']
     ActivityView: typeof import('./src/components/actions/ActivityView.vue')['default']
@@ -67,6 +68,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     RunAllModal: typeof import('./src/components/textenrichment/RunAllModal.vue')['default']
+    RunCard: typeof import('./src/components/actions/RunCard.vue')['default']
     RunHistoryTable: typeof import('./src/components/connect/RunHistoryTable.vue')['default']
     ScheduleList: typeof import('./src/components/connect/ScheduleList.vue')['default']
     SchedulesPanel: typeof import('./src/components/connect/SchedulesPanel.vue')['default']

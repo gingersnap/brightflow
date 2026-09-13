@@ -14,7 +14,8 @@ use serde_json::json;
 use crate::actions::events;
 use crate::actions::types::{
     Action, ActionLogEntry, ActionManifestEntry, ActionRequest, ActionResponse, ActionStatus,
-    BulkApproveFailure, BulkApproveResponse, PendingCount, Scope, UndoOp, ACTION_KINDS,
+    BulkApproveFailure, BulkApproveResponse, BulkRejectResponse, PendingCount, Scope, UndoOp,
+    ACTION_KINDS,
 };
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -354,9 +355,19 @@ pub async fn pending_count(State(state): State<AppState>) -> AppResult<Json<Pend
 /// the normal path; it is the normal path in a loop.
 pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkApproveResponse>> {
     let store = state.require_store()?;
-    let store = std::sync::Arc::clone(store);
     let rows = store.db().list_proposed_actions().await?;
+    approve_rows(&state, rows).await.map(Json)
+}
 
+/// Approve the given proposal rows in the order given, continuing past
+/// per-row failures, and emit one batch event. Shared by the global sweep
+/// and the per-run one; callers pick the rows and their order.
+pub(crate) async fn approve_rows(
+    state: &AppState,
+    rows: Vec<brightflow_store::ActionLogRow>,
+) -> AppResult<BulkApproveResponse> {
+    let store = state.require_store()?;
+    let store = std::sync::Arc::clone(store);
     let total = rows.len();
     let mut approved = 0usize;
     let mut failures: Vec<BulkApproveFailure> = Vec::new();
@@ -394,7 +405,7 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
         let (log_id, kind) = (row.id, row.action_kind.clone());
         // Quiet per-row execution: one batch event goes out at the end
         // instead of a WS frame per proposal.
-        match execute_and_record_quiet(&state, row, action).await {
+        match execute_and_record_quiet(state, row, action).await {
             Ok((response, entry)) => {
                 if response.status == ActionStatus::Applied {
                     approved += 1;
@@ -415,13 +426,41 @@ pub async fn approve_all(State(state): State<AppState>) -> AppResult<Json<BulkAp
 
     let failed = total.saturating_sub(approved);
     tracing::info!("bulk approve: {approved}/{total} applied, {failed} failed");
-    events::emit_batch(&state, entries, total, approved, failed).await;
-    Ok(Json(BulkApproveResponse {
+    events::emit_batch(state, entries, total, approved, failed).await;
+    Ok(BulkApproveResponse {
         total,
         approved,
         failed,
         failures,
-    }))
+    })
+}
+
+/// Reject the given proposal rows and emit one batch event. Rejecting is a
+/// status flip with nothing to execute, so a row can only fail to update.
+pub(crate) async fn reject_rows(
+    state: &AppState,
+    rows: Vec<brightflow_store::ActionLogRow>,
+) -> AppResult<BulkRejectResponse> {
+    let store = state.require_store()?;
+    let store = std::sync::Arc::clone(store);
+    let total = rows.len();
+    let mut rejected = 0usize;
+    let mut entries: Vec<ActionLogEntry> = Vec::with_capacity(total);
+    for mut row in rows {
+        let now = chrono::Utc::now().timestamp();
+        match store.db().set_action_status(row.id, "rejected", now).await {
+            Ok(()) => {
+                rejected += 1;
+                row.status = "rejected".to_string();
+                row.resolved_at = Some(now);
+                entries.push(ActionLogEntry::from_row(row));
+            },
+            Err(e) => tracing::warn!("could not reject action {}: {e}", row.id),
+        }
+    }
+    let failed = total.saturating_sub(rejected);
+    events::emit_batch(state, entries, total, rejected, failed).await;
+    Ok(BulkRejectResponse { total, rejected })
 }
 
 pub(crate) fn push_failure(

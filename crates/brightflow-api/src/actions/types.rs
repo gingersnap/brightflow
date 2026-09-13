@@ -407,6 +407,16 @@ pub struct BulkApproveResponse {
     pub failures: Vec<BulkApproveFailure>,
 }
 
+/// Outcome of rejecting a run's proposals at once.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkRejectResponse {
+    /// Proposals of the run that were pending when the sweep started.
+    pub total: usize,
+    pub rejected: usize,
+}
+
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]

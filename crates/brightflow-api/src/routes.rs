@@ -188,6 +188,14 @@ fn api_routes() -> Router<AppState> {
         .route("/agent/runs/{id}", get(agent_handlers::get_run))
         .route("/agent/runs/{id}/cancel", post(agent_handlers::cancel_run))
         .route(
+            "/agent/runs/{id}/approve-all",
+            post(agent_handlers::approve_all),
+        )
+        .route(
+            "/agent/runs/{id}/reject-all",
+            post(agent_handlers::reject_all),
+        )
+        .route(
             "/agent/runs/{id}/undo-all",
             post(agent_handlers::undo_all),
         )

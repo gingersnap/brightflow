@@ -24,6 +24,7 @@ export type { AvailableConnectorResponse } from './AvailableConnectorResponse';
 export type { BreakdownRow } from './BreakdownRow';
 export type { BulkApproveFailure } from './BulkApproveFailure';
 export type { BulkApproveResponse } from './BulkApproveResponse';
+export type { BulkRejectResponse } from './BulkRejectResponse';
 export type { BulkUndoResponse } from './BulkUndoResponse';
 export type { CategoryCount } from './CategoryCount';
 export type { ColumnExt } from './ColumnExt';

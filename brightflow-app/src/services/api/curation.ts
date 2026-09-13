@@ -10,6 +10,7 @@ import type {
   ActionResponse,
   AgentRunResponse,
   BulkApproveResponse,
+  BulkRejectResponse,
   BulkUndoResponse,
   PendingCount,
 } from '@/types/generated';
@@ -53,6 +54,12 @@ export const agentApi = {
   /** Revert every applied, undoable action of a run, newest first. */
   undoAll: (id: number): Promise<BulkUndoResponse | null> =>
     api.post<BulkUndoResponse>(`/api/agent/runs/${id}/undo-all`),
+  /** Apply every pending proposal of a run, oldest first. */
+  approveAll: (id: number): Promise<BulkApproveResponse | null> =>
+    api.post<BulkApproveResponse>(`/api/agent/runs/${id}/approve-all`),
+  /** Reject every pending proposal of a run. */
+  rejectAll: (id: number): Promise<BulkRejectResponse | null> =>
+    api.post<BulkRejectResponse>(`/api/agent/runs/${id}/reject-all`),
   list: (limit = 50): Promise<AgentRunResponse[] | null> =>
     api.get<AgentRunResponse[]>(`/api/agent/runs?limit=${limit}`),
   get: (id: number): Promise<AgentRunResponse | null> =>

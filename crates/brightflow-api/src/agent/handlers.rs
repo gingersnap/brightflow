@@ -222,6 +222,48 @@ pub async fn undo_all(
     }))
 }
 
+/// The run's proposals still awaiting review, oldest first: the order they
+/// were proposed in, which is the order dependent proposals must apply in.
+async fn pending_rows(state: &AppState, id: i64) -> AppResult<Vec<brightflow_store::ActionLogRow>> {
+    let store = state.require_store()?;
+    store
+        .db()
+        .get_agent_run(id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
+    Ok(store
+        .db()
+        .list_actions_for_agent_run(id)
+        .await?
+        .into_iter()
+        .filter(|r| r.status == "proposed")
+        .collect())
+}
+
+/// `POST /api/agent/runs/{id}/approve-all` — apply every pending proposal
+/// of one run, oldest first, through the same path a single approval uses.
+pub async fn approve_all(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<crate::actions::types::BulkApproveResponse>> {
+    let rows = pending_rows(&state, id).await?;
+    crate::actions::handlers::approve_rows(&state, rows)
+        .await
+        .map(Json)
+}
+
+/// `POST /api/agent/runs/{id}/reject-all` — reject every pending proposal
+/// of one run.
+pub async fn reject_all(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<crate::actions::types::BulkRejectResponse>> {
+    let rows = pending_rows(&state, id).await?;
+    crate::actions::handlers::reject_rows(&state, rows)
+        .await
+        .map(Json)
+}
+
 /// `POST /api/agent/runs/{id}/cancel`
 pub async fn cancel_run(
     State(state): State<AppState>,

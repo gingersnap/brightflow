@@ -1,6 +1,7 @@
 /**
- * REST side of the curation surface: dispatch, approve/reject/undo, bulk
- * approve, and the feed/pending-count snapshots (colada queries).
+ * REST side of the curation surface: dispatch, approve/reject/undo, the
+ * bulk approve and the per-run approve/reject sweeps, and the
+ * feed/pending-count snapshots (colada queries).
  *
  * Dispatch is not optimistic: a failure sets `lastError` and returns null
  * rather than undoing anything, because nothing here owns the overlay an
@@ -13,9 +14,14 @@
 import { useQuery } from '@pinia/colada';
 import { ref } from 'vue';
 
-import { actionsApi } from '@/services/api';
+import { actionsApi, agentApi } from '@/services/api';
 import { FEED_LIMIT, useCurationStore } from '@/stores/curation';
-import type { Action, ActionResponse, BulkApproveResponse } from '@/types/generated';
+import type {
+  Action,
+  ActionResponse,
+  BulkApproveResponse,
+  BulkRejectResponse,
+} from '@/types/generated';
 
 export function useCuration() {
   const store = useCurationStore();
@@ -99,11 +105,22 @@ export function useCuration() {
    * requests. The server applies them oldest-first (proposals have ordering
    * dependencies), reports what failed, and pushes one batch event.
    */
-  async function approveAll(): Promise<BulkApproveResponse | null> {
+  function approveAll(): Promise<BulkApproveResponse | null> {
+    return approveSweep(() => actionsApi.approveAll());
+  }
+
+  /** Approve one run's pending proposals, the same server-side sweep scoped to the run. */
+  function approveRun(runId: number): Promise<BulkApproveResponse | null> {
+    return approveSweep(() => agentApi.approveAll(runId));
+  }
+
+  async function approveSweep(
+    sweep: () => Promise<BulkApproveResponse | null>,
+  ): Promise<BulkApproveResponse | null> {
     approvingAll.value = true;
     store.lastError = null;
     try {
-      const result = await actionsApi.approveAll();
+      const result = await sweep();
       if (result != null && result.failed > 0) {
         const first = result.failures[0];
         const example = first == null ? '' : ` — e.g. ${first.actionKind}: ${first.error}`;
@@ -119,12 +136,27 @@ export function useCuration() {
     }
   }
 
+  /** Reject one run's pending proposals in one sweep; nothing is applied. */
+  async function rejectRun(runId: number): Promise<BulkRejectResponse | null> {
+    store.lastError = null;
+    try {
+      const result = await agentApi.rejectAll(runId);
+      store.offlineRefresh(false);
+      return result;
+    } catch (error) {
+      store.lastError = error instanceof Error ? error.message : 'Bulk reject failed';
+      return null;
+    }
+  }
+
   return {
     approve,
     approveAll,
+    approveRun,
     approvingAll,
     dispatch,
     dispatching,
+    rejectRun,
     store,
     undo,
     reject,

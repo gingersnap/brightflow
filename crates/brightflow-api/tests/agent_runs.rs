@@ -2,7 +2,8 @@
 //! kind, the run's context carries the column profiles the prompt promises,
 //! and what the run proposes lands at the agent layer through the same bus
 //! a person uses — held as a proposal until approved, applied at once when
-//! the run auto-applies.
+//! the run auto-applies. A run's proposals can be approved or rejected as
+//! one batch.
 
 #![expect(
     clippy::unwrap_used,
@@ -218,4 +219,108 @@ async fn describe_table_proposals_land_at_the_agent_layer() {
         body.resolved_by.as_ref().map(|p| p.layer),
         Some(Layer::User)
     );
+}
+
+/// The per-run sweeps: approve-all applies every pending proposal of that
+/// run and no other, oldest first; reject-all flips the rest to rejected.
+#[tokio::test]
+async fn a_runs_proposals_are_approved_or_rejected_as_one_batch() {
+    use brightflow_api::agent::handlers::{approve_all, reject_all};
+
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
+    let store = state.store().unwrap();
+    let now = chrono::Utc::now().timestamp();
+    let scope_key = format!("describe_table:{SOURCE}:{TABLE}");
+    let run = store
+        .db()
+        .insert_agent_run("describe_table", "propose", &scope_key, now)
+        .await
+        .unwrap();
+    let other = store
+        .db()
+        .insert_agent_run("describe_table", "propose", &scope_key, now)
+        .await
+        .unwrap();
+    let propose = |run_id: i64, column: &str, text: &str, request: &str| {
+        let action = Action::SetColumnDescription {
+            scope: Scope {
+                source_id: SOURCE.to_string(),
+                table: TABLE.to_string(),
+            },
+            column: column.to_string(),
+            description: Some(text.to_string()),
+        };
+        let request_id = request.to_string();
+        let app = state.clone();
+        async move {
+            dispatch_action(
+                &app,
+                action,
+                &request_id,
+                Actor::Agent {
+                    run_id,
+                    auto_apply: false,
+                },
+            )
+            .await
+            .unwrap()
+        }
+    };
+    propose(run.id, "title", "Headline.", "r1").await;
+    propose(run.id, "body", "Text.", "r2").await;
+    let elsewhere = propose(other.id, "id", "Row id.", "r3").await;
+
+    let approved = approve_all(State(state.clone()), Path(run.id))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(
+        (approved.total, approved.approved, approved.failed),
+        (2, 2, 0)
+    );
+    let resolved = store.resolved_columns(SOURCE, TABLE).await.unwrap();
+    let description = |name: &str| {
+        resolved
+            .iter()
+            .find(|c| c.name == name)
+            .and_then(|c| c.description.clone())
+    };
+    assert_eq!(description("title").as_deref(), Some("Headline."));
+    assert_eq!(description("body").as_deref(), Some("Text."));
+    // The other run's proposal is untouched.
+    assert_eq!(description("id"), None);
+    let other_row = store
+        .db()
+        .get_action(elsewhere.log_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(other_row.status, "proposed");
+
+    // Nothing pending on the first run any more; rejecting the other run
+    // flips its proposal without applying it.
+    let again = approve_all(State(state.clone()), Path(run.id))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(again.total, 0);
+    let rejected = reject_all(State(state.clone()), Path(other.id))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!((rejected.total, rejected.rejected), (1, 1));
+    let after_reject = store
+        .db()
+        .get_action(elsewhere.log_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after_reject.status, "rejected");
+    assert_eq!(description("id"), None);
+
+    // An unknown run is a 404, not an empty sweep.
+    assert!(approve_all(State(state.clone()), Path(9_999))
+        .await
+        .is_err());
 }
