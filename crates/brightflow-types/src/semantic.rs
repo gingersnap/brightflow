@@ -109,7 +109,7 @@ pub struct CustomExtension {
 }
 
 impl CustomExtension {
-    pub fn from_json(vendor_name: impl Into<String>, value: &serde_json::Value) -> Self {
+    pub(crate) fn from_json(vendor_name: impl Into<String>, value: &serde_json::Value) -> Self {
         Self {
             vendor_name: vendor_name.into(),
             data: value.to_string(),
@@ -122,7 +122,7 @@ impl CustomExtension {
 }
 
 /// Read one vendor's extension as JSON.
-pub fn extension_json(exts: &[CustomExtension], vendor: &str) -> Option<serde_json::Value> {
+pub(crate) fn extension_json(exts: &[CustomExtension], vendor: &str) -> Option<serde_json::Value> {
     exts.iter()
         .find(|e| e.vendor_name == vendor)
         .and_then(CustomExtension::json)

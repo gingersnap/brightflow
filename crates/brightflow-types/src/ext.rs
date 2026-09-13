@@ -405,6 +405,7 @@ impl MetricExpr {
         self
     }
 
+    /// Add one predicate, builder style.
     #[must_use]
     pub fn with_filter(mut self, filter: MetricFilter) -> Self {
         self.filters.push(filter);

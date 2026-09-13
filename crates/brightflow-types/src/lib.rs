@@ -25,6 +25,13 @@
 //! A type enters this crate only once it crosses a second boundary. The
 //! operations language (filter, group, pivot) is the next candidate and is
 //! deliberately not here yet.
+//!
+//! Some functions exist for producers outside this workspace rather than
+//! for any caller in it: the [`LogicalType`] conversions to and from Polars
+//! and arrow-rs, [`TableDeclaration::from_endpoint_json`] for the
+//! connector-author shape, and [`parse_model`] for a pasted document. They
+//! are the library's surface and stay whether or not a crate here calls
+//! them; everything else is `pub(crate)` unless a workspace crate names it.
 
 pub mod changes;
 pub mod datatype;
