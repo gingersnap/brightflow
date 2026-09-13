@@ -135,22 +135,44 @@ impl ConnectorResult {
     }
 }
 
-/// Per-endpoint metadata from a connector run
+/// Longbow's per-endpoint result plus the one thing this crate adds.
+///
+/// The declaration, typed. Everything Longbow reports (name, rows, keys,
+/// cursor, type errors) is read through `Deref`; `declaration` shadows the
+/// raw JSON of the same name on the inner result, which is consumed to
+/// build it.
 #[derive(Debug, Clone)]
 pub struct EndpointResultInfo {
-    pub name: String,
-    pub parquet_path: Option<String>,
-    pub rows: usize,
-    pub primary_key: Vec<String>,
-    pub cursor_field: Option<String>,
-    pub cursor_value: Option<String>,
-    pub duration_ms: u64,
+    inner: longbow::pipeline::EndpointResult,
     /// What the connector declared about this table, typed. `None` when the
     /// endpoint declared nothing. The dataset's `source` is a placeholder
     /// here (the endpoint name); the store sets the real one on apply.
     pub declaration: Option<TableDeclaration>,
-    /// Values Longbow nulled because they did not fit their declared type.
-    pub type_errors: u64,
+}
+
+impl EndpointResultInfo {
+    /// Wrap Longbow's result, parsing its pass-through declaration.
+    fn parse(mut inner: longbow::pipeline::EndpointResult) -> Result<Self> {
+        let declaration =
+            parse_declaration(&inner.name, &inner.primary_key, inner.declaration.take())?;
+        Ok(Self { inner, declaration })
+    }
+
+    /// For callers that build results by hand (tests, fixtures): a Longbow
+    /// result with an already-typed declaration.
+    pub fn with_declaration(
+        inner: longbow::pipeline::EndpointResult,
+        declaration: Option<TableDeclaration>,
+    ) -> Self {
+        Self { inner, declaration }
+    }
+}
+
+impl std::ops::Deref for EndpointResultInfo {
+    type Target = longbow::pipeline::EndpointResult;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 /// `connector:{name}` at the frontmatter version, with the source hash. A
@@ -207,7 +229,7 @@ fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> Result<Connec
         .endpoints
         .iter()
         .map(|e| {
-            Ok(EndpointResultInfo {
+            EndpointResultInfo::parse(longbow::pipeline::EndpointResult {
                 name: e.name.clone(),
                 parquet_path: None,
                 rows: 0,
@@ -215,7 +237,7 @@ fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> Result<Connec
                 cursor_field: e.cursor_field.clone(),
                 cursor_value: None,
                 duration_ms: 0,
-                declaration: parse_declaration(&e.name, &e.primary_key, e.declaration.clone())?,
+                declaration: e.declaration.clone(),
                 type_errors: 0,
             })
         })
@@ -242,20 +264,7 @@ fn map_run_result(
     let endpoints = run_result
         .endpoints
         .into_iter()
-        .map(|ep| {
-            let declaration = parse_declaration(&ep.name, &ep.primary_key, ep.declaration)?;
-            Ok(EndpointResultInfo {
-                name: ep.name,
-                parquet_path: ep.parquet_path,
-                rows: ep.rows,
-                primary_key: ep.primary_key,
-                cursor_field: ep.cursor_field,
-                cursor_value: ep.cursor_value,
-                duration_ms: ep.duration_ms,
-                declaration,
-                type_errors: ep.type_errors,
-            })
-        })
+        .map(EndpointResultInfo::parse)
         .collect::<Result<Vec<_>>>()?;
     Ok(ConnectorResult {
         meta: run_result.meta,
@@ -576,8 +585,10 @@ mod tests {
 
     // -- map_run_result -----------------------------------------------------
 
+    /// The wrapper adds the typed declaration and nothing else: every field
+    /// Longbow reported reads through unchanged.
     #[test]
-    fn map_run_result_translates_every_field_verbatim() {
+    fn map_run_result_wraps_longbows_result_and_types_the_declaration() {
         let run_result = longbow::RunResult {
             meta: longbow::pipeline::ConnectorMeta::default(),
             endpoints: vec![longbow::pipeline::EndpointResult {

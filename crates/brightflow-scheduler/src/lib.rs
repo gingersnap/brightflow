@@ -644,19 +644,24 @@ mod tests {
             .await
             .expect("table");
 
-        let endpoint = |name: &str, json: serde_json::Value| EndpointResultInfo {
-            name: name.to_string(),
-            parquet_path: None,
-            rows: 0,
-            primary_key: vec!["id".to_string()],
-            cursor_field: None,
-            cursor_value: None,
-            duration_ms: 0,
-            declaration: Some(
-                TableDeclaration::from_endpoint_json(name, name, vec!["id".into()], json)
-                    .expect("declaration"),
-            ),
-            type_errors: 0,
+        let endpoint = |name: &str, json: serde_json::Value| {
+            EndpointResultInfo::with_declaration(
+                brightflow_connect::longbow::pipeline::EndpointResult {
+                    name: name.to_string(),
+                    parquet_path: None,
+                    rows: 0,
+                    primary_key: vec!["id".to_string()],
+                    cursor_field: None,
+                    cursor_value: None,
+                    duration_ms: 0,
+                    declaration: None,
+                    type_errors: 0,
+                },
+                Some(
+                    TableDeclaration::from_endpoint_json(name, name, vec!["id".into()], json)
+                        .expect("declaration"),
+                ),
+            )
         };
         let result = ConnectorResult {
             meta: brightflow_connect::longbow::pipeline::ConnectorMeta {
