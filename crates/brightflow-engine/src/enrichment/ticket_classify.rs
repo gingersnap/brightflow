@@ -12,11 +12,11 @@
 //! whatever the entries are called at write time.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 
 use super::function::{TicketClassifySpec, VocabEntry};
+use super::push_fmt;
 use super::vocabulary::{is_other, OTHER, OTHER_PARENT};
 use crate::data::config::ColumnRole;
 use brightflow_types::{ColumnExt, Field, LogicalType};
@@ -111,13 +111,6 @@ pub struct ClassifyCell {
     pub subcategory_id: i64,
     /// One of [`SENTIMENT_VALUES`].
     pub sentiment: String,
-}
-
-/// Append formatted text; writing into a `String` cannot fail.
-fn push_fmt(out: &mut String, args: std::fmt::Arguments<'_>) {
-    if out.write_fmt(args).is_err() {
-        unreachable!("fmt::Write for String is infallible");
-    }
 }
 
 fn name_of(names: &VocabNames, id: i64) -> String {

@@ -11,7 +11,9 @@ use anyhow::Result;
 use polars::prelude::*;
 
 use crate::data::config::{ColumnRole, Polarity, TimeGranularity};
-use brightflow_types::{ColumnExt, Dataset, Field, LogicalType, MetricExt, TableDeclaration};
+use brightflow_types::{
+    ColumnExt, Dataset, DatasetExt, DocFields, Field, LogicalType, MetricExt, TableDeclaration,
+};
 
 #[derive(Debug, Clone)]
 pub struct DataSchema {
@@ -175,13 +177,34 @@ impl DataSchema {
     }
 }
 
+/// The columns that make a row readable as a document, guessed from names.
+///
+/// `id`/`uri` identify it, `number` numbers it, `title`/`subject`/`name`
+/// head it, `body`/`text`/`description`/`content` are its text,
+/// `created_at`/`timestamp`/`date`/`time` date it, `html_url`/`url`/`link`
+/// link to it. `None` when no name matches. The one place this guess lives;
+/// the detector declares it and readers fall back to it.
+pub fn infer_doc_fields(columns: &[String]) -> Option<DocFields> {
+    let has = |name: &str| columns.iter().any(|c| c == name);
+    let first = |names: &[&str]| names.iter().find(|n| has(n)).map(|n| (*n).to_string());
+    let doc = DocFields {
+        id: first(&["id", "uri"]),
+        number: first(&["number"]),
+        title: first(&["title", "subject", "name"]),
+        body: first(&["body", "text", "description", "content"]),
+        timestamp: first(&["created_at", "timestamp", "date", "time"]),
+        url_template: first(&["html_url", "url", "link"]).map(|c| format!("{{{c}}}")),
+    };
+    (doc != DocFields::default()).then_some(doc)
+}
+
 /// What the detector would declare about a table, as a producer.
 ///
 /// One field per column with its logical type and the role the detection
-/// rules give it. A string column the name rule takes for the time axis is
-/// declared `is_time` explicitly, since its datatype says otherwise. Applied
-/// under the `detected` layer so every other producer and every edit
-/// outranks it.
+/// rules give it, plus the doc columns its names suggest. A string column
+/// the name rule takes for the time axis is declared `is_time` explicitly,
+/// since its datatype says otherwise. Applied under the `detected` layer so
+/// every other producer and every edit outranks it.
 pub fn detected_declaration(df: &DataFrame, table: &str) -> Result<TableDeclaration> {
     let schema = detect_schema(df)?;
     let is = |names: &[String], name: &str| names.iter().any(|n| n == name);
@@ -207,6 +230,13 @@ pub fn detected_declaration(df: &DataFrame, table: &str) -> Result<TableDeclarat
             field = field.with_is_time(true);
         }
         dataset.fields.push(field);
+    }
+    let names: Vec<String> = dataset.fields.iter().map(|f| f.name.clone()).collect();
+    if let Some(doc) = infer_doc_fields(&names) {
+        dataset.set_brightflow(&DatasetExt {
+            doc: Some(doc),
+            ..DatasetExt::default()
+        });
     }
     Ok(TableDeclaration {
         dataset: Some(dataset),
@@ -251,5 +281,38 @@ mod tests {
             ds.field("order_date").unwrap().datatype,
             Some(LogicalType::String)
         );
+        // No document-like names here: nothing declared for doc columns.
+        assert!(ds.brightflow().and_then(|e| e.doc).is_none());
+    }
+
+    #[test]
+    fn detected_declaration_declares_doc_columns_by_name() {
+        let df = df!(
+            "id" => &[1_i64, 2],
+            "title" => &["a", "b"],
+            "body" => &["x", "y"],
+            "html_url" => &["u1", "u2"],
+            "created_at" => &["2024-01-01", "2024-01-02"],
+        )
+        .unwrap();
+        let decl = detected_declaration(&df, "issues").unwrap();
+        let doc = decl
+            .dataset
+            .unwrap()
+            .brightflow()
+            .and_then(|e| e.doc)
+            .expect("doc columns");
+        assert_eq!(doc.id.as_deref(), Some("id"));
+        assert_eq!(doc.title.as_deref(), Some("title"));
+        assert_eq!(doc.body.as_deref(), Some("body"));
+        assert_eq!(doc.url_template.as_deref(), Some("{html_url}"));
+        assert_eq!(doc.timestamp.as_deref(), Some("created_at"));
+
+        let cols = |names: &[&str]| names.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        let posts = infer_doc_fields(&cols(&["uri", "text", "indexed_at"])).unwrap();
+        assert_eq!(posts.id.as_deref(), Some("uri"));
+        assert_eq!(posts.body.as_deref(), Some("text"));
+        assert_eq!(posts.timestamp, None);
+        assert_eq!(infer_doc_fields(&cols(&["x"])), None);
     }
 }

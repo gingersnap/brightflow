@@ -2,10 +2,11 @@
 //! number and title to head it, the body to quote, the timestamp to order
 //! by, and how to link back to the source.
 //!
-//! Comes from the table's declared `doc` fields (a connector or a person
-//! stated them, resolved through the store) and, when nobody has, from the
-//! column names themselves — `id`, `number`, `title`, `body`, `created_at`,
-//! `html_url` are what most sources call these things. Presentation-only,
+//! Comes from the table's resolved `doc` fields: a connector or a person
+//! declared them, or the detector guessed them from the column names when
+//! it gave the table its base layer (`brightflow_engine::data::schema::
+//! infer_doc_fields`, the one place that guess lives). The same guess is the
+//! fallback here for a table with no semantic rows at all. Presentation-only,
 //! except that the id column is also the join key the mentions child table
 //! and induction sampling use, so every consumer reads it from here.
 
@@ -48,19 +49,18 @@ impl DocDisplay {
         }
     }
 
-    /// What the column names say, for a table nobody has described. A
-    /// missing id column still yields `id`, which readers treat as "use the
-    /// row index".
+    /// What the column names say, for a table nobody has described: the
+    /// detector's guess, applied at read time. A missing id column still
+    /// yields `id`, which readers treat as "use the row index".
     pub fn infer(columns: &[String]) -> Self {
-        let has = |name: &str| columns.iter().any(|c| c == name);
-        let first = |names: &[&str]| names.iter().find(|n| has(n)).map(|n| (*n).to_string());
+        let doc = brightflow_engine::data::schema::infer_doc_fields(columns).unwrap_or_default();
         Self {
-            id_column: first(&["id", "uri"]).unwrap_or_else(|| "id".to_string()),
-            number_column: first(&["number"]),
-            title_column: first(&["title", "subject", "name"]),
-            body_column: first(&["body", "text", "description", "content"]),
-            timestamp_column: first(&["created_at", "timestamp", "date", "time"]),
-            url_template: first(&["html_url", "url", "link"]).map(|c| format!("{{{c}}}")),
+            id_column: doc.id.unwrap_or_else(|| "id".to_string()),
+            number_column: doc.number,
+            title_column: doc.title,
+            body_column: doc.body,
+            timestamp_column: doc.timestamp,
+            url_template: doc.url_template,
         }
     }
 

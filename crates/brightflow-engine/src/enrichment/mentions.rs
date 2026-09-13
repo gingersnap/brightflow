@@ -17,12 +17,12 @@
 //! reason is extracted too and `incidental=false` marks it.
 
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::function::{TicketExtractSpec, VocabEntry};
+use super::push_fmt;
 use super::ticket_classify::{VocabNames, SENTIMENT_VALUES};
 use super::vocabulary::{is_other, OTHER};
 use crate::data::config::ColumnRole;
@@ -147,13 +147,6 @@ impl SubjectResolver {
 
     pub fn resolve(&self, surface: &str) -> Option<i64> {
         self.by_surface.get(&surface.trim().to_lowercase()).copied()
-    }
-}
-
-/// Append formatted text; writing into a `String` cannot fail.
-fn push_fmt(out: &mut String, args: std::fmt::Arguments<'_>) {
-    if out.write_fmt(args).is_err() {
-        unreachable!("fmt::Write for String is infallible");
     }
 }
 

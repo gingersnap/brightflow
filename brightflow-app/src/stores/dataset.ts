@@ -19,6 +19,7 @@ import { computed, ref } from 'vue';
 
 import type { ColumnInfo, LoadTableResponse } from '@/types';
 import type { ActionLogEntry, ColumnRole, Polarity, TimeGranularity } from '@/types/generated';
+import { COLUMN_ACTION_KINDS } from '@/utils/actionKinds';
 import { isNumericType, isTemporalType } from '@/utils/dtype';
 import { humanizeColumn } from '@/utils/format';
 
@@ -40,13 +41,7 @@ interface SemanticActionParams {
   polarity?: Polarity;
 }
 
-const SEMANTIC_KINDS = new Set([
-  'set_column_role',
-  'set_column_label',
-  'set_column_description',
-  'set_kpi',
-  'set_column_polarity',
-]);
+const SEMANTIC_KINDS = new Set(COLUMN_ACTION_KINDS);
 
 /** The `params` of a logged `set_table_settings` action. */
 interface TableSettingsParams {

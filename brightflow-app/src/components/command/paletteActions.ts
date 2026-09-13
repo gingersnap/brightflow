@@ -13,6 +13,7 @@ import type {
   TaxonomyCategory,
   TimeGranularity,
 } from '@/types/generated';
+import { COLUMN_ACTION_KINDS, TABLE_ACTION_KINDS } from '@/utils/actionKinds';
 
 /**
  * Per-action command-palette flows.
@@ -107,15 +108,7 @@ export const INSIGHT_KINDS: readonly string[] = [
 ];
 
 /** Column- and table-semantic kinds, offered wherever a table is in scope. */
-export const COLUMN_KINDS: readonly string[] = [
-  'set_column_role',
-  'set_column_label',
-  'set_column_description',
-  'set_kpi',
-  'set_column_polarity',
-  'reset_column_semantics',
-  'set_table_settings',
-];
+export const COLUMN_KINDS: readonly string[] = [...COLUMN_ACTION_KINDS, ...TABLE_ACTION_KINDS];
 
 const GRANULARITY_OPTIONS: { label: string; value: TimeGranularity }[] = [
   { label: 'Day', value: 'day' },
