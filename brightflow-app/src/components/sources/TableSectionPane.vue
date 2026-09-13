@@ -7,7 +7,7 @@
  *
  * With a table selected it also offers the `describe_table` agent run: the
  * one place, shared by every table-scoped view, to ask a model to fill in
- * the table's descriptions, roles and polarity as proposals.
+ * the table's descriptions, roles and polarity.
  */
 
 import { computed, ref, watch } from 'vue';
@@ -42,7 +42,7 @@ const selected = computed(() => sourceTables.value.find((t) => t.name === props.
 
 const expanded = ref(props.selectedTable == null);
 
-/** The one agent run offered here; proposes by default. */
+/** The one agent run offered here. */
 const DESCRIBE_KIND = [
   { kind: 'describe_table', label: 'Describe with agent', icon: 'i-lucide-sparkles' },
 ];
@@ -89,15 +89,10 @@ function handleCardClick(table: SourceTable): void {
     <!-- Content -->
     <div class="border-t border-default bg-muted/10 p-4">
       <div v-if="selectedTable" class="mb-3 flex flex-wrap items-center gap-3">
-        <AgentActions
-          :source-id="sourceId"
-          :table="selectedTable"
-          :kinds="DESCRIBE_KIND"
-          :default-auto-apply="false"
-        />
+        <AgentActions :source-id="sourceId" :table="selectedTable" :kinds="DESCRIBE_KIND" />
         <span class="text-xs text-muted">
-          Proposes descriptions, roles, polarity and KPIs for {{ selectedTable }}; review them in
-          Activity.
+          Writes descriptions, roles, polarity and KPIs for {{ selectedTable }}; check them on
+          Semantics, where your edits outrank the agent's.
         </span>
       </div>
       <div

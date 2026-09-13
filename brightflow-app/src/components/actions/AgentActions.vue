@@ -7,7 +7,8 @@ import type { AgentRunEventPayload, AgentRunResponse } from '@/types/generated';
 
 /**
  * Agent-run trigger buttons. Hidden entirely unless an LLM provider is
- * configured. Proposals land in the activity feed for approve/reject.
+ * configured. A run applies as it goes unless "Ask me first" is on, in
+ * which case its proposals wait in Activity for approval.
  *
  * Run progress arrives as pushed `agentRun` WS events — no polling.
  */
@@ -19,12 +20,6 @@ const props = defineProps<{
    * `parentId` scopes an induction run to one parent category.
    */
   kinds: { kind: string; label: string; icon: string; parentId?: number }[];
-  /**
-   * Initial state of the auto-apply switch. Defaults on; a caller whose run
-   * writes prose people will read as fact (describe_table) starts it off so
-   * the run proposes for review.
-   */
-  defaultAutoApply?: boolean;
 }>();
 
 /** Structural guard for a pushed `agentRun` frame. */
@@ -41,11 +36,12 @@ const activeRun = ref<AgentRunResponse | null>(null);
 const lastRun = ref<AgentRunResponse | null>(null);
 const lastResult = ref<string | null>(null);
 /**
- * Auto-apply by default: every tool the runner hands out is undoable, so
- * reversibility (not pre-approval) is the safety mechanism. The caller can
- * start the switch off where proposals are the better default.
+ * Runs apply at once by default: every tool the runner hands out is
+ * undoable and lands at the agent layer, which a person's edit outranks, so
+ * review happens where the result reads. "Ask me first" is the trust dial
+ * for a person who wants a gate on this run.
  */
-const autoApply = ref(props.defaultAutoApply ?? true);
+const askFirst = ref(false);
 const undoingAll = ref(false);
 let unsubscribe: (() => void) | null = null;
 
@@ -93,7 +89,7 @@ async function start(kind: string, parentId?: number): Promise<void> {
     kind,
     sourceId: props.sourceId,
     table: props.table,
-    mode: autoApply.value ? 'auto_apply' : 'propose',
+    mode: askFirst.value ? 'propose' : 'auto_apply',
     ...(parentId == null ? {} : { parentId }),
   });
   if (run == null) {
@@ -155,7 +151,7 @@ async function undoAll(): Promise<void> {
       >
         {{ entry.label }}
       </UButton>
-      <USwitch v-model="autoApply" label="Auto-apply (undoable)" />
+      <USwitch v-model="askFirst" label="Ask me first" />
       <UButton
         v-if="canUndoAll"
         size="md"

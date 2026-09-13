@@ -20,17 +20,11 @@ const VALID_KINDS: &[&str] = &[
     "describe_table",
 ];
 
-/// The mode a run gets when the request names none. Curation runs apply at
-/// once because every tool they get is undoable; `describe_table` proposes,
-/// because it writes descriptions people will read as fact and a wrong one
-/// is cheaper to reject than to notice later.
-fn default_mode(kind: &str) -> &'static str {
-    if kind == "describe_table" {
-        "propose"
-    } else {
-        "auto_apply"
-    }
-}
+/// The mode a run gets when the request names none: apply at once. Every
+/// tool a run is handed is undoable and lands at the agent layer, which a
+/// person's edit outranks, so review happens where the result reads, not
+/// on a proposal queue. A caller asks for `propose` when it wants a gate.
+const DEFAULT_MODE: &str = "auto_apply";
 
 /// Must stay inside the `agent_runs.mode` CHECK constraint (migration 010).
 const VALID_MODES: &[&str] = &["propose", "auto_apply"];
@@ -64,10 +58,7 @@ pub async fn start_run(
             VALID_KINDS.join(", ")
         )));
     }
-    let mode = req
-        .mode
-        .as_deref()
-        .unwrap_or_else(|| default_mode(&req.kind));
+    let mode = req.mode.as_deref().unwrap_or(DEFAULT_MODE);
     if !VALID_MODES.contains(&mode) {
         return Err(AppError::BadRequest(format!(
             "unknown agent mode '{mode}'; valid: {}",
@@ -303,11 +294,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn describe_table_proposes_by_default_and_the_rest_apply() {
-        assert_eq!(default_mode("describe_table"), "propose");
-        for kind in VALID_KINDS.iter().filter(|k| **k != "describe_table") {
-            assert_eq!(default_mode(kind), "auto_apply", "{kind}");
-        }
-        assert!(VALID_MODES.contains(&default_mode("describe_table")));
+    fn the_default_mode_is_one_the_constraint_admits() {
+        assert!(VALID_MODES.contains(&DEFAULT_MODE));
+        assert_eq!(DEFAULT_MODE, "auto_apply");
     }
 }
