@@ -27,6 +27,7 @@ use super::ticket_classify::{VocabNames, SENTIMENT_VALUES};
 use super::vocabulary::{is_other, OTHER};
 use super::OutputSemantic;
 use crate::data::config::ColumnRole;
+use brightflow_types::LogicalType;
 
 /// Child-table name for a parent `table`.
 pub fn mentions_table_name(table: &str) -> String {
@@ -69,6 +70,7 @@ pub const FLAG_COLUMNS: [&str; 4] = [
 pub const FLAG_SEMANTICS: [OutputSemantic; 4] = [
     OutputSemantic {
         name: "has_feedback",
+        datatype: LogicalType::Boolean,
         role: ColumnRole::Dimension,
         label: "Has feedback",
         description: "Whether the ticket contains at least one piece of feedback about \
@@ -76,6 +78,7 @@ pub const FLAG_SEMANTICS: [OutputSemantic; 4] = [
     },
     OutputSemantic {
         name: "has_incidental_feedback",
+        datatype: LogicalType::Boolean,
         role: ColumnRole::Dimension,
         label: "Has incidental feedback",
         description: "Whether the ticket contains feedback that is not the reason the \
@@ -83,12 +86,14 @@ pub const FLAG_SEMANTICS: [OutputSemantic; 4] = [
     },
     OutputSemantic {
         name: "has_competitor_mention",
+        datatype: LogicalType::Boolean,
         role: ColumnRole::Dimension,
         label: "Mentions a competitor",
         description: "Whether the ticket names a competitor.",
     },
     OutputSemantic {
         name: "mention_count",
+        datatype: LogicalType::Integer,
         role: ColumnRole::Measure,
         label: "Mention count",
         description: "How many products, competitors, prices, services or pieces of \

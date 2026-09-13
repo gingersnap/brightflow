@@ -37,7 +37,9 @@ use brightflow_llm::{
     chat_with_backoff, ChatClient, ChatMessage, ChatOptions, ChatOutcome, RetryPolicy, ToolDef,
 };
 use brightflow_store::ParquetStore;
-use brightflow_types::{ColumnExt, Dataset, Field, Provenance, Relationship, TableDeclaration};
+use brightflow_types::{
+    ColumnExt, Dataset, Field, LogicalType, Provenance, Relationship, TableDeclaration,
+};
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
@@ -107,12 +109,17 @@ pub enum RunSpec {
         /// Live id → name lookup, loaded when the run starts. Names reach the
         /// prompt and the materialised columns, never the cache key.
         names: Arc<VocabNames>,
+        /// The table's resolved semantics as prompt text
+        /// (`semantics::prompt`), appended to the system turn. Loaded at run
+        /// start like the names, and like them never part of the cache key.
+        table_context: Arc<str>,
     },
     TicketExtract {
         spec: TicketExtractSpec,
         names: Arc<VocabNames>,
         /// Name/alias → id for products and competitors.
         resolver: Arc<SubjectResolver>,
+        table_context: Arc<str>,
     },
 }
 
@@ -193,22 +200,39 @@ impl RunSpec {
         ))
     }
 
-    fn messages(&self, row: &RowInput) -> Vec<ChatMessage> {
-        match self {
-            Self::TicketClassify { spec, names } => vec![
-                ChatMessage::system(ticket_classify::system_prompt(spec, names)),
-                self.ticket_turn(row),
-            ],
-            Self::TicketExtract { spec, names, .. } => vec![
-                ChatMessage::system(mentions::system_prompt(spec, names)),
-                self.ticket_turn(row),
-            ],
+    /// The system turn: the kind's rules, then the table's context when
+    /// there is any. Byte-identical across the rows of one run.
+    fn system_turn(&self) -> String {
+        let (rules, context) = match self {
+            Self::TicketClassify {
+                spec,
+                names,
+                table_context,
+            } => (ticket_classify::system_prompt(spec, names), table_context),
+            Self::TicketExtract {
+                spec,
+                names,
+                table_context,
+                ..
+            } => (mentions::system_prompt(spec, names), table_context),
+        };
+        if context.is_empty() {
+            rules
+        } else {
+            format!("{rules}\n\nABOUT THE DATA\n{context}")
         }
+    }
+
+    fn messages(&self, row: &RowInput) -> Vec<ChatMessage> {
+        vec![
+            ChatMessage::system(self.system_turn()),
+            self.ticket_turn(row),
+        ]
     }
 
     fn tool(&self) -> ToolDef {
         match self {
-            Self::TicketClassify { spec, names } => ToolDef {
+            Self::TicketClassify { spec, names, .. } => ToolDef {
                 name: ticket_classify::TOOL_NAME.to_string(),
                 description: "Record the classification of this ticket.".to_string(),
                 parameters: ticket_classify::tool_schema(spec, names),
@@ -233,12 +257,15 @@ impl RunSpec {
     /// Validate a model answer into the cell's `value_json`.
     fn validate(&self, args: &serde_json::Value) -> Result<serde_json::Value, String> {
         match self {
-            Self::TicketClassify { spec, names } => ticket_classify::validate(spec, names, args)
-                .and_then(|cell| serde_json::to_value(cell).map_err(|e| e.to_string())),
+            Self::TicketClassify { spec, names, .. } => {
+                ticket_classify::validate(spec, names, args)
+                    .and_then(|cell| serde_json::to_value(cell).map_err(|e| e.to_string()))
+            },
             Self::TicketExtract {
                 spec,
                 names,
                 resolver,
+                ..
             } => mentions::validate(spec, names, resolver, args)
                 .and_then(|cell| serde_json::to_value(cell).map_err(|e| e.to_string())),
         }
@@ -328,7 +355,7 @@ impl RunSpec {
     /// Prompt-side character count for the cold-start token heuristic.
     pub fn prompt_chars(&self) -> usize {
         match self {
-            Self::TicketClassify { spec, names } => {
+            Self::TicketClassify { spec, names, .. } => {
                 ticket_classify::system_prompt(spec, names).len()
             },
             Self::TicketExtract { spec, names, .. } => mentions::system_prompt(spec, names).len(),
@@ -1043,12 +1070,17 @@ async fn declare_output_semantics(
     function_name: &str,
     run: &RunSpec,
 ) {
-    let field = |name: &str, role: ColumnRole, label: Option<&str>, description: &str| {
+    let field = |name: &str,
+                 datatype: LogicalType,
+                 role: ColumnRole,
+                 label: Option<&str>,
+                 description: &str| {
         let mut ext = ColumnExt::role(role);
         if let Some(label) = label {
             ext = ext.with_label(label);
         }
         Field::column(name)
+            .with_datatype(datatype)
             .with_description(description)
             .with_brightflow(&ext)
     };
@@ -1056,10 +1088,11 @@ async fn declare_output_semantics(
     dataset.fields = run
         .output_semantics()
         .iter()
-        .map(|s| field(s.name, s.role, Some(s.label), s.description))
+        .map(|s| field(s.name, s.datatype, s.role, Some(s.label), s.description))
         .collect();
     dataset.fields.push(field(
         &format!("{function_name}__status"),
+        LogicalType::String,
         ColumnRole::Ignored,
         None,
         "Per-row outcome of the enrichment run; bookkeeping, not data.",
@@ -1103,13 +1136,17 @@ async fn declare_child_semantics(
     parent_id: &str,
     function_name: &str,
 ) {
-    let dim = |name: &str, description: &str| {
+    let dim = |name: &str, datatype: LogicalType, description: &str| {
         Field::column(name)
+            .with_datatype(datatype)
             .with_description(description)
             .with_brightflow(&ColumnExt::role(ColumnRole::Dimension))
     };
-    let ignored =
-        |name: &str| Field::column(name).with_brightflow(&ColumnExt::role(ColumnRole::Ignored));
+    let ignored = |name: &str, datatype: LogicalType| {
+        Field::column(name)
+            .with_datatype(datatype)
+            .with_brightflow(&ColumnExt::role(ColumnRole::Ignored))
+    };
     let mut dataset = Dataset::new(child, format!("{source_id}/{child}"));
     dataset.description = Some(format!(
         "One row per mention the extractor found in `{parent}`: a product, competitor, price, service or piece of feedback."
@@ -1118,28 +1155,37 @@ async fn declare_child_semantics(
         Field::column(mentions::MENTION_COLUMNS[0])
             .with_description("The parent row this mention was found in")
             .with_brightflow(&ColumnExt::role(ColumnRole::Entity)),
-        ignored("mention_idx"),
-        dim("type", "product, competitor, pricing, service or feedback"),
-        ignored("subject_id"),
+        ignored("mention_idx", LogicalType::Integer),
+        dim(
+            "type",
+            LogicalType::String,
+            "product, competitor, pricing, service or feedback",
+        ),
+        ignored("subject_id", LogicalType::Integer),
         dim(
             "subject",
+            LogicalType::String,
             "The resolved vocabulary entry the mention is about",
         ),
-        ignored("subject_surface"),
-        ignored("feedback_summary"),
+        ignored("subject_surface", LogicalType::String),
+        ignored("feedback_summary", LogicalType::String),
         dim(
             "feedback_category",
+            LogicalType::String,
             "The feedback vocabulary entry, when the mention is feedback",
         ),
         dim(
             "incidental",
+            LogicalType::Boolean,
             "Whether the mention is beside the point of the ticket",
         ),
         dim(
             "sentiment",
+            LogicalType::String,
             "positive, neutral, negative or mixed, for this mention",
         ),
         Field::column("confidence")
+            .with_datatype(LogicalType::Float)
             .with_description("The model's confidence in the mention, 0 to 1")
             .with_brightflow(&ColumnExt::role(ColumnRole::Measure)),
     ];
@@ -1594,15 +1640,45 @@ mod tests {
         RunSpec::TicketClassify {
             spec,
             names: Arc::new(names),
+            table_context: Arc::from(""),
         }
     }
 
     fn classify_run_with_description(description: &str) -> RunSpec {
-        let RunSpec::TicketClassify { mut spec, names } = classify_run() else {
+        let RunSpec::TicketClassify {
+            mut spec,
+            names,
+            table_context,
+        } = classify_run()
+        else {
             unreachable!()
         };
         spec.categories[0].description = Some(description.to_string());
-        RunSpec::TicketClassify { spec, names }
+        RunSpec::TicketClassify {
+            spec,
+            names,
+            table_context,
+        }
+    }
+
+    /// Table context rides at the end of the system turn and never touches
+    /// the cache key.
+    #[test]
+    fn table_context_is_appended_to_the_system_turn_but_not_hashed() {
+        let plain = classify_run();
+        let RunSpec::TicketClassify { spec, names, .. } = classify_run() else {
+            unreachable!()
+        };
+        let with_context = RunSpec::TicketClassify {
+            spec,
+            names,
+            table_context: Arc::from("TABLE issues — Issues and pull requests"),
+        };
+        assert_eq!(plain.spec_hash(), with_context.spec_hash());
+        let system = with_context.system_turn();
+        assert!(system.ends_with("ABOUT THE DATA\nTABLE issues — Issues and pull requests"));
+        assert!(system.starts_with(&plain.system_turn()));
+        assert!(!plain.system_turn().contains("ABOUT THE DATA"));
     }
 
     /// Language is detected pre-call, stored in the rendered inputs (so it is
@@ -1640,11 +1716,20 @@ mod tests {
     /// normalised to its primary subtag.
     #[test]
     fn classify_uses_the_language_column_when_configured() {
-        let RunSpec::TicketClassify { mut spec, names } = classify_run() else {
+        let RunSpec::TicketClassify {
+            mut spec,
+            names,
+            table_context,
+        } = classify_run()
+        else {
             unreachable!()
         };
         spec.language_column = Some("lang".to_string());
-        let run = RunSpec::TicketClassify { spec, names };
+        let run = RunSpec::TicketClassify {
+            spec,
+            names,
+            table_context,
+        };
         let df = df!(
             "title" => &["x"],
             "body" => &["The generated invoice does not show the VAT breakdown."],
@@ -1665,6 +1750,7 @@ mod tests {
         let b = RunSpec::TicketClassify {
             spec,
             names: Arc::new(VocabNames::from([(1, "Payments".to_string())])),
+            table_context: Arc::from(""),
         };
         assert_eq!(a.spec_hash(), b.spec_hash());
         assert_ne!(

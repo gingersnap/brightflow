@@ -10,6 +10,7 @@ pub mod ticket_classify;
 pub mod vocabulary;
 
 use crate::data::config::ColumnRole;
+use brightflow_types::LogicalType;
 
 /// What a materialised output column means.
 ///
@@ -19,6 +20,7 @@ use crate::data::config::ColumnRole;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputSemantic {
     pub name: &'static str,
+    pub datatype: LogicalType,
     pub role: ColumnRole,
     pub label: &'static str,
     pub description: &'static str,

@@ -146,12 +146,17 @@ pub async fn run_spec_for(
     table_id: &str,
     spec: FunctionSpec,
 ) -> AppResult<RunSpec> {
+    // The table's prompt context is loaded here too, so one run sees one
+    // description of its table.
+    let table_context: Arc<str> =
+        Arc::from(crate::semantics::prompt::for_table_id(store, table_id).await?);
     match spec {
         FunctionSpec::TicketClassify(tc) => {
             let snap = load(store, table_id).await?;
             Ok(RunSpec::TicketClassify {
                 spec: tc,
                 names: Arc::new(snap.names),
+                table_context,
             })
         },
         FunctionSpec::TicketExtract(te) => {
@@ -160,6 +165,7 @@ pub async fn run_spec_for(
                 spec: te,
                 names: Arc::new(snap.names),
                 resolver: Arc::new(snap.resolver),
+                table_context,
             })
         },
     }

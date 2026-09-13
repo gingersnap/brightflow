@@ -404,8 +404,30 @@ fn induction_system(level: &str, corpus: &str, cap: usize) -> String {
     )
 }
 
-/// Kind-specific context: what the model sees.
+/// What the model sees: the kind's own system prompt with the table's
+/// resolved semantics appended (`semantics::prompt`), and the kind's user
+/// content.
 async fn build_context(
+    state: &AppState,
+    kind: &str,
+    source_id: &str,
+    table: &str,
+    parent_id: Option<i64>,
+) -> AppResult<(String, String)> {
+    let (system, user) = kind_context(state, kind, source_id, table, parent_id).await?;
+    let table_context = match state.store() {
+        Some(store) => crate::semantics::prompt::for_table(store, source_id, table).await?,
+        None => String::new(),
+    };
+    if table_context.is_empty() {
+        Ok((system, user))
+    } else {
+        Ok((format!("{system}\n\nABOUT THE DATA\n{table_context}"), user))
+    }
+}
+
+/// Kind-specific context, before the table's semantics are appended.
+async fn kind_context(
     state: &AppState,
     kind: &str,
     source_id: &str,

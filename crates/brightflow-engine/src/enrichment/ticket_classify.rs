@@ -20,6 +20,7 @@ use super::function::{TicketClassifySpec, VocabEntry};
 use super::vocabulary::{is_other, OTHER, OTHER_PARENT};
 use super::OutputSemantic;
 use crate::data::config::ColumnRole;
+use brightflow_types::LogicalType;
 
 /// Upper bound the prompt states for the summary; validation trims, never
 /// rejects, so a verbose model degrades to a truncated summary rather than a
@@ -50,18 +51,21 @@ pub const OUTPUT_COLUMNS: [&str; 5] = [
 pub const OUTPUT_SEMANTICS: [OutputSemantic; 5] = [
     OutputSemantic {
         name: "summary",
+        datatype: LogicalType::String,
         role: ColumnRole::Ignored,
         label: "Summary",
         description: "One-sentence summary of the ticket, written by the model.",
     },
     OutputSemantic {
         name: "language",
+        datatype: LogicalType::String,
         role: ColumnRole::Dimension,
         label: "Language",
         description: "Language of the ticket text, detected before the model call.",
     },
     OutputSemantic {
         name: "category",
+        datatype: LogicalType::String,
         role: ColumnRole::Dimension,
         label: "Category",
         description: "What is wrong for the user, from the table's category vocabulary; \
@@ -69,6 +73,7 @@ pub const OUTPUT_SEMANTICS: [OutputSemantic; 5] = [
     },
     OutputSemantic {
         name: "subcategory",
+        datatype: LogicalType::String,
         role: ColumnRole::Dimension,
         label: "Subcategory",
         description: "The finer entry under the category, from the table's subcategory \
@@ -76,6 +81,7 @@ pub const OUTPUT_SEMANTICS: [OutputSemantic; 5] = [
     },
     OutputSemantic {
         name: "sentiment",
+        datatype: LogicalType::String,
         role: ColumnRole::Dimension,
         label: "Sentiment",
         description: "How the customer feels about the matter: neutral (no evaluative \

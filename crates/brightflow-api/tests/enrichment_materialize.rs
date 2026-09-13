@@ -185,6 +185,18 @@ async fn materialize_declares_output_semantics_without_overwriting_edits() {
         Some((Layer::Declared, "enrichment:classify"))
     );
 
+    // The prompt context every model call appends reflects the rows.
+    let context = brightflow_api::semantics::prompt::for_table(&store, SOURCE, TABLE)
+        .await
+        .unwrap();
+    assert!(context.starts_with("TABLE issues"), "{context}");
+    assert!(
+        context.contains("- category (String, dimension, \"Category\")"),
+        "{context}"
+    );
+    assert!(context.contains("Not analysed: "), "{context}");
+    assert!(context.contains("classify__status"), "{context}");
+
     // The in-memory overrides Explore reads follow the rows.
     let live = state
         .schema_overrides
