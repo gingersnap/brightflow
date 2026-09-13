@@ -14,6 +14,7 @@ import type {
   SemanticModelImportResponse,
   SemanticModelResponse,
   Source,
+  SourceOverviewResponse,
   TableSemanticsResponse,
 } from '@/types/generated';
 import type { TableInfo } from '@/types/generated/TableInfo';
@@ -86,6 +87,9 @@ export const sourceApi = {
   delete: (id: string): Promise<unknown> => api.delete(`/api/sources/${id}`),
   snippet: (id: string): Promise<{ snippet: string } | null> =>
     api.get<{ snippet: string }>(`/api/sources/${id}/snippet`),
+  /** Per-table signals for the Overview page: freshness, coverage, proposals, last run. */
+  overview: (id: string): Promise<SourceOverviewResponse | null> =>
+    api.get<SourceOverviewResponse>(`/api/sources/${encodeURIComponent(id)}/overview`),
   /** Persist a CSV as a first-class upload source (survives restarts). */
   uploadCsv: async (file: File, table?: string): Promise<UploadSourceResult> => {
     const formData = new FormData();

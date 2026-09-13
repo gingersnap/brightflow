@@ -84,7 +84,7 @@ export interface ToolDef {
 }
 
 export const TOOL_DEFS: Record<ToolId, { label: string; icon: string; group: ToolGroup }> = {
-  dashboard: { group: 'overview', icon: 'i-lucide-bar-chart-3', label: 'Dashboard' },
+  dashboard: { group: 'overview', icon: 'i-lucide-layout-dashboard', label: 'Overview' },
   funnels: { group: 'analyze', icon: 'i-lucide-git-branch', label: 'Funnels' },
   retention: { group: 'analyze', icon: 'i-lucide-calendar-check', label: 'Retention' },
   users: { group: 'analyze', icon: 'i-lucide-users', label: 'Users' },

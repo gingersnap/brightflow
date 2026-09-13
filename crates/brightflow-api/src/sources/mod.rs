@@ -2,5 +2,6 @@
 //! one list, and maps each to the tools it supports.
 
 pub mod handlers;
+pub mod overview;
 pub mod profiles;
 pub mod types;

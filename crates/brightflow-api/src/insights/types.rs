@@ -68,7 +68,7 @@ pub struct DriversRequest {
 }
 
 /// One recorded insights computation (manual or post-sync).
-#[derive(Debug, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct InsightRunResponse {

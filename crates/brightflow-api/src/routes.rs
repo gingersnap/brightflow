@@ -294,6 +294,11 @@ fn api_routes() -> Router<AppState> {
         .route("/system/ws", get(system_handlers::system_ws_handler))
         // Unified sources (must be before /sources/{id})
         .route("/sources/unified", get(sources_handlers::list_unified_sources))
+        // Per-table signals for a source's Overview page
+        .route(
+            "/sources/{source_id}/overview",
+            get(crate::sources::overview::source_overview),
+        )
         // Persistent CSV uploads (must be before /sources/{id})
         .route("/sources/upload", post(handlers::upload_source))
         // Source management
