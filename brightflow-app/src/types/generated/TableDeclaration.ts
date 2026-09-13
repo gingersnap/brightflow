@@ -2,10 +2,10 @@
 import type { Dataset } from "./Dataset";
 import type { Metric } from "./Metric";
 import type { Relationship } from "./Relationship";
-import type { TableSchema } from "./TableSchema";
 
 export type TableDeclaration = { contract_version: number, name: string, 
 /**
- * The physical columns, when the producer knows them before writing.
+ * The table's meaning: its fields, keys, description. Keys live here,
+ * on the dataset, as Ossie has them.
  */
-schema?: TableSchema, primary_key: Array<string>, unique_keys: Array<Array<string>>, cursor_field?: string, dataset?: Dataset, relationships: Array<Relationship>, metrics: Array<Metric>, };
+dataset?: Dataset, relationships: Array<Relationship>, metrics: Array<Metric>, };

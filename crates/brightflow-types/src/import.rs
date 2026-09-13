@@ -55,8 +55,6 @@ pub fn declarations_of(model: &SemanticModel) -> Vec<TableDeclaration> {
                 .cloned()
                 .collect();
             TableDeclaration {
-                primary_key: dataset.primary_key.clone(),
-                unique_keys: dataset.unique_keys.clone(),
                 dataset: Some(dataset.clone()),
                 relationships,
                 metrics,
@@ -109,7 +107,7 @@ mod tests {
         let decls = declarations_of(&model);
         assert_eq!(decls.len(), 2);
         let issues = decls.iter().find(|d| d.name == "issues").expect("issues");
-        assert_eq!(issues.primary_key, ["id"]);
+        assert_eq!(issues.dataset.as_ref().unwrap().primary_key, ["id"]);
         assert_eq!(issues.metrics.len(), 1);
         assert!(issues.relationships.is_empty());
         let comments = decls

@@ -894,7 +894,6 @@ mod tests {
             "issues",
             "issues",
             vec!["id".into()],
-            Some("updated_at".into()),
             serde_json::json!({
                 "description": "Issues and pull requests",
                 "columns": {
@@ -915,7 +914,6 @@ mod tests {
             "issue_comments",
             "issue_comments",
             vec!["id".into()],
-            None,
             serde_json::json!({
                 "columns": {
                     "id": {"datatype": "Integer"},

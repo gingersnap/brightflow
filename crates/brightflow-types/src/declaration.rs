@@ -18,7 +18,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::datatype::TableSchema;
 use crate::ext::{DatasetExt, MetricExpr, BRIGHTFLOW_VENDOR};
 use crate::semantic::{
     items_from_value, set_extension_json, AiContext, CustomExtension, Dataset, Field, Metric,
@@ -36,21 +35,8 @@ pub struct TableDeclaration {
     #[serde(default = "default_contract_version")]
     pub contract_version: u32,
     pub name: String,
-    /// The physical columns, when the producer knows them before writing.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub schema: Option<TableSchema>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub primary_key: Vec<String>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub unique_keys: Vec<Vec<String>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub cursor_field: Option<String>,
+    /// The table's meaning: its fields, keys, description. Keys live here,
+    /// on the dataset, as Ossie has them.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -96,10 +82,6 @@ impl TableDeclaration {
         Self {
             contract_version: CONTRACT_VERSION,
             name: name.into(),
-            schema: None,
-            primary_key: Vec::new(),
-            unique_keys: Vec::new(),
-            cursor_field: None,
             dataset: None,
             relationships: Vec::new(),
             metrics: Vec::new(),
@@ -107,18 +89,17 @@ impl TableDeclaration {
     }
 
     /// Build from the connector-author shape. `source` is the dataset's
-    /// `source` string (`{source_id}/{table}`); `primary_key` and
-    /// `cursor_field` come from the endpoint config, not from the JSON.
+    /// `source` string (`{source_id}/{table}`); `primary_key` comes from the
+    /// endpoint config, not from the JSON, and lands on the dataset.
     pub fn from_endpoint_json(
         name: &str,
         source: &str,
         primary_key: Vec<String>,
-        cursor_field: Option<String>,
         value: serde_json::Value,
     ) -> Result<Self, String> {
         let de: EndpointDeclarationDe = serde_json::from_value(value).map_err(|e| e.to_string())?;
         let mut dataset = Dataset::new(name, source);
-        dataset.primary_key.clone_from(&primary_key);
+        dataset.primary_key = primary_key;
         dataset.unique_keys = de.unique_keys;
         dataset.description = de.description;
         dataset.ai_context = de.ai_context;
@@ -141,28 +122,10 @@ impl TableDeclaration {
         Ok(Self {
             contract_version: CONTRACT_VERSION,
             name: name.to_string(),
-            schema: None,
-            primary_key,
-            unique_keys: Vec::new(),
-            cursor_field,
             dataset: Some(dataset),
             relationships,
             metrics,
         })
-    }
-
-    /// Declared fields with no column in `schema`. Empty when there is no
-    /// schema to compare against.
-    pub fn columns_without_data(&self) -> Vec<String> {
-        let (Some(schema), Some(dataset)) = (&self.schema, &self.dataset) else {
-            return Vec::new();
-        };
-        dataset
-            .fields
-            .iter()
-            .filter(|f| !schema.has_column(&f.name))
-            .map(|f| f.name.clone())
-            .collect()
     }
 }
 
@@ -211,7 +174,7 @@ fn qualify_metric(mut metric: Metric, dataset: &str) -> Metric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datatype::{ColumnSchema, LogicalType};
+    use crate::datatype::LogicalType;
     use crate::ext::{Aggregation, ColumnRole, TimeGranularity};
     use serde_json::json;
 
@@ -239,7 +202,6 @@ mod tests {
             "issues",
             "connector:x/issues",
             vec!["id".into()],
-            Some("updated_at".into()),
             github_issues(),
         )
         .unwrap();
@@ -275,7 +237,6 @@ mod tests {
             "issues",
             "connector:x/issues",
             vec!["id".into()],
-            Some("updated_at".into()),
             github_issues(),
         )
         .unwrap();
@@ -293,7 +254,6 @@ mod tests {
             metric.structured_expr().unwrap().aggregation,
             Aggregation::Sum
         );
-        assert_eq!(decl.cursor_field.as_deref(), Some("updated_at"));
     }
 
     #[test]
@@ -302,7 +262,6 @@ mod tests {
             "issues",
             "s/issues",
             vec!["id".into()],
-            None,
             github_issues(),
         )
         .unwrap();
@@ -313,33 +272,14 @@ mod tests {
 
     #[test]
     fn unknown_endpoint_keys_are_rejected() {
-        let err =
-            TableDeclaration::from_endpoint_json("t", "s/t", vec![], None, json!({"colums": {}}))
-                .unwrap_err();
+        let err = TableDeclaration::from_endpoint_json("t", "s/t", vec![], json!({"colums": {}}))
+            .unwrap_err();
         assert!(err.contains("colums"), "{err}");
     }
 
     #[test]
-    fn columns_without_data_compares_fields_to_schema() {
-        let mut decl = TableDeclaration::from_endpoint_json(
-            "t",
-            "s/t",
-            vec![],
-            None,
-            json!({"columns": {"a": {}, "b": {}}}),
-        )
-        .unwrap();
-        assert!(decl.columns_without_data().is_empty());
-        decl.schema = Some(TableSchema {
-            columns: vec![ColumnSchema::new("a", LogicalType::String)],
-        });
-        assert_eq!(decl.columns_without_data(), ["b"]);
-    }
-
-    #[test]
     fn empty_endpoint_json_is_a_bare_dataset() {
-        let decl =
-            TableDeclaration::from_endpoint_json("t", "s/t", vec![], None, json!({})).unwrap();
+        let decl = TableDeclaration::from_endpoint_json("t", "s/t", vec![], json!({})).unwrap();
         let ds = decl.dataset.unwrap();
         assert!(ds.fields.is_empty());
         assert!(ds.brightflow().is_none());

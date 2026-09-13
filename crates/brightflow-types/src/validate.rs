@@ -340,7 +340,6 @@ mod tests {
             "issue_comments",
             "s/issue_comments",
             vec!["id".into()],
-            None,
             serde_json::json!({
                 "columns": {"id": {}, "issue_number": {}},
                 "relationships": [{"to": "issues", "from_columns": ["issue_number"], "to_columns": ["number"]}],
@@ -354,7 +353,6 @@ mod tests {
             "issue_comments",
             "s/issue_comments",
             vec!["uuid".into()],
-            None,
             serde_json::json!({
                 "columns": {"id": {}},
                 "relationships": [{"to": "issues", "from_columns": ["issue_number"], "to_columns": ["number"]}],

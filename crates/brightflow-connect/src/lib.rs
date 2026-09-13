@@ -173,20 +173,13 @@ fn provenance_for(meta: &longbow::pipeline::ConnectorMeta) -> Provenance {
 fn parse_declaration(
     name: &str,
     primary_key: &[String],
-    cursor_field: Option<&str>,
     declaration: Option<serde_json::Value>,
 ) -> Result<Option<TableDeclaration>> {
     let Some(value) = declaration else {
         return Ok(None);
     };
-    let decl = TableDeclaration::from_endpoint_json(
-        name,
-        name,
-        primary_key.to_vec(),
-        cursor_field.map(str::to_string),
-        value,
-    )
-    .map_err(|e| ConnectError(format!("endpoint `{name}`: invalid declaration: {e}")))?;
+    let decl = TableDeclaration::from_endpoint_json(name, name, primary_key.to_vec(), value)
+        .map_err(|e| ConnectError(format!("endpoint `{name}`: invalid declaration: {e}")))?;
     if let Err(violations) = decl.validate() {
         let list: Vec<String> = violations.iter().map(ToString::to_string).collect();
         return Err(ConnectError(format!(
@@ -222,12 +215,7 @@ fn build_dry_run_result(pipeline: &longbow::pipeline::Pipeline) -> Result<Connec
                 cursor_field: e.cursor_field.clone(),
                 cursor_value: None,
                 duration_ms: 0,
-                declaration: parse_declaration(
-                    &e.name,
-                    &e.primary_key,
-                    e.cursor_field.as_deref(),
-                    e.declaration.clone(),
-                )?,
+                declaration: parse_declaration(&e.name, &e.primary_key, e.declaration.clone())?,
                 type_errors: 0,
             })
         })
@@ -255,12 +243,7 @@ fn map_run_result(
         .endpoints
         .into_iter()
         .map(|ep| {
-            let declaration = parse_declaration(
-                &ep.name,
-                &ep.primary_key,
-                ep.cursor_field.as_deref(),
-                ep.declaration,
-            )?;
+            let declaration = parse_declaration(&ep.name, &ep.primary_key, ep.declaration)?;
             Ok(EndpointResultInfo {
                 name: ep.name,
                 parquet_path: ep.parquet_path,
@@ -663,8 +646,7 @@ mod tests {
 
         let decl = result.endpoints[0].declaration.as_ref().unwrap();
         assert_eq!(decl.name, "issues");
-        assert_eq!(decl.primary_key, ["id"]);
-        assert_eq!(decl.cursor_field.as_deref(), Some("updated_at"));
+        assert_eq!(decl.dataset.as_ref().unwrap().primary_key, ["id"]);
         let ds = decl.dataset.as_ref().unwrap();
         assert_eq!(ds.description.as_deref(), Some("Issues and pull requests"));
         assert_eq!(

@@ -653,7 +653,7 @@ mod tests {
             cursor_value: None,
             duration_ms: 0,
             declaration: Some(
-                TableDeclaration::from_endpoint_json(name, name, vec!["id".into()], None, json)
+                TableDeclaration::from_endpoint_json(name, name, vec!["id".into()], json)
                     .expect("declaration"),
             ),
             type_errors: 0,
