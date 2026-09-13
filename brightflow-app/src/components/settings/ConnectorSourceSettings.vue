@@ -13,6 +13,7 @@ import { useRouter } from 'vue-router';
 
 import { hintsFor } from '@/components/connect/connectorHints';
 import SchedulesPanel from '@/components/connect/SchedulesPanel.vue';
+import SemanticModelPanel from '@/components/settings/SemanticModelPanel.vue';
 import { connectApi } from '@/services/api';
 import type { UnifiedSource } from '@/types/generated';
 
@@ -270,6 +271,8 @@ watch(presetId, () => void refreshConfig());
 
       <!-- Schedules + runs for this preset -->
       <SchedulesPanel :preset-name="source.name" />
+
+      <SemanticModelPanel :source-id="source.id" />
 
       <!-- Danger zone -->
       <section>

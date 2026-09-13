@@ -5,7 +5,14 @@
 
 import type { UnifiedSource } from '@/types';
 import type { UploadSourceResult } from '@/types/enrichment';
-import type { DatasetInfo, LoadTableResponse, QueryResponse, Source } from '@/types/generated';
+import type {
+  DatasetInfo,
+  LoadTableResponse,
+  QueryResponse,
+  SemanticModelImportResponse,
+  SemanticModelResponse,
+  Source,
+} from '@/types/generated';
 import type { TableInfo } from '@/types/generated/TableInfo';
 
 import { api, ApiError } from './core';
@@ -18,6 +25,22 @@ export const tableApi = {
   load: (sourceId: string, name: string): Promise<LoadTableResponse | null> =>
     api.post<LoadTableResponse>(
       `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(name)}/load`,
+    ),
+};
+
+// The source's semantic model: the Ossie document the store rebuilds from
+// Its resolved rows, and a pasted document applied as declared rows.
+export const semanticModelApi = {
+  export: (sourceId: string): Promise<SemanticModelResponse | null> =>
+    api.get<SemanticModelResponse>(`/api/sources/${encodeURIComponent(sourceId)}/semantic-model`),
+  import: (
+    sourceId: string,
+    document: unknown,
+    dryRun: boolean,
+  ): Promise<SemanticModelImportResponse | null> =>
+    api.post<SemanticModelImportResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/semantic-model/import${dryRun ? '?dry_run=true' : ''}`,
+      document,
     ),
 };
 

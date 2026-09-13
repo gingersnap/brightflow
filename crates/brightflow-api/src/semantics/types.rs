@@ -80,6 +80,42 @@ pub struct DeclarationChangesResponse {
     pub changes: Vec<DeclarationDiff>,
 }
 
+/// `?dry_run=true` on the import: validate and report, write nothing.
+#[derive(Debug, Default, Deserialize)]
+pub struct ImportQuery {
+    pub dry_run: Option<bool>,
+}
+
+/// What importing a model did, or would do, per table.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedTable {
+    pub table: String,
+    pub columns: usize,
+    pub relationships: usize,
+    pub metrics: usize,
+    /// Declared columns the table's data does not have.
+    pub columns_without_data: Vec<String>,
+    /// Metrics with no structured expression, which the store cannot run.
+    pub metrics_skipped: Vec<String>,
+    /// Relationships whose target table this source does not have.
+    pub relationships_skipped: Vec<String>,
+}
+
+/// The result of importing a semantic model into a source.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticModelImportResponse {
+    /// The producer the rows were filed under: `document:{model name}`.
+    pub producer: String,
+    pub dry_run: bool,
+    pub applied: Vec<ImportedTable>,
+    /// Datasets in the model with no table in this source.
+    pub missing_tables: Vec<String>,
+}
+
 /// One source as an Ossie document.
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]

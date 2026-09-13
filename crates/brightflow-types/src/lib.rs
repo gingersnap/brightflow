@@ -30,6 +30,7 @@ pub mod changes;
 pub mod datatype;
 pub mod declaration;
 pub mod ext;
+pub mod import;
 pub mod provenance;
 pub mod resolved;
 pub mod semantic;
@@ -42,6 +43,7 @@ pub use ext::{
     Aggregation, ColumnExt, ColumnRole, DatasetExt, DocFields, FilterOp, MetricExpr, MetricExt,
     MetricFilter, Polarity, TimeGranularity, BRIGHTFLOW_VENDOR,
 };
+pub use import::{declarations_of, parse_model};
 pub use provenance::{Layer, Provenance};
 pub use resolved::{
     resolve_columns, resolve_table, ColumnOpinion, ResolvedColumn, ResolvedTable, TableOpinion,

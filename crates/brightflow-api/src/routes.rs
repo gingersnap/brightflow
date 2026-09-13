@@ -211,6 +211,11 @@ fn api_routes() -> Router<AppState> {
             "/sources/{source_id}/semantic-model",
             get(semantics_handlers::export_semantic_model),
         )
+        // A pasted model becomes declared-layer rows under document:{name}.
+        .route(
+            "/sources/{source_id}/semantic-model/import",
+            post(semantics_handlers::import_semantic_model),
+        )
         // Text Explorer (no-LLM text filtering + words widget)
         .route(
             "/sources/{source_id}/tables/{table}/textexplore/search",

@@ -73,6 +73,7 @@ declare module 'vue' {
     SchedulesView: typeof import('./src/components/schedules/SchedulesView.vue')['default']
     SeasonalityRenderer: typeof import('./src/components/insights/renderers/SeasonalityRenderer.vue')['default']
     SegmentRenderer: typeof import('./src/components/insights/renderers/SegmentRenderer.vue')['default']
+    SemanticModelPanel: typeof import('./src/components/settings/SemanticModelPanel.vue')['default']
     SetupPane: typeof import('./src/components/textenrichment/SetupPane.vue')['default']
     SourceCard: typeof import('./src/components/layout/SourceCard.vue')['default']
     SourceLanding: typeof import('./src/components/layout/SourceLanding.vue')['default']
