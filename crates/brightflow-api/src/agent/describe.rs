@@ -37,6 +37,7 @@ pub const TOOLS: &[&str] = &[
     "set_column_polarity",
     "set_kpi",
     "set_column_role",
+    "create_model",
 ];
 
 /// The run's system prompt, before the runner appends the table's semantics.
@@ -62,6 +63,11 @@ higher_is_better; errors, latency, churn: lower_is_better); leave the rest alone
 6. set_column_role only when the current role is plainly wrong: an identifier \
 counted as a measure (role entity), a code with a handful of values counted as \
 a measure (role dimension), a date stored as text left as a dimension (role time).
+7. create_model, at most one, only when a cleaned or aggregated table would \
+serve a reader plainly better than this one (a filter that removes noise rows, \
+or a group-by over a time column and a measure). Call preview_model with the \
+same operations first and look at the rows; if they are not what you meant, \
+do not create. Name it in snake_case after what it holds.
 
 Rules: a value that is already set stays unless it is wrong. Do not state what \
 the samples do not support; when unsure, say less. Columns listed as not \

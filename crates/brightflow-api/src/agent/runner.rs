@@ -3,6 +3,7 @@
 use axum::extract::State;
 use axum::Json;
 use brightflow_llm::{ChatClient, ChatMessage, ToolDef};
+use brightflow_types::{ModelRecipe, Operation};
 use serde_json::json;
 
 use crate::actions::handlers::{dispatch_action, Actor};
@@ -103,6 +104,15 @@ async fn run_inner(
             if call.function.name == "done" {
                 finished = true;
                 messages.push(ChatMessage::tool_result(call.id.clone(), "acknowledged"));
+                continue;
+            }
+            if call.function.name == PREVIEW_MODEL_TOOL {
+                // Read-only: runs the chain over the table and shows the
+                // first rows. Never touches the bus, never logged.
+                let reply = preview_model(state, source_id, table, &call.function.arguments)
+                    .await
+                    .unwrap_or_else(|e| json!({ "status": "error", "error": e.to_string() }));
+                messages.push(ChatMessage::tool_result(call.id.clone(), reply.to_string()));
                 continue;
             }
             // Reconstruct a full Action from the tool call: the tool name is
@@ -293,12 +303,76 @@ fn tools_for(kind: &str) -> Vec<ToolDef> {
                 })
         })
         .collect();
+    if kind == "describe_table" {
+        tools.push(ToolDef {
+            name: PREVIEW_MODEL_TOOL.to_string(),
+            description: "Run a chain of operations over this table and return the first rows \
+                          and the output columns, without creating anything. Call it with the \
+                          same `operations` you would give create_model."
+                .to_string(),
+            parameters: serde_json::to_value(schemars::schema_for!(ModelRecipe))
+                .unwrap_or_else(|_| json!({ "type": "object" })),
+        });
+    }
     tools.push(ToolDef {
         name: "done".to_string(),
         description: "Call when you have proposed everything worth proposing.".to_string(),
         parameters: json!({ "type": "object", "properties": {} }),
     });
     tools
+}
+
+/// The read-only companion to `create_model`: the same recipe, run over
+/// the table with a trailing limit, answered as columns and rows.
+const PREVIEW_MODEL_TOOL: &str = "preview_model";
+
+/// Rows a preview returns; enough to judge a chain, small enough for a prompt.
+const PREVIEW_ROWS: u32 = 20;
+
+async fn preview_model(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    arguments: &str,
+) -> AppResult<serde_json::Value> {
+    let recipe: ModelRecipe = serde_json::from_str(arguments)
+        .map_err(|e| AppError::BadRequest(format!("preview arguments: {e}")))?;
+    let store = state.require_store()?;
+    let row = store
+        .db()
+        .get_table(source_id, table)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("table '{table}' not found")))?;
+    recipe
+        .validate(&row.column_names())
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let files = store.get_table_parquet_paths(source_id, table).await?;
+    let data = crate::analytics::session::DatasetData::Parquet { files };
+    tokio::task::spawn_blocking(move || preview_chain(&data, recipe.operations))
+        .await
+        .map_err(|e| AppError::Internal(format!("preview task failed: {e}")))?
+}
+
+/// The preview answer for a chain over a dataset: the query executor's
+/// response with a limit appended, minus the timing.
+fn preview_chain(
+    data: &crate::analytics::session::DatasetData,
+    mut operations: Vec<Operation>,
+) -> AppResult<serde_json::Value> {
+    operations.push(Operation::Limit { n: PREVIEW_ROWS });
+    let response = crate::analytics::executor::execute_query(
+        data,
+        crate::analytics::types::Query {
+            dataset_id: "preview".to_string(),
+            operations,
+            request_id: None,
+        },
+    )?;
+    Ok(json!({
+        "columns": response.columns.iter().map(|c| json!({ "name": c.name, "datatype": c.datatype })).collect::<Vec<_>>(),
+        "rows": response.rows,
+        "totalRows": response.total_rows,
+    }))
 }
 
 /// (kind, description, parameter schema) triples from the action manifest,
@@ -630,8 +704,9 @@ mod tests {
         assert!(prompt.contains("AT MOST 10 entries"), "{prompt}");
     }
 
-    /// The describe run gets exactly the semantic actions plus `done`, and
-    /// nothing that touches insights or vocabulary.
+    /// The describe run gets exactly the semantic actions, the read-only
+    /// model preview and `done`, and nothing that touches insights or
+    /// vocabulary.
     #[test]
     fn describe_table_tools_are_the_semantic_actions() {
         let names: Vec<String> = tools_for("describe_table")
@@ -642,6 +717,7 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect();
+        expected.push(PREVIEW_MODEL_TOOL.to_string());
         expected.push("done".to_string());
         assert_eq!(names, expected);
         // Every tool came from the manifest with its scope stripped.
@@ -763,5 +839,52 @@ mod tests {
         assert!(props.get("source_id").is_none(), "scope is server-injected");
         assert!(props.get("kind").is_none());
         assert!(props.get("name").is_some());
+    }
+
+    /// The describe run offers create_model and its read-only preview; no
+    /// other run does, and the preview never reaches the bus.
+    #[test]
+    fn describe_run_has_create_model_and_a_preview_tool() {
+        let names: Vec<String> = tools_for("describe_table")
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(names.contains(&"create_model".to_string()));
+        assert!(names.contains(&PREVIEW_MODEL_TOOL.to_string()));
+        assert_eq!(names.last().map(String::as_str), Some("done"));
+        let triage: Vec<String> = tools_for("triage_insights")
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(!triage.contains(&"create_model".to_string()));
+        assert!(!triage.contains(&PREVIEW_MODEL_TOOL.to_string()));
+    }
+
+    #[test]
+    fn preview_runs_the_chain_with_a_limit_and_reports_columns_and_rows() {
+        use polars::prelude::*;
+        let df = df!("region" => ["EU", "US", "EU"], "revenue" => [1.0_f64, 2.0, 3.0]).unwrap();
+        let data = crate::analytics::session::DatasetData::Uploaded(df);
+        let out = preview_chain(
+            &data,
+            vec![Operation::GroupBy {
+                by: vec!["region".into()],
+                aggs: vec![brightflow_types::AggSpec {
+                    column: "revenue".into(),
+                    function: brightflow_types::Aggregation::Sum,
+                    alias: Some("sum".into()),
+                }],
+            }],
+        )
+        .unwrap();
+        let columns: Vec<&str> = out["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(columns, ["region", "sum"]);
+        assert_eq!(out["totalRows"], 2);
+        assert_eq!(out["rows"].as_array().unwrap().len(), 2);
     }
 }
