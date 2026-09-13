@@ -32,7 +32,7 @@ pub struct DataSchema {
     /// Identifier columns: not analysed, but named so a finding can say
     /// "per user" rather than treating the column as noise.
     pub entity_columns: Vec<String>,
-    /// Display labels someone set; `label_for` falls back to the name.
+    /// Display labels someone set; `AnalysisTree::label` falls back to the name.
     pub labels: HashMap<String, String>,
     /// Descriptions someone set, for narration and for the LLM.
     pub descriptions: HashMap<String, String>,
@@ -49,11 +49,6 @@ pub struct DeclaredMetric {
 }
 
 impl DataSchema {
-    /// The label to show for a column: the curated one, else the name.
-    pub fn label_for<'a>(&'a self, column: &'a str) -> &'a str {
-        self.labels.get(column).map_or(column, String::as_str)
-    }
-
     /// All numeric columns that should be analyzed
     pub fn analyzable_columns(&self) -> Vec<String> {
         self.measure_columns.clone()

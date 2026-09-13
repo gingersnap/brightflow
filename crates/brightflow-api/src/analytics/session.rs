@@ -256,6 +256,7 @@ impl DatasetManager {
     }
 
     /// Check if a dataset exists
+    #[cfg(test)]
     pub fn has_dataset(&self, id: &str) -> bool {
         self.datasets.contains_key(id)
     }

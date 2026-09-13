@@ -8,6 +8,12 @@
 //! `register_existing_events` (one-time walk of an
 //! `events/{source}/{date}/*.parquet` tree).
 //!
+//! The catalog itself is reached through `db()`: every metadata query is a
+//! method on `StoreDb`, and callers use them directly. `ParquetStore` keeps
+//! only the operations that touch Parquet files and the few name-resolving
+//! wrappers over the semantic reads that nearly every caller wants by
+//! `(source_id, table_name)`. A new query belongs on `StoreDb`, not here.
+//!
 //! Stored file paths are written root-relative, so a catalog keeps pointing at
 //! its data when the workspace is copied or moved. Absolute paths written
 //! before that was true still resolve, so reading accepts either form. Full-table rewrites (`replace_table_data`) take an
@@ -43,16 +49,14 @@ pub(crate) mod table;
 pub use error::{StoreError, StoreResult};
 // Downstream crates use SQLite through these re-exports (including `rusqlite`
 // itself) so the whole workspace shares one driver version by construction.
-pub use db::{AppliedDeclaration, StoredMetric, StoredRelationship};
 pub use deadpool_sqlite::rusqlite;
-pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
+pub use ingest::{IngestMode, IngestOptions};
 pub use migrate::{migrate, MigrateError, Migration};
+// Row types callers name. The rest are reachable through the methods that
+// return them (`db::AppliedDeclaration` and friends live on `db`).
 pub use models::{
-    ActionLogRow, AgentRunRow, ColumnSemanticRow, DeclarationChangeRow, EnrichmentCacheRow,
-    EnrichmentFunctionRow, EnrichmentFunctionVersionRow, EnrichmentRunRow, FileColumnStatRow,
-    InsightHistoryRow, InsightRunRow, InsightStateRow, InsightSuppressionRow, MetricRow,
-    RelationshipRow, SourceRow, TableRow, TableSemanticsRow, TaxonomyCategoryRow,
-    UnresolvedSubjectRow,
+    ActionLogRow, AgentRunRow, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentRunRow,
+    InsightHistoryRow, InsightRunRow, TableRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
 };
 pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};
@@ -62,7 +66,9 @@ pub use table::{TableInfo, TableRef};
 
 use std::path::{Path, PathBuf};
 
-use db::StoreDb;
+use db::{AppliedDeclaration, StoreDb};
+use ingest::MergeMetrics;
+use models::FileColumnStatRow;
 use polars::prelude::*;
 use tracing::info;
 
@@ -540,7 +546,7 @@ impl ParquetStore {
         self.db.export_model(source_id).await
     }
 
-    /// Get the internal StoreDb (for seeding operations that need direct access).
+    /// The catalog. This is the store's query API; see the module doc.
     pub fn db(&self) -> &StoreDb {
         &self.db
     }

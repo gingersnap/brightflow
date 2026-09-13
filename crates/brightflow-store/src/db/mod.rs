@@ -1,6 +1,8 @@
 //! The store's SQLite pool and its metadata queries, grouped by domain.
 //!
-//! `StoreDb` is one struct over one pool; the query methods live in
+//! `StoreDb` is one struct over one pool, reached as `ParquetStore::db()`,
+//! and it is the store's query API: callers use its methods directly
+//! rather than through wrappers on the facade. The query methods live in
 //! per-domain files (catalog, semantics, insights, actions, curation, agent,
 //! enrichment) purely for navigability. Every method is still a
 //! self-contained named query, so there is exactly one *directory* to look

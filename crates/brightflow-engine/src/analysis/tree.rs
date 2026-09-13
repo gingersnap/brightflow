@@ -821,15 +821,10 @@ impl AnalysisType {
         }
     }
 
-    /// Generate a natural language summary, naming columns by their
-    /// humanised names.
-    pub fn natural_summary(&self) -> String {
-        self.natural_summary_with(&humanize_column)
-    }
-
     /// Generate a natural language summary, naming columns through `label`
-    /// (a curated label where one exists, the humanised name otherwise).
-    pub fn natural_summary_with(&self, label: &dyn Fn(&str) -> String) -> String {
+    /// (a curated label where one exists, the humanised name otherwise —
+    /// see `AnalysisTree::label`).
+    pub fn natural_summary(&self, label: &dyn Fn(&str) -> String) -> String {
         match self {
             Self::Anomaly {
                 column,
@@ -1153,7 +1148,7 @@ impl AnalysisTree {
         description: String,
         data: Option<NodeData>,
     ) -> NodeId {
-        let summary = analysis.natural_summary_with(&|c| self.label(c));
+        let summary = analysis.natural_summary(&|c| self.label(c));
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
         let node = AnalysisNode {
@@ -1224,7 +1219,7 @@ impl AnalysisTree {
         description: String,
         data: Option<NodeData>,
     ) -> NodeId {
-        let summary = analysis.natural_summary_with(&|c| self.label(c));
+        let summary = analysis.natural_summary(&|c| self.label(c));
         let tech_summary = analysis.tech_summary();
         let id = NodeId(self.nodes.len());
         let parent_chain = self.nodes[parent_id.0].filter_chain.clone();
