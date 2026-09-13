@@ -43,7 +43,13 @@ const props = defineProps<{
 
 const router = useRouter();
 const route = useRoute();
+// Stores first: the watchers below read them the moment they are created.
+const connectionStore = useConnectionStore();
+const datasetStore = useDatasetStore();
 const pivotStore = usePivotStore();
+const queryStore = useQueryStore();
+const resultsStore = useResultsStore();
+const uiStore = useUiStore();
 const savedViews = useSavedViews(() => props.sourceId);
 
 /**
@@ -84,11 +90,6 @@ watch(
     }
   },
 );
-const connectionStore = useConnectionStore();
-const datasetStore = useDatasetStore();
-const queryStore = useQueryStore();
-const resultsStore = useResultsStore();
-const uiStore = useUiStore();
 
 const loadingTable = ref(false);
 
