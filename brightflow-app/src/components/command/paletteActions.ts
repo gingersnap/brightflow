@@ -10,10 +10,12 @@ import type {
   AnalysisNode,
   ColumnInfo,
   DismissReason,
+  ModelSummary,
   TaxonomyCategory,
   TimeGranularity,
 } from '@/types/generated';
 import { COLUMN_ACTION_KINDS, TABLE_ACTION_KINDS } from '@/utils/actionKinds';
+import type { CapturedModel } from '@/utils/modelRecipe';
 
 /**
  * Per-action command-palette flows.
@@ -45,6 +47,10 @@ export interface PaletteData {
   categories: TaxonomyCategory[];
   insights: AnalysisNode[];
   columns: ColumnInfo[];
+  /** The source's models, for the model flows; absent off Explore. */
+  models?: ModelSummary[];
+  /** What Explore is showing right now, as a recipe; absent off Explore. */
+  captureModel?: () => CapturedModel;
 }
 
 // Deliberately type aliases, not interfaces — interfaces lack implicit index signatures.
@@ -110,6 +116,12 @@ export const INSIGHT_KINDS: readonly string[] = [
 /** Column- and table-semantic kinds, offered wherever a table is in scope. */
 export const COLUMN_KINDS: readonly string[] = [...COLUMN_ACTION_KINDS, ...TABLE_ACTION_KINDS];
 
+/** Model kinds offered on Explore, where the current state can be captured. */
+export const MODEL_KINDS: readonly string[] = ['create_model', 'rebuild_model', 'delete_model'];
+
+/** Model kinds that need no builder state, for the Semantics route. */
+export const MODEL_MAINTENANCE_KINDS: readonly string[] = ['rebuild_model', 'delete_model'];
+
 const GRANULARITY_OPTIONS: { label: string; value: TimeGranularity }[] = [
   { label: 'Day', value: 'day' },
   { label: 'Week', value: 'week' },
@@ -143,6 +155,25 @@ function insightChildren(
     icon: 'i-lucide-lightbulb',
     ...build(insight),
   }));
+}
+
+function modelChildren(
+  ctx: PaletteActionContext,
+  onPick: (model: ModelSummary) => void,
+): PaletteItem[] {
+  return (ctx.data.models ?? []).map((model) => {
+    const item: PaletteItem = {
+      label: model.table,
+      icon: 'i-lucide-layers',
+      onSelect: () => {
+        onPick(model);
+      },
+    };
+    if (model.inputTable != null) {
+      item.suffix = `from ${model.inputTable}`;
+    }
+    return item;
+  });
 }
 
 /** Fire-and-forget wrapper so onSelect handlers stay synchronous. */
@@ -201,6 +232,82 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
           });
         });
       },
+    }),
+  },
+
+  create_model: {
+    icon: 'i-lucide-layers',
+    build: (ctx) => ({
+      onSelect: () => {
+        ctx.helpers.close();
+        run(async () => {
+          const captured = ctx.data.captureModel?.();
+          if (captured == null) {
+            return;
+          }
+          const name = await ctx.helpers.promptText({
+            title: 'Save as model',
+            description: `A new table built from ${ctx.table}, rebuilt after every sync.`,
+            placeholder: 'snake_case name for the new table',
+            confirmLabel: 'Build',
+          });
+          if (name == null) {
+            return;
+          }
+          await ctx.helpers.dispatch({
+            kind: 'create_model',
+            source_id: ctx.sourceId,
+            table: ctx.table,
+            name,
+            recipe: captured.recipe,
+            client_spec: captured.clientSpec,
+          });
+        });
+      },
+    }),
+  },
+
+  rebuild_model: {
+    icon: 'i-lucide-refresh-cw',
+    build: (ctx) => ({
+      placeholder: 'Rebuild which model…',
+      children: modelChildren(ctx, (model) => {
+        ctx.helpers.close();
+        run(() =>
+          ctx.helpers.dispatch({
+            kind: 'rebuild_model',
+            source_id: ctx.sourceId,
+            table: model.table,
+            model_id: model.id,
+          }),
+        );
+      }),
+    }),
+  },
+
+  delete_model: {
+    icon: 'i-lucide-trash-2',
+    build: (ctx) => ({
+      placeholder: 'Delete which model…',
+      children: modelChildren(ctx, (model) => {
+        ctx.helpers.close();
+        run(async () => {
+          const confirmed = await ctx.helpers.confirm({
+            title: 'Delete model',
+            description: `Delete “${model.table}” and its table? Undo recreates both.`,
+            confirmLabel: 'Delete',
+          });
+          if (!confirmed) {
+            return;
+          }
+          await ctx.helpers.dispatch({
+            kind: 'delete_model',
+            source_id: ctx.sourceId,
+            table: model.table,
+            model_id: model.id,
+          });
+        });
+      }),
     }),
   },
 

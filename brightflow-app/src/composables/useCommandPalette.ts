@@ -13,6 +13,8 @@ import {
   COLUMN_KINDS,
   type ConfirmOptions,
   INSIGHT_KINDS,
+  MODEL_KINDS,
+  MODEL_MAINTENANCE_KINDS,
   type PaletteActionContext,
   type PaletteItem,
   type PromptOptions,
@@ -20,12 +22,16 @@ import {
 } from '@/components/command/paletteActions';
 import TextPromptModal from '@/components/command/TextPromptModal.vue';
 import { patchFromAction, useInsightActions } from '@/composables/useInsightActions';
-import { useSources } from '@/composables/useSources';
+import { useModels } from '@/composables/useModels';
+import { UNIFIED_SOURCES_KEY, useSources } from '@/composables/useSources';
 import { actionsApi, taxonomyApi } from '@/services/api';
 import { useDatasetStore } from '@/stores/dataset';
 import { useInsightsStore } from '@/stores/insights';
+import { usePivotStore } from '@/stores/pivot';
+import { useQueryStore } from '@/stores/query';
 import { toolsForSource } from '@/types';
 import type { Action } from '@/types/generated';
+import { captureRecipe } from '@/utils/modelRecipe';
 
 export interface PaletteGroup {
   id: string;
@@ -62,7 +68,8 @@ export function useCommandPalette(
 
   const routeTool = computed<string | null>(() => {
     const name = typeof route.name === 'string' ? route.name : '';
-    const tableRoute = /^(?<tool>insights|explore|textenrichment|textexplore)-table$/u.exec(name);
+    const tableRoute =
+      /^(?<tool>insights|explore|textenrichment|textexplore|semantics)-table$/u.exec(name);
     if (tableRoute) {
       return tableRoute.groups?.['tool'] ?? null;
     }
@@ -102,6 +109,10 @@ export function useCommandPalette(
   const isTextEnrichment = computed(() => routeTool.value === 'textenrichment' && hasScope.value);
   const isInsights = computed(() => routeTool.value === 'insights' && hasScope.value);
   const isExplore = computed(() => routeTool.value === 'explore' && hasScope.value);
+  const isSemantics = computed(() => routeTool.value === 'semantics' && hasScope.value);
+  const pivotStore = usePivotStore();
+  const queryStore = useQueryStore();
+  const modelList = useModels(() => scopeSourceId.value ?? '');
 
   const { data: taxonomy } = useQuery({
     // Same key as VocabularyTree.vue.
@@ -139,6 +150,11 @@ export function useCommandPalette(
     await queryCache.invalidateQueries({
       key: ['taxonomy', action.source_id, action.table],
     });
+    // A model come or gone is a table come or gone, which every picker
+    // Reads from the source list.
+    if (action.kind === 'create_model' || action.kind === 'delete_model') {
+      await queryCache.invalidateQueries({ key: UNIFIED_SOURCES_KEY });
+    }
   }
 
   // ── Groups ────────────────────────────────────────────────────────────────
@@ -189,7 +205,9 @@ export function useCommandPalette(
     } else if (isInsights.value) {
       kinds = [...INSIGHT_KINDS, ...COLUMN_KINDS];
     } else if (isExplore.value) {
-      kinds = COLUMN_KINDS;
+      kinds = [...COLUMN_KINDS, ...MODEL_KINDS];
+    } else if (isSemantics.value) {
+      kinds = [...COLUMN_KINDS, ...MODEL_MAINTENANCE_KINDS];
     }
     if (kinds.length === 0) {
       return [];
@@ -204,6 +222,8 @@ export function useCommandPalette(
         categories: taxonomy.value?.categories ?? [],
         insights: insightsStore.visibleRoots,
         columns: datasetStore.columns,
+        models: modelList.models.value,
+        captureModel: () => captureRecipe(queryStore, pivotStore),
       },
       helpers: {
         dispatch: dispatchAction,

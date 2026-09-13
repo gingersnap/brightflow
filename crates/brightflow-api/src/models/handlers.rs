@@ -9,7 +9,9 @@ use axum::{
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::shared::AppResult;
+use brightflow_types::ModelRecipe;
+
+use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
 /// A model as a listing shows it: which table it is, what it is built from,
@@ -33,6 +35,13 @@ pub struct ModelSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_build: Option<ModelBuildSummary>,
+    /// The current recipe, so the UI can describe the model.
+    pub recipe: ModelRecipe,
+    /// The Explore snapshot the current recipe was captured from, when the
+    /// builder made it; absent for a recipe an agent wrote.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "unknown")]
+    pub client_spec: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -63,6 +72,18 @@ pub async fn list_models(
     let db = store.db();
     let mut out = Vec::new();
     for m in db.list_models_for_source(&source_id).await? {
+        let version = db
+            .get_model_version(&m.id, m.current_version)
+            .await?
+            .ok_or_else(|| {
+                AppError::Internal(format!("model '{}' has no current version", m.id))
+            })?;
+        let recipe: ModelRecipe = serde_json::from_str(&version.recipe_json)
+            .map_err(|e| AppError::Internal(format!("stored recipe is not readable: {e}")))?;
+        let client_spec = version
+            .client_spec
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
         let last_build = db
             .latest_model_build(&m.id)
             .await?
@@ -80,6 +101,8 @@ pub async fn list_models(
             version: m.current_version,
             created_by: m.created_by,
             last_build,
+            recipe,
+            client_spec,
         });
     }
     Ok(Json(out))

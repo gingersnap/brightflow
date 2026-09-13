@@ -13,6 +13,8 @@
  *
  * A saved view is applied by writing its spec into the query and pivot
  * stores; the route's `?view=` names the applied one so it can be linked.
+ * `?model=` does the same with a model's stored snapshot on its input
+ * table, which is how a recipe is edited.
  */
 
 import { onBeforeUnmount, ref, watch } from 'vue';
@@ -23,6 +25,7 @@ import FilterBar from '@/components/query/FilterBar.vue';
 import QueryBuilder from '@/components/query/QueryBuilder.vue';
 import ResultsPanel from '@/components/results/ResultsPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
+import { useModels } from '@/composables/useModels';
 import { useSavedViews } from '@/composables/useSavedViews';
 import { datasetApi, tableApi } from '@/services/api';
 import { isActionEvent } from '@/services/wsGuards';
@@ -34,6 +37,7 @@ import { useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { SourceTable } from '@/types';
+import type { ModelSummary } from '@/types/generated';
 import { applyExploreView, parseExploreView } from '@/utils/viewSpec';
 
 const props = defineProps<{
@@ -51,6 +55,10 @@ const queryStore = useQueryStore();
 const resultsStore = useResultsStore();
 const uiStore = useUiStore();
 const savedViews = useSavedViews(() => props.sourceId);
+const models = useModels(() => props.sourceId);
+
+/** The model whose recipe is open for editing here, from `?model=`. */
+const editingModel = ref<ModelSummary | null>(null);
 
 /**
  * The applied saved view. Carried in the route as `?view=` so a link from
@@ -91,6 +99,25 @@ watch(
   },
 );
 
+/** Apply a model's snapshot once its input table is loaded and the list is known. */
+watch(
+  () => [datasetStore.name, models.models.value.length, route.query['model']] as const,
+  ([loaded, , wanted]) => {
+    if (loaded == null || typeof wanted !== 'string' || wanted === editingModel.value?.id) {
+      return;
+    }
+    const model = models.models.value.find((m) => m.id === wanted && m.inputTable === loaded);
+    if (model == null) {
+      return;
+    }
+    const spec = parseExploreView(model.clientSpec);
+    if (spec != null) {
+      applyExploreView(spec, queryStore, pivotStore);
+      editingModel.value = model;
+    }
+  },
+);
+
 const loadingTable = ref(false);
 
 const stopSemanticEvents = connectionStore.onMessage('actionEvent', (payload) => {
@@ -117,6 +144,7 @@ onBeforeUnmount(stopSemanticEvents);
 async function loadTable(name: string): Promise<void> {
   loadingTable.value = true;
   activeViewId.value = null;
+  editingModel.value = null;
   try {
     resetAllStores();
     const result = await tableApi.load(props.sourceId, name);
@@ -202,6 +230,7 @@ watch(
           v-model:active-view-id="activeViewId"
           :source-id="sourceId"
           :table="table"
+          :editing-model="editingModel"
         />
       </div>
       <FilterBar />

@@ -7,7 +7,7 @@
 
 import { describe, expect, test, vi } from 'vitest';
 
-import type { Action, ColumnInfo } from '@/types/generated';
+import type { Action, ColumnInfo, ModelSummary } from '@/types/generated';
 
 import { ACTION_PALETTE, type PaletteActionContext } from './paletteActions';
 
@@ -137,5 +137,103 @@ describe('reset_column_semantics', () => {
       source_id: 's',
       table: 'issues',
     });
+  });
+});
+
+describe('model kinds', () => {
+  function modelCtx(models: ModelSummary[], promptAnswer: string | null) {
+    const dispatch = vi.fn<(action: Action) => Promise<void>>(() => Promise.resolve());
+    const context: PaletteActionContext = {
+      data: {
+        captureModel: () => ({
+          clientSpec: {
+            pivot: {
+              columnFields: [],
+              decimalPlaces: 2,
+              rowFields: [],
+              showColumnTotals: true,
+              showConditionalFormatting: false,
+              showSubtotals: true,
+              valueFields: [],
+            },
+            query: {
+              filters: [],
+              limit: 100,
+              sections: {
+                filter: { collapsed: false, enabled: true },
+                limit: { collapsed: false, enabled: true },
+                sort: { collapsed: true, enabled: false },
+              },
+              sortBy: null,
+              sortDescending: false,
+            },
+            version: 1,
+          },
+          recipe: { operations: [{ n: 100, type: 'limit' }], version: 1 },
+        }),
+        categories: [],
+        columns: [],
+        insights: [],
+        models,
+      },
+      helpers: {
+        close: vi.fn((): void => {}),
+        confirm: vi.fn(() => Promise.resolve(true)),
+        dispatch,
+        promptText: vi.fn(() => Promise.resolve(promptAnswer)),
+      },
+      sourceId: 's',
+      table: 'orders',
+    };
+    return { context, dispatch };
+  }
+
+  const model: ModelSummary = {
+    id: 'm1',
+    inputTable: 'orders',
+    recipe: { operations: [{ n: 100, type: 'limit' }], version: 1 },
+    table: 'eu_orders',
+    version: 1,
+  };
+
+  test('create_model prompts for a name and dispatches the captured recipe', async () => {
+    const { context, dispatch } = modelCtx([], 'top_orders');
+    ACTION_PALETTE['create_model']?.build(context).onSelect?.();
+    await flush();
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'create_model',
+        name: 'top_orders',
+        recipe: { operations: [{ n: 100, type: 'limit' }], version: 1 },
+        source_id: 's',
+        table: 'orders',
+      }),
+    );
+  });
+
+  test('rebuild_model and delete_model list the models and scope to the output table', async () => {
+    const { context, dispatch } = modelCtx([model], null);
+    const rebuild = ACTION_PALETTE['rebuild_model']?.build(context);
+    expect(rebuild?.children?.map((c) => c.label)).toEqual(['eu_orders']);
+    expect(rebuild?.children?.[0]?.suffix).toBe('from orders');
+    rebuild?.children?.[0]?.onSelect?.();
+    await flush();
+    expect(dispatch).toHaveBeenCalledWith({
+      kind: 'rebuild_model',
+      model_id: 'm1',
+      source_id: 's',
+      table: 'eu_orders',
+    });
+
+    ACTION_PALETTE['delete_model']?.build(context).children?.[0]?.onSelect?.();
+    await flush();
+    expect(dispatch).toHaveBeenCalledWith({
+      kind: 'delete_model',
+      model_id: 'm1',
+      source_id: 's',
+      table: 'eu_orders',
+    });
+    // With no models the pickers have nothing to pick and the palette drops them.
+    expect(ACTION_PALETTE['rebuild_model']?.build(modelCtx([], null).context).children).toEqual([]);
   });
 });

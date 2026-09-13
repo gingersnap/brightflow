@@ -8,6 +8,7 @@ export { connectApi } from './connect';
 export { actionsApi, agentApi, jobsApi } from './curation';
 export { enrichFnApi, llmApi } from './enrich';
 export { insightHistoryApi, insightRunsApi, insightsApi } from './insights';
+export { modelsApi } from './models';
 export { productAnalyticsApi } from './productAnalytics';
 export { datasetApi, semanticModelApi, semanticsApi, sourceApi, tableApi } from './sources';
 export {
