@@ -154,9 +154,15 @@ describe('applySemanticAction for table settings', () => {
     expect(
       store.applySemanticAction(entry({ ...base, table: 'other', time_granularity: 'day' })),
     ).toBe(false);
+    // A display name or description lands too; a blank one clears.
     expect(store.applySemanticAction(entry({ ...base, display_name: 'X', table: 'issues' }))).toBe(
-      false,
+      true,
     );
+    expect(store.displayName).toBe('X');
+    expect(store.applySemanticAction(entry({ ...base, description: ' ', table: 'issues' }))).toBe(
+      true,
+    );
+    expect(store.description).toBeNull();
     expect(store.timeGranularity).toBe('month');
   });
 });

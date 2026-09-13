@@ -92,6 +92,29 @@ function handleOperatorChange(filterId: string, op: string): void {
   }
 }
 
+// A temporal column gets the browser's date or time picker; the value it
+// Yields (`2024-01-15`, `2024-01-15T10:30`) is what the backend parses.
+function inputTypeFor(filter: Filter): 'date' | 'datetime-local' | 'time' | 'text' {
+  if (!filter.column) {
+    return 'text';
+  }
+  switch (getColumnType(filter.column)) {
+    case 'Date': {
+      return 'date';
+    }
+    case 'DateTime':
+    case 'DateTimeTz': {
+      return 'datetime-local';
+    }
+    case 'Time': {
+      return 'time';
+    }
+    default: {
+      return 'text';
+    }
+  }
+}
+
 // Handle value change
 function handleValueChange(filterId: string, value: unknown): void {
   queryStore.updateFilter(filterId, { value });
@@ -148,6 +171,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
           <UInput
             v-if="operatorNeedsValue(filter.op)"
             :model-value="(filter.value as string | number | null) ?? ''"
+            :type="inputTypeFor(filter)"
             placeholder="value"
             size="xs"
             variant="none"

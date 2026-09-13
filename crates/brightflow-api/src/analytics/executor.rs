@@ -80,10 +80,13 @@ pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryRespons
 }
 
 /// Apply a single operation to a LazyFrame
-fn apply_operation(lf: LazyFrame, op: Operation) -> AppResult<LazyFrame> {
+fn apply_operation(mut lf: LazyFrame, op: Operation) -> AppResult<LazyFrame> {
     match op {
         Operation::Filter { column, op, value } => {
-            let expr = build_filter_expr(&column, op, value)?;
+            // The plan's schema decides how a string value is compared: a
+            // date column gets a date literal, not text.
+            let dtype = lf.collect_schema()?.get(column.as_str()).cloned();
+            let expr = build_filter_expr(&column, dtype.as_ref(), op, value)?;
             Ok(lf.filter(expr))
         },
         Operation::Select { columns } => {
@@ -178,9 +181,89 @@ fn period_expr(column: &str, dtype: &DataType, granularity: TimeGranularity) -> 
     })
 }
 
-/// Build a filter expression
-fn build_filter_expr(column: &str, op: FilterOp, value: serde_json::Value) -> AppResult<Expr> {
+/// A string value against a temporal column, as the comparison Polars can
+/// run: the column and the literal to compare it with. A date-only string
+/// against a datetime column compares by calendar day, which is what
+/// "before 2024-03-01" means to a person. `None` when the column is not
+/// temporal or the value is not a string, so the plain literal applies.
+fn temporal_comparison(column: &str, dtype: &DataType, value: &str) -> Option<(Expr, Expr)> {
+    let text = value.trim();
+    let date_options = StrptimeOptions {
+        format: Some("%Y-%m-%d".into()),
+        strict: false,
+        exact: true,
+        cache: true,
+    };
+    let is_date_only = text.len() == 10;
+    match dtype {
+        DataType::Date => Some((col(column), lit(text).str().to_date(date_options))),
+        DataType::Datetime(unit, zone) => {
+            if is_date_only {
+                return Some((
+                    col(column).cast(DataType::Date),
+                    lit(text).str().to_date(date_options),
+                ));
+            }
+            // `datetime-local` inputs omit seconds; strptime wants them.
+            let full = if text.len() == 16 {
+                format!("{text}:00")
+            } else {
+                text.to_string()
+            };
+            let literal = lit(full).str().to_datetime(
+                Some(*unit),
+                zone.clone(),
+                StrptimeOptions {
+                    format: None,
+                    strict: false,
+                    exact: true,
+                    cache: true,
+                },
+                lit("raise"),
+            );
+            Some((col(column), literal))
+        },
+        DataType::Time => Some((
+            col(column),
+            lit(text).str().to_time(StrptimeOptions {
+                format: None,
+                strict: false,
+                exact: true,
+                cache: true,
+            }),
+        )),
+        _ => None,
+    }
+}
+
+/// Build a filter expression. `dtype` is the column's planned type when the
+/// caller resolved it; it only changes how string values are compared with
+/// temporal columns.
+fn build_filter_expr(
+    column: &str,
+    dtype: Option<&DataType>,
+    op: FilterOp,
+    value: serde_json::Value,
+) -> AppResult<Expr> {
     let c = col(column);
+    let temporal = match (&value, dtype) {
+        (serde_json::Value::String(s), Some(dtype)) => temporal_comparison(column, dtype, s),
+        _ => None,
+    };
+    if let Some((column_expr, literal)) = temporal {
+        let comparison = match op {
+            FilterOp::Eq => Some(column_expr.eq(literal)),
+            FilterOp::Ne => Some(column_expr.neq(literal)),
+            FilterOp::Gt => Some(column_expr.gt(literal)),
+            FilterOp::Gte => Some(column_expr.gt_eq(literal)),
+            FilterOp::Lt => Some(column_expr.lt(literal)),
+            FilterOp::Lte => Some(column_expr.lt_eq(literal)),
+            _ => None,
+        };
+        if let Some(expr) = comparison {
+            return Ok(expr);
+        }
+    }
 
     Ok(match op {
         FilterOp::Eq => c.eq(json_to_lit(&value)?),
@@ -366,6 +449,52 @@ fn anyvalue_to_json(val: &AnyValue<'_>) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A string value against a Date column filters by date, not by text;
+    /// a date-only string against a Datetime column filters by calendar
+    /// day; a full timestamp compares exactly.
+    #[test]
+    fn temporal_filters_compare_dates_not_text() {
+        use polars::prelude::NamedFrom;
+        let days = Series::new("d".into(), &[19737_i32, 19738, 19800])
+            .cast(&DataType::Date)
+            .unwrap();
+        let stamps = Series::new(
+            "ts".into(),
+            &[
+                1_705_314_600_000_000_i64,
+                1_705_400_000_000_000,
+                1_710_000_000_000_000,
+            ],
+        )
+        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+        .unwrap();
+        let lf = DataFrame::new(vec![days.into(), stamps.into()])
+            .unwrap()
+            .lazy();
+        let filter = |column: &str, op: FilterOp, value: &str| {
+            apply_operation(
+                lf.clone(),
+                Operation::Filter {
+                    column: column.to_string(),
+                    op,
+                    value: serde_json::Value::String(value.to_string()),
+                },
+            )
+            .unwrap()
+            .collect()
+            .unwrap()
+            .height()
+        };
+        // 19737 days = 2024-01-15.
+        assert_eq!(filter("d", FilterOp::Gte, "2024-01-16"), 2);
+        assert_eq!(filter("d", FilterOp::Lt, "2024-01-16"), 1);
+        assert_eq!(filter("d", FilterOp::Eq, "2024-01-15"), 1);
+        // The first stamp is 2024-01-15T10:30:00; the second is the next day.
+        assert_eq!(filter("ts", FilterOp::Eq, "2024-01-15"), 1);
+        assert_eq!(filter("ts", FilterOp::Gt, "2024-01-15T11:00"), 2);
+        assert_eq!(filter("ts", FilterOp::Lte, "2024-01-15T10:30:00"), 1);
+    }
 
     fn tickets() -> LazyFrame {
         df! {

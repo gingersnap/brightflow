@@ -17,8 +17,9 @@ describe('normalizeType', () => {
     expect(normalizeType('String')).toBe('string');
   });
 
-  test('temporal, opaque and missing types fall back to string', () => {
-    expect(normalizeType('DateTime')).toBe('string');
+  test('temporal types have their own bucket; opaque and missing fall back to string', () => {
+    expect(normalizeType('DateTime')).toBe('temporal');
+    expect(normalizeType('Date')).toBe('temporal');
     expect(normalizeType('Opaque')).toBe('string');
     expect(normalizeType(null)).toBe('string');
   });

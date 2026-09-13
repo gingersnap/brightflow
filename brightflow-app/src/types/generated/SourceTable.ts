@@ -3,7 +3,15 @@
 /**
  * A table belonging to a source
  */
-export type SourceTable = { name: string, numRows: number | null, 
+export type SourceTable = { name: string, 
+/**
+ * The resolved display name, when someone set one.
+ */
+displayName?: string, 
+/**
+ * The resolved description, when someone wrote one.
+ */
+description?: string, numRows: number | null, 
 /**
  * True when the table type supports text enrichment (Topics).
  */

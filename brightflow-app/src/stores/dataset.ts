@@ -53,6 +53,8 @@ interface TableSettingsParams {
   kind: 'set_table_settings';
   source_id: string;
   table: string;
+  display_name?: string;
+  description?: string;
   time_granularity?: TimeGranularity;
 }
 
@@ -93,6 +95,9 @@ export const useDatasetStore = defineStore('dataset', () => {
   const rowCount = ref<number | null>(null);
   const columns = ref<ColumnInfo[]>([]);
   const timeGranularity = ref<TimeGranularity>(DEFAULT_TIME_GRANULARITY);
+  /** The resolved display name and description, when someone set them. */
+  const displayName = ref<string | null>(null);
+  const description = ref<string | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -126,6 +131,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     rowCount.value = response.rowCount;
     columns.value = response.columns;
     timeGranularity.value = response.timeGranularity ?? DEFAULT_TIME_GRANULARITY;
+    displayName.value = response.displayName ?? null;
+    description.value = response.description ?? null;
     loading.value = false;
     error.value = null;
 
@@ -151,11 +158,22 @@ export const useDatasetStore = defineStore('dataset', () => {
       if (name.value == null || settings.table !== name.value) {
         return false;
       }
-      if (settings.time_granularity == null) {
-        return false;
+      let changed = false;
+      if (settings.time_granularity != null) {
+        timeGranularity.value = settings.time_granularity;
+        changed = true;
       }
-      timeGranularity.value = settings.time_granularity;
-      return true;
+      if (settings.display_name != null) {
+        const trimmed = settings.display_name.trim();
+        displayName.value = trimmed === '' ? null : trimmed;
+        changed = true;
+      }
+      if (settings.description != null) {
+        const trimmed = settings.description.trim();
+        description.value = trimmed === '' ? null : trimmed;
+        changed = true;
+      }
+      return changed;
     }
     if (!isSemanticParams(entry.params)) {
       return false;
@@ -185,11 +203,11 @@ export const useDatasetStore = defineStore('dataset', () => {
         return true;
       }
       case 'set_column_description': {
-        const description = params.description?.trim() ?? '';
-        if (description === '') {
+        const text = params.description?.trim() ?? '';
+        if (text === '') {
           delete col.description;
         } else {
-          col.description = description;
+          col.description = text;
         }
         return true;
       }
@@ -216,6 +234,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     rowCount.value = null;
     columns.value = [];
     timeGranularity.value = DEFAULT_TIME_GRANULARITY;
+    displayName.value = null;
+    description.value = null;
     error.value = null;
   }
 
@@ -226,6 +246,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     rowCount,
     columns,
     timeGranularity,
+    displayName,
+    description,
     loading,
     error,
     // Computed

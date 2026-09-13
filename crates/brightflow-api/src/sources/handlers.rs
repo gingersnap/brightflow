@@ -11,6 +11,30 @@ use super::profiles::{connector_tools, upload_tools, web_analytics_tools};
 use super::types::{SourceKind, SourceTable, UnifiedSource};
 
 /// GET /api/sources/unified — merged list of event sources + connector sources
+/// A source's tables with their resolved display name and description,
+/// so a picker can show "Issues" and what one row is.
+async fn source_tables(
+    store: &brightflow_store::ParquetStore,
+    source_id: &str,
+) -> Vec<SourceTable> {
+    let mut out = Vec::new();
+    for t in store
+        .list_tables_by_source(source_id)
+        .await
+        .unwrap_or_default()
+    {
+        let resolved = store.db().resolved_table(&t.id).await.ok().flatten();
+        out.push(SourceTable {
+            name: t.name.clone(),
+            display_name: resolved.as_ref().and_then(|r| r.display_name.clone()),
+            description: resolved.as_ref().and_then(|r| r.description.clone()),
+            num_rows: Some(t.total_rows),
+            enrichable: crate::shared::schema_has_text_column(t.schema_json.as_deref()),
+        });
+    }
+    out
+}
+
 pub async fn list_unified_sources(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<UnifiedSource>>> {
@@ -22,19 +46,7 @@ pub async fn list_unified_sources(
             for src in event_sources {
                 let source_id_key = brightflow_core::web_source_id(&src.id);
                 let tables: Vec<SourceTable> = match state.store() {
-                    Some(store) => store
-                        .list_tables_by_source(&source_id_key)
-                        .await
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|t| SourceTable {
-                            name: t.name.clone(),
-                            num_rows: Some(t.total_rows),
-                            enrichable: crate::shared::schema_has_text_column(
-                                t.schema_json.as_deref(),
-                            ),
-                        })
-                        .collect(),
+                    Some(store) => source_tables(store, &source_id_key).await,
                     None => Vec::new(),
                 };
                 let ready = !tables.is_empty();
@@ -60,19 +72,7 @@ pub async fn list_unified_sources(
                 let source_id_key = brightflow_core::connector_source_id(&config.id);
 
                 let tables: Vec<SourceTable> = match state.store() {
-                    Some(store) => store
-                        .list_tables_by_source(&source_id_key)
-                        .await
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|t| SourceTable {
-                            name: t.name.clone(),
-                            num_rows: Some(t.total_rows),
-                            enrichable: crate::shared::schema_has_text_column(
-                                t.schema_json.as_deref(),
-                            ),
-                        })
-                        .collect(),
+                    Some(store) => source_tables(store, &source_id_key).await,
                     None => Vec::new(),
                 };
                 let ready = !tables.is_empty();
@@ -106,17 +106,7 @@ pub async fn list_unified_sources(
     if let Some(store) = state.store() {
         if let Ok(uploads) = store.db().list_registered_sources("upload").await {
             for src in uploads {
-                let tables: Vec<SourceTable> = store
-                    .list_tables_by_source(&src.source_id)
-                    .await
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|t| SourceTable {
-                        name: t.name.clone(),
-                        num_rows: Some(t.total_rows),
-                        enrichable: crate::shared::schema_has_text_column(t.schema_json.as_deref()),
-                    })
-                    .collect();
+                let tables: Vec<SourceTable> = source_tables(store, &src.source_id).await;
                 let ready = !tables.is_empty();
                 sources.push(UnifiedSource {
                     id: src.source_id.clone(),

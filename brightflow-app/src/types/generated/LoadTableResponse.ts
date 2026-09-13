@@ -10,4 +10,12 @@ export type LoadTableResponse = { id: string, name: string, rowCount: number | n
  * The table's configured period for time bucketing, when one is set.
  * Explore uses it as the default granularity of a time field.
  */
-timeGranularity?: TimeGranularity, };
+timeGranularity?: TimeGranularity, 
+/**
+ * The resolved display name, when someone set one.
+ */
+displayName?: string, 
+/**
+ * The resolved description, when someone wrote one.
+ */
+description?: string, };

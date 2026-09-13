@@ -94,8 +94,18 @@ function handleCardClick(table: SourceTable): void {
           @click="handleCardClick(table)"
         >
           <UIcon name="i-lucide-table-2" class="h-5 w-5 text-muted" />
-          <div>
-            <p class="text-sm font-medium text-highlighted">{{ table.name }}</p>
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-highlighted">
+              {{ table.displayName ?? table.name }}
+              <span v-if="table.displayName" class="font-normal text-muted">{{ table.name }}</span>
+            </p>
+            <p
+              v-if="table.description"
+              class="truncate text-sm text-muted"
+              :title="table.description"
+            >
+              {{ table.description }}
+            </p>
             <p v-if="table.numRows != null" class="text-sm text-muted">
               {{ table.numRows.toLocaleString() }} rows
             </p>

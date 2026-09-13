@@ -4,15 +4,15 @@
  *
  * `LogicalType` is the contract crate's ten-value vocabulary, generated from
  * Rust, so there is nothing to normalise: a column is `Integer` or it is not.
- * `normalizeType` folds the ten into the four buckets the filter-operator
- * catalogue is keyed by; temporal types fall in the string bucket there
- * because no temporal operators exist yet. `isStringType` matches `String`
- * only, so a date column is never offered where a text column is required.
+ * `normalizeType` folds the ten into the five buckets the filter-operator
+ * catalogue is keyed by; `Opaque` and a missing type fall in the string
+ * bucket. `isStringType` matches `String` only, so a date column is never
+ * offered where a text column is required.
  */
 
 import type { LogicalType } from '@/types/generated';
 
-export type NormalizedType = 'int' | 'float' | 'string' | 'boolean';
+export type NormalizedType = 'int' | 'float' | 'string' | 'boolean' | 'temporal';
 
 const FLOAT_TYPES: ReadonlySet<LogicalType> = new Set<LogicalType>(['Float', 'Decimal']);
 const TEMPORAL_TYPES: ReadonlySet<LogicalType> = new Set<LogicalType>([
@@ -32,6 +32,9 @@ export function normalizeType(datatype: LogicalType | null | undefined): Normali
   }
   if (datatype === 'Boolean') {
     return 'boolean';
+  }
+  if (datatype != null && TEMPORAL_TYPES.has(datatype)) {
+    return 'temporal';
   }
   return 'string';
 }

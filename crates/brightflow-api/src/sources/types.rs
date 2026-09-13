@@ -48,6 +48,14 @@ pub enum SourceTool {
 #[serde(rename_all = "camelCase")]
 pub struct SourceTable {
     pub name: String,
+    /// The resolved display name, when someone set one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub display_name: Option<String>,
+    /// The resolved description, when someone wrote one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub description: Option<String>,
     #[ts(type = "number | null")]
     pub num_rows: Option<i64>,
     /// True when the table type supports text enrichment (Topics).

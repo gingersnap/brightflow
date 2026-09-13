@@ -9,19 +9,44 @@ import { normalizeType } from '@/utils/dtype';
 // Adding a FilterOp variant without an entry here is a type error.
 const OPERATORS: Record<FilterOp, OperatorDef> = {
   // Universal operators
-  eq: { label: 'equals', types: ['string', 'int', 'float', 'boolean'] },
-  ne: { label: 'not equals', types: ['string', 'int', 'float', 'boolean'] },
-  isNull: { label: 'is null', noValue: true, types: ['string', 'int', 'float', 'boolean'] },
-  isNotNull: { label: 'is not null', noValue: true, types: ['string', 'int', 'float', 'boolean'] },
+  eq: {
+    label: 'equals',
+    temporalLabel: 'on',
+    types: ['string', 'int', 'float', 'boolean', 'temporal'],
+  },
+  ne: {
+    label: 'not equals',
+    temporalLabel: 'not on',
+    types: ['string', 'int', 'float', 'boolean', 'temporal'],
+  },
+  isNull: {
+    label: 'is null',
+    noValue: true,
+    types: ['string', 'int', 'float', 'boolean', 'temporal'],
+  },
+  isNotNull: {
+    label: 'is not null',
+    noValue: true,
+    types: ['string', 'int', 'float', 'boolean', 'temporal'],
+  },
 
   // String operators
   contains: { label: 'contains', types: ['string'] },
 
-  // Numeric operators
-  gt: { label: 'greater than', types: ['int', 'float'] },
-  gte: { label: 'greater or equal', types: ['int', 'float'] },
-  lt: { label: 'less than', types: ['int', 'float'] },
-  lte: { label: 'less or equal', types: ['int', 'float'] },
+  // Numeric and temporal operators. The backend compares a temporal column
+  // With a date or timestamp literal, so "after" is `gt` on the wire.
+  gt: { label: 'greater than', temporalLabel: 'after', types: ['int', 'float', 'temporal'] },
+  gte: {
+    label: 'greater or equal',
+    temporalLabel: 'on or after',
+    types: ['int', 'float', 'temporal'],
+  },
+  lt: { label: 'less than', temporalLabel: 'before', types: ['int', 'float', 'temporal'] },
+  lte: {
+    label: 'less or equal',
+    temporalLabel: 'on or before',
+    types: ['int', 'float', 'temporal'],
+  },
 
   // Array operator
   in: { isArray: true, label: 'in list', types: ['string', 'int', 'float'] },
@@ -49,6 +74,9 @@ function getDefaultOperator(datatype: LogicalType | null | undefined): FilterOp 
     case 'boolean': {
       return 'eq';
     }
+    case 'temporal': {
+      return 'gte';
+    }
     default: {
       return 'eq';
     }
@@ -66,7 +94,7 @@ export function useOperators() {
       .filter(([_key, op]) => op.types.includes(normalizedType))
       .map(([key, op]) => ({
         isArray: op.isArray ?? false,
-        label: op.label,
+        label: normalizedType === 'temporal' ? (op.temporalLabel ?? op.label) : op.label,
         noValue: op.noValue ?? false,
         value: key,
       }));

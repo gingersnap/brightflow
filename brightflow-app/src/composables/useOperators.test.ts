@@ -60,9 +60,25 @@ describe('getOperatorsForType', () => {
     expect(keysFor(untyped.datatype)).toEqual(keysFor('String'));
   });
 
-  test('temporal types take the string operators until temporal ones exist', () => {
-    expect(keysFor('Date')).toEqual(keysFor('String'));
-    expect(keysFor('DateTimeTz')).toEqual(keysFor('String'));
+  test('temporal types get comparison operators worded as before and after', () => {
+    expect(keysFor('Date')).toEqual(['eq', 'ne', 'isNull', 'isNotNull', 'gt', 'gte', 'lt', 'lte']);
+    expect(keysFor('DateTimeTz')).toEqual(keysFor('Date'));
+    const labels = getOperatorsForType('Date').map((op) => op.label);
+    expect(labels).toEqual([
+      'on',
+      'not on',
+      'is null',
+      'is not null',
+      'after',
+      'on or after',
+      'before',
+      'on or before',
+    ]);
+    // The same operator keeps its numeric wording elsewhere.
+    expect(getOperatorsForType('Integer').find((op) => op.value === 'gt')?.label).toBe(
+      'greater than',
+    );
+    expect(getDefaultOperator('Date')).toBe('gte');
   });
 });
 
@@ -70,7 +86,8 @@ describe('getOperator', () => {
   test('returns the raw definition for a known key', () => {
     expect(getOperator('eq')).toEqual({
       label: 'equals',
-      types: ['string', 'int', 'float', 'boolean'],
+      temporalLabel: 'on',
+      types: ['string', 'int', 'float', 'boolean', 'temporal'],
     });
   });
 

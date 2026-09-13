@@ -256,6 +256,14 @@ pub struct LoadTableResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub time_granularity: Option<TimeGranularity>,
+    /// The resolved display name, when someone set one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub display_name: Option<String>,
+    /// The resolved description, when someone wrote one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub description: Option<String>,
 }
 
 #[cfg(test)]

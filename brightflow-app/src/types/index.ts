@@ -134,6 +134,8 @@ export type TextSize = 'small' | 'default' | 'large';
 // Operator definition (frontend-only)
 export interface OperatorDef {
   label: string;
+  /** The label for a temporal column, where "after" reads better than "greater than". */
+  temporalLabel?: string;
   types: string[];
   noValue?: boolean;
   isArray?: boolean;

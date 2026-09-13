@@ -65,14 +65,18 @@ pub async fn load_table(
     // settings UIs show role/KPI/label/polarity, the declared datatype and
     // who said so, without a second fetch.
     let mut columns = dataset.columns();
-    if let Some(store) = state.store() {
-        let resolved = store.resolved_columns(&source_id, &name).await?;
-        for col in &mut columns {
-            if let Some(r) = resolved.iter().find(|r| r.name == col.name) {
-                col.apply_resolved(r);
+    let table_display: Option<brightflow_types::ResolvedTable> = match state.store() {
+        Some(store) => {
+            let resolved = store.resolved_columns(&source_id, &name).await?;
+            for col in &mut columns {
+                if let Some(r) = resolved.iter().find(|r| r.name == col.name) {
+                    col.apply_resolved(r);
+                }
             }
-        }
-    }
+            store.resolved_table(&source_id, &name).await?
+        },
+        None => None,
+    };
     let key = crate::state::cache_key(&source_id, &name);
     let time_granularity = state
         .settings_overrides
@@ -86,6 +90,8 @@ pub async fn load_table(
         column_count: dataset.column_count(),
         columns,
         time_granularity,
+        display_name: table_display.as_ref().and_then(|t| t.display_name.clone()),
+        description: table_display.and_then(|t| t.description),
     }))
 }
 
