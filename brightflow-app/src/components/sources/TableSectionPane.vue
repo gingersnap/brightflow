@@ -4,10 +4,15 @@
  * no table is selected and collapses on pick. Single-table sources emit
  * `auto-select-table` instead of `select-table`, so the parent can give
  * automatic selection different navigation semantics than a user click.
+ *
+ * With a table selected it also offers the `describe_table` agent run: the
+ * one place, shared by every table-scoped view, to ask a model to fill in
+ * the table's descriptions, roles and polarity as proposals.
  */
 
 import { computed, ref, watch } from 'vue';
 
+import AgentActions from '@/components/actions/AgentActions.vue';
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useSources } from '@/composables/useSources';
 import type { SourceTable } from '@/types';
@@ -36,6 +41,11 @@ const sourceTables = computed(() => {
 const selected = computed(() => sourceTables.value.find((t) => t.name === props.selectedTable));
 
 const expanded = ref(props.selectedTable == null);
+
+/** The one agent run offered here; proposes by default. */
+const DESCRIBE_KIND = [
+  { kind: 'describe_table', label: 'Describe with agent', icon: 'i-lucide-sparkles' },
+];
 
 watch(
   () => props.selectedTable,
@@ -101,6 +111,18 @@ function handleCardClick(table: SourceTable): void {
 
     <!-- Content -->
     <div class="border-t border-default bg-muted/10 p-4">
+      <div v-if="selectedTable" class="mb-3 flex flex-wrap items-center gap-3">
+        <AgentActions
+          :source-id="sourceId"
+          :table="selectedTable"
+          :kinds="DESCRIBE_KIND"
+          :default-auto-apply="false"
+        />
+        <span class="text-xs text-muted">
+          Proposes descriptions, roles, polarity and KPIs for {{ selectedTable }}; review them in
+          Activity.
+        </span>
+      </div>
       <div
         v-if="sourceTables.length > 0"
         class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"

@@ -67,6 +67,13 @@ function describe(entry: ActionLogEntry): string {
       details.push(`${key}=${value.length > 24 ? `${value.slice(0, 24)}…` : value}`);
     }
   }
+  // The prose a describe run proposes is what a reviewer reads, so it gets more room.
+  for (const key of ['description', 'display_name', 'displayName', 'role', 'polarity']) {
+    const value = params[key];
+    if (typeof value === 'string' && value.length > 0) {
+      details.push(`${key}=${value.length > 80 ? `${value.slice(0, 80)}…` : value}`);
+    }
+  }
   for (const key of ['clusterId', 'cluster_id', 'from_cluster_id', 'into_cluster_id']) {
     const value = params[key];
     if (typeof value === 'number') {

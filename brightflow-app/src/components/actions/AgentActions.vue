@@ -19,6 +19,12 @@ const props = defineProps<{
    * `parentId` scopes an induction run to one parent category.
    */
   kinds: { kind: string; label: string; icon: string; parentId?: number }[];
+  /**
+   * Initial state of the auto-apply switch. Defaults on; a caller whose run
+   * writes prose people will read as fact (describe_table) starts it off so
+   * the run proposes for review.
+   */
+  defaultAutoApply?: boolean;
 }>();
 
 /** Structural guard for a pushed `agentRun` frame. */
@@ -36,9 +42,10 @@ const lastRun = ref<AgentRunResponse | null>(null);
 const lastResult = ref<string | null>(null);
 /**
  * Auto-apply by default: every tool the runner hands out is undoable, so
- * reversibility (not pre-approval) is the safety mechanism.
+ * reversibility (not pre-approval) is the safety mechanism. The caller can
+ * start the switch off where proposals are the better default.
  */
-const autoApply = ref(true);
+const autoApply = ref(props.defaultAutoApply ?? true);
 const undoingAll = ref(false);
 let unsubscribe: (() => void) | null = null;
 

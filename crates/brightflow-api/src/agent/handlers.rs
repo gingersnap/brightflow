@@ -10,14 +10,27 @@ use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
 /// Must stay in sync with `runner::tools_for`, `runner::build_context`, and the
-/// `agent_runs.kind` CHECK constraint (migration 023).
+/// `agent_runs.kind` CHECK constraint (migration 030).
 const VALID_KINDS: &[&str] = &[
     "narrate_insights",
     "triage_insights",
     "propose_categories",
     "propose_subcategories",
     "propose_feedback_categories",
+    "describe_table",
 ];
+
+/// The mode a run gets when the request names none. Curation runs apply at
+/// once because every tool they get is undoable; `describe_table` proposes,
+/// because it writes descriptions people will read as fact and a wrong one
+/// is cheaper to reject than to notice later.
+fn default_mode(kind: &str) -> &'static str {
+    if kind == "describe_table" {
+        "propose"
+    } else {
+        "auto_apply"
+    }
+}
 
 /// Must stay inside the `agent_runs.mode` CHECK constraint (migration 010).
 const VALID_MODES: &[&str] = &["propose", "auto_apply"];
@@ -51,7 +64,10 @@ pub async fn start_run(
             VALID_KINDS.join(", ")
         )));
     }
-    let mode = req.mode.as_deref().unwrap_or("auto_apply");
+    let mode = req
+        .mode
+        .as_deref()
+        .unwrap_or_else(|| default_mode(&req.kind));
     if !VALID_MODES.contains(&mode) {
         return Err(AppError::BadRequest(format!(
             "unknown agent mode '{mode}'; valid: {}",
@@ -238,4 +254,18 @@ pub async fn cancel_run(
         .ok_or_else(|| AppError::NotFound(format!("agent run {id} not found")))?;
     crate::actions::events::emit_run_row(&state, updated.clone(), Vec::new());
     Ok(Json(to_response(updated, Vec::new())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn describe_table_proposes_by_default_and_the_rest_apply() {
+        assert_eq!(default_mode("describe_table"), "propose");
+        for kind in VALID_KINDS.iter().filter(|k| **k != "describe_table") {
+            assert_eq!(default_mode(kind), "auto_apply", "{kind}");
+        }
+        assert!(VALID_MODES.contains(&default_mode("describe_table")));
+    }
 }

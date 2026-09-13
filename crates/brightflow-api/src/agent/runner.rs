@@ -276,6 +276,7 @@ fn tools_for(kind: &str) -> Vec<ToolDef> {
         "propose_categories" | "propose_subcategories" | "propose_feedback_categories" => {
             &["define_taxonomy_category"]
         },
+        "describe_table" => crate::agent::describe::TOOLS,
         _ => &[], // narrate_insights: text only
     };
     let manifest = manifest_schemas();
@@ -583,6 +584,7 @@ async fn kind_context(
                 .unwrap_or_default(),
             ))
         },
+        "describe_table" => crate::agent::describe::context(state, source_id, table).await,
         other => Err(AppError::BadRequest(format!(
             "unknown agent kind '{other}'"
         ))),
@@ -626,6 +628,31 @@ mod tests {
         );
         assert!(prompt.contains(&expected), "{prompt}");
         assert!(prompt.contains("AT MOST 10 entries"), "{prompt}");
+    }
+
+    /// The describe run gets exactly the semantic actions plus `done`, and
+    /// nothing that touches insights or vocabulary.
+    #[test]
+    fn describe_table_tools_are_the_semantic_actions() {
+        let names: Vec<String> = tools_for("describe_table")
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        let mut expected: Vec<String> = crate::agent::describe::TOOLS
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        expected.push("done".to_string());
+        assert_eq!(names, expected);
+        // Every tool came from the manifest with its scope stripped.
+        for tool in tools_for("describe_table") {
+            let props = tool.parameters.pointer("/properties");
+            assert!(
+                props.is_none_or(|p| p.get("source_id").is_none()),
+                "{}",
+                tool.name
+            );
+        }
     }
 
     #[test]

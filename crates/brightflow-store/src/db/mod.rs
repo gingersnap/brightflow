@@ -57,6 +57,7 @@ static MIGRATIONS: &[Migration] = &[
     migration!(27, "027_layered_semantics"),
     migration!(28, "028_declaration_changes"),
     migration!(29, "029_schema_json_columns"),
+    migration!(30, "030_describe_table_agent_kind"),
 ];
 
 #[derive(Clone, Debug)]
