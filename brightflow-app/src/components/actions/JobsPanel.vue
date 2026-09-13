@@ -2,7 +2,7 @@
 /**
  * Running jobs: every background run — connector syncs, enrichment runs,
  * agent runs, insight runs — in one list, what is running first and then
- * what recently finished. Every kind pushes over the socket (agent and
+ * what recently finished, collapsed behind its count. Every kind pushes over the socket (agent and
  * insight runs on their own frames, syncs and enrichment runs on `job`
  * frames), so the list refetches on each push and never polls.
  */
@@ -11,6 +11,7 @@ import { useQuery } from '@pinia/colada';
 import { computed, onBeforeUnmount, ref } from 'vue';
 
 import JobRow from '@/components/actions/JobRow.vue';
+import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { jobsApi } from '@/services/api';
 import { useConnectionStore } from '@/stores/connection';
 
@@ -21,6 +22,9 @@ const { data, refetch } = useQuery({
   key: () => ['jobs', tick.value],
   query: async () => (await jobsApi.list(100)) ?? [],
 });
+
+/** Running is the point of the tab and stays open; finished is history, collapsed with its count. */
+const finishedOpen = ref(false);
 
 const jobs = computed(() => data.value ?? []);
 const running = computed(() => jobs.value.filter((j) => j.status === 'running'));
@@ -66,17 +70,22 @@ onBeforeUnmount(() => {
           />
         </div>
       </section>
-      <section>
-        <h3
-          class="border-y border-default bg-muted/10 px-4 py-1.5 text-xs font-semibold tracking-wider text-muted uppercase"
+      <CollapsibleSection v-model:open="finishedOpen" class="border-t border-default">
+        <template #title>
+          <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">
+            Finished ({{ finished.length }})
+          </h3>
+        </template>
+        <p
+          v-if="finished.length === 0"
+          class="border-t border-default px-4 py-3 text-sm text-muted"
         >
-          Finished
-        </h3>
-        <p v-if="finished.length === 0" class="px-4 py-3 text-sm text-muted">No jobs yet.</p>
-        <div v-else class="divide-y divide-default">
+          No jobs yet.
+        </p>
+        <div v-else class="divide-y divide-default border-t border-default">
           <JobRow v-for="job in finished" :key="`${job.kind}:${job.id}`" :job="job" />
         </div>
-      </section>
+      </CollapsibleSection>
     </div>
   </div>
 </template>

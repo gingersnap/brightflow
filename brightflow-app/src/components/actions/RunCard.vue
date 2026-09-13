@@ -4,8 +4,9 @@
  * stats line and the model's closing note in full (for a describe run, what
  * it overruled and why), approve-all and reject-all for the proposals still
  * pending, a link to the table's Semantics page, and the run's entries
- * inside. The entries are the same rows the feed shows on their own, so a
- * person can reject two and approve the rest without leaving the card.
+ * inside, collapsed until opened with their count on the toggle. The
+ * entries are the same rows the feed shows on their own, so a person can
+ * reject two and approve the rest without leaving the card.
  */
 
 import { computed, ref } from 'vue';
@@ -24,7 +25,8 @@ const props = defineProps<{
 }>();
 
 const curation = useCuration();
-const expanded = ref(true);
+/** Collapsed until asked: the header carries the count, the note and the controls. */
+const expanded = ref(false);
 const busy = ref(false);
 
 const pending = computed(() => pendingIn(props.entries));
@@ -108,7 +110,7 @@ async function rejectRun(): Promise<void> {
               {{ formatTime(run.createdAt) }}
               <template v-if="detail.stats"> · {{ detail.stats }}</template>
             </template>
-            <template v-else>{{ entries.length }} actions</template>
+            <template v-else>run details not loaded</template>
             <template v-if="pending > 0"> · {{ pending }} awaiting review</template>
           </p>
         </div>
@@ -153,9 +155,11 @@ async function rejectRun(): Promise<void> {
             color="neutral"
             variant="ghost"
             :icon="expanded ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-            :aria-label="expanded ? 'Collapse run' : 'Expand run'"
+            :aria-expanded="expanded"
             @click="expanded = !expanded"
-          />
+          >
+            {{ entries.length }} action{{ entries.length === 1 ? '' : 's' }}
+          </UButton>
         </div>
       </div>
       <p
