@@ -44,6 +44,7 @@ pub mod semantics;
 pub mod shared;
 pub mod sources;
 pub mod state;
+pub mod sync;
 pub mod system;
 pub mod textexplore;
 pub mod web_analytics;

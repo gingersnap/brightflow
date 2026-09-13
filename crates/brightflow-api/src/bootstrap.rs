@@ -170,29 +170,14 @@ pub(crate) async fn start_scheduler(
     state.scheduler = Some(Arc::clone(&scheduler));
     state.scheduler_db = Some(scheduler_db);
 
-    // Post-sync hook: promoted llm_prompt functions run incrementally
-    // after each endpoint merge, then insights auto-recompute (which
-    // spawns and returns — the scheduler awaits this hook inline).
+    // Post-sync hook: the shared after-write sequence (`sync.rs`). The
+    // scheduler awaits it inline per endpoint, so model rebuilds block the
+    // sync while enrichment and insights spawn and return.
     let hook_state = state.clone();
     scheduler
         .set_post_sync_hook(Arc::new(move |source_id: String, table: String| {
             let sync_state = hook_state.clone();
-            Box::pin(async move {
-                // A connector that declared nothing still gets a base layer.
-                if let Some(sync_store) = sync_state.store() {
-                    match crate::semantics::detect::declare_detected_if_undescribed(
-                        sync_store, &source_id, &table,
-                    )
-                    .await
-                    {
-                        Ok(_) => {},
-                        Err(e) => tracing::warn!("detection for '{source_id}/{table}' failed: {e}"),
-                    }
-                }
-                crate::enrichment::post_sync(sync_state.clone(), source_id.clone(), table.clone())
-                    .await;
-                crate::insights::auto::post_sync(sync_state, source_id, table).await;
-            })
+            Box::pin(crate::sync::after_table_write(sync_state, source_id, table))
         }))
         .await;
 

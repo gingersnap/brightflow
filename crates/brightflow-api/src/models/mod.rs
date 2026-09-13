@@ -14,6 +14,8 @@
 pub mod deps;
 pub mod semantics;
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use brightflow_store::{ModelBuildRow, ModelRow, ParquetStore, TableRow};
@@ -122,6 +124,8 @@ pub async fn rebuild(state: &AppState, model_id: &str, trigger: &str) -> AppResu
     crate::jobs::emit_model_job(state, &build.id).await;
 
     let built_rows = result?;
+    // What follows any table write, minus the dependents walk (see sync.rs).
+    crate::sync::after_model_write(state.clone(), source_id.clone(), output.clone()).await;
     Ok(BuildOutcome {
         build_id: build.id,
         rows: built_rows,
@@ -189,31 +193,44 @@ async fn build_once(
 /// Rebuild every model fed by `table`, directly or through other models,
 /// in feeding order. Errors are logged per model and never stop the rest;
 /// a broken model is visible as a failed build in Activity.
-pub async fn rebuild_dependents(state: &AppState, source_id: &str, table: &str) {
-    let Some(store) = state.store() else { return };
-    let Ok(Some(row)) = store.db().get_table(source_id, table).await else {
-        return;
-    };
-    let Ok(listed) = store.db().list_models_for_source(source_id).await else {
-        return;
-    };
-    let models: Vec<ModelRow> = listed
-        .into_iter()
-        .map(|m| ModelRow {
-            id: m.id,
-            output_table_id: m.output_table_id,
-            input_table_id: m.input_table_id,
-            current_version: m.current_version,
-            created_by: m.created_by,
-            created_at: m.created_at,
-            updated_at: m.updated_at,
-        })
-        .collect();
-    for model_id in deps::dependents_in_order(&models, &row.id) {
-        if let Err(e) = rebuild(state, &model_id, "sync").await {
-            tracing::warn!("model '{model_id}' did not rebuild after '{source_id}/{table}': {e}");
+///
+/// Boxed with an explicit `Send` because the call graph is a cycle — an
+/// enrichment run materialises, which rebuilds dependents, whose builds
+/// trigger enrichment — and the compiler cannot close a `Send` proof
+/// through an infinitely nested opaque future.
+pub fn rebuild_dependents<'a>(
+    state: &'a AppState,
+    source_id: &'a str,
+    table: &'a str,
+) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    Box::pin(async move {
+        let Some(store) = state.store() else { return };
+        let Ok(Some(row)) = store.db().get_table(source_id, table).await else {
+            return;
+        };
+        let Ok(listed) = store.db().list_models_for_source(source_id).await else {
+            return;
+        };
+        let models: Vec<ModelRow> = listed
+            .into_iter()
+            .map(|m| ModelRow {
+                id: m.id,
+                output_table_id: m.output_table_id,
+                input_table_id: m.input_table_id,
+                current_version: m.current_version,
+                created_by: m.created_by,
+                created_at: m.created_at,
+                updated_at: m.updated_at,
+            })
+            .collect();
+        for model_id in deps::dependents_in_order(&models, &row.id) {
+            if let Err(e) = rebuild(state, &model_id, "sync").await {
+                tracing::warn!(
+                    "model '{model_id}' did not rebuild after '{source_id}/{table}': {e}"
+                );
+            }
         }
-    }
+    })
 }
 
 fn now() -> i64 {

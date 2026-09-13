@@ -974,6 +974,8 @@ pub async fn materialize(
         {
             Ok(()) => {
                 declare_output_semantics(store, source_id, table_name, function_name, run).await;
+                // The table changed shape: models built from it follow.
+                crate::models::rebuild_dependents(state, source_id, table_name).await;
                 if let Some((rows, unresolved)) = child {
                     let child_name = mentions::mentions_table_name(table_name);
                     write_child_table(store, source_id, &child_name, rows).await?;
