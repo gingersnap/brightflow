@@ -12,8 +12,8 @@ use axum::{
 
 use crate::semantics::types::{
     ColumnSemanticsResponse, DeclarationChangesResponse, ImportQuery, ImportedTable, LayersQuery,
-    SemanticModelImportResponse, SemanticModelResponse, TableSemanticsResponse, TableSettings,
-    TableSettingsResponse,
+    SavedViewResponse, SemanticModelImportResponse, SemanticModelResponse, TableSemanticsResponse,
+    TableSettings, TableSettingsResponse,
 };
 use crate::shared::AppResult;
 use crate::state::AppState;
@@ -59,6 +59,20 @@ pub async fn get_table_semantics(
         table,
         layers,
     }))
+}
+
+/// GET /api/sources/{source_id}/views — every saved view of the source,
+/// by table then name. Writes go through `save_view`, `rename_view` and
+/// `delete_view` on the action bus.
+pub async fn list_saved_views(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+) -> AppResult<Json<Vec<SavedViewResponse>>> {
+    let store = state.require_store()?;
+    let rows = store.db().list_saved_views_for_source(&source_id).await?;
+    Ok(Json(
+        rows.into_iter().map(SavedViewResponse::from).collect(),
+    ))
 }
 
 /// GET /api/sources/{source_id}/tables/{name}/settings — the resolved table

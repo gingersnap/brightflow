@@ -86,6 +86,45 @@ pub struct TableSettingsResponse {
     pub settings: TableSettings,
 }
 
+/// A saved view as the client reads it: its table named, its spec as the
+/// JSON the client saved.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedViewResponse {
+    pub id: String,
+    pub source_id: String,
+    pub table: String,
+    pub name: String,
+    /// "explore"
+    pub kind: String,
+    #[ts(type = "unknown")]
+    pub spec: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub created_by: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
+impl From<brightflow_store::SavedViewListRow> for SavedViewResponse {
+    fn from(r: brightflow_store::SavedViewListRow) -> Self {
+        Self {
+            id: r.id,
+            source_id: r.source_id,
+            table: r.table_name,
+            name: r.name,
+            kind: r.kind,
+            spec: serde_json::from_str(&r.spec_json).unwrap_or(serde_json::Value::Null),
+            created_by: r.created_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
 /// What a producer's re-declarations changed, newest first.
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]

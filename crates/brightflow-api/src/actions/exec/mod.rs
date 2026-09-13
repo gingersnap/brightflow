@@ -9,6 +9,7 @@
 pub(crate) mod insights;
 pub(crate) mod semantics;
 pub(crate) mod taxonomy;
+pub(crate) mod views;
 
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;

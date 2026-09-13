@@ -10,24 +10,31 @@
  * Applied column-semantic actions arrive over the WebSocket as action events
  * and are patched into the dataset store, so a rename or role change made
  * here or anywhere else shows without reloading the table.
+ *
+ * A saved view is applied by writing its spec into the query and pivot
+ * stores; the route's `?view=` names the applied one so it can be linked.
  */
 
 import { onBeforeUnmount, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
+import SavedViewsBar from '@/components/explore/SavedViewsBar.vue';
 import FilterBar from '@/components/query/FilterBar.vue';
 import QueryBuilder from '@/components/query/QueryBuilder.vue';
 import ResultsPanel from '@/components/results/ResultsPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
+import { useSavedViews } from '@/composables/useSavedViews';
 import { datasetApi, tableApi } from '@/services/api';
 import { isActionEvent } from '@/services/wsGuards';
 import { resetAllStores } from '@/stores';
 import { useConnectionStore } from '@/stores/connection';
 import { useDatasetStore } from '@/stores/dataset';
+import { usePivotStore } from '@/stores/pivot';
 import { useQueryStore } from '@/stores/query';
 import { useResultsStore } from '@/stores/results';
 import { useUiStore } from '@/stores/ui';
 import type { SourceTable } from '@/types';
+import { applyExploreView, parseExploreView } from '@/utils/viewSpec';
 
 const props = defineProps<{
   sourceId: string;
@@ -35,6 +42,48 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
+const pivotStore = usePivotStore();
+const savedViews = useSavedViews(() => props.sourceId);
+
+/**
+ * The applied saved view. Carried in the route as `?view=` so a link from
+ * the Saved page or the Overview opens the table with the view applied;
+ * cleared when the table changes.
+ */
+const activeViewId = ref<string | null>(null);
+watch(activeViewId, (id) => {
+  const current = typeof route.query['view'] === 'string' ? route.query['view'] : null;
+  if (id === current) {
+    return;
+  }
+  const query = { ...route.query };
+  if (id == null) {
+    delete query['view'];
+  } else {
+    query['view'] = id;
+  }
+  void router.replace({ query });
+});
+
+/** Apply the route's view once the table is loaded and the list is known. */
+watch(
+  () => [datasetStore.name, savedViews.views.value.length, route.query['view']] as const,
+  ([loaded, , wanted]) => {
+    if (loaded == null || typeof wanted !== 'string' || wanted === activeViewId.value) {
+      return;
+    }
+    const view = savedViews.views.value.find((v) => v.id === wanted && v.table === loaded);
+    if (view == null) {
+      return;
+    }
+    const spec = parseExploreView(view.spec);
+    if (spec != null) {
+      applyExploreView(spec, queryStore, pivotStore);
+      activeViewId.value = view.id;
+    }
+  },
+);
 const connectionStore = useConnectionStore();
 const datasetStore = useDatasetStore();
 const queryStore = useQueryStore();
@@ -66,6 +115,7 @@ onBeforeUnmount(stopSemanticEvents);
 
 async function loadTable(name: string): Promise<void> {
   loadingTable.value = true;
+  activeViewId.value = null;
   try {
     resetAllStores();
     const result = await tableApi.load(props.sourceId, name);
@@ -145,6 +195,14 @@ watch(
     />
 
     <div :inert="!table" :class="{ 'opacity-50': !table }">
+      <div class="flex items-center gap-2 border-b border-default px-4 py-2">
+        <SavedViewsBar
+          v-if="table"
+          v-model:active-view-id="activeViewId"
+          :source-id="sourceId"
+          :table="table"
+        />
+      </div>
       <FilterBar />
       <QueryBuilder />
     </div>

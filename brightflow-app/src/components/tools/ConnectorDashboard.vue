@@ -3,8 +3,8 @@
  * Overview of a connector or upload source: one card per table with what it
  * is (display name, description, rows) and the signals that make it worth
  * opening — when it last changed, how much of it is described, proposals
- * waiting on it, its latest insight run — and a jump into each tool for
- * that table. The signals come from the overview endpoint and refetch
+ * waiting on it, its latest insight run, its saved views — and a jump into
+ * each tool for that table. The signals come from the overview endpoint and refetch
  * when a proposal is decided or an insights run finishes; the listing
  * itself comes from the shared source list. Read-only: every action here
  * is navigation.
@@ -14,6 +14,7 @@ import { useQuery } from '@pinia/colada';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useSavedViews } from '@/composables/useSavedViews';
 import { sourceApi } from '@/services/api';
 import { isJobEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
@@ -68,6 +69,12 @@ const { data: overview } = useQuery({
   ],
   query: async () => await sourceApi.overview(props.sourceId),
 });
+
+const savedViews = useSavedViews(() => props.sourceId);
+
+function savedCount(table: string): number {
+  return savedViews.forTable(table).length;
+}
 
 const tables = computed<OverviewTable[]>(() =>
   mergeSignals(props.source.tables, overview.value?.tables ?? []),
@@ -194,6 +201,17 @@ function open(route: TableRoute, table: string): void {
           <div class="col-span-2">
             <dt class="text-muted">Insights</dt>
             <dd class="text-default">{{ lastRun(row) ?? 'No run yet' }}</dd>
+          </div>
+          <div v-if="savedCount(row.table.name) > 0" class="col-span-2">
+            <dt class="text-muted">Saved views</dt>
+            <dd class="text-default">
+              <RouterLink
+                :to="{ name: 'source-tool', params: { sourceId, tool: 'saved' } }"
+                class="underline-offset-2 hover:underline"
+              >
+                {{ savedCount(row.table.name) }}
+              </RouterLink>
+            </dd>
           </div>
           <div v-if="row.table.lastDeclarationChange" class="col-span-2">
             <dt class="text-muted">Connector</dt>

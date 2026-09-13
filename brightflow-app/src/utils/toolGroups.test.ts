@@ -27,7 +27,7 @@ describe('groupTools', () => {
     const groups = groupTools(toolsForSource(source(['dashboard', 'explore', 'insights'])));
     expect(groups.map((g) => [g.id, g.heading, g.tools.map((t) => t.id)])).toEqual([
       ['overview', false, ['dashboard']],
-      ['analyze', true, ['explore', 'insights']],
+      ['analyze', true, ['explore', 'insights', 'saved']],
       ['data', true, ['semantics']],
       ['settings', false, ['settings']],
     ]);
@@ -36,6 +36,6 @@ describe('groupTools', () => {
   test('drops a group the source has no tools in and keeps the backend order within one', () => {
     const groups = groupTools(toolsForSource(source(['textexplore', 'explore'])));
     expect(groups.map((g) => g.id)).toEqual(['analyze', 'data', 'settings']);
-    expect(groups[0]?.tools.map((t) => t.id)).toEqual(['textexplore', 'explore']);
+    expect(groups[0]?.tools.map((t) => t.id)).toEqual(['textexplore', 'explore', 'saved']);
   });
 });

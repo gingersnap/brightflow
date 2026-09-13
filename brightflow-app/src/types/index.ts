@@ -56,10 +56,11 @@ export type {
 export type { SourceKind, SourceTable, SourceTool, UnifiedSource } from './generated';
 
 /**
- * Tool ids the UI routes on: the backend's tools plus the two client-side
- * tabs every source gets, Semantics (what its tables mean) and Settings.
+ * Tool ids the UI routes on: the backend's tools plus the client-side tabs
+ * every source gets — Saved (its views), Semantics (what its tables mean)
+ * and Settings.
  */
-export type ToolId = SourceTool | 'semantics' | 'settings';
+export type ToolId = SourceTool | 'saved' | 'semantics' | 'settings';
 
 /**
  * What a tool is for, which is how the sidebar groups them: the landing
@@ -91,6 +92,7 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string; group: Too
   explore: { group: 'analyze', icon: 'i-lucide-search', label: 'Explore' },
   insights: { group: 'analyze', icon: 'i-lucide-sparkles', label: 'Insights' },
   textexplore: { group: 'analyze', icon: 'i-lucide-text-search', label: 'Text Explorer' },
+  saved: { group: 'analyze', icon: 'i-lucide-bookmark', label: 'Saved' },
   textenrichment: {
     group: 'data',
     icon: 'i-lucide-messages-square',
@@ -102,8 +104,8 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string; group: Too
 
 export function toolsForSource(source: UnifiedSource): ToolDef[] {
   // Collision-free by type: the backend's SourceTool can't contain
-  // 'semantics' or 'settings', which are the client-side tabs.
-  const ids: ToolId[] = [...source.tools, 'semantics', 'settings'];
+  // 'saved', 'semantics' or 'settings', which are the client-side tabs.
+  const ids: ToolId[] = [...source.tools, 'saved', 'semantics', 'settings'];
   return ids.map((id) => {
     const def = TOOL_DEFS[id];
     return { group: def.group, icon: def.icon, id, label: def.label };

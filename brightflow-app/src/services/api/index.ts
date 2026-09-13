@@ -17,4 +17,5 @@ export {
   ticketsApi,
   vocabularyApi,
 } from './textenrichment';
+export { viewsApi } from './views';
 export { analyticsApi } from './webAnalytics';

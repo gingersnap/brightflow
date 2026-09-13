@@ -581,7 +581,7 @@ pub async fn execute_action(
     actor: &Actor,
     action: &Action,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    use crate::actions::exec::{insights, semantics, taxonomy};
+    use crate::actions::exec::{insights, semantics, taxonomy, views};
     match action {
         Action::DismissInsight {
             scope: Scope { source_id, table },
@@ -659,6 +659,32 @@ pub async fn execute_action(
             scope: Scope { source_id, table },
             column,
         } => semantics::execute_reset_column_semantics(state, source_id, table, column).await,
+        Action::SaveView {
+            scope: Scope { source_id, table },
+            name,
+            spec,
+            view_id,
+        } => {
+            views::execute_save_view(
+                state,
+                actor,
+                source_id,
+                table,
+                name,
+                spec,
+                view_id.as_deref(),
+            )
+            .await
+        },
+        Action::RenameView {
+            scope: Scope { source_id, table },
+            view_id,
+            name,
+        } => views::execute_rename_view(state, source_id, table, view_id, name).await,
+        Action::DeleteView {
+            scope: Scope { source_id, table },
+            view_id,
+        } => views::execute_delete_view(state, source_id, table, view_id).await,
         Action::SetTableSettings {
             scope: Scope { source_id, table },
             display_name,
@@ -754,8 +780,10 @@ pub async fn execute_action(
 /// Apply an inverse operation. Same shape as `execute_action`: one line per
 /// arm, bodies in `exec::*` next to the executes they invert.
 pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
-    use crate::actions::exec::{insights, semantics, taxonomy};
+    use crate::actions::exec::{insights, semantics, taxonomy, views};
     match op {
+        UndoOp::DeleteSavedView { view_id } => views::undo_delete_saved_view(state, view_id).await,
+        UndoOp::RestoreSavedView { row } => views::undo_restore_saved_view(state, row).await,
         UndoOp::DeleteInsightState {
             table_id,
             fingerprint,

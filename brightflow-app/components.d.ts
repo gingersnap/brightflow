@@ -72,6 +72,8 @@ declare module 'vue' {
     RunAllModal: typeof import('./src/components/textenrichment/RunAllModal.vue')['default']
     RunCard: typeof import('./src/components/actions/RunCard.vue')['default']
     RunHistoryTable: typeof import('./src/components/connect/RunHistoryTable.vue')['default']
+    SavedViewsBar: typeof import('./src/components/explore/SavedViewsBar.vue')['default']
+    SavedViewsTool: typeof import('./src/components/saved/SavedViewsTool.vue')['default']
     ScheduleList: typeof import('./src/components/connect/ScheduleList.vue')['default']
     SchedulesPanel: typeof import('./src/components/connect/SchedulesPanel.vue')['default']
     SchedulesView: typeof import('./src/components/schedules/SchedulesView.vue')['default']

@@ -16,6 +16,7 @@ mod curation;
 mod enrichment;
 mod insights;
 mod semantics;
+mod views;
 
 pub use semantics::{AppliedDeclaration, StoredMetric, StoredRelationship};
 
@@ -58,6 +59,7 @@ static MIGRATIONS: &[Migration] = &[
     migration!(28, "028_declaration_changes"),
     migration!(29, "029_schema_json_columns"),
     migration!(30, "030_describe_table_agent_kind"),
+    migration!(31, "031_saved_views"),
 ];
 
 #[derive(Clone, Debug)]

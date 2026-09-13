@@ -40,6 +40,7 @@ const TextEnrichmentView = defineAsyncComponent(
 const TextExploreTool = defineAsyncComponent(
   () => import('@/components/textexplore/TextExploreTool.vue'),
 );
+const SavedViewsTool = defineAsyncComponent(() => import('@/components/saved/SavedViewsTool.vue'));
 const SemanticsTool = defineAsyncComponent(
   () => import('@/components/semantics/SemanticsTool.vue'),
 );
@@ -165,6 +166,9 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
         :source-id="sourceId"
         :table="table"
       />
+
+      <!-- Saved views -->
+      <SavedViewsTool v-else-if="activeTool === 'saved'" :source-id="sourceId" />
 
       <!-- Semantics -->
       <SemanticsTool v-else-if="activeTool === 'semantics'" :source-id="sourceId" :table="table" />

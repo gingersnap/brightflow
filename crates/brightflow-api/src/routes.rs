@@ -301,6 +301,11 @@ fn api_routes() -> Router<AppState> {
             "/sources/{source_id}/overview",
             get(crate::sources::overview::source_overview),
         )
+        // Saved views of a source (writes go through the action bus)
+        .route(
+            "/sources/{source_id}/views",
+            get(semantics_handlers::list_saved_views),
+        )
         // Persistent CSV uploads (must be before /sources/{id})
         .route("/sources/upload", post(handlers::upload_source))
         // Source management

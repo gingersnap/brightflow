@@ -196,6 +196,36 @@ pub enum Action {
         scope: Scope,
         column: String,
     },
+    /// Save the current Explore configuration of a table under a name, or
+    /// overwrite the view named by `view_id` with a new name and spec. The
+    /// spec is the client's own snapshot; the server stores it as given.
+    SaveView {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        name: String,
+        #[ts(type = "unknown")]
+        spec: serde_json::Value,
+        /// The view to overwrite; absent creates a new one.
+        #[serde(default)]
+        #[ts(optional)]
+        view_id: Option<String>,
+    },
+    /// Give a saved view a new name.
+    RenameView {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        view_id: String,
+        name: String,
+    },
+    /// Remove a saved view. Undo puts it back as it was.
+    DeleteView {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        view_id: String,
+    },
     /// The table's own settings — display name, description, analysis
     /// period and how many periods to compare — as one opinion at the
     /// actor's layer. A field left out is "no opinion", so a producer's
@@ -329,6 +359,9 @@ impl Action {
             Self::SetColumnDescription { .. } => "set_column_description",
             Self::SetTableSettings { .. } => "set_table_settings",
             Self::ResetColumnSemantics { .. } => "reset_column_semantics",
+            Self::SaveView { .. } => "save_view",
+            Self::RenameView { .. } => "rename_view",
+            Self::DeleteView { .. } => "delete_view",
         }
     }
 
@@ -351,7 +384,10 @@ impl Action {
             | Self::SetColumnLabel { scope, .. }
             | Self::SetColumnDescription { scope, .. }
             | Self::SetTableSettings { scope, .. }
-            | Self::ResetColumnSemantics { scope, .. } => scope,
+            | Self::ResetColumnSemantics { scope, .. }
+            | Self::SaveView { scope, .. }
+            | Self::RenameView { scope, .. }
+            | Self::DeleteView { scope, .. } => scope,
         };
         (&scope.source_id, &scope.table)
     }
@@ -536,6 +572,10 @@ pub fn kind_is_undoable(kind: &str) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum UndoOp {
+    /// Undo of a save that created a view: remove it.
+    DeleteSavedView { view_id: String },
+    /// Undo of a rename, a re-save or a delete: put the previous row back.
+    RestoreSavedView { row: brightflow_store::SavedViewRow },
     DeleteInsightState {
         table_id: String,
         fingerprint: String,
@@ -743,6 +783,25 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "Set the table's display name, description, analysis period \
          (day, week, month, quarter or year) and how many periods to compare. \
          Give only the fields to change; a blank string clears a text field.",
+        true,
+    ),
+    (
+        "save_view",
+        "Save view",
+        "Save the current Explore configuration of a table under a name, or \
+         overwrite an existing view. The spec is the client's own snapshot.",
+        true,
+    ),
+    (
+        "rename_view",
+        "Rename view",
+        "Give a saved view a new name.",
+        true,
+    ),
+    (
+        "delete_view",
+        "Delete view",
+        "Remove a saved view. Undo puts it back as it was.",
         true,
     ),
 ];
@@ -972,6 +1031,30 @@ mod tests {
                     table: String::new(),
                 },
                 column: String::new(),
+            },
+            Action::SaveView {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                name: String::new(),
+                spec: serde_json::Value::Null,
+                view_id: None,
+            },
+            Action::RenameView {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                view_id: String::new(),
+                name: String::new(),
+            },
+            Action::DeleteView {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                view_id: String::new(),
             },
         ];
         assert_eq!(

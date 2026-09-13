@@ -112,6 +112,7 @@ export type { RunTriggerResponse } from './RunTriggerResponse';
 export type { SampleCellResponse } from './SampleCellResponse';
 export type { SampleRunRequest } from './SampleRunRequest';
 export type { SampleRunResponse } from './SampleRunResponse';
+export type { SavedViewResponse } from './SavedViewResponse';
 export type { ScheduleRequest } from './ScheduleRequest';
 export type { ScheduleResponse } from './ScheduleResponse';
 export type { SchedulerJob } from './SchedulerJob';

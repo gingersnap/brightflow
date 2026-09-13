@@ -368,6 +368,37 @@ pub struct EnrichmentRunRow {
     pub finished_at: Option<String>,
 }
 
+/// A saved view: a named Explore configuration over one table. `spec_json`
+/// is the client's own snapshot, opaque to the store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewRow {
+    pub id: String,
+    pub table_id: String,
+    pub name: String,
+    /// 'explore'
+    pub kind: String,
+    pub spec_json: String,
+    pub created_by: Option<String>,
+    /// Unix seconds.
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// A saved view with its table named, for a source-wide listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedViewListRow {
+    pub id: String,
+    pub table_id: String,
+    pub source_id: String,
+    pub table_name: String,
+    pub name: String,
+    pub kind: String,
+    pub spec_json: String,
+    pub created_by: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// One enrichment run with the function and table it ran for, as the
 /// jobs list needs it: the run's own columns plus the names the joins add.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -638,6 +669,28 @@ crate::impl_from_row!(EnrichmentRunRow {
     error,
     created_at,
     finished_at,
+});
+crate::impl_from_row!(SavedViewRow {
+    id,
+    table_id,
+    name,
+    kind,
+    spec_json,
+    created_by,
+    created_at,
+    updated_at,
+});
+crate::impl_from_row!(SavedViewListRow {
+    id,
+    table_id,
+    source_id,
+    table_name,
+    name,
+    kind,
+    spec_json,
+    created_by,
+    created_at,
+    updated_at,
 });
 crate::impl_from_row!(RecentEnrichmentRunRow {
     id,
