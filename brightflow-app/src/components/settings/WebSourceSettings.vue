@@ -10,7 +10,6 @@ import { useClipboard } from '@vueuse/core';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import SemanticModelPanel from '@/components/settings/SemanticModelPanel.vue';
 import { sourceApi } from '@/services/api';
 import type { UnifiedSource } from '@/types';
 
@@ -138,8 +137,6 @@ const { mutate: deleteSource } = useMutation({
           </template>
         </div>
       </section>
-
-      <SemanticModelPanel :source-id="source.id" />
 
       <!-- Danger zone -->
       <section>

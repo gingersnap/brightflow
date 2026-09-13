@@ -11,6 +11,9 @@
  * second editing path. Server data comes through Pinia Colada and is
  * refetched on every applied or undone action that names this table: a
  * change may reveal what a lower layer says, which no event carries.
+ *
+ * The source's model import and export sits at the foot, collapsed: it is
+ * source-scoped, so it shows whether or not a table is picked.
  */
 
 import type { DropdownMenuItem } from '@nuxt/ui';
@@ -20,6 +23,7 @@ import { useRouter } from 'vue-router';
 
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { columnMenuItems } from '@/components/query/columnMenu';
+import SemanticModelPanel from '@/components/semantics/SemanticModelPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
 import { useColumnSemantics } from '@/composables/useColumnSemantics';
 import { useInsightActions } from '@/composables/useInsightActions';
@@ -247,6 +251,7 @@ const tableSettingsMenu = computed<DropdownMenuItem[][]>(() => [
 
 const tableLayersOpen = ref(false);
 const changesOpen = ref(false);
+const modelOpen = ref(false);
 </script>
 
 <template>
@@ -491,6 +496,21 @@ const changesOpen = ref(false);
           </ul>
         </CollapsibleSection>
       </section>
+    </div>
+
+    <!-- The whole source's model, in and out -->
+    <div class="px-4 pb-4" :class="{ 'pt-4': !hasTable }">
+      <CollapsibleSection v-model:open="modelOpen" class="rounded-lg border border-default">
+        <template #title>
+          <h3 class="text-sm font-medium text-default">
+            Semantic model
+            <span class="font-normal text-muted">import and export, whole source</span>
+          </h3>
+        </template>
+        <div class="border-t border-default p-4">
+          <SemanticModelPanel :source-id="sourceId" />
+        </div>
+      </CollapsibleSection>
     </div>
   </div>
 </template>

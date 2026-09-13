@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * The source's semantic model, in and out. "Export" fetches the Ossie
- * document the store rebuilds from its resolved rows and shows it in the
- * editor; a pasted document (or a bare model in the short hand-authored
- * form) is checked with a dry run and applied as declared rows under
- * `document:{name}`, one table at a time. Datasets with no table here are
- * listed, not refused; a malformed model is refused with the reason.
+ * The source's semantic model, in and out, at the foot of the Semantics
+ * page. "Export" fetches the Ossie document the store rebuilds from its
+ * resolved rows and shows it in the editor; a pasted document (or a bare
+ * model in the short hand-authored form) is checked with a dry run and
+ * applied as declared rows under `document:{name}`, one table at a time.
+ * Datasets with no table here are listed, not refused; a malformed model
+ * is refused with the reason. Source-scoped, so it needs no table picked.
  */
 
 import { ref } from 'vue';
@@ -74,7 +75,6 @@ function summary(entry: SemanticModelImportResponse['applied'][number]): string 
 
 <template>
   <section>
-    <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Semantic model</h3>
     <div class="space-y-3 rounded-lg border border-default bg-elevated p-4">
       <p class="text-sm text-muted">
         What this source's tables mean, as an Ossie document. Export the current model to edit it,
