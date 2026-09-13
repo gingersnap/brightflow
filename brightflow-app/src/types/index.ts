@@ -61,23 +61,43 @@ export type { SourceKind, SourceTable, SourceTool, UnifiedSource } from './gener
  */
 export type ToolId = SourceTool | 'semantics' | 'settings';
 
+/**
+ * What a tool is for, which is how the sidebar groups them: the landing
+ * view, asking questions of the data, defining what the data means, and
+ * administering the source. Analyze and Data carry a heading in the
+ * sidebar; Overview and Settings are single entries and need none.
+ */
+export type ToolGroup = 'overview' | 'analyze' | 'data' | 'settings';
+
+export const TOOL_GROUPS: { id: ToolGroup; label: string; heading: boolean }[] = [
+  { heading: false, id: 'overview', label: 'Overview' },
+  { heading: true, id: 'analyze', label: 'Analyze' },
+  { heading: true, id: 'data', label: 'Data' },
+  { heading: false, id: 'settings', label: 'Settings' },
+];
+
 export interface ToolDef {
   id: ToolId;
   label: string;
   icon: string;
+  group: ToolGroup;
 }
 
-export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
-  dashboard: { label: 'Dashboard', icon: 'i-lucide-bar-chart-3' },
-  funnels: { label: 'Funnels', icon: 'i-lucide-git-branch' },
-  retention: { label: 'Retention', icon: 'i-lucide-calendar-check' },
-  users: { label: 'Users', icon: 'i-lucide-users' },
-  explore: { label: 'Explore', icon: 'i-lucide-search' },
-  insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
-  textexplore: { label: 'Text Explorer', icon: 'i-lucide-text-search' },
-  textenrichment: { label: 'Text enrichment', icon: 'i-lucide-messages-square' },
-  semantics: { label: 'Semantics', icon: 'i-lucide-book-open-text' },
-  settings: { label: 'Settings', icon: 'i-lucide-settings' },
+export const TOOL_DEFS: Record<ToolId, { label: string; icon: string; group: ToolGroup }> = {
+  dashboard: { group: 'overview', icon: 'i-lucide-bar-chart-3', label: 'Dashboard' },
+  funnels: { group: 'analyze', icon: 'i-lucide-git-branch', label: 'Funnels' },
+  retention: { group: 'analyze', icon: 'i-lucide-calendar-check', label: 'Retention' },
+  users: { group: 'analyze', icon: 'i-lucide-users', label: 'Users' },
+  explore: { group: 'analyze', icon: 'i-lucide-search', label: 'Explore' },
+  insights: { group: 'analyze', icon: 'i-lucide-sparkles', label: 'Insights' },
+  textexplore: { group: 'analyze', icon: 'i-lucide-text-search', label: 'Text Explorer' },
+  textenrichment: {
+    group: 'data',
+    icon: 'i-lucide-messages-square',
+    label: 'Text enrichment',
+  },
+  semantics: { group: 'data', icon: 'i-lucide-book-open-text', label: 'Semantics' },
+  settings: { group: 'settings', icon: 'i-lucide-settings', label: 'Settings' },
 };
 
 export function toolsForSource(source: UnifiedSource): ToolDef[] {
@@ -86,7 +106,7 @@ export function toolsForSource(source: UnifiedSource): ToolDef[] {
   const ids: ToolId[] = [...source.tools, 'semantics', 'settings'];
   return ids.map((id) => {
     const def = TOOL_DEFS[id];
-    return { icon: def.icon, id, label: def.label };
+    return { group: def.group, icon: def.icon, id, label: def.label };
   });
 }
 

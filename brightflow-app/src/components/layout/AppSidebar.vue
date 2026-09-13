@@ -2,10 +2,14 @@
 /**
  * Dashboard sidebar: builds the per-source tool tree from the source
  * list, with active/expanded state derived from the current route params.
- * Also starts insights-activity realtime and badge hydration on setup,
- * keeping the unseen-findings counters it renders live.
+ * A source's tools are grouped by what they are for (`utils/toolGroups`):
+ * the Analyze and Data groups get a heading row, rendered as an inert
+ * child entry because the menu draws every child as a link. Also starts
+ * insights-activity realtime and badge hydration on setup, keeping the
+ * unseen-findings counters it renders live.
  */
 
+import type { NavigationMenuItem } from '@nuxt/ui';
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -14,6 +18,7 @@ import { useInsightsActivityFeed } from '@/composables/useInsightsActivityFeed';
 import { useSources } from '@/composables/useSources';
 import { useInsightsActivityStore } from '@/stores/insightsActivity';
 import { type ToolId, type UnifiedSource, toolsForSource } from '@/types';
+import { groupTools } from '@/utils/toolGroups';
 
 const router = useRouter();
 const route = useRoute();
@@ -38,34 +43,48 @@ function sourceIcon(kind: UnifiedSource['kind']): string {
   return kind === 'upload' ? 'i-lucide-upload' : 'i-lucide-cable';
 }
 
+/** A group heading inside a source: styled as an eyebrow, not clickable. */
+const HEADING_CLASS =
+  'pointer-events-none mt-2 px-0 text-xs font-semibold tracking-wider text-muted uppercase';
+
 // Build nav items: Sources group + Settings group
 const navItems = computed(() => {
   const currentSourceId = route.params['sourceId'] as string | undefined;
   const currentTool = route.params['tool'] as string | undefined;
 
   const sourceItems = sources.value.map((source) => {
-    const tools = toolsForSource(source);
+    const children: NavigationMenuItem[] = [];
+    for (const group of groupTools(toolsForSource(source))) {
+      if (group.heading) {
+        children.push({
+          label: group.label,
+          value: `${source.id}:group:${group.id}`,
+          class: HEADING_CLASS,
+        });
+      }
+      for (const tool of group.tools) {
+        // New-findings badge on the Insights tool (post-sync auto-runs).
+        const unseen = tool.id === 'insights' ? insightsActivity.unseenCount(source.id) : 0;
+        children.push({
+          label: tool.label,
+          icon: tool.icon,
+          value: `${source.id}:${tool.id}`,
+          active: source.id === currentSourceId && tool.id === currentTool,
+          ...(unseen > 0 ? { badge: unseen } : {}),
+          onSelect: () => {
+            handleSourceToolSelect(source.id, tool.id);
+            open.value = false;
+          },
+        });
+      }
+    }
     return {
       label: source.name,
       icon: sourceIcon(source.kind),
       value: source.id,
       type: 'trigger' as const,
       defaultOpen: source.id === currentSourceId,
-      children: tools.map((tool) => {
-        // New-findings badge on the Insights tool (post-sync auto-runs).
-        const unseen = tool.id === 'insights' ? insightsActivity.unseenCount(source.id) : 0;
-        return {
-          label: tool.label,
-          icon: tool.icon,
-          value: `${source.id}:${tool.id}`,
-          active: source.id === currentSourceId && tool.id === currentTool,
-          badge: unseen > 0 ? unseen : undefined,
-          onSelect: () => {
-            handleSourceToolSelect(source.id, tool.id);
-            open.value = false;
-          },
-        };
-      }),
+      children,
     };
   });
 
