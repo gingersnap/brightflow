@@ -189,9 +189,6 @@ pub(crate) async fn start_scheduler(
                         Err(e) => tracing::warn!("detection for '{source_id}/{table}' failed: {e}"),
                     }
                 }
-                sync_state
-                    .refresh_overrides_from_store(&source_id, &table)
-                    .await;
                 crate::enrichment::post_sync(sync_state.clone(), source_id.clone(), table.clone())
                     .await;
                 crate::insights::auto::post_sync(sync_state, source_id, table).await;

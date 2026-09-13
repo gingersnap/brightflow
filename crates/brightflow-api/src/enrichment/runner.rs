@@ -965,8 +965,7 @@ pub async fn materialize(
             .await
         {
             Ok(()) => {
-                declare_output_semantics(state, store, source_id, table_name, function_name, run)
-                    .await;
+                declare_output_semantics(store, source_id, table_name, function_name, run).await;
                 if let Some((rows, unresolved)) = child {
                     let child_name = mentions::mentions_table_name(table_name);
                     write_child_table(store, source_id, &child_name, rows).await?;
@@ -977,7 +976,6 @@ pub async fn materialize(
                         .is_some()
                     {
                         declare_child_semantics(
-                            state,
                             store,
                             source_id,
                             table_name,
@@ -1059,11 +1057,10 @@ fn parent_id_column(df: &DataFrame, id_column: &str) -> Column {
 /// Declare the meaning of the columns this run just materialised, as this
 /// function's own `declared`-layer rows: one per output column plus the
 /// `{fn}__status` column as `ignored`. A person's edit above that layer is
-/// untouched; a re-run replaces only these rows. Then the in-memory
-/// overrides are refreshed so Explore sees labels without a restart. Failure
-/// is logged, not returned — see the module header.
+/// untouched; a re-run replaces only these rows, and every reader resolves
+/// them from the store on its next read. Failure is logged, not returned —
+/// see the module header.
 async fn declare_output_semantics(
-    state: &AppState,
     store: &ParquetStore,
     source_id: &str,
     table_name: &str,
@@ -1101,20 +1098,11 @@ async fn declare_output_semantics(
         dataset: Some(dataset),
         ..TableDeclaration::new(table_name)
     };
-    match store
+    if let Err(e) = store
         .apply_declaration(source_id, &decl, &enrichment_provenance(function_name))
         .await
     {
-        Ok(_) => {
-            state
-                .refresh_overrides_from_store(source_id, table_name)
-                .await;
-        },
-        Err(e) => {
-            tracing::warn!(
-                "could not declare output semantics for '{source_id}/{table_name}': {e}"
-            );
-        },
+        tracing::warn!("could not declare output semantics for '{source_id}/{table_name}': {e}");
     }
 }
 
@@ -1128,7 +1116,6 @@ fn enrichment_provenance(function_name: &str) -> Provenance {
 /// Declare the mentions child table: what each of its columns means and
 /// the join back to the parent row. Applied after the child exists.
 async fn declare_child_semantics(
-    state: &AppState,
     store: &ParquetStore,
     source_id: &str,
     parent: &str,
@@ -1202,14 +1189,11 @@ async fn declare_child_semantics(
         }],
         ..TableDeclaration::new(child)
     };
-    match store
+    if let Err(e) = store
         .apply_declaration(source_id, &decl, &enrichment_provenance(function_name))
         .await
     {
-        Ok(_) => state.refresh_overrides_from_store(source_id, child).await,
-        Err(e) => {
-            tracing::warn!("could not declare child semantics for '{source_id}/{child}': {e}");
-        },
+        tracing::warn!("could not declare child semantics for '{source_id}/{child}': {e}");
     }
 }
 

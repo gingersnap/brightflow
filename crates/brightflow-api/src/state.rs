@@ -3,16 +3,16 @@
 //! Cheap to clone by design — every field is an `Arc`, a `DashMap`, or a
 //! broadcast sender, because axum clones the state per request. Caches keyed by
 //! source *and* table use `cache_key()` so a table name alone can never alias two
-//! sources (the same mistake `DatasetSource::StoreTable` once made).
+//! sources (the same mistake `DatasetSource::StoreTable` once made). Semantics
+//! are not cached here: every reader resolves them from the store, which is
+//! the only source of truth.
 
 use crate::analytics::session::{DatasetData, DatasetManager, DatasetSource};
 use crate::shared::AppResult;
 use crate::system::log_layer::LogEntry;
 use crate::system::sampler::SystemSnapshot;
-use brightflow_engine::data::merge::{ColumnOverride, TableSettingsOverride};
 use brightflow_scheduler::Scheduler;
 use brightflow_store::{ParquetStore, TableInfo};
-use brightflow_types::{ResolvedColumn, ResolvedTable};
 use dashmap::DashMap;
 use polars::prelude::*;
 use std::path::Path;
@@ -29,10 +29,6 @@ pub struct AppState {
     pub table_index: Arc<RwLock<Vec<TableInfo>>>,
     /// Reference to the Parquet store for lazy loading
     store: Option<Arc<ParquetStore>>,
-    /// Column semantic overrides keyed by table name
-    pub schema_overrides: Arc<DashMap<String, Vec<ColumnOverride>>>,
-    /// Table analysis settings overrides keyed by table name
-    pub settings_overrides: Arc<DashMap<String, TableSettingsOverride>>,
     /// Text Explorer index cache, keyed by `cache_key(source_id, table)`.
     /// The index module owns the caching contract (versioning + eviction);
     /// this is only the shared map it lives in.
@@ -89,8 +85,6 @@ impl AppState {
             datasets: DatasetManager::new(),
             table_index: Arc::new(RwLock::new(Vec::new())),
             store: None,
-            schema_overrides: Arc::new(DashMap::new()),
-            settings_overrides: Arc::new(DashMap::new()),
             text_indexes: Arc::new(DashMap::new()),
             agent_runs: Arc::new(DashMap::new()),
             enrichment_jobs: Arc::new(DashMap::new()),
@@ -118,81 +112,6 @@ impl AppState {
                 .entry(key.to_string())
                 .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
         )
-    }
-
-    /// Load every table's resolved semantics from the store into memory.
-    pub async fn load_overrides_from_store(&self) {
-        let Some(store) = &self.store else {
-            return;
-        };
-        let tables = match store.list_tables().await {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!("Failed to list tables for override loading: {e}");
-                return;
-            },
-        };
-        for table_ref in tables {
-            self.refresh_overrides_from_store(&table_ref.source_id, &table_ref.name)
-                .await;
-        }
-    }
-
-    /// Re-read one table's resolved semantics from the store and replace its
-    /// in-memory overrides — columns and table settings both. Every writer of
-    /// semantic rows calls this after its rows land; the database stays the
-    /// source of truth.
-    pub async fn refresh_overrides_from_store(&self, source_id: &str, table_name: &str) {
-        let Some(store) = &self.store else {
-            return;
-        };
-        let key = cache_key(source_id, table_name);
-        match store.resolved_columns(source_id, table_name).await {
-            Ok(columns) => {
-                let overrides: Vec<ColumnOverride> =
-                    columns.iter().map(override_from_resolved).collect();
-                self.schema_overrides.insert(key.clone(), overrides);
-            },
-            Err(e) => tracing::warn!(
-                "Failed to refresh column semantics for '{source_id}/{table_name}': {e}"
-            ),
-        }
-        match store.resolved_table(source_id, table_name).await {
-            Ok(resolved) => match resolved.as_ref().and_then(settings_from_resolved) {
-                Some(settings) => {
-                    self.settings_overrides.insert(key, settings);
-                },
-                None => {
-                    self.settings_overrides.remove(&key);
-                },
-            },
-            Err(e) => tracing::warn!(
-                "Failed to refresh table settings for '{source_id}/{table_name}': {e}"
-            ),
-        }
-    }
-
-    /// Replace one column's in-memory semantic override for a table (keyed by
-    /// `cache_key`), so the next analysis run and the next `load_table` see a
-    /// write without a restart. Every writer of `column_semantics` calls this
-    /// after its row lands; the database stays the source of truth.
-    pub fn set_column_override(&self, key: &str, ovr: ColumnOverride) {
-        let mut overrides = self
-            .schema_overrides
-            .get(key)
-            .map(|v| v.value().clone())
-            .unwrap_or_default();
-        overrides.retain(|o| o.column_name != ovr.column_name);
-        overrides.push(ovr);
-        self.schema_overrides.insert(key.to_string(), overrides);
-    }
-
-    /// Forget one column's in-memory override — the inverse of
-    /// `set_column_override`, for columns that were dropped from the table.
-    pub fn remove_column_override(&self, key: &str, column: &str) {
-        if let Some(mut overrides) = self.schema_overrides.get_mut(key) {
-            overrides.retain(|o| o.column_name != column);
-        }
     }
 
     /// Get a reference to the Parquet store
@@ -372,29 +291,4 @@ impl AppState {
 /// Build a composite DashMap key for source/table-keyed caches.
 pub(crate) fn cache_key(source_id: &str, table_name: &str) -> String {
     format!("{source_id}|{table_name}")
-}
-
-/// The engine's view of one resolved column.
-pub(crate) fn override_from_resolved(column: &ResolvedColumn) -> ColumnOverride {
-    ColumnOverride {
-        column_name: column.name.clone(),
-        role: column.role,
-        is_kpi: column.is_kpi.unwrap_or(false),
-        polarity: column.polarity.unwrap_or_default(),
-        label: column.label.clone(),
-        description: column.description.clone(),
-    }
-}
-
-/// The engine's view of a resolved table's analysis settings; `None` when
-/// nothing analysis-relevant is set.
-pub(crate) fn settings_from_resolved(table: &ResolvedTable) -> Option<TableSettingsOverride> {
-    let comparison_periods = table.comparison_periods.map(|p| p as usize);
-    if table.time_granularity.is_none() && comparison_periods.is_none() {
-        return None;
-    }
-    Some(TableSettingsOverride {
-        time_granularity: table.time_granularity,
-        comparison_periods,
-    })
 }

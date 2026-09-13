@@ -77,11 +77,7 @@ pub async fn load_table(
         },
         None => None,
     };
-    let key = crate::state::cache_key(&source_id, &name);
-    let time_granularity = state
-        .settings_overrides
-        .get(&key)
-        .and_then(|s| s.time_granularity);
+    let time_granularity = table_display.as_ref().and_then(|t| t.time_granularity);
 
     Ok(Json(LoadTableResponse {
         id,
@@ -271,7 +267,6 @@ async fn ingest_csv_as_source(
     if let Err(e) = crate::semantics::detect::declare_detected(store, &source_id, &table).await {
         tracing::warn!("detection for '{source_id}/{table}' failed: {e}");
     }
-    state.refresh_overrides_from_store(&source_id, &table).await;
     state.refresh_table_index().await;
 
     let columns: Vec<String> = df

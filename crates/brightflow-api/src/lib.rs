@@ -143,9 +143,6 @@ pub async fn serve(
 
     bootstrap::seed_and_recover(&state).await;
 
-    // Load column semantic overrides from SQLite
-    state.load_overrides_from_store().await;
-
     let auth_db = bootstrap::init_auth(&mut state, &paths).await?;
     bootstrap::start_scheduler(&mut state, &paths).await?;
     bootstrap::start_ingest(&mut state, &paths).await;

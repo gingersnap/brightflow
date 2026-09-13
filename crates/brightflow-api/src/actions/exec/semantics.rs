@@ -163,7 +163,6 @@ pub(crate) async fn execute_reset_column_semantics(
         .db()
         .delete_column_opinions_at_layers(&table_id, column, &[Layer::User, Layer::Agent])
         .await?;
-    state.refresh_overrides_from_store(source_id, table).await;
     let resolved = resolved_column(state, source_id, table, column).await?;
     Ok((
         json!({
@@ -192,7 +191,6 @@ pub(crate) async fn undo_restore_column_opinions(
     for row in rows.iter().filter(|r| r.column == column) {
         store.db().write_column_opinion(&table_id, row).await?;
     }
-    state.refresh_overrides_from_store(source_id, table).await;
     Ok(())
 }
 
@@ -232,7 +230,6 @@ pub(crate) async fn execute_set_table_settings(
         next.comparison_periods = Some(v);
     }
     store.db().write_table_opinion(&table_id, &next).await?;
-    state.refresh_overrides_from_store(source_id, table).await;
     Ok((
         json!({
             "displayName": next.display_name,
@@ -274,7 +271,6 @@ pub(crate) async fn undo_restore_table_settings(
             .delete_table_opinion(&table_id, provenance)
             .await?;
     }
-    state.refresh_overrides_from_store(source_id, table).await;
     Ok(())
 }
 
@@ -334,7 +330,6 @@ pub(crate) async fn undo_restore_column_semantic(
             .delete_column_opinion(&table_id, column, &prov)
             .await?;
     }
-    state.refresh_overrides_from_store(source_id, table).await;
     Ok(())
 }
 
@@ -394,10 +389,10 @@ async fn resolved_column(
         .find(|c| c.name == column))
 }
 
-/// Mutate the actor's opinion row for one column, creating it if absent,
-/// then refresh the in-memory overrides so the next analysis run and the
-/// next `load_table` see the change. Returns the row as it was before (for
-/// undo) and the provenance it was written under.
+/// Mutate the actor's opinion row for one column, creating it if absent.
+/// Every reader resolves from the store, so the next analysis run and the
+/// next `load_table` see the change with nothing to refresh. Returns the
+/// row as it was before (for undo) and the provenance it was written under.
 async fn mutate_opinion(
     state: &AppState,
     actor: &Actor,
@@ -414,7 +409,6 @@ async fn mutate_opinion(
         .unwrap_or_else(|| ColumnOpinion::empty(column, prov.clone()));
     mutate(&mut next);
     store.db().write_column_opinion(&table_id, &next).await?;
-    state.refresh_overrides_from_store(source_id, table).await;
     Ok((previous, prov))
 }
 
@@ -434,7 +428,6 @@ async fn write_opinion(
         .unwrap_or_else(|| ColumnOpinion::empty(column, prov.clone()));
     mutate(&mut next);
     store.db().write_column_opinion(&table_id, &next).await?;
-    state.refresh_overrides_from_store(source_id, table).await;
     Ok(())
 }
 

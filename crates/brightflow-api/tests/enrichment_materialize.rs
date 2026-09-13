@@ -197,16 +197,6 @@ async fn materialize_declares_output_semantics_without_overwriting_edits() {
     assert!(context.contains("Not analysed: "), "{context}");
     assert!(context.contains("classify__status"), "{context}");
 
-    // The in-memory overrides Explore reads follow the rows.
-    let live = state
-        .schema_overrides
-        .get(&format!("{SOURCE}|{TABLE}"))
-        .map(|v| v.value().clone())
-        .unwrap_or_default();
-    assert!(live
-        .iter()
-        .any(|o| o.column_name == "category" && o.label.as_deref() == Some("Category")));
-
     // A person renames the column at the user layer; a second
     // materialisation keeps the name and the function's description.
     rename_category(&store, &table.id).await;

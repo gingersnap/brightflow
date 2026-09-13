@@ -65,84 +65,119 @@ impl DataSchema {
     }
 }
 
+/// Where the detector's rules put one column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Detected {
+    /// A date or datetime column.
+    Time,
+    /// A numeric column with enough distinct values to be a quantity.
+    Measure,
+    /// A string, categorical, or low-cardinality numeric column.
+    Dimension,
+    /// A string column whose name says it holds the time axis (`date`,
+    /// `timestamp`, `time`): a dimension that may serve as the time column.
+    TimeByName,
+    /// Nothing the analysis can use.
+    Unplaced,
+}
+
+/// The detector's rule for one column: temporal dtypes are time, numerics
+/// are measures unless they have fewer than 20 distinct values covering under
+/// 5% of rows, strings and categoricals are dimensions.
+pub fn detect_column(column: &Column, row_count: usize) -> Detected {
+    match column.dtype() {
+        DataType::Date | DataType::Datetime(_, _) => Detected::Time,
+        DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::Int64
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64
+        | DataType::Float32
+        | DataType::Float64 => {
+            let unique_count = column.n_unique().unwrap_or(0);
+            let cardinality_ratio = unique_count as f64 / row_count.max(1) as f64;
+            if unique_count < 20 && cardinality_ratio < 0.05 {
+                Detected::Dimension
+            } else {
+                Detected::Measure
+            }
+        },
+        DataType::String => {
+            let name_lower = column.name().to_lowercase();
+            if name_lower == "date" || name_lower == "timestamp" || name_lower == "time" {
+                Detected::TimeByName
+            } else {
+                Detected::Dimension
+            }
+        },
+        other if other.is_categorical() => Detected::Dimension,
+        _ => Detected::Unplaced,
+    }
+}
+
+/// The detector's last resort for a time axis when no column qualified: the
+/// first column, if its name mentions a date or time.
+pub fn time_axis_by_first_column(df: &DataFrame) -> Option<String> {
+    let first = df.get_columns().first()?.name().to_string();
+    let lower = first.to_lowercase();
+    (lower.contains("date") || lower.contains("time")).then_some(first)
+}
+
 /// Auto-detect schema from DataFrame (fallback when no config provided)
 pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
-    let mut measure_columns = Vec::new();
-    let mut dimension_columns = Vec::new();
-    let mut time_columns = Vec::new();
-    let mut time_column = None;
-
+    let mut schema = DataSchema::empty();
     let row_count = df.height();
-
     for col in df.get_columns() {
-        let name = col.name().to_string();
-        let dtype = col.dtype();
+        schema.place_detected(col.name(), detect_column(col, row_count));
+    }
+    if schema.time_column.is_none() {
+        schema.time_column = time_axis_by_first_column(df);
+    }
+    Ok(schema)
+}
 
-        match dtype {
-            DataType::Date | DataType::Datetime(_, _) => {
-                time_columns.push(name.clone());
-                if time_column.is_none() {
-                    time_column = Some(name);
-                }
-            },
-            DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-            | DataType::Float32
-            | DataType::Float64 => {
-                let unique_count = col.n_unique().unwrap_or(0);
-                let cardinality_ratio = unique_count as f64 / row_count as f64;
-
-                if unique_count < 20 && cardinality_ratio < 0.05 {
-                    dimension_columns.push(name);
-                } else {
-                    measure_columns.push(name);
-                }
-            },
-            DataType::String => {
-                dimension_columns.push(name.clone());
-
-                let name_lower = name.to_lowercase();
-                if time_column.is_none()
-                    && (name_lower == "date" || name_lower == "timestamp" || name_lower == "time")
-                {
-                    time_column = Some(name);
-                }
-            },
-            _ => {
-                if dtype.is_categorical() {
-                    dimension_columns.push(name);
-                }
-            },
+impl DataSchema {
+    /// No columns, default granularity.
+    pub fn empty() -> Self {
+        Self {
+            measure_columns: Vec::new(),
+            kpi_columns: Vec::new(),
+            dimension_columns: Vec::new(),
+            time_columns: Vec::new(),
+            time_column: None,
+            time_granularity: TimeGranularity::default(),
+            polarity: HashMap::new(),
+            entity_columns: Vec::new(),
+            labels: HashMap::new(),
+            descriptions: HashMap::new(),
+            metrics: Vec::new(),
         }
     }
 
-    if time_column.is_none() && !df.get_columns().is_empty() {
-        let first_col = df.get_columns()[0].name().to_string();
-        let first_lower = first_col.to_lowercase();
-        if first_lower.contains("date") || first_lower.contains("time") {
-            time_column = Some(first_col);
+    /// Add a column where the detector's rule put it. A `TimeByName` column
+    /// is a dimension that becomes the time axis if none has been chosen.
+    pub fn place_detected(&mut self, name: &str, detected: Detected) {
+        match detected {
+            Detected::Time => {
+                self.time_columns.push(name.to_string());
+                if self.time_column.is_none() {
+                    self.time_column = Some(name.to_string());
+                }
+            },
+            Detected::Measure => self.measure_columns.push(name.to_string()),
+            Detected::Dimension => self.dimension_columns.push(name.to_string()),
+            Detected::TimeByName => {
+                self.dimension_columns.push(name.to_string());
+                if self.time_column.is_none() {
+                    self.time_column = Some(name.to_string());
+                }
+            },
+            Detected::Unplaced => {},
         }
     }
-
-    Ok(DataSchema {
-        measure_columns,
-        kpi_columns: Vec::new(), // Auto-detect doesn't distinguish KPIs
-        dimension_columns,
-        time_columns,
-        time_column,
-        time_granularity: TimeGranularity::default(),
-        polarity: HashMap::new(),
-        entity_columns: Vec::new(),
-        labels: HashMap::new(),
-        descriptions: HashMap::new(),
-        metrics: Vec::new(),
-    })
 }
 
 /// What the detector would declare about a table, as a producer.

@@ -315,7 +315,7 @@ pub async fn delete_function(
     }
 
     if q.drop_columns.unwrap_or(false) {
-        drop_output_columns(&state, store, &row, &table_row).await?;
+        drop_output_columns(store, &row, &table_row).await?;
     }
 
     store.db().delete_enrichment_function(&row.id).await?;
@@ -328,7 +328,6 @@ pub async fn delete_function(
 /// Returns how many were present. A no-op for kinds this runner does not
 /// materialise.
 async fn drop_output_columns(
-    state: &AppState,
     store: &ParquetStore,
     row: &EnrichmentFunctionRow,
     table_row: &TableRow,
@@ -362,14 +361,12 @@ async fn drop_output_columns(
         store
             .replace_table_data(&table_row.source_id, &table_row.name, out_df, None)
             .await?;
-        let key = crate::state::cache_key(&table_row.source_id, &table_row.name);
         let prov = brightflow_types::Provenance::declared(format!("enrichment:{}", row.name));
         for name in &names {
             store
                 .db()
                 .delete_column_opinion(&table_row.id, name, &prov)
                 .await?;
-            state.remove_column_override(&key, name);
         }
     }
     Ok(dropped)
@@ -392,7 +389,7 @@ pub async fn reset_function(
             active.id
         )));
     }
-    let columns_dropped = drop_output_columns(&state, store, &row, &table_row).await?;
+    let columns_dropped = drop_output_columns(store, &row, &table_row).await?;
     let cells_deleted = store.db().prune_cache_except(&row.id, &[]).await?;
     Ok(Json(serde_json::json!({
         "cellsDeleted": cells_deleted,

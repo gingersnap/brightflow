@@ -131,16 +131,6 @@ async fn import_applies_the_model_per_table_and_export_rebuilds_it() {
         .unwrap();
     assert_eq!(table.display_name.as_deref(), Some("Issues"));
 
-    // The engine's in-memory view followed.
-    let live = state
-        .schema_overrides
-        .get(&format!("{SOURCE}|issues"))
-        .map(|v| v.value().clone())
-        .unwrap_or_default();
-    assert!(live
-        .iter()
-        .any(|o| o.column_name == "reactions_total" && o.is_kpi));
-
     // Export rebuilds a document from the resolved rows.
     let exported = export_semantic_model(State(state.clone()), Path(SOURCE.to_string()))
         .await

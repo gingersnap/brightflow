@@ -144,9 +144,6 @@ pub async fn import_semantic_model(
         let outcome = store
             .apply_declaration(&source_id, &decl, &provenance)
             .await?;
-        state
-            .refresh_overrides_from_store(&source_id, &decl.name)
-            .await;
         applied.push(ImportedTable {
             table: decl.name.clone(),
             columns: outcome.columns,

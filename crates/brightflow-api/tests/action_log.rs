@@ -445,16 +445,6 @@ async fn column_semantic_actions_write_the_actors_layer_and_round_trip_through_u
     assert_eq!(title_after_role.role, Some(ColumnRole::Entity));
     assert_eq!(title_after_role.is_kpi, Some(false));
 
-    // The in-memory override the engine and load_table read follows the row.
-    let key = format!("{SOURCE}|{TABLE}");
-    let live = state
-        .schema_overrides
-        .get(&key)
-        .map(|v| v.value().clone())
-        .unwrap_or_default();
-    let live_title = live.iter().find(|o| o.column_name == "title").unwrap();
-    assert_eq!(live_title.role, Some(ColumnRole::Entity));
-
     // Undo puts the row back as it was: KPI set, no role.
     let row = store
         .db()
@@ -548,15 +538,6 @@ async fn set_table_settings_writes_the_actors_layer_and_undoes() {
     assert_eq!(resolved.display_name.as_deref(), Some("Tickets"));
     assert_eq!(resolved.time_granularity, Some(TimeGranularity::Month));
     assert_eq!(resolved.resolved_by.map(|p| p.layer), Some(Layer::User));
-    // The engine's override follows the row.
-    let key = format!("{SOURCE}|{TABLE}");
-    assert_eq!(
-        state
-            .settings_overrides
-            .get(&key)
-            .and_then(|s| s.time_granularity),
-        Some(TimeGranularity::Month)
-    );
 
     let row = store
         .db()
@@ -574,7 +555,6 @@ async fn set_table_settings_writes_the_actors_layer_and_undoes() {
     .unwrap();
     assert!(matches!(undone.0.status, ActionStatus::Undone));
     assert_eq!(store.resolved_table(SOURCE, TABLE).await.unwrap(), None);
-    assert!(state.settings_overrides.get(&key).is_none());
 }
 
 /// Reset to declared drops a person's rows so the layer beneath shows, and

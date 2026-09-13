@@ -23,15 +23,16 @@ use brightflow_engine::analysis::polarity::apply_sentiment;
 use brightflow_engine::analysis::scoring::{MetricSpec, ScoringContext};
 use brightflow_engine::analysis::select::{dimension_of, measure_of};
 use brightflow_engine::analysis::tree::{AnalysisTree, ReportType, ReviewCadence};
-use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
+use brightflow_engine::data::merge::build_schema;
 use brightflow_engine::data::schema::{DataSchema, DeclaredMetric};
+use brightflow_types::{ResolvedColumn, ResolvedTable};
 
 use crate::insights::types::{
     DriversRequest, EngineConfig, InsightRunResponse, InsightsResponse, ReviewRequest,
     TrendsRequest,
 };
 use crate::shared::{AppError, AppResult};
-use crate::state::{cache_key, AppState};
+use crate::state::AppState;
 use tracing::instrument;
 
 const DEFAULT_Z: f64 = 2.0;
@@ -348,7 +349,7 @@ pub(crate) async fn run_report_core(
     kind: ReportKind,
     trigger: RunTrigger,
 ) -> AppResult<InsightsResponse> {
-    let (files, table_name, overrides, settings) =
+    let (files, table_name, resolved, table) =
         resolve_dataset(state, source_id, dataset_id).await?;
     let metrics = declared_metrics(state.require_store()?, source_id, &table_name).await?;
 
@@ -362,7 +363,7 @@ pub(crate) async fn run_report_core(
 
     let mut result = tokio::task::spawn_blocking(move || {
         let df = scan_parquet_files(files)?;
-        let schema = build_schema(&df, &overrides, settings.as_ref(), &metrics)
+        let schema = build_schema(&df, &resolved, table.as_ref(), &metrics)
             .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
         let engine = AnalysisEngine::new(
             config_for_engine.z_threshold.unwrap_or(DEFAULT_Z),
@@ -539,7 +540,8 @@ fn parse_dataset_ref(dataset_id: &str) -> (Option<&str>, &str) {
     }
 }
 
-/// Resolve a dataset ID to Parquet file paths, table name, and schema overrides.
+/// Resolve a dataset ID to Parquet file paths, table name, and the store's
+/// resolved semantics for the table.
 ///
 /// Loads directly from the Parquet store — no in-memory DatasetManager needed.
 /// Accepts dataset IDs in `"store:{source_id}|{table_name}"` format or plain table
@@ -553,8 +555,8 @@ async fn resolve_dataset(
 ) -> AppResult<(
     Vec<PathBuf>,
     String,
-    Vec<ColumnOverride>,
-    Option<TableSettingsOverride>,
+    Vec<ResolvedColumn>,
+    Option<ResolvedTable>,
 )> {
     let (parsed_source, parsed_table) = parse_dataset_ref(dataset_id);
     let table_name = parsed_table.to_string();
@@ -577,19 +579,10 @@ async fn resolve_dataset(
         )));
     }
 
-    let key = cache_key(source_id, &table_name);
-    let overrides = state
-        .schema_overrides
-        .get(&key)
-        .map(|v| v.value().clone())
-        .unwrap_or_default();
+    let resolved = store.resolved_columns(source_id, &table_name).await?;
+    let table = store.resolved_table(source_id, &table_name).await?;
 
-    let settings = state
-        .settings_overrides
-        .get(&key)
-        .map(|v| v.value().clone());
-
-    Ok((files, table_name, overrides, settings))
+    Ok((files, table_name, resolved, table))
 }
 
 /// Scan Parquet files into a collected DataFrame (safe to call from blocking context)
