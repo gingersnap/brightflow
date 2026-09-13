@@ -697,6 +697,14 @@ fn cache_hit(cached: &brightflow_store::EnrichmentCacheRow) -> Option<CellResult
     })
 }
 
+/// Where a full run reports progress: its row, and the app state the
+/// progress frame is pushed through.
+#[derive(Clone, Copy)]
+pub struct RunProgress<'a> {
+    pub run_id: &'a str,
+    pub state: &'a AppState,
+}
+
 /// Bulk cache lookup first, then misses through the LLM at bounded concurrency.
 ///
 /// Every computed cell is written to the cache, successes and errors alike, but
@@ -711,9 +719,10 @@ pub async fn execute_cells(
     version: i64,
     run: &RunSpec,
     rows: &[RowInput],
-    run_id: Option<&str>,
+    progress: Option<RunProgress<'_>>,
     cache: CacheMode,
 ) -> AppResult<ExecOutcome> {
+    let run_id = progress.as_ref().map(|p| p.run_id);
     let shash = run.spec_hash();
 
     // Deduplicate by content: identical inputs share one cell.
@@ -821,6 +830,8 @@ pub async fn execute_cells(
                     .await
                 {
                     tracing::warn!("enrichment run progress write failed: {e}");
+                } else if let Some(p) = progress.as_ref() {
+                    crate::jobs::emit_enrichment_job(p.state, rid).await;
                 }
                 last_progress = Instant::now();
             }
@@ -1329,6 +1340,7 @@ pub async fn execute_full_run(
         tracing::warn!("enrichment run {run_id} failed: {e}");
     }
     state.enrichment_jobs.remove(&run_id);
+    crate::jobs::emit_enrichment_job(&state, &run_id).await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1354,7 +1366,7 @@ async fn drive_run(
         version,
         run,
         &inputs,
-        Some(run_id),
+        Some(RunProgress { run_id, state }),
         CacheMode::Use,
     )
     .await?;

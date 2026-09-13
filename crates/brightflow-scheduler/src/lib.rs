@@ -9,7 +9,8 @@
 //! config lookup, env-var interpolation in connector configs, the connector
 //! run, Parquet merge per endpoint, cursor persistence, and the post-sync
 //! hook. Failures of a sync are recorded on its `SyncRun` row, not
-//! propagated — the loop must survive any single job.
+//! propagated — the loop must survive any single job. A `SyncListener`
+//! hears every row transition (running, completed, failed).
 
 // shadow_reuse: rebinding a borrowed parameter to its owned copy before a
 // `move` closure (`let id = id.to_owned();`) is the crate-wide db idiom.
@@ -50,6 +51,14 @@ pub type PostSyncHook = Arc<
         + Sync,
 >;
 
+/// Told each time a sync run's row changes.
+///
+/// Fires for created-as-running, then completed or failed. Called inline
+/// on the sync task, so a listener that does real work should spawn; it is
+/// how the API learns about syncs without this crate knowing what the API
+/// does with them.
+pub type SyncListener = Arc<dyn Fn(SyncRun) + Send + Sync>;
+
 /// The scheduler reads job definitions from SQLite and manages execution.
 #[derive(Clone)]
 pub struct Scheduler {
@@ -58,6 +67,7 @@ pub struct Scheduler {
     paths: WorkspacePaths,
     running: Arc<RwLock<HashSet<String>>>,
     post_sync_hook: Arc<RwLock<Option<PostSyncHook>>>,
+    sync_listener: Arc<RwLock<Option<SyncListener>>>,
 }
 
 impl Scheduler {
@@ -70,12 +80,18 @@ impl Scheduler {
             paths,
             running: Arc::new(RwLock::new(HashSet::new())),
             post_sync_hook: Arc::new(RwLock::new(None)),
+            sync_listener: Arc::new(RwLock::new(None)),
         }
     }
 
     /// Install the post-sync hook (called once at API startup).
     pub async fn set_post_sync_hook(&self, hook: PostSyncHook) {
         *self.post_sync_hook.write().await = Some(hook);
+    }
+
+    /// Install the sync-run listener (called once at API startup).
+    pub async fn set_sync_listener(&self, listener: SyncListener) {
+        *self.sync_listener.write().await = Some(listener);
     }
 
     /// Start the scheduler background loop (ticks every 30 seconds)
@@ -181,6 +197,8 @@ impl Scheduler {
         let run_id = run.id.clone();
         let run_id_clone = run_id.clone();
         let hook = self.post_sync_hook.read().await.clone();
+        let listener = self.sync_listener.read().await.clone();
+        notify(listener.as_ref(), run.clone());
 
         // Mark as running
         running
@@ -204,19 +222,38 @@ impl Scheduler {
             let key = inflight_key(job_id_owned.as_deref(), &connector_id_owned);
             running.write().await.remove(&key);
 
-            if let Err(e) = result {
-                error!("Sync run {} failed: {e}", run.id);
-                // Mark the sync run as failed in the database
-                if let Err(db_err) = db
-                    .update_sync_run(&run.id, "failed", None, 0, Some(&e.to_string()))
-                    .await
-                {
-                    error!("Failed to update sync run {} as failed: {db_err}", run.id);
-                }
+            match result {
+                Ok(()) => {
+                    // The completed row, as `execute_sync` wrote it.
+                    if let Ok(Some(finished)) = db.get_sync_run(&run.id).await {
+                        notify(listener.as_ref(), finished);
+                    }
+                },
+                Err(e) => {
+                    error!("Sync run {} failed: {e}", run.id);
+                    // Mark the sync run as failed in the database
+                    match db
+                        .update_sync_run(&run.id, "failed", None, 0, Some(&e.to_string()))
+                        .await
+                    {
+                        Ok(Some(failed)) => notify(listener.as_ref(), failed),
+                        Ok(None) => {},
+                        Err(db_err) => {
+                            error!("Failed to update sync run {} as failed: {db_err}", run.id);
+                        },
+                    }
+                },
             }
         });
 
         run_id_clone
+    }
+}
+
+/// Hand a run row to the listener, if one is installed.
+fn notify(listener: Option<&SyncListener>, run: SyncRun) {
+    if let Some(listener) = listener {
+        listener(run);
     }
 }
 

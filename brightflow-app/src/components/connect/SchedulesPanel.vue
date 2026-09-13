@@ -7,10 +7,11 @@
  */
 
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada';
-import { useIntervalFn } from '@vueuse/core';
-import { computed, watch } from 'vue';
+import { computed, onBeforeUnmount } from 'vue';
 
 import { connectApi } from '@/services/api';
+import { isJobEvent } from '@/services/wsGuards';
+import { useConnectionStore } from '@/stores/connection';
 import type { EnrichedSyncRun, UnifiedConnector } from '@/types';
 
 import RunHistoryTable from './RunHistoryTable.vue';
@@ -70,25 +71,15 @@ const historyRuns = computed(() =>
   filteredRuns.value.filter((r) => r.status !== 'running' && r.status !== 'pending').slice(0, 20),
 );
 
-const activeRunsExist = computed(() => activeRuns.value.length > 0);
-
-// Refresh run state every 3s while a run is active (pauses itself otherwise).
-const { pause: stopPolling, resume: startPolling } = useIntervalFn(
-  () => {
+// Every sync run transition arrives as a `job` frame; refetch on each.
+const connection = useConnectionStore();
+const stopJobEvents = connection.onMessage('job', (payload) => {
+  if (isJobEvent(payload) && payload.job.kind === 'connector_sync') {
     queryCache.invalidateQueries({ key: ['connectors'] });
     queryCache.invalidateQueries({ key: ['sync-runs'] });
-  },
-  3000,
-  { immediate: false },
-);
-
-watch(activeRunsExist, (hasActive) => {
-  if (hasActive) {
-    startPolling();
-  } else {
-    stopPolling();
   }
 });
+onBeforeUnmount(stopJobEvents);
 
 const { mutate: syncNow, isLoading: triggering } = useMutation({
   mutation: (name: string) => connectApi.runConnector(name),

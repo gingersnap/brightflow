@@ -15,6 +15,7 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { sourceApi } from '@/services/api';
+import { isJobEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
 import { useCurationStore } from '@/stores/curation';
 import type { UnifiedSource } from '@/types';
@@ -45,7 +46,17 @@ const runsTick = ref(0);
 const stopRunEvents = connection.onMessage('insightsComputed', () => {
   runsTick.value += 1;
 });
-onBeforeUnmount(stopRunEvents);
+// A finished sync changes rows and "last changed"; the source list
+// Refetches on its own key, the signals on this one.
+const stopJobEvents = connection.onMessage('job', (payload) => {
+  if (isJobEvent(payload) && payload.job.status !== 'running') {
+    runsTick.value += 1;
+  }
+});
+onBeforeUnmount(() => {
+  stopRunEvents();
+  stopJobEvents();
+});
 
 const { data: overview } = useQuery({
   key: () => [

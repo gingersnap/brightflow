@@ -2,21 +2,17 @@
 /**
  * Running jobs: every background run — connector syncs, enrichment runs,
  * agent runs, insight runs — in one list, what is running first and then
- * what recently finished. Agent and insight runs push over the socket;
- * syncs and enrichment runs do not yet, so while anything is running the
- * list refreshes every few seconds, and stops when nothing is.
+ * what recently finished. Every kind pushes over the socket (agent and
+ * insight runs on their own frames, syncs and enrichment runs on `job`
+ * frames), so the list refetches on each push and never polls.
  */
 
 import { useQuery } from '@pinia/colada';
-import { useIntervalFn } from '@vueuse/core';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 
 import JobRow from '@/components/actions/JobRow.vue';
 import { jobsApi } from '@/services/api';
 import { useConnectionStore } from '@/stores/connection';
-
-/** Refresh cadence while a job is running; the same cadence the tools use. */
-const LIVE_REFRESH_MS = 3000;
 
 const connection = useConnectionStore();
 const tick = ref(0);
@@ -30,31 +26,19 @@ const jobs = computed(() => data.value ?? []);
 const running = computed(() => jobs.value.filter((j) => j.status === 'running'));
 const finished = computed(() => jobs.value.filter((j) => j.status !== 'running'));
 
-const stopAgentEvents = connection.onMessage('agentRun', () => {
+const bump = (): void => {
   tick.value += 1;
-});
-const stopInsightEvents = connection.onMessage('insightsComputed', () => {
-  tick.value += 1;
-});
+};
+const stops = [
+  connection.onMessage('agentRun', bump),
+  connection.onMessage('insightsComputed', bump),
+  connection.onMessage('job', bump),
+];
 onBeforeUnmount(() => {
-  stopAgentEvents();
-  stopInsightEvents();
+  for (const stop of stops) {
+    stop();
+  }
 });
-
-const { pause, resume } = useIntervalFn(() => void refetch(), LIVE_REFRESH_MS, {
-  immediate: false,
-});
-watch(
-  () => running.value.length > 0,
-  (live) => {
-    if (live) {
-      resume();
-    } else {
-      pause();
-    }
-  },
-  { immediate: true },
-);
 </script>
 
 <template>

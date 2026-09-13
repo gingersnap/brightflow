@@ -9,6 +9,7 @@ import type {
   ActionBatchPayload,
   ActionEventPayload,
   InsightsComputedPayload,
+  JobEventPayload,
 } from '@/types/generated';
 
 /** Structural guard for a pushed `actionEvent` frame. */
@@ -41,4 +42,16 @@ export function isInsightsComputed(
     typeof m['table'] === 'string' &&
     typeof m['computedAt'] === 'number'
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value != null;
+}
+
+/** Structural guard for a pushed `job` frame. */
+export function isJobEvent(
+  m: Record<string, unknown>,
+): m is Record<string, unknown> & JobEventPayload {
+  const job = m['job'];
+  return isRecord(job) && typeof job['kind'] === 'string' && typeof job['status'] === 'string';
 }

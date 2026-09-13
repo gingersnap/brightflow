@@ -7,11 +7,18 @@
 //! renders each row as a `Job` with a common status, epoch timestamps and
 //! a one-line detail. Cancelling stays with each kind's own endpoint; a job
 //! says whether it can be cancelled and the client knows where.
+//!
+//! The same shape rides the socket as a `job` frame for the two kinds that
+//! had no frame of their own: syncs, through the scheduler's listener, and
+//! enrichment runs, at start, every progress write and finish.
 
 use axum::extract::{Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+use brightflow_scheduler::SyncRun;
+use brightflow_store::RecentEnrichmentRunRow;
 
 use crate::shared::AppResult;
 use crate::state::AppState;
@@ -122,6 +129,110 @@ pub fn sort_jobs(jobs: &mut [Job]) {
     });
 }
 
+/// A sync run as a job. The connector's name is looked up by the caller;
+/// the row only carries its id.
+pub fn sync_job(r: SyncRun, connector_name: &str) -> Job {
+    let detail = match (&r.error, r.status.as_str()) {
+        (Some(e), _) => Some(e.clone()),
+        (None, "running") => None,
+        (None, _) => Some(format!("{} rows synced", r.rows_synced)),
+    };
+    Job {
+        id: r.id,
+        kind: JobKind::ConnectorSync,
+        label: format!("{connector_name} sync"),
+        source_id: Some(format!("connector:{connector_name}")),
+        table: None,
+        status: r.status,
+        started_at: epoch_of(&r.started_at).unwrap_or(0),
+        finished_at: r.finished_at.as_deref().and_then(epoch_of),
+        detail,
+        cancellable: false,
+    }
+}
+
+/// An enrichment run as a job.
+pub fn enrichment_job(r: RecentEnrichmentRunRow) -> Job {
+    let detail = match (&r.error, r.status.as_str()) {
+        (Some(e), _) => Some(e.clone()),
+        (None, "running") => Some(format!("{} of {} rows", r.rows_done, r.rows_total)),
+        (None, _) => Some(format!(
+            "{} rows{}",
+            r.rows_done,
+            if r.rows_failed > 0 {
+                format!(", {} failed", r.rows_failed)
+            } else {
+                String::new()
+            }
+        )),
+    };
+    Job {
+        id: r.id,
+        kind: JobKind::EnrichmentRun,
+        label: format!("{} ({})", r.function_name, r.mode),
+        source_id: Some(r.source_id),
+        table: Some(r.table_name),
+        cancellable: r.status == "running",
+        status: r.status,
+        started_at: epoch_of(&r.created_at).unwrap_or(0),
+        finished_at: r.finished_at.as_deref().and_then(epoch_of),
+        detail,
+    }
+}
+
+/// Push an enrichment run's current row to every client, with the names
+/// the row does not carry looked up. Best effort: a run the store cannot
+/// find emits nothing.
+pub async fn emit_enrichment_job(state: &AppState, run_id: &str) {
+    let Some(store) = state.store() else { return };
+    let db = store.db();
+    let Ok(Some(run)) = db.get_enrichment_run(run_id).await else {
+        return;
+    };
+    let Ok(Some(function)) = db.get_enrichment_function(&run.function_id).await else {
+        return;
+    };
+    let Ok(Some(table)) = db.get_table_by_id(&function.table_id).await else {
+        return;
+    };
+    let row = RecentEnrichmentRunRow {
+        id: run.id,
+        function_id: run.function_id,
+        function_name: function.name,
+        source_id: table.source_id,
+        table_name: table.name,
+        mode: run.mode,
+        status: run.status,
+        rows_total: run.rows_total,
+        rows_done: run.rows_done,
+        rows_failed: run.rows_failed,
+        error: run.error,
+        created_at: run.created_at,
+        finished_at: run.finished_at,
+    };
+    crate::actions::events::emit_job(state, enrichment_job(row));
+}
+
+/// Push a sync run to every client. The scheduler's listener calls this
+/// on its own task, since the listener itself must not block the sync.
+pub async fn emit_sync_job(state: AppState, run: SyncRun) {
+    let name = match state.scheduler_db.as_ref() {
+        Some(db) => db
+            .list_connector_configs()
+            .await
+            .ok()
+            .and_then(|configs| {
+                configs
+                    .into_iter()
+                    .find(|c| c.id == run.connector_id)
+                    .map(|c| c.name)
+            })
+            .unwrap_or_else(|| run.connector_id.clone()),
+        None => run.connector_id.clone(),
+    };
+    crate::actions::events::emit_job(&state, sync_job(run, &name));
+}
+
 async fn sync_jobs(state: &AppState) -> Vec<Job> {
     let Some(db) = state.scheduler_db.as_ref() else {
         return Vec::new();
@@ -138,23 +249,7 @@ async fn sync_jobs(state: &AppState) -> Vec<Job> {
                 .iter()
                 .find(|c| c.id == r.connector_id)
                 .map_or_else(|| r.connector_id.clone(), |c| c.name.clone());
-            let detail = match (&r.error, r.status.as_str()) {
-                (Some(e), _) => Some(e.clone()),
-                (None, "running") => None,
-                (None, _) => Some(format!("{} rows synced", r.rows_synced)),
-            };
-            Job {
-                id: r.id,
-                kind: JobKind::ConnectorSync,
-                label: format!("{name} sync"),
-                source_id: Some(format!("connector:{name}")),
-                table: None,
-                status: r.status,
-                started_at: epoch_of(&r.started_at).unwrap_or(0),
-                finished_at: r.finished_at.as_deref().and_then(epoch_of),
-                detail,
-                cancellable: false,
-            }
+            sync_job(r, &name)
         })
         .collect()
 }
@@ -166,35 +261,7 @@ async fn enrichment_jobs(state: &AppState) -> Vec<Job> {
     let Ok(runs) = store.db().list_recent_enrichment_runs(PER_KIND).await else {
         return Vec::new();
     };
-    runs.into_iter()
-        .map(|r| {
-            let detail = match (&r.error, r.status.as_str()) {
-                (Some(e), _) => Some(e.clone()),
-                (None, "running") => Some(format!("{} of {} rows", r.rows_done, r.rows_total)),
-                (None, _) => Some(format!(
-                    "{} rows{}",
-                    r.rows_done,
-                    if r.rows_failed > 0 {
-                        format!(", {} failed", r.rows_failed)
-                    } else {
-                        String::new()
-                    }
-                )),
-            };
-            Job {
-                id: r.id,
-                kind: JobKind::EnrichmentRun,
-                label: format!("{} ({})", r.function_name, r.mode),
-                source_id: Some(r.source_id),
-                table: Some(r.table_name),
-                cancellable: r.status == "running",
-                status: r.status,
-                started_at: epoch_of(&r.created_at).unwrap_or(0),
-                finished_at: r.finished_at.as_deref().and_then(epoch_of),
-                detail,
-            }
-        })
-        .collect()
+    runs.into_iter().map(enrichment_job).collect()
 }
 
 async fn agent_jobs(state: &AppState) -> Vec<Job> {
@@ -349,6 +416,74 @@ mod tests {
                 (1, "failed")
             ]
         );
+    }
+
+    #[test]
+    fn sync_job_names_the_connector_and_phrases_the_outcome() {
+        let running = SyncRun {
+            id: "r1".to_string(),
+            job_id: None,
+            connector_id: "cfg-1".to_string(),
+            started_at: "2026-09-13T10:00:00+00:00".to_string(),
+            finished_at: None,
+            status: "running".to_string(),
+            endpoints_synced: None,
+            rows_synced: 0,
+            error: None,
+        };
+        let job = sync_job(running.clone(), "github");
+        assert_eq!(job.label, "github sync");
+        assert_eq!(job.source_id.as_deref(), Some("connector:github"));
+        assert_eq!(job.started_at, 1_789_293_600);
+        assert_eq!(job.detail, None);
+        assert!(!job.cancellable);
+
+        let done = SyncRun {
+            status: "completed".to_string(),
+            finished_at: Some("2026-09-13T10:05:00+00:00".to_string()),
+            rows_synced: 1203,
+            ..running.clone()
+        };
+        assert_eq!(
+            sync_job(done, "github").detail.as_deref(),
+            Some("1203 rows synced")
+        );
+        let failed = SyncRun {
+            status: "failed".to_string(),
+            error: Some("401 from api.github.com".to_string()),
+            ..running
+        };
+        assert_eq!(
+            sync_job(failed, "github").detail.as_deref(),
+            Some("401 from api.github.com")
+        );
+    }
+
+    #[test]
+    fn enrichment_job_reports_progress_while_running_and_totals_after() {
+        let row = |status: &str, done: i64, failed: i64| RecentEnrichmentRunRow {
+            id: "e1".to_string(),
+            function_id: "f1".to_string(),
+            function_name: "Classify tickets".to_string(),
+            source_id: "connector:github".to_string(),
+            table_name: "issues".to_string(),
+            mode: "full".to_string(),
+            status: status.to_string(),
+            rows_total: 40,
+            rows_done: done,
+            rows_failed: failed,
+            error: None,
+            created_at: "2026-09-13 10:00:00".to_string(),
+            finished_at: None,
+        };
+        let live = enrichment_job(row("running", 12, 0));
+        assert_eq!(live.label, "Classify tickets (full)");
+        assert_eq!(live.detail.as_deref(), Some("12 of 40 rows"));
+        assert!(live.cancellable);
+        assert_eq!(live.table.as_deref(), Some("issues"));
+        let done = enrichment_job(row("completed", 40, 3));
+        assert_eq!(done.detail.as_deref(), Some("40 rows, 3 failed"));
+        assert!(!done.cancellable);
     }
 
     #[test]

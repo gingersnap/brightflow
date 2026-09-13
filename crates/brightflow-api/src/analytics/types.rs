@@ -199,6 +199,9 @@ pub enum WsServerMessage {
 
     /// An insights run (manual or post-sync) finished
     InsightsComputed(crate::actions::events::InsightsComputedPayload),
+
+    /// A sync or enrichment run started, progressed or finished
+    Job(crate::actions::events::JobEventPayload),
 }
 
 impl From<crate::actions::events::CurationEvent> for WsServerMessage {
@@ -209,6 +212,7 @@ impl From<crate::actions::events::CurationEvent> for WsServerMessage {
             CurationEvent::ActionBatch(p) => Self::ActionBatch(p),
             CurationEvent::AgentRun(p) => Self::AgentRun(p),
             CurationEvent::InsightsComputed(p) => Self::InsightsComputed(p),
+            CurationEvent::Job(p) => Self::Job(p),
         }
     }
 }

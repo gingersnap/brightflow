@@ -24,6 +24,17 @@ pub enum CurationEvent {
     ActionBatch(ActionBatchPayload),
     AgentRun(AgentRunEventPayload),
     InsightsComputed(InsightsComputedPayload),
+    Job(JobEventPayload),
+}
+
+/// A background job (sync, enrichment run) started, progressed or finished.
+/// Agent and insight runs have their own frames; this one carries the two
+/// kinds that had none.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct JobEventPayload {
+    pub job: crate::jobs::Job,
 }
 
 /// One action-log row changed (created, applied, failed, rejected, undone).
@@ -134,6 +145,14 @@ pub async fn emit_batch(
         .ok();
 }
 
+/// Emit a background job's current state.
+pub fn emit_job(state: &AppState, job: crate::jobs::Job) {
+    state
+        .curation_events
+        .send(CurationEvent::Job(JobEventPayload { job }))
+        .ok();
+}
+
 /// Emit a finished insights run (badge + activity surfaces).
 pub fn emit_insights_computed(state: &AppState, row: &brightflow_store::InsightRunRow) {
     let payload = InsightsComputedPayload {
@@ -235,6 +254,28 @@ mod tests {
     fn resync_wire_format() {
         let json = serde_json::to_string(&WsServerMessage::ActionResync).unwrap();
         assert_eq!(json, r#"{"type":"actionResync"}"#);
+    }
+
+    #[test]
+    fn job_wire_format() {
+        let msg = WsServerMessage::from(CurationEvent::Job(JobEventPayload {
+            job: crate::jobs::Job {
+                id: "r1".to_string(),
+                kind: crate::jobs::JobKind::ConnectorSync,
+                label: "github sync".to_string(),
+                source_id: Some("connector:github".to_string()),
+                table: None,
+                status: "running".to_string(),
+                started_at: 1,
+                finished_at: None,
+                detail: None,
+                cancellable: false,
+            },
+        }));
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""type":"job""#), "{json}");
+        assert!(json.contains(r#""kind":"connector_sync""#), "{json}");
+        assert!(json.contains(r#""startedAt":1"#), "{json}");
     }
 
     #[test]

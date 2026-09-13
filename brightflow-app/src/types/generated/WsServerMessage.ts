@@ -3,6 +3,7 @@ import type { ActionBatchPayload } from "./ActionBatchPayload";
 import type { ActionEventPayload } from "./ActionEventPayload";
 import type { AgentRunEventPayload } from "./AgentRunEventPayload";
 import type { InsightsComputedPayload } from "./InsightsComputedPayload";
+import type { JobEventPayload } from "./JobEventPayload";
 import type { QueryResponse } from "./QueryResponse";
 
 /**
@@ -13,4 +14,4 @@ export type WsServerMessage = { "type": "queryResult" } & QueryResponse | { "typ
  * Correlation id when the failing query carried one; parse errors
  * never do — the client accepts uncorrelated errors.
  */
-request_id?: string, } | { "type": "pong" } | { "type": "connected", serverVersion: string, } | { "type": "actionEvent" } & ActionEventPayload | { "type": "actionBatch" } & ActionBatchPayload | { "type": "agentRun" } & AgentRunEventPayload | { "type": "actionResync" } | { "type": "insightsComputed" } & InsightsComputedPayload;
+request_id?: string, } | { "type": "pong" } | { "type": "connected", serverVersion: string, } | { "type": "actionEvent" } & ActionEventPayload | { "type": "actionBatch" } & ActionBatchPayload | { "type": "agentRun" } & AgentRunEventPayload | { "type": "actionResync" } | { "type": "insightsComputed" } & InsightsComputedPayload | { "type": "job" } & JobEventPayload;

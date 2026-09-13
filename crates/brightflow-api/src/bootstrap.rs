@@ -196,6 +196,16 @@ pub(crate) async fn start_scheduler(
         }))
         .await;
 
+    // Sync runs ride the socket as job frames: the listener runs on the sync
+    // task, so the lookup and send happen on a task of their own.
+    let listener_state = state.clone();
+    scheduler
+        .set_sync_listener(Arc::new(move |run: brightflow_scheduler::SyncRun| {
+            let sync_state = listener_state.clone();
+            tokio::spawn(crate::jobs::emit_sync_job(sync_state, run));
+        }))
+        .await;
+
     // Start scheduler background loop
     tokio::spawn(async move {
         scheduler.start().await;

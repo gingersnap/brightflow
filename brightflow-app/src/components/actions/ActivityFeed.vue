@@ -10,8 +10,9 @@
  * approveAll for what it confirms and deliberately does not promise.
  *
  * The runs behind the cards and the finished jobs come from their lists,
- * refetched on every pushed `agentRun` or `insightsComputed` frame; a run
- * older than the list's window still groups, without its header details.
+ * refetched on every pushed `agentRun`, `insightsComputed` or finished
+ * `job` frame; a run older than the list's window still groups, without
+ * its header details.
  */
 
 import { useQuery } from '@pinia/colada';
@@ -22,6 +23,7 @@ import JobRow from '@/components/actions/JobRow.vue';
 import RunCard from '@/components/actions/RunCard.vue';
 import { useCuration } from '@/composables/useCuration';
 import { agentApi, jobsApi } from '@/services/api';
+import { isJobEvent } from '@/services/wsGuards';
 import { useConnectionStore } from '@/stores/connection';
 import type { AgentRunResponse } from '@/types/generated';
 
@@ -52,9 +54,17 @@ const stopRunEvents = connection.onMessage('agentRun', () => {
 const stopInsightEvents = connection.onMessage('insightsComputed', () => {
   runsTick.value += 1;
 });
+// A job frame while running only changes the other tab; one that finished
+// Takes its place in the log, so refetch only then.
+const stopJobEvents = connection.onMessage('job', (payload) => {
+  if (isJobEvent(payload) && payload.job.status !== 'running') {
+    runsTick.value += 1;
+  }
+});
 onBeforeUnmount(() => {
   stopRunEvents();
   stopInsightEvents();
+  stopJobEvents();
 });
 
 const runsById = computed(() => {

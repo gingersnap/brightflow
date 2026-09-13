@@ -673,6 +673,7 @@ async fn start_run_internal_scoped(
     state
         .enrichment_jobs
         .insert(run_id.clone(), handle.abort_handle());
+    crate::jobs::emit_enrichment_job(state, &run_id).await;
     Ok(run_id)
 }
 
@@ -743,6 +744,7 @@ pub async fn cancel_run(
             .db()
             .finish_enrichment_run(&rid, "cancelled", Some("cancelled by user"))
             .await?;
+        crate::jobs::emit_enrichment_job(&state, &rid).await;
     }
     let updated = store
         .db()

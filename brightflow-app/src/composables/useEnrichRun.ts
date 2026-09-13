@@ -1,26 +1,32 @@
 /**
- * Enrichment run lifecycle: start or resume, poll, cancel.
+ * Enrichment run lifecycle: start or resume, follow, cancel.
  *
  * Resumes from the function's `activeRunId` on mount, so a reload during a long
- * run reattaches to it instead of appearing to have lost it.
+ * run reattaches to it instead of appearing to have lost it. Progress arrives
+ * as pushed `job` frames for the run's id; each one is followed by one fetch
+ * of the full run row, which carries the token counts the frame does not.
  */
 
-import { useIntervalFn } from '@vueuse/core';
-import { ref } from 'vue';
+import { onScopeDispose, ref } from 'vue';
 
 import { enrichFnApi } from '@/services/api';
+import { isJobEvent } from '@/services/wsGuards';
+import { useConnectionStore } from '@/stores/connection';
 import type { EnrichRun, RunScope } from '@/types/enrichment';
 
 /**
  * Full/incremental run lifecycle: start (or resume a run found on mount via
- * the function's activeRunId), poll every 2s, cancel. Same cadence as
- * AgentActions.vue.
+ * the function's activeRunId), follow its pushed frames, cancel.
  */
 export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
   const run = ref<EnrichRun | null>(null);
   const errorMessage = ref<string | null>(null);
+  const connection = useConnectionStore();
 
-  async function poll(): Promise<void> {
+  /** True while pushed frames for the current run are acted on. */
+  let following = false;
+
+  async function refresh(): Promise<void> {
     if (run.value == null) {
       return;
     }
@@ -35,10 +41,24 @@ export function useEnrichRun(onFinished?: (run: EnrichRun) => void) {
     }
   }
 
-  // Auto-cleans on unmount; started explicitly when a run begins.
-  const { pause: stopPolling, resume: beginPolling } = useIntervalFn(() => void poll(), 2000, {
-    immediate: false,
+  const stopJobEvents = connection.onMessage('job', (payload) => {
+    if (
+      following &&
+      isJobEvent(payload) &&
+      payload.job.kind === 'enrichment_run' &&
+      payload.job.id === run.value?.id
+    ) {
+      void refresh();
+    }
   });
+  onScopeDispose(stopJobEvents);
+
+  function beginPolling(): void {
+    following = true;
+  }
+  function stopPolling(): void {
+    following = false;
+  }
 
   async function start(functionId: string, scope: RunScope): Promise<void> {
     errorMessage.value = null;
