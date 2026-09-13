@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 use ts_rs::TS;
 
+use brightflow_types::TableSchema;
+
 use crate::db::StoreDb;
 use crate::error::{StoreError, StoreResult};
 use crate::ingest::concat_df;
@@ -56,9 +58,9 @@ pub struct TableInfo {
     pub num_rows: Option<i64>,
     /// Number of files
     pub num_files: usize,
-    /// Schema as JSON
-    #[ts(type = "unknown")]
-    pub schema: Option<serde_json::Value>,
+    /// The table's columns and logical types.
+    #[ts(optional)]
+    pub schema: Option<TableSchema>,
     /// Column-level statistics (min/max/null_count)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub column_stats: Vec<ColumnStat>,
@@ -100,10 +102,7 @@ pub async fn get_table_info(
     let files = db.list_table_files(&row.id).await?;
     let stat_rows = db.get_column_stats(&row.id).await?;
 
-    let schema: Option<serde_json::Value> = row
-        .schema_json
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok());
+    let schema = row.schema();
 
     let created_at = row.created_at.parse::<DateTime<Utc>>().ok();
     let updated_at = row.updated_at.parse::<DateTime<Utc>>().ok();

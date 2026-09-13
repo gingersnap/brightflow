@@ -279,17 +279,10 @@ fn table_id_by_name(
     .optional()
 }
 
-/// Column names in a table's stored schema, whichever shape it was written
-/// in (both carry `fields[].name`).
+/// Column names in a table's stored schema (the contract's `TableSchema`).
 fn schema_column_names(schema_json: Option<&str>) -> Option<Vec<String>> {
-    let v: serde_json::Value = serde_json::from_str(schema_json?).ok()?;
-    let fields = v.get("fields").or_else(|| v.get("columns"))?.as_array()?;
-    Some(
-        fields
-            .iter()
-            .filter_map(|f| f.get("name").and_then(|n| n.as_str()).map(str::to_string))
-            .collect(),
-    )
+    let schema: brightflow_types::TableSchema = serde_json::from_str(schema_json?).ok()?;
+    Some(schema.columns.into_iter().map(|c| c.name).collect())
 }
 
 impl StoreDb {

@@ -12,26 +12,13 @@ pub use df_cells::{derive_title, read_i64_at, read_id_at, read_string_at};
 pub use error::{AppError, AppResult};
 pub use path_guard::reject_unsafe_path_params;
 
-/// True when a stored `schema_json` contains at least one string column.
-///
-/// The schema-based "enrichable" gate (any table with text can be enriched).
-/// Reads the contract shape (`columns[].datatype == "String"`) and the
-/// pre-027 shape (`fields[].type` of `str`) still present on older rows.
-pub fn schema_has_text_column(schema_json: Option<&str>) -> bool {
-    schema_json
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .and_then(|v| {
-            v.get("columns")
-                .or_else(|| v.get("fields"))
-                .and_then(|f| f.as_array())
-                .map(|fields| {
-                    fields.iter().any(|f| {
-                        f.get("datatype")
-                            .or_else(|| f.get("type"))
-                            .and_then(|t| t.as_str())
-                            .is_some_and(|t| t == "String" || t == "str" || t == "string")
-                    })
-                })
-        })
-        .unwrap_or(false)
+/// True when a table's stored schema has at least one `String` column: the
+/// "enrichable" gate (any table with text can be enriched).
+pub fn schema_has_text_column(table: &brightflow_store::TableRow) -> bool {
+    table.schema().is_some_and(|schema| {
+        schema
+            .columns
+            .iter()
+            .any(|c| c.datatype == brightflow_types::LogicalType::String)
+    })
 }

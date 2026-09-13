@@ -20,9 +20,7 @@ use crate::enrichment::types::{
     FunctionVersionResponse, SampleCellResponse, SampleRunRequest, SampleRunResponse,
     StartEnrichRunRequest, StartEnrichRunResponse, UpdateFunctionRequest,
 };
-use crate::enrichment::validate::{
-    parse_spec, table_columns as schema_columns, valid_name, validate_spec,
-};
+use crate::enrichment::validate::{parse_spec, valid_name, validate_spec};
 use crate::shared::{AppError, AppResult};
 use crate::state::AppState;
 
@@ -34,11 +32,6 @@ const HEURISTIC_COMPLETION_TOKENS_PER_OUTPUT: i64 = 150;
 
 fn store(state: &AppState) -> AppResult<&std::sync::Arc<ParquetStore>> {
     state.require_store()
-}
-
-/// Column names for a table row's stored schema (see `validate::table_columns`).
-fn table_columns(table: &TableRow) -> Vec<String> {
-    schema_columns(table.schema_json.as_deref())
 }
 
 async fn to_response(
@@ -156,7 +149,7 @@ pub async fn create_function(
         .get_table(&source_id, &table)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("table '{table}' not found")))?;
-    let columns = table_columns(&table_row);
+    let columns = table_row.column_names();
     if columns.iter().any(|c| c == &req.name) {
         return Err(AppError::BadRequest(format!(
             "function name '{}' collides with an existing table column",
@@ -235,7 +228,7 @@ pub async fn update_function(
     }
 
     let mut spec = parse_spec(&row.kind, &req.config)?;
-    let columns = table_columns(&table_row);
+    let columns = table_row.column_names();
     // The function's own materialized outputs may already be table columns;
     // exclude them from the collision check on edit.
     let previous = store
@@ -438,7 +431,7 @@ pub async fn sample_run(
 
     let spec = if let Some(draft) = &req.config {
         let mut parsed = parse_spec(&row.kind, draft)?;
-        let columns = table_columns(&table_row);
+        let columns = table_row.column_names();
         let mut own: Vec<String> = output_columns_for(&parsed);
         own.push(format!("{}__status", row.name));
         let filtered: Vec<String> = columns.into_iter().filter(|c| !own.contains(c)).collect();

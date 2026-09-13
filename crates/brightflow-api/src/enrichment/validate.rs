@@ -27,26 +27,6 @@ pub(crate) fn valid_name(name: &str) -> bool {
         && !name.starts_with(|c: char| c.is_ascii_digit())
 }
 
-/// Column names from a table's stored `schema_json`, empty on any malformed
-/// or absent schema — validation then rejects every column reference, which
-/// is the safe direction.
-pub(crate) fn table_columns(schema_json: Option<&str>) -> Vec<String> {
-    schema_json
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .and_then(|v| {
-            v.get("columns")
-                .or_else(|| v.get("fields"))
-                .and_then(|f| f.as_array())
-                .map(|fields| {
-                    fields
-                        .iter()
-                        .filter_map(|f| f.get("name").and_then(|n| n.as_str()).map(String::from))
-                        .collect()
-                })
-        })
-        .unwrap_or_default()
-}
-
 /// Assemble a `FunctionSpec` from a kind + kind-less config payload.
 pub(crate) fn parse_spec(kind: &str, config: &serde_json::Value) -> AppResult<FunctionSpec> {
     let mut merged = config.clone();
@@ -156,14 +136,6 @@ mod tests {
         assert!(!valid_name("1abc"));
         assert!(!valid_name("a-b"));
         assert!(!valid_name(&"a".repeat(65)));
-    }
-
-    #[test]
-    fn table_columns_reads_field_names_and_defaults_to_empty() {
-        let schema = r#"{"fields":[{"name":"id"},{"name":"title"}]}"#;
-        assert_eq!(table_columns(Some(schema)), cols(&["id", "title"]));
-        assert!(table_columns(None).is_empty());
-        assert!(table_columns(Some("not json")).is_empty());
     }
 
     #[test]

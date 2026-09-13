@@ -9,6 +9,7 @@
 //! the bottom are what make the 1:1 mirroring load-bearing: each field is
 //! read from the column of the same name.
 
+use brightflow_types::TableSchema;
 use serde::{Deserialize, Serialize};
 
 /// A table row from the `tables` SQLite table
@@ -24,6 +25,24 @@ pub struct TableRow {
     pub updated_at: String,
     pub partition_columns: Option<String>,
     pub source_id: String,
+}
+
+impl TableRow {
+    /// The stored schema, in the contract's shape. `None` when the row has
+    /// none or it does not parse; migration 029 rewrote every older shape.
+    pub fn schema(&self) -> Option<TableSchema> {
+        self.schema_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+    }
+
+    /// The stored schema's column names, in file order; empty when there
+    /// is no schema, which is the safe direction for a validator.
+    pub fn column_names(&self) -> Vec<String> {
+        self.schema()
+            .map(|s| s.columns.into_iter().map(|c| c.name).collect())
+            .unwrap_or_default()
+    }
 }
 
 /// A file entry row from the `table_files` SQLite table
@@ -621,3 +640,41 @@ crate::impl_from_row!(DeclarationChangeRow {
     changes_json,
     created_at,
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use brightflow_types::LogicalType;
+
+    fn table(schema_json: Option<&str>) -> TableRow {
+        TableRow {
+            id: "t".into(),
+            name: "issues".into(),
+            version: 1,
+            schema_json: schema_json.map(str::to_string),
+            primary_keys: None,
+            total_rows: 0,
+            created_at: String::new(),
+            updated_at: String::new(),
+            partition_columns: None,
+            source_id: "s".into(),
+        }
+    }
+
+    #[test]
+    fn schema_parses_the_contract_shape_and_nothing_else() {
+        let row = table(Some(
+            r#"{"columns":[{"name":"id","datatype":"Integer"},{"name":"title","datatype":"String","physical":"str"}]}"#,
+        ));
+        let schema = row.schema().expect("schema");
+        assert_eq!(schema.columns[1].datatype, LogicalType::String);
+        assert_eq!(schema.columns[1].physical.as_deref(), Some("str"));
+        assert_eq!(row.column_names(), ["id", "title"]);
+        assert!(table(None).schema().is_none());
+        assert!(table(Some("not json")).column_names().is_empty());
+        // The pre-029 shape is not accepted: the migration rewrote it.
+        assert!(table(Some(r#"{"fields":[{"name":"id","type":"i64"}]}"#))
+            .schema()
+            .is_none());
+    }
+}

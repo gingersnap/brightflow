@@ -113,7 +113,7 @@ pub async fn import_semantic_model(
             )));
         }
         if dry_run {
-            let known = crate::enrichment::validate::table_columns(table.schema_json.as_deref());
+            let known = table.column_names();
             let columns_without_data = decl
                 .dataset
                 .as_ref()

@@ -521,3 +521,71 @@ async fn promoted_function_config_returns_current_version_only() {
         None
     );
 }
+
+/// Migration 029 rewrites the engine-shaped `schema_json` of older rows into
+/// the contract's `TableSchema`, mapping the Polars type word to a logical
+/// type and keeping the word as `physical`; a row already in the new shape
+/// is left alone.
+#[test]
+fn migration_029_rewrites_old_schema_json_into_table_schema() {
+    use brightflow_types::LogicalType as L;
+    let tmp = TempDir::new().expect("tmp");
+    let conn = file_backed_conn(&tmp);
+    let files = migration_files();
+    let migration_029 = files
+        .iter()
+        .find(|(name, _)| name.starts_with("029"))
+        .expect("029 exists")
+        .clone();
+    for (name, sql) in &files {
+        if name.starts_with("029") {
+            break;
+        }
+        conn.execute_batch(sql).expect(name);
+    }
+    conn.execute_batch(
+        r#"
+        INSERT INTO tables (id, name, source_id, schema_json) VALUES
+          ('t-old', 'issues', 'c:x',
+           '{"fields":[{"name":"id","type":"i64","nullable":true},{"name":"title","type":"str","nullable":true},{"name":"ts","type":"datetime[μs, UTC]","nullable":true},{"name":"tags","type":"list[str]","nullable":true}]}'),
+          ('t-new', 'orders', 'c:x',
+           '{"columns":[{"name":"id","datatype":"Integer","nullable":true}]}'),
+          ('t-none', 'empty', 'c:x', NULL);
+        "#,
+    )
+    .expect("fixture");
+
+    conn.execute_batch(&migration_029.1).expect("029 applies");
+
+    let read = |id: &str| -> Option<String> {
+        conn.query_row("SELECT schema_json FROM tables WHERE id = ?", [id], |r| {
+            r.get(0)
+        })
+        .expect("row")
+    };
+    let old: brightflow_types::TableSchema =
+        serde_json::from_str(&read("t-old").expect("json")).expect("parses as TableSchema");
+    let types: Vec<(String, L, Option<String>)> = old
+        .columns
+        .iter()
+        .map(|c| (c.name.clone(), c.datatype, c.physical.clone()))
+        .collect();
+    assert_eq!(
+        types,
+        vec![
+            ("id".to_string(), L::Integer, Some("i64".to_string())),
+            ("title".to_string(), L::String, Some("str".to_string())),
+            (
+                "ts".to_string(),
+                L::DateTimeTz,
+                Some("datetime[μs, UTC]".to_string())
+            ),
+            ("tags".to_string(), L::Opaque, Some("list[str]".to_string())),
+        ]
+    );
+    assert_eq!(
+        read("t-new").as_deref(),
+        Some(r#"{"columns":[{"name":"id","datatype":"Integer","nullable":true}]}"#)
+    );
+    assert_eq!(read("t-none"), None);
+}

@@ -35,7 +35,7 @@ async fn source_tables(
             display_name: resolved.as_ref().and_then(|r| r.display_name.clone()),
             description: resolved.as_ref().and_then(|r| r.description.clone()),
             num_rows: Some(t.total_rows),
-            enrichable: crate::shared::schema_has_text_column(t.schema_json.as_deref()),
+            enrichable: crate::shared::schema_has_text_column(&t),
             last_declaration_change,
         });
     }
