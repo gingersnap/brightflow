@@ -56,8 +56,9 @@ pub use migrate::{migrate, MigrateError, Migration};
 // return them (`db::AppliedDeclaration` and friends live on `db`).
 pub use models::{
     ActionLogRow, AgentRunRow, EnrichmentCacheRow, EnrichmentFunctionRow, EnrichmentRunRow,
-    InsightHistoryRow, InsightRunRow, RecentEnrichmentRunRow, SavedViewListRow, SavedViewRow,
-    TableRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
+    InsightHistoryRow, InsightRunRow, ModelBuildRow, ModelListRow, ModelRow, ModelVersionRow,
+    RecentEnrichmentRunRow, SavedViewListRow, SavedViewRow, TableRow, TaxonomyCategoryRow,
+    UnresolvedSubjectRow,
 };
 pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};
@@ -211,6 +212,17 @@ impl ParquetStore {
             expected_version,
         )
         .await
+    }
+
+    /// Create a table from a DataFrame or replace its contents: the write
+    /// path for a derived table. A zero-row frame still creates the table.
+    pub async fn write_table(
+        &self,
+        source_id: &str,
+        table_name: &str,
+        df: DataFrame,
+    ) -> StoreResult<TableRow> {
+        ingest::write_table(&self.db, &self.root_path, source_id, table_name, df).await
     }
 
     /// Delete a single table for a source

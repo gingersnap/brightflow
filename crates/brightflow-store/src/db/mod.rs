@@ -15,6 +15,7 @@ mod catalog;
 mod curation;
 mod enrichment;
 mod insights;
+mod models;
 mod semantics;
 mod views;
 
@@ -60,6 +61,7 @@ static MIGRATIONS: &[Migration] = &[
     migration!(29, "029_schema_json_columns"),
     migration!(30, "030_describe_table_agent_kind"),
     migration!(31, "031_saved_views"),
+    migration!(32, "032_models"),
 ];
 
 #[derive(Clone, Debug)]

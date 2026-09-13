@@ -384,6 +384,65 @@ pub struct SavedViewRow {
     pub updated_at: i64,
 }
 
+/// A model: a table that knows its recipe. `output_table_id` is the table
+/// the model builds; `input_table_id` is what it builds from, null once the
+/// input has been deleted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelRow {
+    pub id: String,
+    pub output_table_id: String,
+    pub input_table_id: Option<String>,
+    pub current_version: i64,
+    pub created_by: Option<String>,
+    /// Unix seconds.
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// One immutable recipe snapshot of a model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelVersionRow {
+    pub model_id: String,
+    pub version: i64,
+    /// The contract crate's `ModelRecipe`, as JSON.
+    pub recipe_json: String,
+    /// The Explore snapshot the recipe was captured from, opaque here.
+    pub client_spec: Option<String>,
+    pub created_by: Option<String>,
+    pub created_at: i64,
+}
+
+/// One build attempt of a model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelBuildRow {
+    pub id: String,
+    pub model_id: String,
+    pub version: i64,
+    /// running | completed | failed
+    pub status: String,
+    /// create | update | sync | manual | undo
+    pub triggered_by: String,
+    pub rows: Option<i64>,
+    pub error: Option<String>,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+}
+
+/// A model with both its tables named, for a source-wide listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelListRow {
+    pub id: String,
+    pub source_id: String,
+    pub output_table_id: String,
+    pub output_table: String,
+    pub input_table_id: Option<String>,
+    pub input_table: Option<String>,
+    pub current_version: i64,
+    pub created_by: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// A saved view with its table named, for a source-wide listing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedViewListRow {
@@ -767,3 +826,43 @@ mod tests {
             .is_none());
     }
 }
+crate::impl_from_row!(ModelRow {
+    id,
+    output_table_id,
+    input_table_id,
+    current_version,
+    created_by,
+    created_at,
+    updated_at,
+});
+crate::impl_from_row!(ModelVersionRow {
+    model_id,
+    version,
+    recipe_json,
+    client_spec,
+    created_by,
+    created_at,
+});
+crate::impl_from_row!(ModelBuildRow {
+    id,
+    model_id,
+    version,
+    status,
+    triggered_by,
+    rows,
+    error,
+    started_at,
+    finished_at,
+});
+crate::impl_from_row!(ModelListRow {
+    id,
+    source_id,
+    output_table_id,
+    output_table,
+    input_table_id,
+    input_table,
+    current_version,
+    created_by,
+    created_at,
+    updated_at,
+});

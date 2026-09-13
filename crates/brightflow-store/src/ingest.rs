@@ -13,6 +13,7 @@ use tracing::{debug, info};
 
 use crate::db::StoreDb;
 use crate::error::{StoreError, StoreResult};
+use crate::models::TableRow;
 use crate::stats;
 
 /// Metrics from a merge (upsert) operation
@@ -407,6 +408,78 @@ pub async fn replace_table_data(
     Ok(())
 }
 
+/// Create a table from a DataFrame, or replace its contents if it exists:
+/// the write path for a derived table. Unlike `ingest_parquet`, a zero-row
+/// frame still creates the table and registers its (empty) file, because a
+/// model whose chain matches nothing must keep existing.
+pub async fn write_table(
+    db: &StoreDb,
+    root: &Path,
+    source_id: &str,
+    table_name: &str,
+    df: DataFrame,
+) -> StoreResult<TableRow> {
+    let existing = db.get_table(source_id, table_name).await?;
+    let old_paths: Vec<std::path::PathBuf> = match &existing {
+        Some(row) => db
+            .list_table_files(&row.id)
+            .await?
+            .iter()
+            .map(|f| root.join(&f.path))
+            .collect(),
+        None => Vec::new(),
+    };
+
+    let table_dir = root.join(source_id).join(table_name);
+    std::fs::create_dir_all(&table_dir)?;
+    let relative_path = new_parquet_path(source_id, table_name);
+    let dest_path = root.join(&relative_path);
+
+    let write_df = df.clone();
+    let write_path = dest_path.clone();
+    tokio::task::spawn_blocking(move || -> StoreResult<()> {
+        let mut rechunked = write_df;
+        rechunked.rechunk_mut();
+        let file = std::fs::File::create(&write_path)?;
+        ParquetWriter::new(file)
+            .with_compression(ParquetCompression::Zstd(None))
+            .finish(&mut rechunked)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| StoreError::Other(format!("Task join error: {e}")))??;
+
+    let file_size = i64::try_from(std::fs::metadata(&dest_path)?.len()).unwrap_or(0);
+    let num_rows = i64::try_from(df.height()).unwrap_or(0);
+    let schema_json = schema_to_json(df.schema().as_ref());
+    let schema_str =
+        serde_json::to_string(&schema_json).map_err(|e| StoreError::Other(e.to_string()))?;
+
+    let table_row = match existing {
+        Some(row) => row,
+        None => db.create_table(table_name, source_id).await?,
+    };
+    db.replace_table_files(&table_row.id, &[(relative_path, num_rows, file_size)])
+        .await?;
+    let table_row = db
+        .update_table_meta(&table_row.id, Some(&schema_str), None, num_rows)
+        .await?
+        .ok_or_else(|| StoreError::Other("Failed to update table".into()))?;
+    let column_stats = stats::extract_column_stats(&df, &table_row.id);
+    db.upsert_column_stats(&table_row.id, &column_stats).await?;
+
+    for old_path in &old_paths {
+        if old_path.exists() {
+            std::fs::remove_file(old_path)?;
+        }
+    }
+    info!(
+        "Wrote table '{}' for source '{}' ({} rows, 1 file)",
+        table_name, source_id, num_rows
+    );
+    Ok(table_row)
+}
+
 /// Write a DataFrame to a parquet file
 fn write_parquet(df: &DataFrame, path: &Path) -> StoreResult<()> {
     let file = std::fs::File::create(path)?;
@@ -685,5 +758,62 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(vs, vec![Some("x"), Some("y")]);
+    }
+
+    /// `write_table` creates on first call, replaces on the next, and keeps
+    /// a zero-row table alive — the one place a derived table diverges from
+    /// `ingest_parquet`'s empty-file rule.
+    #[tokio::test]
+    async fn write_table_creates_replaces_and_keeps_empty_tables() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db_url = format!(
+            "sqlite:{}?mode=rwc",
+            tmp.path().join("litehouse.db").display()
+        );
+        let store = ParquetStore::new(tmp.path(), &db_url).await.expect("store");
+
+        let first = df!("region" => ["EU", "US"], "sum" => [1.5f64, 2.5]).expect("df");
+        let row = store
+            .write_table("c:s1", "by_region", first)
+            .await
+            .expect("create");
+        assert_eq!(row.total_rows, 2);
+        let files = store.db().list_table_files(&row.id).await.expect("files");
+        assert_eq!(files.len(), 1);
+        let first_path = tmp.path().join(&files[0].path);
+        assert!(first_path.exists());
+
+        let second = df!("region" => ["EU"], "sum" => [9.0f64]).expect("df");
+        let row2 = store
+            .write_table("c:s1", "by_region", second)
+            .await
+            .expect("replace");
+        assert_eq!(row2.id, row.id, "replace keeps the catalog row");
+        assert_eq!(row2.total_rows, 1);
+        assert!(!first_path.exists(), "the replaced file is unlinked");
+        let read = store.read_table("c:s1", "by_region").await.expect("read");
+        assert_eq!(read.height(), 1);
+
+        let empty = df!("region" => Vec::<&str>::new(), "sum" => Vec::<f64>::new()).expect("df");
+        let row3 = store
+            .write_table("c:s1", "by_region", empty)
+            .await
+            .expect("empty replace");
+        assert_eq!(row3.total_rows, 0);
+        assert!(store
+            .db()
+            .get_table("c:s1", "by_region")
+            .await
+            .expect("q")
+            .is_some());
+        assert_eq!(
+            store
+                .db()
+                .list_table_files(&row3.id)
+                .await
+                .expect("files")
+                .len(),
+            1
+        );
     }
 }
