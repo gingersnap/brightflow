@@ -542,32 +542,14 @@ pub enum UndoOp {
         kind: String,
         target: String,
     },
-    RestoreKpi {
-        source_id: String,
-        table: String,
-        column: String,
-        role: String,
-        is_kpi: bool,
-    },
-    /// Undo of set_column_polarity: restore the previous polarity string.
-    RestorePolarity {
-        source_id: String,
-        table: String,
-        column: String,
-        polarity: String,
-    },
     /// Undo of every column-semantic action: put the actor's opinion row
-    /// back as it was, or delete it when the action created it. Rows logged
-    /// before layers existed have no `provenance` and restore at the user
-    /// layer.
+    /// back as it was, or delete it when the action created it.
     RestoreColumnSemantic {
         source_id: String,
         table: String,
         column: String,
         snapshot: ColumnSemanticSnapshot,
-        #[serde(default)]
-        provenance: Option<brightflow_types::Provenance>,
-        #[serde(default = "default_true")]
+        provenance: brightflow_types::Provenance,
         existed: bool,
     },
     /// Undo of reset_column_semantics: write the removed opinion rows back.
@@ -754,10 +736,6 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
 ];
-
-const fn default_true() -> bool {
-    true
-}
 
 #[cfg(test)]
 mod tests {

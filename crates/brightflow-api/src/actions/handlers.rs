@@ -492,8 +492,13 @@ pub(crate) async fn undo_action_row(
             row.action_kind
         )));
     };
-    let op: UndoOp = serde_json::from_str(undo_json)
-        .map_err(|e| AppError::Internal(format!("stored undo unreadable: {e}")))?;
+    // An undo recorded by an older Brightflow may no longer parse; say so
+    // rather than applying nothing.
+    let op: UndoOp = serde_json::from_str(undo_json).map_err(|e| {
+        AppError::BadRequest(format!(
+            "this action's undo was recorded by an older version and cannot be applied: {e}"
+        ))
+    })?;
     apply_undo(state, &op).await?;
     store
         .db()
@@ -738,19 +743,6 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             kind,
             target,
         } => insights::undo_delete_suppression(state, table_id, kind, target).await,
-        UndoOp::RestoreKpi {
-            source_id,
-            table,
-            column,
-            role,
-            is_kpi,
-        } => semantics::undo_restore_kpi(state, source_id, table, column, role, *is_kpi).await,
-        UndoOp::RestorePolarity {
-            source_id,
-            table,
-            column,
-            polarity,
-        } => semantics::undo_restore_polarity(state, source_id, table, column, polarity).await,
         UndoOp::RestoreColumnSemantic {
             source_id,
             table,
@@ -760,13 +752,7 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             existed,
         } => {
             semantics::undo_restore_column_semantic(
-                state,
-                source_id,
-                table,
-                column,
-                snapshot,
-                provenance.as_ref(),
-                *existed,
+                state, source_id, table, column, snapshot, provenance, *existed,
             )
             .await
         },

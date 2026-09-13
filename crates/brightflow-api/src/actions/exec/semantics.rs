@@ -9,8 +9,7 @@
 //! detection here any more: the detector is a producer with its own layer.
 //!
 //! Undo puts the actor's row back exactly as it was before the action — or
-//! deletes it, when the action created it. Rows logged before layers existed
-//! carry the old full-tuple snapshot and restore it at the user layer.
+//! deletes it, when the action created it.
 
 use brightflow_types::{
     ColumnOpinion, ColumnRole, Layer, Polarity, Provenance, ResolvedColumn, TableOpinion,
@@ -22,9 +21,6 @@ use crate::actions::types::{ColumnSemanticSnapshot, TableSettingsSnapshot, UndoO
 use crate::actions::Actor;
 use crate::shared::AppResult;
 use crate::state::AppState;
-
-/// The producer a legacy (pre-layer) undo row restores into.
-const LEGACY_PRODUCER: &str = "user:legacy";
 
 /// The layer and producer an actor's edits are filed under.
 pub(crate) fn provenance_for_actor(actor: &Actor) -> Provenance {
@@ -274,39 +270,6 @@ pub(crate) async fn undo_restore_table_settings(
     Ok(())
 }
 
-/// Legacy undo (rows logged before layers): restore role and KPI at the
-/// user layer.
-pub(crate) async fn undo_restore_kpi(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-    column: &str,
-    role: &str,
-    is_kpi: bool,
-) -> AppResult<()> {
-    let role = ColumnRole::parse(role);
-    write_opinion(state, &legacy_provenance(), source_id, table, column, |o| {
-        o.ext.role = role;
-        o.ext.is_kpi = Some(is_kpi);
-    })
-    .await
-}
-
-/// Legacy undo: restore polarity at the user layer.
-pub(crate) async fn undo_restore_polarity(
-    state: &AppState,
-    source_id: &str,
-    table: &str,
-    column: &str,
-    polarity: &str,
-) -> AppResult<()> {
-    let polarity = Polarity::parse(polarity);
-    write_opinion(state, &legacy_provenance(), source_id, table, column, |o| {
-        o.ext.polarity = polarity;
-    })
-    .await
-}
-
 /// Put the actor's row back as it was: rewrite it from the snapshot, or
 /// delete it when the action created it.
 pub(crate) async fn undo_restore_column_semantic(
@@ -315,31 +278,21 @@ pub(crate) async fn undo_restore_column_semantic(
     table: &str,
     column: &str,
     snapshot: &ColumnSemanticSnapshot,
-    provenance: Option<&Provenance>,
+    provenance: &Provenance,
     existed: bool,
 ) -> AppResult<()> {
-    let prov = provenance.cloned().unwrap_or_else(legacy_provenance);
     let (store, table_id) = table_ctx(state, source_id, table).await?;
     if existed {
-        let mut opinion = ColumnOpinion::empty(column, prov);
+        let mut opinion = ColumnOpinion::empty(column, provenance.clone());
         snapshot.apply_to(&mut opinion);
         store.db().write_column_opinion(&table_id, &opinion).await?;
     } else {
         store
             .db()
-            .delete_column_opinion(&table_id, column, &prov)
+            .delete_column_opinion(&table_id, column, provenance)
             .await?;
     }
     Ok(())
-}
-
-fn legacy_provenance() -> Provenance {
-    Provenance {
-        layer: Layer::User,
-        producer: LEGACY_PRODUCER.to_string(),
-        version: None,
-        hash: None,
-    }
 }
 
 fn restore_op(
@@ -357,7 +310,7 @@ fn restore_op(
             .as_ref()
             .map(ColumnSemanticSnapshot::from_opinion)
             .unwrap_or_default(),
-        provenance: Some(prov),
+        provenance: prov,
         existed: previous.is_some(),
     }
 }
@@ -410,25 +363,6 @@ async fn mutate_opinion(
     mutate(&mut next);
     store.db().write_column_opinion(&table_id, &next).await?;
     Ok((previous, prov))
-}
-
-async fn write_opinion(
-    state: &AppState,
-    prov: &Provenance,
-    source_id: &str,
-    table: &str,
-    column: &str,
-    mutate: impl FnOnce(&mut ColumnOpinion),
-) -> AppResult<()> {
-    let (store, table_id) = table_ctx(state, source_id, table).await?;
-    let mut next = store
-        .db()
-        .column_opinion(&table_id, column, prov)
-        .await?
-        .unwrap_or_else(|| ColumnOpinion::empty(column, prov.clone()));
-    mutate(&mut next);
-    store.db().write_column_opinion(&table_id, &next).await?;
-    Ok(())
 }
 
 #[cfg(test)]

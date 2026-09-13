@@ -151,6 +151,16 @@ impl FlushTask {
                 tracing::error!("Failed to register flushed file in catalog: {e}");
             } else {
                 let web_source = brightflow_core::web_source_id(source_id);
+                // The store's source registry knows every source that has
+                // tables. A web source is named by its id here; its display
+                // name lives in the ingest database.
+                if let Err(e) = store
+                    .db()
+                    .register_source(&web_source, "web", source_id, None)
+                    .await
+                {
+                    tracing::warn!("could not register web source '{web_source}': {e}");
+                }
                 if let Err(e) = crate::semantics::detect::declare_detected_if_undescribed(
                     store,
                     &web_source,
