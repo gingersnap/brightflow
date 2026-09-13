@@ -53,6 +53,7 @@ static MIGRATIONS: &[Migration] = &[
     migration!(25, "025_ticket_function_kinds"),
     migration!(26, "026_drop_embedding_tables"),
     migration!(27, "027_layered_semantics"),
+    migration!(28, "028_declaration_changes"),
 ];
 
 #[derive(Clone, Debug)]

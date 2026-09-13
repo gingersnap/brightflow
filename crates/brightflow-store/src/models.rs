@@ -121,6 +121,19 @@ pub struct RelationshipRow {
     pub updated_at: String,
 }
 
+/// What a producer's re-declaration changed (`declaration_changes`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeclarationChangeRow {
+    pub id: i64,
+    pub table_id: String,
+    pub producer: String,
+    pub from_version: Option<String>,
+    pub to_version: Option<String>,
+    /// JSON array of `DeclarationChange`.
+    pub changes_json: String,
+    pub created_at: String,
+}
+
 /// One named metric over one table. `expr_json` is the structured
 /// `MetricExpr`; `sql` is its rendered ANSI form, kept for export only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -597,5 +610,14 @@ crate::impl_from_row!(EnrichmentCacheRow {
     completion_tokens,
     cached_tokens,
     version,
+    created_at,
+});
+crate::impl_from_row!(DeclarationChangeRow {
+    id,
+    table_id,
+    producer,
+    from_version,
+    to_version,
+    changes_json,
     created_at,
 });

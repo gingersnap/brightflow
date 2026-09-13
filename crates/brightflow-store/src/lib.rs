@@ -48,10 +48,11 @@ pub use deadpool_sqlite::rusqlite;
 pub use ingest::{IngestMode, IngestOptions, MergeMetrics};
 pub use migrate::{migrate, MigrateError, Migration};
 pub use models::{
-    ActionLogRow, AgentRunRow, ColumnSemanticRow, EnrichmentCacheRow, EnrichmentFunctionRow,
-    EnrichmentFunctionVersionRow, EnrichmentRunRow, FileColumnStatRow, InsightHistoryRow,
-    InsightRunRow, InsightStateRow, InsightSuppressionRow, MetricRow, RelationshipRow, SourceRow,
-    TableRow, TableSemanticsRow, TaxonomyCategoryRow, UnresolvedSubjectRow,
+    ActionLogRow, AgentRunRow, ColumnSemanticRow, DeclarationChangeRow, EnrichmentCacheRow,
+    EnrichmentFunctionRow, EnrichmentFunctionVersionRow, EnrichmentRunRow, FileColumnStatRow,
+    InsightHistoryRow, InsightRunRow, InsightStateRow, InsightSuppressionRow, MetricRow,
+    RelationshipRow, SourceRow, TableRow, TableSemanticsRow, TaxonomyCategoryRow,
+    UnresolvedSubjectRow,
 };
 pub use pool::{open_pool, SqliteError, SqlitePool, SqlitePoolProfile};
 pub use row::{execute, fetch_all, fetch_one, fetch_optional, FromRow};

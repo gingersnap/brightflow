@@ -113,6 +113,7 @@ export const COLUMN_KINDS: readonly string[] = [
   'set_column_description',
   'set_kpi',
   'set_column_polarity',
+  'reset_column_semantics',
   'set_table_settings',
 ];
 
@@ -524,6 +525,33 @@ export const ACTION_PALETTE: Record<string, PaletteActionConfig> = {
           });
         },
       })),
+    }),
+  },
+
+  reset_column_semantics: {
+    icon: 'i-lucide-undo-2',
+    build: (ctx) => ({
+      placeholder: 'Reset which column to its declaration…',
+      children: ctx.data.columns
+        .filter(
+          (column) => column.resolvedBy?.layer === 'user' || column.resolvedBy?.layer === 'agent',
+        )
+        .map((column) => ({
+          label: columnLabel(column),
+          suffix: column.resolvedBy?.layer === 'agent' ? 'set by an agent' : 'edited',
+          icon: 'i-lucide-undo-2',
+          onSelect: () => {
+            ctx.helpers.close();
+            run(() =>
+              ctx.helpers.dispatch({
+                kind: 'reset_column_semantics',
+                source_id: ctx.sourceId,
+                table: ctx.table,
+                column: column.name,
+              }),
+            );
+          },
+        })),
     }),
   },
 

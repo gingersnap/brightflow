@@ -188,6 +188,14 @@ pub enum Action {
         #[ts(optional)]
         description: Option<String>,
     },
+    /// Forget every edit to a column — person and agent rows alike — so the
+    /// producers' declarations show through again. Undo puts the rows back.
+    ResetColumnSemantics {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        column: String,
+    },
     /// The table's own settings — display name, description, analysis
     /// period and how many periods to compare — as one opinion at the
     /// actor's layer. A field left out is "no opinion", so a producer's
@@ -320,6 +328,7 @@ impl Action {
             Self::SetColumnLabel { .. } => "set_column_label",
             Self::SetColumnDescription { .. } => "set_column_description",
             Self::SetTableSettings { .. } => "set_table_settings",
+            Self::ResetColumnSemantics { .. } => "reset_column_semantics",
         }
     }
 
@@ -341,7 +350,8 @@ impl Action {
             | Self::SetColumnRole { scope, .. }
             | Self::SetColumnLabel { scope, .. }
             | Self::SetColumnDescription { scope, .. }
-            | Self::SetTableSettings { scope, .. } => scope,
+            | Self::SetTableSettings { scope, .. }
+            | Self::ResetColumnSemantics { scope, .. } => scope,
         };
         (&scope.source_id, &scope.table)
     }
@@ -560,6 +570,13 @@ pub enum UndoOp {
         #[serde(default = "default_true")]
         existed: bool,
     },
+    /// Undo of reset_column_semantics: write the removed opinion rows back.
+    RestoreColumnOpinions {
+        source_id: String,
+        table: String,
+        column: String,
+        rows: Vec<brightflow_types::ColumnOpinion>,
+    },
     /// Undo of set_table_settings: put the actor's table row back, or
     /// delete it when the action created it.
     RestoreTableSettings {
@@ -719,6 +736,13 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "Describe column",
         "Attach a one- or two-sentence description to a column, shown as help \
          text beside its label. Omit or blank the description to clear it.",
+        true,
+    ),
+    (
+        "reset_column_semantics",
+        "Reset column to declared",
+        "Forget every edit made to a column, by a person or an agent, so what \
+         its producer declared shows again. Use when an edit turned out wrong.",
         true,
     ),
     (
@@ -953,6 +977,13 @@ mod tests {
                 description: None,
                 time_granularity: None,
                 comparison_periods: None,
+            },
+            Action::ResetColumnSemantics {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                column: String::new(),
             },
         ];
         assert_eq!(

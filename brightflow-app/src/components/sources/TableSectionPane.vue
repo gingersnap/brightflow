@@ -11,6 +11,7 @@ import { computed, ref, watch } from 'vue';
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useSources } from '@/composables/useSources';
 import type { SourceTable } from '@/types';
+import type { DeclarationDiff } from '@/types/generated';
 
 const props = defineProps<{
   sourceId: string;
@@ -54,6 +55,29 @@ watch(
   },
   { immediate: true },
 );
+
+/** "Declaration 0.2.0 → 0.3.0 changed reactions_total, created_at". */
+function changeSummary(diff: DeclarationDiff): string {
+  const columns: string[] = [];
+  for (const change of diff.changes) {
+    if (change.column != null && !columns.includes(change.column)) {
+      columns.push(change.column);
+    }
+  }
+  const versions =
+    diff.fromVersion != null && diff.toVersion != null
+      ? `${diff.fromVersion} → ${diff.toVersion}`
+      : (diff.toVersion ?? '');
+  const what = columns.length > 0 ? columns.join(', ') : 'table settings';
+  return `Declaration ${versions} changed ${what}`.replace('  ', ' ');
+}
+
+/** One line per changed field, for the tooltip. */
+function changeDetail(diff: DeclarationDiff): string {
+  return diff.changes
+    .map((c) => `${c.column ?? 'table'}.${c.field}: ${c.from ?? '—'} → ${c.to ?? '—'}`)
+    .join('\n');
+}
 
 function handleCardClick(table: SourceTable): void {
   expanded.value = false;
@@ -108,6 +132,14 @@ function handleCardClick(table: SourceTable): void {
             </p>
             <p v-if="table.numRows != null" class="text-sm text-muted">
               {{ table.numRows.toLocaleString() }} rows
+            </p>
+            <p
+              v-if="table.lastDeclarationChange"
+              class="truncate text-sm text-muted"
+              :title="changeDetail(table.lastDeclarationChange)"
+            >
+              <UIcon name="i-lucide-git-commit-horizontal" class="mr-1 inline h-3.5 w-3.5" />
+              {{ changeSummary(table.lastDeclarationChange) }}
             </p>
           </div>
         </button>

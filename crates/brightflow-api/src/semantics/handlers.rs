@@ -11,8 +11,8 @@ use axum::{
 };
 
 use crate::semantics::types::{
-    ColumnSemanticsResponse, LayersQuery, SemanticModelResponse, TableSettings,
-    TableSettingsResponse,
+    ColumnSemanticsResponse, DeclarationChangesResponse, LayersQuery, SemanticModelResponse,
+    TableSettings, TableSettingsResponse,
 };
 use crate::shared::AppResult;
 use crate::state::AppState;
@@ -49,6 +49,25 @@ pub async fn get_table_settings(
     Ok(Json(TableSettingsResponse {
         table_name: name,
         settings: resolved.map(TableSettings::from).unwrap_or_default(),
+    }))
+}
+
+/// GET /api/sources/{source_id}/tables/{name}/semantics/changes — what each
+/// re-declaration by a producer changed, newest first.
+pub async fn list_declaration_changes(
+    State(state): State<AppState>,
+    Path((source_id, name)): Path<(String, String)>,
+) -> AppResult<Json<DeclarationChangesResponse>> {
+    let store = state.require_store()?;
+    let table = store
+        .db()
+        .get_table(&source_id, &name)
+        .await?
+        .ok_or_else(|| crate::shared::AppError::NotFound(format!("Table '{name}' not found")))?;
+    let changes = store.db().declaration_changes(&table.id).await?;
+    Ok(Json(DeclarationChangesResponse {
+        table_name: name,
+        changes,
     }))
 }
 

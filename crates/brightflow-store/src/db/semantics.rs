@@ -16,16 +16,18 @@
 //! a warning rather than failing the read.
 
 use brightflow_types::{
-    resolve_columns, resolve_table, ColumnExt, ColumnOpinion, ColumnRole, CustomExtension, Dataset,
-    DatasetExt, DocFields, Layer, LogicalType, Metric, MetricExpr, MetricExt, Polarity, Provenance,
-    Relationship, ResolvedColumn, ResolvedTable, SemanticModel, TableDeclaration, TableOpinion,
-    TimeGranularity,
+    diff_declarations, resolve_columns, resolve_table, ColumnExt, ColumnOpinion, ColumnRole,
+    CustomExtension, Dataset, DatasetExt, DeclarationDiff, DocFields, Layer, LogicalType, Metric,
+    MetricExpr, MetricExt, Polarity, Provenance, Relationship, ResolvedColumn, ResolvedTable,
+    SemanticModel, TableDeclaration, TableOpinion, TimeGranularity,
 };
 use rusqlite::{params, OptionalExtension, Transaction};
 
 use super::StoreDb;
 use crate::error::{StoreError, StoreResult};
-use crate::models::{ColumnSemanticRow, MetricRow, RelationshipRow, TableSemanticsRow};
+use crate::models::{
+    ColumnSemanticRow, DeclarationChangeRow, MetricRow, RelationshipRow, TableSemanticsRow,
+};
 use crate::row::{execute, fetch_all};
 
 /// What `apply_declaration` did, for logs and for the caller's own checks.
@@ -42,6 +44,10 @@ pub struct AppliedDeclaration {
     pub metrics_skipped: Vec<String>,
     /// Declared columns the table's current schema does not have.
     pub columns_without_data: Vec<String>,
+    /// What this apply changed against the same producer's previous rows;
+    /// `None` on a first declaration or when nothing differed. Recorded in
+    /// `declaration_changes` when present.
+    pub diff: Option<DeclarationDiff>,
 }
 
 /// A relationship as stored, with table names resolved.
@@ -319,6 +325,28 @@ impl StoreDb {
                 let mut out = AppliedDeclaration::default();
 
                 let layer = prov.layer.as_str();
+                // The same producer's previous rows, kept only to diff.
+                let previous_columns: Vec<ColumnOpinion> = fetch_all::<ColumnSemanticRow, _>(
+                    tx,
+                    "SELECT * FROM column_semantics WHERE table_id = ? AND layer = ? AND producer = ? ORDER BY column_name",
+                    params![table_id, layer, prov.producer],
+                )?
+                .iter()
+                .filter_map(ColumnSemanticRow::to_opinion)
+                .collect();
+                let previous_table: Option<TableOpinion> = fetch_all::<TableSemanticsRow, _>(
+                    tx,
+                    "SELECT * FROM table_semantics WHERE table_id = ? AND layer = ? AND producer = ?",
+                    params![table_id, layer, prov.producer],
+                )?
+                .first()
+                .and_then(TableSemanticsRow::to_opinion);
+                let had_previous = !previous_columns.is_empty() || previous_table.is_some();
+                let previous_version = previous_columns
+                    .first()
+                    .map(|c| c.provenance.version.clone())
+                    .or_else(|| previous_table.as_ref().map(|t| t.provenance.version.clone()))
+                    .flatten();
                 tx.execute(
                     "DELETE FROM column_semantics WHERE table_id = ? AND layer = ? AND producer = ?",
                     params![table_id, layer, prov.producer],
@@ -336,10 +364,13 @@ impl StoreDb {
                     params![table_id, layer, prov.producer],
                 )?;
 
+                let mut next_columns: Vec<ColumnOpinion> = Vec::new();
+                let mut next_table: Option<TableOpinion> = None;
                 if let Some(dataset) = &decl.dataset {
                     for field in &dataset.fields {
                         let opinion = ColumnOpinion::from_field(field, &prov);
                         write_column_opinion_tx(tx, &table_id, &opinion)?;
+                        next_columns.push(opinion);
                         out.columns += 1;
                     }
                     let ext = dataset.brightflow().unwrap_or_default();
@@ -361,6 +392,7 @@ impl StoreDb {
                     };
                     if !table_opinion.is_empty() {
                         write_table_opinion_tx(tx, &table_id, &table_opinion)?;
+                        next_table = Some(table_opinion);
                     }
                     if let Some(names) = schema_column_names(schema_json.as_deref()) {
                         out.columns_without_data = dataset
@@ -466,10 +498,98 @@ impl StoreDb {
                     )?;
                     out.metrics += 1;
                 }
+
+                if had_previous {
+                    let changes = diff_declarations(
+                        &previous_columns,
+                        &next_columns,
+                        previous_table.as_ref(),
+                        next_table.as_ref(),
+                    );
+                    if !changes.is_empty() {
+                        let diff = DeclarationDiff {
+                            producer: prov.producer.clone(),
+                            from_version: previous_version,
+                            to_version: prov.version.clone(),
+                            changes,
+                        };
+                        tx.execute(
+                            r"INSERT INTO declaration_changes
+                                (table_id, producer, from_version, to_version, changes_json)
+                              VALUES (?, ?, ?, ?, ?)",
+                            params![
+                                table_id,
+                                diff.producer,
+                                diff.from_version,
+                                diff.to_version,
+                                to_json(&diff.changes).unwrap_or_else(|| "[]".to_string()),
+                            ],
+                        )?;
+                        out.diff = Some(diff);
+                    }
+                }
                 Ok(out)
             })
             .await?;
         Ok(out)
+    }
+
+    /// Every recorded re-declaration of a table, newest first.
+    pub async fn declaration_changes(&self, table_id: &str) -> StoreResult<Vec<DeclarationDiff>> {
+        let table_id = table_id.to_owned();
+        let rows = self
+            .pool
+            .call(move |conn| {
+                fetch_all::<DeclarationChangeRow, _>(
+                    conn,
+                    "SELECT * FROM declaration_changes WHERE table_id = ? ORDER BY id DESC",
+                    params![table_id],
+                )
+            })
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| DeclarationDiff {
+                producer: row.producer,
+                from_version: row.from_version,
+                to_version: row.to_version,
+                changes: parse_json(Some(&row.changes_json)).unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    /// Remove every opinion about one column at the given layers and return
+    /// what was removed, so a caller can put it back. This is "reset to
+    /// declared": drop the user and agent rows, let the producers show.
+    pub async fn delete_column_opinions_at_layers(
+        &self,
+        table_id: &str,
+        column: &str,
+        layers: &[Layer],
+    ) -> StoreResult<Vec<ColumnOpinion>> {
+        let table_id = table_id.to_owned();
+        let column = column.to_owned();
+        let layers: Vec<String> = layers.iter().map(|l| l.as_str().to_string()).collect();
+        let removed = self
+            .pool
+            .transaction(move |tx| {
+                let mut removed = Vec::new();
+                for layer in &layers {
+                    let rows = fetch_all::<ColumnSemanticRow, _>(
+                        tx,
+                        "SELECT * FROM column_semantics WHERE table_id = ? AND column_name = ? AND layer = ?",
+                        params![table_id, column, layer],
+                    )?;
+                    removed.extend(rows.iter().filter_map(ColumnSemanticRow::to_opinion));
+                    tx.execute(
+                        "DELETE FROM column_semantics WHERE table_id = ? AND column_name = ? AND layer = ?",
+                        params![table_id, column, layer],
+                    )?;
+                }
+                Ok(removed)
+            })
+            .await?;
+        Ok(removed)
     }
 
     /// Write one opinion at its (layer, producer): a person's or an agent's
@@ -904,6 +1024,87 @@ mod tests {
             .find(|c| c.name == "reactions_total")
             .expect("reactions");
         assert_eq!(reactions.description.as_deref(), Some("Reactions"));
+    }
+
+    /// A re-declaration by the same producer records what changed, with the
+    /// versions on either side; an identical re-apply records nothing.
+    #[tokio::test]
+    async fn redeclaring_records_a_diff_between_versions() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+        let table = db.create_table("issues", "c:s1").await.expect("table");
+        let first = db
+            .apply_declaration("c:s1", &issues_declaration(), &github())
+            .await
+            .expect("apply");
+        assert_eq!(first.diff, None);
+        let again = db
+            .apply_declaration("c:s1", &issues_declaration(), &github())
+            .await
+            .expect("re-apply");
+        assert_eq!(again.diff, None);
+
+        let mut bumped = issues_declaration();
+        let dataset = bumped.dataset.as_mut().expect("dataset");
+        let field = dataset
+            .fields
+            .iter_mut()
+            .find(|f| f.name == "reactions_total")
+            .expect("field");
+        field.description = Some("Reactions on the issue".into());
+        let newer = Provenance::declared("connector:github").with_version("0.4.0");
+        let applied = db
+            .apply_declaration("c:s1", &bumped, &newer)
+            .await
+            .expect("apply newer");
+        let diff = applied.diff.expect("diff");
+        assert_eq!(diff.from_version.as_deref(), Some("0.3.0"));
+        assert_eq!(diff.to_version.as_deref(), Some("0.4.0"));
+        assert_eq!(diff.changed_columns(), ["reactions_total"]);
+        assert_eq!(diff.changes[0].field, "description");
+        assert_eq!(diff.changes[0].from.as_deref(), Some("Reactions"));
+
+        let history = db.declaration_changes(&table.id).await.expect("history");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0], diff);
+    }
+
+    /// Reset to declared: the user and agent rows go and come back as
+    /// returned; the connector's rows stay.
+    #[tokio::test]
+    async fn reset_removes_edits_above_the_declaration_and_returns_them() {
+        let tmp = TempDir::new().expect("temp dir");
+        let db = temp_db(&tmp).await;
+        let table = db.create_table("issues", "c:s1").await.expect("table");
+        db.apply_declaration("c:s1", &issues_declaration(), &github())
+            .await
+            .expect("apply");
+        let mut edit = ColumnOpinion::empty("reactions_total", user());
+        edit.ext.label = Some("Reactions".into());
+        db.write_column_opinion(&table.id, &edit)
+            .await
+            .expect("edit");
+
+        let removed = db
+            .delete_column_opinions_at_layers(
+                &table.id,
+                "reactions_total",
+                &[Layer::User, Layer::Agent],
+            )
+            .await
+            .expect("reset");
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].ext.label.as_deref(), Some("Reactions"));
+        let resolved = db.resolved_columns(&table.id).await.expect("resolved");
+        let reactions = resolved
+            .iter()
+            .find(|c| c.name == "reactions_total")
+            .expect("column");
+        assert_eq!(reactions.label, None);
+        assert_eq!(
+            reactions.resolved_by.as_ref().map(|p| p.layer),
+            Some(Layer::Declared)
+        );
     }
 
     #[tokio::test]

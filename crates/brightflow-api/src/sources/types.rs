@@ -60,6 +60,11 @@ pub struct SourceTable {
     pub num_rows: Option<i64>,
     /// True when the table type supports text enrichment (Topics).
     pub enrichable: bool,
+    /// The most recent re-declaration by a producer, when one changed
+    /// something, so a card can say what a connector upgrade did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_declaration_change: Option<brightflow_types::DeclarationDiff>,
 }
 
 /// Unified view of a data source (event source or connector)

@@ -576,3 +576,100 @@ async fn set_table_settings_writes_the_actors_layer_and_undoes() {
     assert_eq!(store.resolved_table(SOURCE, TABLE).await.unwrap(), None);
     assert!(state.settings_overrides.get(&key).is_none());
 }
+
+/// Reset to declared drops a person's rows so the layer beneath shows, and
+/// undo brings the rows back.
+#[tokio::test]
+async fn reset_column_semantics_drops_edits_and_undo_restores_them() {
+    use brightflow_types::Layer;
+
+    let ws = copy_template().unwrap();
+    let state = state_with_planted_table(&ws).await;
+    let store = state.store().unwrap();
+    let scope = || Scope {
+        source_id: SOURCE.to_string(),
+        table: TABLE.to_string(),
+    };
+    let human = || Actor::Human {
+        user_id: "user-1".to_string(),
+    };
+    let resolved = |column: &str| {
+        let handle = Arc::clone(store);
+        let wanted = column.to_string();
+        async move {
+            handle
+                .resolved_columns(SOURCE, TABLE)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|c| c.name == wanted)
+        }
+    };
+
+    // The detector gives the planted table its base layer (the ingest path
+    // used here bypasses the upload handler that would have run it); then a
+    // person relabels a column on top.
+    brightflow_api::semantics::detect::declare_detected(store, SOURCE, TABLE)
+        .await
+        .unwrap();
+    dispatch_action(
+        &state,
+        Action::SetColumnLabel {
+            scope: scope(),
+            column: "title".to_string(),
+            label: Some("Headline".to_string()),
+        },
+        "req-label",
+        human(),
+    )
+    .await
+    .unwrap();
+    let edited = resolved("title").await.unwrap();
+    assert_eq!(edited.label.as_deref(), Some("Headline"));
+    assert_eq!(
+        edited.resolved_by.as_ref().map(|p| p.layer),
+        Some(Layer::User)
+    );
+
+    let response = dispatch_action(
+        &state,
+        Action::ResetColumnSemantics {
+            scope: scope(),
+            column: "title".to_string(),
+        },
+        "req-reset",
+        human(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(response.status, ActionStatus::Applied));
+    assert_eq!(response.result["removed"], 1);
+    let reset = resolved("title").await.unwrap();
+    assert_eq!(reset.label, None);
+    assert_eq!(
+        reset.resolved_by.as_ref().map(|p| p.layer),
+        Some(Layer::Detected)
+    );
+
+    let row = store
+        .db()
+        .list_actions(10)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.request_id == "req-reset")
+        .unwrap();
+    let undone = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(row.id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(undone.0.status, ActionStatus::Undone));
+    let restored = resolved("title").await.unwrap();
+    assert_eq!(restored.label.as_deref(), Some("Headline"));
+    assert_eq!(
+        restored.resolved_by.as_ref().map(|p| p.layer),
+        Some(Layer::User)
+    );
+}

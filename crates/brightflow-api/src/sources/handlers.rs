@@ -24,12 +24,19 @@ async fn source_tables(
         .unwrap_or_default()
     {
         let resolved = store.db().resolved_table(&t.id).await.ok().flatten();
+        let last_declaration_change = store
+            .db()
+            .declaration_changes(&t.id)
+            .await
+            .ok()
+            .and_then(|mut changes| (!changes.is_empty()).then(|| changes.remove(0)));
         out.push(SourceTable {
             name: t.name.clone(),
             display_name: resolved.as_ref().and_then(|r| r.display_name.clone()),
             description: resolved.as_ref().and_then(|r| r.description.clone()),
             num_rows: Some(t.total_rows),
             enrichable: crate::shared::schema_has_text_column(t.schema_json.as_deref()),
+            last_declaration_change,
         });
     }
     out

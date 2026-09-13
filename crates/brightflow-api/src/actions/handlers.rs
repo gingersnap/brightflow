@@ -611,6 +611,10 @@ pub async fn execute_action(
             )
             .await
         },
+        Action::ResetColumnSemantics {
+            scope: Scope { source_id, table },
+            column,
+        } => semantics::execute_reset_column_semantics(state, source_id, table, column).await,
         Action::SetTableSettings {
             scope: Scope { source_id, table },
             display_name,
@@ -766,6 +770,12 @@ pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
             )
             .await
         },
+        UndoOp::RestoreColumnOpinions {
+            source_id,
+            table,
+            column,
+            rows,
+        } => semantics::undo_restore_column_opinions(state, source_id, table, column, rows).await,
         UndoOp::RestoreTableSettings {
             source_id,
             table,

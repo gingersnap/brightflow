@@ -6,6 +6,10 @@
  * clearing is its own call (`clearLabel`, `clearDescription`), which sends
  * the action without the field — the backend reads an absent field as clear.
  *
+ * `reset` forgets every edit to a column so the producers' declarations show
+ * again; the Explore tool reloads the table on that event, since the event
+ * cannot carry what the layers beneath say.
+ *
  * The dataset store is patched from the resulting `actionEvent`, not here.
  */
 
@@ -29,6 +33,8 @@ export interface ColumnSemanticEdits {
   /** Prompt for a new description; no-op when the prompt is cancelled. */
   describe: (scope: ColumnScope, column: ColumnInfo) => Promise<void>;
   clearDescription: (scope: ColumnScope, column: ColumnInfo) => Promise<void>;
+  /** Forget every edit to the column, by anyone. */
+  reset: (scope: ColumnScope, column: ColumnInfo) => Promise<void>;
 }
 
 /** A column's shown name: its label, else its raw name. */
@@ -120,6 +126,18 @@ export function useColumnSemantics(): ColumnSemanticEdits {
     );
   }
 
+  async function reset(scope: ColumnScope, column: ColumnInfo): Promise<void> {
+    await dispatchWithFeedback(
+      {
+        column: column.name,
+        kind: 'reset_column_semantics',
+        source_id: scope.sourceId,
+        table: scope.table,
+      },
+      { description: `${column.name} shows what its producer declared`, title: 'Column reset' },
+    );
+  }
+
   async function clearLabel(scope: ColumnScope, column: ColumnInfo): Promise<void> {
     await dispatchWithFeedback(
       {
@@ -167,5 +185,5 @@ export function useColumnSemantics(): ColumnSemanticEdits {
     );
   }
 
-  return { clearDescription, clearLabel, describe, rename, setKpi, setPolarity, setRole };
+  return { clearDescription, clearLabel, describe, rename, setKpi, setPolarity, setRole, reset };
 }

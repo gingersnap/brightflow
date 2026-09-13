@@ -106,6 +106,7 @@ const menuItems = computed<ContextMenuItem[][]>(() => {
     clearLabel: () => void semantics.clearLabel(scope, column),
     describe: () => void semantics.describe(scope, column),
     rename: () => void semantics.rename(scope, column),
+    reset: () => void semantics.reset(scope, column),
     setKpi: (isKpi) => void semantics.setKpi(scope, column, isKpi),
     setPolarity: (polarity) => void semantics.setPolarity(scope, column, polarity),
     setRole: (role) => void semantics.setRole(scope, column, role),

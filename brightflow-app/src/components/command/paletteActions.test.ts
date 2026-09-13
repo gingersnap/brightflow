@@ -119,3 +119,23 @@ describe('set_table_settings', () => {
     });
   });
 });
+
+describe('reset_column_semantics', () => {
+  test('offers only edited columns and dispatches the reset', async () => {
+    const edited: ColumnInfo = {
+      ...COLUMNS[0]!,
+      resolvedBy: { layer: 'user', producer: 'user:1' },
+    };
+    const { context, dispatch } = ctx([edited, COLUMNS[1]!]);
+    const item = ACTION_PALETTE['reset_column_semantics']?.build(context);
+    expect(item?.children?.map((c) => c.label)).toEqual(['Revenue']);
+    item?.children?.[0]?.onSelect?.();
+    await flush();
+    expect(dispatch).toHaveBeenCalledWith({
+      column: 'order_total',
+      kind: 'reset_column_semantics',
+      source_id: 's',
+      table: 'issues',
+    });
+  });
+});

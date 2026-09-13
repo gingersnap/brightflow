@@ -18,6 +18,7 @@ function handlers(): ColumnMenuHandlers {
     clearLabel: vi.fn((): void => {}),
     describe: vi.fn((): void => {}),
     rename: vi.fn((): void => {}),
+    reset: vi.fn((): void => {}),
     setKpi: vi.fn((_isKpi: boolean): void => {}),
     setPolarity: vi.fn((_polarity: Polarity): void => {}),
     setRole: vi.fn((_role: ColumnRole): void => {}),
@@ -72,6 +73,22 @@ describe('columnMenuItems', () => {
     expect(labels(dimension)).toEqual([['Role'], ['Rename…', 'Describe…']]);
     const roleless = columnMenuItems(col(), handlers());
     expect(labels(roleless)).toEqual([['Role'], ['Rename…', 'Describe…']]);
+  });
+
+  test('reset to declared appears only for a column a person or agent edited', () => {
+    const h = handlers();
+    const edited = col({ resolvedBy: { layer: 'user', producer: 'user:1' }, role: 'dimension' });
+    const groups = columnMenuItems(edited, h);
+    expect(labels(groups).at(-1)).toEqual(['Reset to declared']);
+    select(groups.at(-1)?.[0]);
+    expect(h.reset).toHaveBeenCalled();
+
+    const declared = col({
+      resolvedBy: { layer: 'declared', producer: 'connector:github' },
+      role: 'dimension',
+    });
+    const declaredGroups = columnMenuItems(declared, handlers());
+    expect(labels(declaredGroups).flat()).not.toContain('Reset to declared');
   });
 
   test('a resolved column leads with a disabled attribution line', () => {

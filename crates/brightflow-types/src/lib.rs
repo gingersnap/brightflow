@@ -26,6 +26,7 @@
 //! operations language (filter, group, pivot) is the next candidate and is
 //! deliberately not here yet.
 
+pub mod changes;
 pub mod datatype;
 pub mod declaration;
 pub mod ext;
@@ -34,6 +35,7 @@ pub mod resolved;
 pub mod semantic;
 pub mod validate;
 
+pub use changes::{diff_declarations, DeclarationChange, DeclarationDiff};
 pub use datatype::{ColumnSchema, LogicalType, TableSchema};
 pub use declaration::{TableDeclaration, CONTRACT_VERSION};
 pub use ext::{

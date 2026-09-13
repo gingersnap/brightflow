@@ -44,9 +44,23 @@ const uiStore = useUiStore();
 const loadingTable = ref(false);
 
 const stopSemanticEvents = connectionStore.onMessage('actionEvent', (payload) => {
-  if (isActionEvent(payload)) {
-    datasetStore.applySemanticAction(payload.entry);
+  if (!isActionEvent(payload)) {
+    return;
   }
+  const entry = payload.entry;
+  // A reset reveals whatever the layers beneath say, which the event does
+  // Not carry: reload the table instead of patching it.
+  const params = entry.params as { table?: unknown } | null;
+  if (
+    entry.actionKind === 'reset_column_semantics' &&
+    entry.status === 'applied' &&
+    props.table != null &&
+    params?.table === props.table
+  ) {
+    void loadTable(props.table);
+    return;
+  }
+  datasetStore.applySemanticAction(entry);
 });
 onBeforeUnmount(stopSemanticEvents);
 

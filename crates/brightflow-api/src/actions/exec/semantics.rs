@@ -149,6 +149,53 @@ pub(crate) async fn execute_set_column_description(
     ))
 }
 
+/// Forget every edit to a column: the user and agent rows go, so whatever a
+/// connector, an enrichment function or the detector declared shows again.
+/// The removed rows ride on the undo op.
+pub(crate) async fn execute_reset_column_semantics(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    column: &str,
+) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    let removed = store
+        .db()
+        .delete_column_opinions_at_layers(&table_id, column, &[Layer::User, Layer::Agent])
+        .await?;
+    state.refresh_overrides_from_store(source_id, table).await;
+    let resolved = resolved_column(state, source_id, table, column).await?;
+    Ok((
+        json!({
+            "column": column,
+            "removed": removed.len(),
+            "resolvedBy": resolved.and_then(|c| c.resolved_by),
+        }),
+        Some(UndoOp::RestoreColumnOpinions {
+            source_id: source_id.to_string(),
+            table: table.to_string(),
+            column: column.to_string(),
+            rows: removed,
+        }),
+    ))
+}
+
+/// Put the rows a reset removed back exactly as they were.
+pub(crate) async fn undo_restore_column_opinions(
+    state: &AppState,
+    source_id: &str,
+    table: &str,
+    column: &str,
+    rows: &[ColumnOpinion],
+) -> AppResult<()> {
+    let (store, table_id) = table_ctx(state, source_id, table).await?;
+    for row in rows.iter().filter(|r| r.column == column) {
+        store.db().write_column_opinion(&table_id, row).await?;
+    }
+    state.refresh_overrides_from_store(source_id, table).await;
+    Ok(())
+}
+
 /// Set the table's own settings as one opinion row at the actor's layer.
 /// Fields given replace the actor's earlier values; fields left `None` keep
 /// what the actor's row already said, so a caller can change the period

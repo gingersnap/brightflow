@@ -5,7 +5,8 @@
 //! column cannot spell it differently.
 
 use brightflow_types::{
-    ColumnOpinion, OssieDocument, ResolvedColumn, ResolvedTable, SemanticModel, TimeGranularity,
+    ColumnOpinion, DeclarationDiff, OssieDocument, ResolvedColumn, ResolvedTable, SemanticModel,
+    TimeGranularity,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -68,6 +69,15 @@ pub struct TableSettingsResponse {
     pub table_name: String,
     #[serde(flatten)]
     pub settings: TableSettings,
+}
+
+/// What a producer's re-declarations changed, newest first.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct DeclarationChangesResponse {
+    pub table_name: String,
+    pub changes: Vec<DeclarationDiff>,
 }
 
 /// One source as an Ossie document.

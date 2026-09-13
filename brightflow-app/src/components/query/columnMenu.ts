@@ -2,8 +2,9 @@
  * The column context menu's items, as a pure function of the column's
  * resolved semantics: who they come from as a leading hint, a role picker
  * with the current role checked, KPI and polarity for measures only, rename
- * and describe, and clear entries that appear only when there is something
- * to clear. The component that shows the menu supplies the handlers; nothing
+ * and describe, clear entries that appear only when there is something to
+ * clear, and "Reset to declared" when a person or an agent has edited the
+ * column. The component that shows the menu supplies the handlers; nothing
  * here dispatches.
  */
 
@@ -20,6 +21,8 @@ export interface ColumnMenuHandlers {
   clearLabel: () => void;
   describe: () => void;
   clearDescription: () => void;
+  /** Forget every edit so the producers' declarations show again. */
+  reset: () => void;
 }
 
 const ROLE_ORDER: ColumnRole[] = ['measure', 'dimension', 'time', 'entity', 'ignored'];
@@ -118,5 +121,12 @@ export function columnMenuItems(
     });
   }
 
-  return [hintGroup, roleGroup, measureGroup, textGroup].filter((group) => group.length > 0);
+  const edited = column.resolvedBy?.layer === 'user' || column.resolvedBy?.layer === 'agent';
+  const resetGroup: ContextMenuItem[] = edited
+    ? [{ icon: 'i-lucide-undo-2', label: 'Reset to declared', onSelect: handlers.reset }]
+    : [];
+
+  return [hintGroup, roleGroup, measureGroup, textGroup, resetGroup].filter(
+    (group) => group.length > 0,
+  );
 }
