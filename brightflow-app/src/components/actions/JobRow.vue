@@ -21,6 +21,7 @@ const KIND_ICONS: Record<Job['kind'], string> = {
   connector_sync: 'i-lucide-cable',
   enrichment_run: 'i-lucide-messages-square',
   insight_run: 'i-lucide-sparkles',
+  model_build: 'i-lucide-layers',
 };
 
 const statusColor: Record<string, string> = {

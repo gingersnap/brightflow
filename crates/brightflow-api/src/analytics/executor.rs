@@ -14,17 +14,34 @@ use brightflow_types::TimeGranularity;
 use polars::prelude::*;
 use std::time::Instant;
 
-/// Execute a query against dataset data
-pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryResponse> {
-    let start = Instant::now();
-
-    // Build LazyFrame from the data source
-    let mut lf = match data {
+/// The lazy frame a dataset starts from.
+fn scan(data: &DatasetData) -> AppResult<LazyFrame> {
+    Ok(match data {
         DatasetData::Uploaded(df) => df.clone().lazy(),
         DatasetData::Parquet { files } => {
             LazyFrame::scan_parquet_files(files.clone().into(), ScanArgsParquet::default())?
         },
-    };
+    })
+}
+
+/// Run a chain over a dataset and collect the frame.
+///
+/// What a model build materialises. Every operation, `Limit` included,
+/// applies in order; the query path below hoists the limit for its row
+/// count and does its own collect.
+pub fn run_chain(data: &DatasetData, operations: &[Operation]) -> AppResult<DataFrame> {
+    let mut lf = scan(data)?;
+    for op in operations {
+        lf = apply_operation(lf, op.clone())?;
+    }
+    Ok(lf.collect()?)
+}
+
+/// Execute a query against dataset data
+pub fn execute_query(data: &DatasetData, query: Query) -> AppResult<QueryResponse> {
+    let start = Instant::now();
+
+    let mut lf = scan(data)?;
 
     // Separate Limit from other operations to get correct total_rows
     let mut limit_op: Option<u32> = None;

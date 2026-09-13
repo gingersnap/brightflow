@@ -34,6 +34,7 @@ pub enum JobKind {
     EnrichmentRun,
     AgentRun,
     InsightRun,
+    ModelBuild,
 }
 
 /// One background run as the Activity page shows it.
@@ -149,6 +150,43 @@ pub fn sync_job(r: SyncRun, connector_name: &str) -> Job {
         detail,
         cancellable: false,
     }
+}
+
+/// A model build as a job. `table` is the model's output.
+pub fn model_job(b: &brightflow_store::ModelBuildRow, source_id: &str, table: &str) -> Job {
+    let detail = match (&b.error, b.rows) {
+        (Some(e), _) => Some(e.clone()),
+        (None, Some(rows)) => Some(format!("{rows} rows")),
+        (None, None) => None,
+    };
+    Job {
+        id: b.id.clone(),
+        kind: JobKind::ModelBuild,
+        label: format!("Build {table} ({})", b.triggered_by),
+        source_id: Some(source_id.to_string()),
+        table: Some(table.to_string()),
+        status: b.status.clone(),
+        started_at: b.started_at,
+        finished_at: b.finished_at,
+        detail,
+        cancellable: false,
+    }
+}
+
+/// Push a model build's current row to every client.
+pub async fn emit_model_job(state: &AppState, build_id: &str) {
+    let Some(store) = state.store() else { return };
+    let db = store.db();
+    let Ok(Some(build)) = db.get_model_build(build_id).await else {
+        return;
+    };
+    let Ok(Some(model)) = db.get_model(&build.model_id).await else {
+        return;
+    };
+    let Ok(Some(table)) = db.get_table_by_id(&model.output_table_id).await else {
+        return;
+    };
+    crate::actions::events::emit_job(state, model_job(&build, &table.source_id, &table.name));
 }
 
 /// An enrichment run as a job.
@@ -298,6 +336,28 @@ async fn agent_jobs(state: &AppState) -> Vec<Job> {
         .collect()
 }
 
+/// Model builds, each named by its output table.
+async fn model_jobs(state: &AppState) -> Vec<Job> {
+    let Some(store) = state.store() else {
+        return Vec::new();
+    };
+    let db = store.db();
+    let Ok(builds) = db.list_recent_model_builds(PER_KIND).await else {
+        return Vec::new();
+    };
+    let mut jobs = Vec::with_capacity(builds.len());
+    for build in &builds {
+        let Ok(Some(model)) = db.get_model(&build.model_id).await else {
+            continue;
+        };
+        let Ok(Some(table)) = db.get_table_by_id(&model.output_table_id).await else {
+            continue;
+        };
+        jobs.push(model_job(build, &table.source_id, &table.name));
+    }
+    jobs
+}
+
 async fn insight_jobs(state: &AppState) -> Vec<Job> {
     let Some(store) = state.store() else {
         return Vec::new();
@@ -345,6 +405,7 @@ pub async fn list_jobs(
     jobs.extend(enrichment_jobs(&state).await);
     jobs.extend(agent_jobs(&state).await);
     jobs.extend(insight_jobs(&state).await);
+    jobs.extend(model_jobs(&state).await);
     sort_jobs(&mut jobs);
     jobs.truncate(limit);
     Ok(Json(jobs))

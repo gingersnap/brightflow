@@ -36,6 +36,7 @@ pub mod ingest;
 pub mod insights;
 pub mod jobs;
 pub mod llm;
+pub mod models;
 pub mod product_analytics;
 pub mod routes;
 pub mod scheduler;
