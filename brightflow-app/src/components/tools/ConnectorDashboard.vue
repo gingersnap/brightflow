@@ -14,6 +14,7 @@ import { useQuery } from '@pinia/colada';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useModels } from '@/composables/useModels';
 import { useSavedViews } from '@/composables/useSavedViews';
 import { sourceApi } from '@/services/api';
 import { isJobEvent } from '@/services/wsGuards';
@@ -71,6 +72,28 @@ const { data: overview } = useQuery({
 });
 
 const savedViews = useSavedViews(() => props.sourceId);
+const modelList = useModels(() => props.sourceId);
+
+/** "Built from orders · 3 rows, 2 minutes ago" for a model's card. */
+function modelLine(table: string): string | null {
+  const model = modelList.forTable(table);
+  if (model == null) {
+    return null;
+  }
+  const from = model.inputTable == null ? 'input table deleted' : `Built from ${model.inputTable}`;
+  const build = model.lastBuild;
+  if (build == null) {
+    return from;
+  }
+  const ago = relativeTime(new Date(build.startedAt * 1000));
+  let outcome = `${build.rows ?? 0} rows`;
+  if (build.status === 'failed') {
+    outcome = `build failed: ${build.error ?? 'unknown error'}`;
+  } else if (build.status === 'running') {
+    outcome = 'building';
+  }
+  return `${from} · ${outcome}, ${ago}`;
+}
 
 function savedCount(table: string): number {
   return savedViews.forTable(table).length;
@@ -162,15 +185,19 @@ function open(route: TableRoute, table: string): void {
               No description yet — add one
             </button>
           </div>
-          <UBadge
-            v-if="(row.signals?.pendingProposals ?? 0) > 0"
-            size="md"
-            color="warning"
-            variant="subtle"
-            class="flex-shrink-0"
-          >
-            {{ row.signals?.pendingProposals }} pending
-          </UBadge>
+          <div class="flex flex-shrink-0 items-center gap-1.5">
+            <UBadge v-if="row.table.model" size="md" color="primary" variant="subtle">
+              Model
+            </UBadge>
+            <UBadge
+              v-if="(row.signals?.pendingProposals ?? 0) > 0"
+              size="md"
+              color="warning"
+              variant="subtle"
+            >
+              {{ row.signals?.pendingProposals }} pending
+            </UBadge>
+          </div>
         </div>
 
         <dl class="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-3 text-sm">
@@ -212,6 +239,10 @@ function open(route: TableRoute, table: string): void {
                 {{ savedCount(row.table.name) }}
               </RouterLink>
             </dd>
+          </div>
+          <div v-if="modelLine(row.table.name)" class="col-span-2">
+            <dt class="text-muted">Model</dt>
+            <dd class="text-default">{{ modelLine(row.table.name) }}</dd>
           </div>
           <div v-if="row.table.lastDeclarationChange" class="col-span-2">
             <dt class="text-muted">Connector</dt>

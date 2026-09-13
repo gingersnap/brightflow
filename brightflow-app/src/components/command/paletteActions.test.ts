@@ -140,54 +140,54 @@ describe('reset_column_semantics', () => {
   });
 });
 
-describe('model kinds', () => {
-  function modelCtx(models: ModelSummary[], promptAnswer: string | null) {
-    const dispatch = vi.fn<(action: Action) => Promise<void>>(() => Promise.resolve());
-    const context: PaletteActionContext = {
-      data: {
-        captureModel: () => ({
-          clientSpec: {
-            pivot: {
-              columnFields: [],
-              decimalPlaces: 2,
-              rowFields: [],
-              showColumnTotals: true,
-              showConditionalFormatting: false,
-              showSubtotals: true,
-              valueFields: [],
-            },
-            query: {
-              filters: [],
-              limit: 100,
-              sections: {
-                filter: { collapsed: false, enabled: true },
-                limit: { collapsed: false, enabled: true },
-                sort: { collapsed: true, enabled: false },
-              },
-              sortBy: null,
-              sortDescending: false,
-            },
-            version: 1,
+function modelCtx(models: ModelSummary[], promptAnswer: string | null) {
+  const dispatch = vi.fn<(action: Action) => Promise<void>>(() => Promise.resolve());
+  const context: PaletteActionContext = {
+    data: {
+      captureModel: () => ({
+        clientSpec: {
+          pivot: {
+            columnFields: [],
+            decimalPlaces: 2,
+            rowFields: [],
+            showColumnTotals: true,
+            showConditionalFormatting: false,
+            showSubtotals: true,
+            valueFields: [],
           },
-          recipe: { operations: [{ n: 100, type: 'limit' }], version: 1 },
-        }),
-        categories: [],
-        columns: [],
-        insights: [],
-        models,
-      },
-      helpers: {
-        close: vi.fn((): void => {}),
-        confirm: vi.fn(() => Promise.resolve(true)),
-        dispatch,
-        promptText: vi.fn(() => Promise.resolve(promptAnswer)),
-      },
-      sourceId: 's',
-      table: 'orders',
-    };
-    return { context, dispatch };
-  }
+          query: {
+            filters: [],
+            limit: 100,
+            sections: {
+              filter: { collapsed: false, enabled: true },
+              limit: { collapsed: false, enabled: true },
+              sort: { collapsed: true, enabled: false },
+            },
+            sortBy: null,
+            sortDescending: false,
+          },
+          version: 1,
+        },
+        recipe: { operations: [{ n: 100, type: 'limit' }], version: 1 },
+      }),
+      categories: [],
+      columns: [],
+      insights: [],
+      models,
+    },
+    helpers: {
+      close: vi.fn((): void => {}),
+      confirm: vi.fn(() => Promise.resolve(true)),
+      dispatch,
+      promptText: vi.fn(() => Promise.resolve(promptAnswer)),
+    },
+    sourceId: 's',
+    table: 'orders',
+  };
+  return { context, dispatch };
+}
 
+describe('model kinds', () => {
   const model: ModelSummary = {
     id: 'm1',
     inputTable: 'orders',

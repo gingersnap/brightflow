@@ -14,6 +14,11 @@
  *
  * The source's model import and export sits at the foot, collapsed: it is
  * source-scoped, so it shows whether or not a table is picked.
+ *
+ * A table that is a model's output gets a Recipe section between the table
+ * and its columns: what it is built from, the chain in words, the last
+ * build, and rebuild / edit / delete through the same bus as everything
+ * else here.
  */
 
 import type { DropdownMenuItem } from '@nuxt/ui';
@@ -25,8 +30,10 @@ import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { columnMenuItems } from '@/components/query/columnMenu';
 import SemanticModelPanel from '@/components/semantics/SemanticModelPanel.vue';
 import TableSectionPane from '@/components/sources/TableSectionPane.vue';
+import { relativeTime } from '@/components/tools/overview';
 import { useColumnSemantics } from '@/composables/useColumnSemantics';
 import { useInsightActions } from '@/composables/useInsightActions';
+import { useModels } from '@/composables/useModels';
 import { usePromptAction } from '@/composables/usePromptAction';
 import { semanticsApi } from '@/services/api';
 import { isActionEvent } from '@/services/wsGuards';
@@ -34,6 +41,7 @@ import { useConnectionStore } from '@/stores/connection';
 import type { SourceTable } from '@/types';
 import type { Layer, ResolvedColumn, TimeGranularity } from '@/types/generated';
 import { changeLines, changeSummary } from '@/utils/declarationChanges';
+import { describeOperation } from '@/utils/modelRecipe';
 import { POLARITY_LABELS, provenanceLabel, ROLE_LABELS } from '@/utils/semanticLabels';
 
 import {
@@ -60,6 +68,53 @@ const promptText = usePromptAction();
 
 const hasTable = computed(() => props.table != null && props.table !== '');
 const tableName = computed(() => props.table ?? '');
+
+const modelList = useModels(() => props.sourceId);
+/** The model this table is the output of, if it is one. */
+const thisModel = computed(() => modelList.forTable(tableName.value) ?? null);
+const recipeSteps = computed(() =>
+  thisModel.value == null
+    ? []
+    : thisModel.value.recipe.operations.map((op) => describeOperation(op)),
+);
+const lastBuildText = computed(() => {
+  const build = thisModel.value?.lastBuild;
+  if (build == null) {
+    return 'never built';
+  }
+  const ago = relativeTime(new Date(build.startedAt * 1000));
+  if (build.status === 'failed') {
+    return `failed ${ago}: ${build.error ?? 'unknown error'}`;
+  }
+  if (build.status === 'running') {
+    return `building, started ${ago}`;
+  }
+  return `${build.rows ?? 0} rows, built ${ago}`;
+});
+
+async function editRecipe(): Promise<void> {
+  const model = thisModel.value;
+  if (model?.inputTable == null) {
+    return;
+  }
+  await router.push({
+    name: 'explore-table',
+    params: { sourceId: props.sourceId, table: model.inputTable },
+    query: { model: model.id },
+  });
+}
+
+async function removeModel(): Promise<void> {
+  const model = thisModel.value;
+  if (model == null) {
+    return;
+  }
+  await modelList.remove(model);
+  await router.push({
+    name: 'source-tool',
+    params: { sourceId: props.sourceId, tool: 'semantics' },
+  });
+}
 
 const { data: columnsData, refetch: refetchColumns } = useQuery({
   key: () => ['semantics-columns', props.sourceId, tableName.value],
@@ -342,6 +397,68 @@ const modelOpen = ref(false);
                 </ul>
               </li>
             </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recipe: only on a model's output table -->
+      <section v-if="thisModel">
+        <h3 class="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">Recipe</h3>
+        <div class="rounded-lg border border-default bg-elevated p-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-sm text-default">
+                <template v-if="thisModel.inputTable">
+                  Built from
+                  <RouterLink
+                    :to="{
+                      name: 'semantics-table',
+                      params: { sourceId, table: thisModel.inputTable },
+                    }"
+                    class="font-medium underline-offset-2 hover:underline"
+                  >
+                    {{ thisModel.inputTable }}
+                  </RouterLink>
+                </template>
+                <template v-else>Input table deleted; the next build will fail.</template>
+                <span class="text-muted"> · version {{ thisModel.version }}</span>
+              </p>
+              <ol class="mt-2 list-decimal space-y-0.5 pl-5 text-sm text-default">
+                <li v-for="(step, i) in recipeSteps" :key="i">{{ step }}</li>
+                <li v-if="recipeSteps.length === 0" class="text-muted">the whole table</li>
+              </ol>
+              <p class="mt-2 text-sm text-muted">Last build: {{ lastBuildText }}</p>
+            </div>
+            <div class="flex flex-shrink-0 items-center gap-1.5">
+              <UButton
+                size="md"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-refresh-cw"
+                @click="thisModel && modelList.rebuild(thisModel)"
+              >
+                Rebuild
+              </UButton>
+              <UButton
+                v-if="thisModel.clientSpec != null && thisModel.inputTable != null"
+                size="md"
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-pencil-line"
+                @click="editRecipe"
+              >
+                Edit recipe
+              </UButton>
+              <UButton
+                size="md"
+                color="error"
+                variant="soft"
+                icon="i-lucide-trash-2"
+                @click="removeModel"
+              >
+                Delete model
+              </UButton>
+            </div>
           </div>
         </div>
       </section>

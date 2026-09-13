@@ -113,9 +113,14 @@ function handleCardClick(table: SourceTable): void {
         >
           <UIcon name="i-lucide-table-2" class="h-5 w-5 text-muted" />
           <div class="min-w-0">
-            <p class="text-sm font-medium text-highlighted">
+            <p class="flex flex-wrap items-center gap-1.5 text-sm font-medium text-highlighted">
               {{ table.displayName ?? table.name }}
               <span v-if="table.displayName" class="font-normal text-muted">{{ table.name }}</span>
+              <UBadge v-if="table.model" size="md" color="primary" variant="subtle">
+                Model<template v-if="table.model.inputTable">
+                  of {{ table.model.inputTable }}</template
+                >
+              </UBadge>
             </p>
             <p
               v-if="table.description"
