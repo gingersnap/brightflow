@@ -194,7 +194,7 @@ pub struct ProvenanceStep {
 
 /// Interestingness = Impact × Significance (× Novelty × KPI boost).
 ///
-/// `final_score = significance · √impact · (0.5 + 0.5·novelty) · kpi_boost`
+/// `final_score = significance · √impact · (0.5 + 0.5·novelty) · kpi_boost · polarity_boost`
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
@@ -206,6 +206,9 @@ pub struct ScoreBreakdown {
     /// 1.0 = never shown before; decays with history (wired in 1C)
     pub novelty: f64,
     pub kpi_boost: f64,
+    /// Above 1 when the finding points the bad way on a measure whose
+    /// polarity is declared (`scoring::BAD_NEWS_MULTIPLIER`); 1.0 otherwise.
+    pub polarity_boost: f64,
 }
 
 impl ScoreBreakdown {
@@ -215,6 +218,7 @@ impl ScoreBreakdown {
             impact: 0.0,
             novelty: 1.0,
             kpi_boost: 1.0,
+            polarity_boost: 1.0,
         }
     }
 }

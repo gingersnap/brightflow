@@ -89,7 +89,12 @@ pub fn select_top(tree: &mut AnalysisTree, max_results: usize) {
 
 /// The measure a finding is about (for diversity grouping).
 pub fn measure_of(node: &AnalysisNode) -> String {
-    match &node.analysis {
+    measure_of_analysis(&node.analysis)
+}
+
+/// `measure_of` for a finding that is not on a tree yet.
+pub fn measure_of_analysis(analysis: &AnalysisType) -> String {
+    match analysis {
         AnalysisType::Anomaly { column, .. }
         | AnalysisType::Trend { column, .. }
         | AnalysisType::PeriodComparison { column, .. }

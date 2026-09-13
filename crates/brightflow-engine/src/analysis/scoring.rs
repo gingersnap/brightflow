@@ -20,11 +20,15 @@
 // than silently falling into a default. Suppress the related nursery lints.
 #![allow(clippy::match_same_arms)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use statrs::distribution::{Binomial, ChiSquared, ContinuousCDF, DiscreteCDF};
 
+use crate::analysis::candidates::{Aggregation, FilterSpec, MeasureRef};
+use crate::analysis::polarity::direction_of_analysis;
+use crate::analysis::select::measure_of_analysis;
 use crate::analysis::tree::{AnalysisType, ScoreBreakdown, TrendDirection};
+use crate::data::config::Polarity;
 
 // ─── Calibration constants ────────────────────────────────────────────────────
 
@@ -38,6 +42,11 @@ const DEFAULT_MIN_EFFECT: f64 = 0.05;
 /// are dropped regardless of effect size
 const MIN_SIGNIFICANCE: f64 = 0.5;
 
+/// Multiplier for a finding that is bad news under the measure's declared
+/// polarity. Modest on purpose: it orders two otherwise equal findings, it
+/// does not lift noise over signal.
+pub const BAD_NEWS_MULTIPLIER: f64 = 1.25;
+
 /// Per-column probability of a same-direction period outlier under H0.
 /// One-sided tail at the default z-threshold of 2.0 (Φ(-2) ≈ 0.0228).
 const OUTLIER_NULL_P: f64 = 0.0228;
@@ -49,13 +58,96 @@ const MEMBERSHIP_NULL_CHURN: f64 = 0.05;
 // ─── Scoring context ──────────────────────────────────────────────────────────
 
 /// Context passed to scoring — carries dataset-wide info needed for KPI
-/// flagging and floor overrides. Fields can be empty (no-ops) for the basic case.
+/// flagging, polarity and floor overrides. Fields can be empty (no-ops) for
+/// the basic case.
 #[derive(Debug, Clone, Default)]
 pub struct ScoringContext {
     /// Columns flagged as KPIs (from the semantic layer)
     pub kpi_columns: HashSet<String>,
+    /// Declared measure polarity, non-neutral entries only.
+    pub polarity: HashMap<String, Polarity>,
+    /// Declared metrics: a (column, aggregation, filters) someone named. A
+    /// derived series that matches one is a KPI series even when its bare
+    /// column is not a KPI.
+    pub metrics: Vec<MetricSpec>,
     /// Min effect size (override DEFAULT_MIN_EFFECT)
     pub min_effect_size: Option<f64>,
+}
+
+/// A declared metric in the engine's own terms.
+///
+/// The column, the candidate aggregation it corresponds to, and its equality
+/// filters. `None` where the declaration used an aggregation or a filter the
+/// enumeration never produces, so it can never match a series.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetricSpec {
+    pub name: String,
+    pub column: String,
+    pub aggregation: Option<Aggregation>,
+    pub filters: Option<Vec<FilterSpec>>,
+    pub is_kpi: bool,
+    pub polarity: Polarity,
+}
+
+impl MetricSpec {
+    /// From the contract's metric extension. Sum, avg and count map onto
+    /// the enumeration's aggregations; only `=` filters with a scalar value
+    /// are expressible.
+    pub fn from_ext(name: &str, ext: &brightflow_types::MetricExt) -> Self {
+        use brightflow_types::{Aggregation as A, FilterOp};
+        let aggregation = match ext.expr.aggregation {
+            A::Sum => Some(Aggregation::Sum),
+            A::Avg => Some(Aggregation::Mean),
+            A::Count => Some(Aggregation::Count),
+            _ => None,
+        };
+        let filters = ext
+            .expr
+            .filters
+            .iter()
+            .map(|f| match (&f.op, &f.value) {
+                (FilterOp::Eq, Some(serde_json::Value::String(v))) => Some(FilterSpec {
+                    column: f.column.clone(),
+                    value: v.clone(),
+                }),
+                (
+                    FilterOp::Eq,
+                    Some(v @ (serde_json::Value::Number(_) | serde_json::Value::Bool(_))),
+                ) => Some(FilterSpec {
+                    column: f.column.clone(),
+                    value: v.to_string(),
+                }),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        Self {
+            name: name.to_string(),
+            column: ext.expr.column.clone(),
+            aggregation,
+            filters,
+            is_kpi: ext.is_kpi.unwrap_or(false),
+            polarity: ext.polarity.unwrap_or_default(),
+        }
+    }
+
+    /// Whether a derived series is this metric: same column and
+    /// aggregation, and every one of the metric's filters among the series'
+    /// filters (the series may slice further).
+    pub fn matches(
+        &self,
+        measure: &MeasureRef,
+        aggregation: Aggregation,
+        filters: &[FilterSpec],
+    ) -> bool {
+        let (Some(agg), Some(own)) = (self.aggregation, &self.filters) else {
+            return false;
+        };
+        let column_matches = match measure {
+            MeasureRef::Column(c) => *c == self.column,
+            MeasureRef::RowCount => agg == Aggregation::Count,
+        };
+        column_matches && agg == aggregation && own.iter().all(|f| filters.contains(f))
+    }
 }
 
 impl ScoringContext {
@@ -66,6 +158,36 @@ impl ScoringContext {
     pub fn with_kpis(mut self, kpis: HashSet<String>) -> Self {
         self.kpi_columns = kpis;
         self
+    }
+
+    pub fn with_polarity(mut self, polarity: HashMap<String, Polarity>) -> Self {
+        self.polarity = polarity;
+        self
+    }
+
+    pub fn with_metrics(mut self, metrics: Vec<MetricSpec>) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    /// The KPI multiplier for a derived series: its column is a KPI, or a
+    /// KPI metric names exactly this series.
+    pub fn series_kpi_boost(
+        &self,
+        measure: &MeasureRef,
+        aggregation: Aggregation,
+        filters: &[FilterSpec],
+    ) -> f64 {
+        let column_kpi = matches!(measure, MeasureRef::Column(c) if self.kpi_columns.contains(c));
+        let metric_kpi = self
+            .metrics
+            .iter()
+            .any(|m| m.is_kpi && m.matches(measure, aggregation, filters));
+        if column_kpi || metric_kpi {
+            KPI_MULTIPLIER
+        } else {
+            1.0
+        }
     }
 
     pub fn with_min_effect(mut self, min: f64) -> Self {
@@ -88,6 +210,7 @@ pub fn score(analysis: &AnalysisType, ctx: &ScoringContext) -> ScoreBreakdown {
     // the derived-series pipeline computes true volume impact directly.
     let impact = effect_size_component(analysis);
     let kpi_boost = kpi_boost_for(analysis, ctx);
+    let polarity_boost = polarity_boost_for(analysis, ctx);
 
     ScoreBreakdown {
         significance: sig,
@@ -95,6 +218,7 @@ pub fn score(analysis: &AnalysisType, ctx: &ScoringContext) -> ScoreBreakdown {
         // Novelty defaults to 1.0 (never seen) until insight history lands (1C).
         novelty: 1.0,
         kpi_boost,
+        polarity_boost,
     }
 }
 
@@ -108,6 +232,7 @@ pub fn total(b: &ScoreBreakdown) -> f64 {
         * b.impact.max(0.0).sqrt()
         * 0.5f64.mul_add(b.novelty.clamp(0.0, 1.0), 0.5)
         * b.kpi_boost
+        * b.polarity_boost
 }
 
 /// Returns true if a finding should be kept: impact above the floor AND the
@@ -298,16 +423,30 @@ fn effect_size_component(a: &AnalysisType) -> f64 {
     }
 }
 
-/// Multiply a finding's score when it lands on a column the user marked as a KPI.
+/// Multiply a finding's score when it points the bad way on a measure with a
+/// declared polarity: a drop in revenue, a rise in churn.
 ///
-/// **Limitation — measure polarity is display-only (v1).** `SetColumnPolarity`
-/// tags a finding good or bad for the UI, and scoring deliberately ignores it: a
-/// 20% drop and a 20% rise in the same measure rank identically. Ranking by
-/// "badness" would make the engine's notion of interesting depend on a
-/// user-supplied label that is often unset or wrong, and a surprising *good*
-/// move is as worth surfacing as a bad one. This function is the hook point if
-/// that call is ever revisited — a polarity-aware boost belongs here, alongside
-/// the KPI multiplier, not in the detectors.
+/// Good news is not penalised — a surprising rise is as worth surfacing as a
+/// fall — and a measure with no declared polarity is untouched, so a table
+/// nobody has described ranks exactly as before. Polarity now comes from the
+/// same layered rows as everything else (a connector declares it, a person
+/// overrides it), which is what makes it safe to rank on.
+pub fn polarity_boost_for(a: &AnalysisType, ctx: &ScoringContext) -> f64 {
+    if ctx.polarity.is_empty() {
+        return 1.0;
+    }
+    let Some(up) = direction_of_analysis(a) else {
+        return 1.0;
+    };
+    let measure = measure_of_analysis(a);
+    match ctx.polarity.get(&measure) {
+        Some(Polarity::HigherIsBetter) if !up => BAD_NEWS_MULTIPLIER,
+        Some(Polarity::LowerIsBetter) if up => BAD_NEWS_MULTIPLIER,
+        _ => 1.0,
+    }
+}
+
+/// Multiply a finding's score when it lands on a column the user marked as a KPI.
 fn kpi_boost_for(a: &AnalysisType, ctx: &ScoringContext) -> f64 {
     if ctx.kpi_columns.is_empty() {
         return 1.0;
@@ -514,8 +653,114 @@ mod tests {
             impact: 1.0,
             novelty: 1.0,
             kpi_boost: 2.5,
+            polarity_boost: 1.0,
         };
         assert!(total(&b).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn bad_news_is_boosted_and_good_news_is_not() {
+        use crate::analysis::tree::TrendDirection;
+        let trend = |direction: TrendDirection| AnalysisType::Trend {
+            column: "churn".to_string(),
+            direction,
+            slope: 1.0,
+            r_squared: 0.9,
+            p_value: 0.001,
+        };
+        let mut polarity = HashMap::new();
+        polarity.insert("churn".to_string(), Polarity::LowerIsBetter);
+        let ctx = ScoringContext::new().with_polarity(polarity);
+        assert!(
+            (polarity_boost_for(&trend(TrendDirection::Increasing), &ctx) - BAD_NEWS_MULTIPLIER)
+                .abs()
+                < 1e-12
+        );
+        assert!((polarity_boost_for(&trend(TrendDirection::Decreasing), &ctx) - 1.0).abs() < 1e-12);
+        // No declared polarity, or a finding without a direction: untouched.
+        assert!(
+            (polarity_boost_for(&trend(TrendDirection::Increasing), &ScoringContext::new()) - 1.0)
+                .abs()
+                < 1e-12
+        );
+        let undirected = AnalysisType::Concentration {
+            column: "churn".to_string(),
+            segment_column: "region".to_string(),
+            hhi: 0.8,
+            top_n: 1,
+            top_share: 0.9,
+            hhi_delta: None,
+            n_segments: 3,
+            n_rows: 100,
+        };
+        assert!((polarity_boost_for(&undirected, &ctx) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_declared_metric_names_a_derived_series_as_kpi() {
+        use brightflow_types::{Aggregation as A, FilterOp, MetricExpr, MetricExt, MetricFilter};
+        let ext = MetricExt {
+            expr: MetricExpr {
+                dataset: None,
+                column: "reactions_total".to_string(),
+                aggregation: A::Sum,
+                filters: vec![MetricFilter {
+                    column: "state".to_string(),
+                    op: FilterOp::Eq,
+                    value: Some(serde_json::Value::String("open".to_string())),
+                }],
+            },
+            is_kpi: Some(true),
+            polarity: None,
+            format: None,
+        };
+        let metric = MetricSpec::from_ext("open_reactions", &ext);
+        let ctx = ScoringContext::new().with_metrics(vec![metric]);
+        let measure = MeasureRef::Column("reactions_total".to_string());
+        let open = vec![FilterSpec {
+            column: "state".to_string(),
+            value: "open".to_string(),
+        }];
+        assert!(
+            (ctx.series_kpi_boost(&measure, Aggregation::Sum, &open) - KPI_MULTIPLIER).abs()
+                < 1e-12
+        );
+        // A deeper slice under the metric's filter still counts; the wrong
+        // aggregation, the unfiltered column, or another column do not.
+        let deeper = vec![
+            open[0].clone(),
+            FilterSpec {
+                column: "region".to_string(),
+                value: "eu".to_string(),
+            },
+        ];
+        assert!(
+            (ctx.series_kpi_boost(&measure, Aggregation::Sum, &deeper) - KPI_MULTIPLIER).abs()
+                < 1e-12
+        );
+        assert!((ctx.series_kpi_boost(&measure, Aggregation::Mean, &open) - 1.0).abs() < 1e-12);
+        assert!((ctx.series_kpi_boost(&measure, Aggregation::Sum, &[]) - 1.0).abs() < 1e-12);
+        assert!(
+            (ctx.series_kpi_boost(
+                &MeasureRef::Column("comments".to_string()),
+                Aggregation::Sum,
+                &open
+            ) - 1.0)
+                .abs()
+                < 1e-12
+        );
+        // An aggregation the enumeration never produces can never match.
+        let median = MetricSpec::from_ext(
+            "m",
+            &MetricExt {
+                expr: MetricExpr {
+                    aggregation: A::Median,
+                    ..ext.expr.clone()
+                },
+                ..ext.clone()
+            },
+        );
+        assert_eq!(median.aggregation, None);
     }
 
     #[test]
@@ -525,6 +770,7 @@ mod tests {
             impact: 1.0,
             novelty: 1.0,
             kpi_boost: 1.0,
+            polarity_boost: 1.0,
         };
         let stale = ScoreBreakdown {
             novelty: 0.0,

@@ -3,7 +3,7 @@
 /**
  * Interestingness = Impact × Significance (× Novelty × KPI boost).
  *
- * `final_score = significance · √impact · (0.5 + 0.5·novelty) · kpi_boost`
+ * `final_score = significance · √impact · (0.5 + 0.5·novelty) · kpi_boost · polarity_boost`
  */
 export type ScoreBreakdown = { 
 /**
@@ -17,4 +17,9 @@ impact: number,
 /**
  * 1.0 = never shown before; decays with history (wired in 1C)
  */
-novelty: number, kpiBoost: number, };
+novelty: number, kpiBoost: number, 
+/**
+ * >1 when the finding points the bad way on a measure whose polarity
+ * is declared (`scoring::BAD_NEWS_MULTIPLIER`); 1.0 otherwise.
+ */
+polarityBoost: number, };

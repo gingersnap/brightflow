@@ -183,13 +183,13 @@ impl AnalysisEngine {
         } else {
             1.0
         };
-        let breakdown = ScoreBreakdown {
+        let mut breakdown = ScoreBreakdown {
             significance,
             impact,
             novelty: 1.0,
             kpi_boost,
+            polarity_boost: 1.0,
         };
-        let score = scoring::total(&breakdown);
 
         let p_value = decomposition
             .drivers
@@ -205,6 +205,8 @@ impl AnalysisEngine {
             change_percent,
             p_value,
         };
+        breakdown.polarity_boost = scoring::polarity_boost_for(&analysis, &self.scoring_ctx);
+        let score = scoring::total(&breakdown);
         let description = format!(
             "Drivers of {measure}: {} → {} ({change_percent:+.1}%) from {prev_period} to {curr_period}",
             format_value(decomposition.total_prev),
@@ -250,13 +252,13 @@ impl AnalysisEngine {
         driver: &RankedDriver,
         gran: &str,
     ) {
-        let breakdown = ScoreBreakdown {
+        let mut breakdown = ScoreBreakdown {
             significance: driver.significance.score,
             impact: (driver.contribution_pct.abs() / 100.0).clamp(0.0, 1.0),
             novelty: 1.0,
             kpi_boost: 1.0,
+            polarity_boost: 1.0,
         };
-        let score = scoring::total(&breakdown);
         let analysis = AnalysisType::Segment {
             target_column: measure.to_string(),
             segment_column: driver.dimension.clone(),
@@ -266,6 +268,8 @@ impl AnalysisEngine {
             contribution_pct: driver.contribution_pct,
             p_value: driver.p_value,
         };
+        breakdown.polarity_boost = scoring::polarity_boost_for(&analysis, &self.scoring_ctx);
+        let score = scoring::total(&breakdown);
         let description = format!(
             "{}=\"{}\": {} → {} (Δ {}, {:.0}% of the movement)",
             driver.dimension,

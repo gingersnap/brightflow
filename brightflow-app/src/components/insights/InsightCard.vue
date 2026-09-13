@@ -230,6 +230,11 @@ const scoreRows = computed(() => [
     label: 'KPI weight',
     value: `×${props.node.scoreBreakdown.kpiBoost.toFixed(2)}`,
   },
+  {
+    hint: 'A finding that points the bad way on a measure with a declared polarity ranks higher.',
+    label: 'Bad-news weight',
+    value: `×${props.node.scoreBreakdown.polarityBoost.toFixed(2)}`,
+  },
 ]);
 </script>
 

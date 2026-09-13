@@ -453,15 +453,17 @@ impl AnalysisEngine {
         if sig.score < min_sig {
             return None;
         }
-        let kpi_boost = match measure {
-            MeasureRef::Column(c) if self.scoring_ctx.kpi_columns.contains(c) => 1.5,
-            _ => 1.0,
-        };
+        let kpi_boost = self.scoring_ctx.series_kpi_boost(
+            measure,
+            frame.provenance.aggregation,
+            &frame.provenance.filters,
+        );
         Some(ScoreBreakdown {
             significance: sig.score,
             impact: frame.impact.clamp(0.0, 1.0),
             novelty: 1.0,
             kpi_boost,
+            polarity_boost: 1.0,
         })
     }
 
@@ -472,11 +474,13 @@ impl AnalysisEngine {
         frame: &SeriesFrame,
         detector: &str,
         analysis: AnalysisType,
-        breakdown: ScoreBreakdown,
+        mut breakdown: ScoreBreakdown,
         description: String,
         why: String,
         data: Option<NodeData>,
     ) {
+        breakdown.polarity_boost =
+            crate::analysis::scoring::polarity_boost_for(&analysis, &self.scoring_ctx);
         let score = crate::analysis::scoring::total(&breakdown);
         let node_id = tree.add_root_full(analysis, score, breakdown, description, data);
         tree.set_insight_meta(

@@ -20,11 +20,11 @@ use std::time::Instant;
 use brightflow_engine::analysis::engine::AnalysisEngine;
 use brightflow_engine::analysis::history::{value_signature, HistoryEntry};
 use brightflow_engine::analysis::polarity::apply_sentiment;
-use brightflow_engine::analysis::scoring::ScoringContext;
+use brightflow_engine::analysis::scoring::{MetricSpec, ScoringContext};
 use brightflow_engine::analysis::select::{dimension_of, measure_of};
 use brightflow_engine::analysis::tree::{AnalysisTree, ReportType, ReviewCadence};
 use brightflow_engine::data::merge::{build_schema, ColumnOverride, TableSettingsOverride};
-use brightflow_engine::data::schema::DataSchema;
+use brightflow_engine::data::schema::{DataSchema, DeclaredMetric};
 
 use crate::insights::types::{
     DriversRequest, EngineConfig, InsightRunResponse, InsightsResponse, ReviewRequest,
@@ -80,7 +80,49 @@ impl ReportKind {
 fn scoring_context(schema: &DataSchema, config: &EngineConfig) -> ScoringContext {
     ScoringContext::new()
         .with_kpis(schema.kpi_columns.iter().cloned().collect())
+        .with_polarity(schema.polarity.clone())
+        .with_metrics(
+            schema
+                .metrics
+                .iter()
+                .map(|m| MetricSpec::from_ext(&m.name, &m.ext))
+                .collect(),
+        )
         .with_min_effect(config.min_effect_size.unwrap_or(DEFAULT_MIN_EFFECT))
+}
+
+/// The table's declared metrics, one per name: the highest layer's wins.
+async fn declared_metrics(
+    store: &brightflow_store::ParquetStore,
+    source_id: &str,
+    table_name: &str,
+) -> AppResult<Vec<DeclaredMetric>> {
+    let Some(row) = store.db().get_table(source_id, table_name).await? else {
+        return Ok(Vec::new());
+    };
+    let mut best: HashMap<String, (usize, DeclaredMetric)> = HashMap::new();
+    for stored in store.db().metrics_for_table(&row.id).await? {
+        let Some(ext) = stored.metric.brightflow() else {
+            continue;
+        };
+        let rank = brightflow_types::Layer::PRECEDENCE
+            .iter()
+            .position(|l| *l == stored.provenance.layer)
+            .unwrap_or(usize::MAX);
+        let candidate = DeclaredMetric {
+            name: stored.metric.name.clone(),
+            ext,
+        };
+        match best.get(&stored.metric.name) {
+            Some((existing, _)) if *existing <= rank => {},
+            _ => {
+                best.insert(stored.metric.name.clone(), (rank, candidate));
+            },
+        }
+    }
+    let mut out: Vec<DeclaredMetric> = best.into_values().map(|(_, m)| m).collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
 }
 
 fn resolve_config(req: EngineConfig) -> EngineConfig {
@@ -308,6 +350,7 @@ pub(crate) async fn run_report_core(
 ) -> AppResult<InsightsResponse> {
     let (files, table_name, overrides, settings) =
         resolve_dataset(state, source_id, dataset_id).await?;
+    let metrics = declared_metrics(state.require_store()?, source_id, &table_name).await?;
 
     let start = Instant::now();
     let config = resolve_config(config);
@@ -319,7 +362,7 @@ pub(crate) async fn run_report_core(
 
     let mut result = tokio::task::spawn_blocking(move || {
         let df = scan_parquet_files(files)?;
-        let schema = build_schema(&df, &overrides, settings.as_ref())
+        let schema = build_schema(&df, &overrides, settings.as_ref(), &metrics)
             .map_err(|e| AppError::Analysis(format!("Schema build failed: {e}")))?;
         let engine = AnalysisEngine::new(
             config_for_engine.z_threshold.unwrap_or(DEFAULT_Z),
@@ -336,7 +379,7 @@ pub(crate) async fn run_report_core(
             ReportKind::Trends => engine.run_trends(&df, &schema)?,
             ReportKind::Drivers => engine.run_report(&df, &schema, ReportType::Drivers)?,
         };
-        // Display-only sentiment tags from measure polarity.
+        // Sentiment tags for renderers; scoring read the same polarity.
         apply_sentiment(&mut result.tree, &schema.polarity);
         Ok::<_, AppError>(result)
     })

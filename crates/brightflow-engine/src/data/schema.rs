@@ -11,7 +11,7 @@ use anyhow::Result;
 use polars::prelude::*;
 
 use crate::data::config::{ColumnRole, Polarity, TimeGranularity};
-use brightflow_types::{ColumnExt, Dataset, Field, LogicalType, TableDeclaration};
+use brightflow_types::{ColumnExt, Dataset, Field, LogicalType, MetricExt, TableDeclaration};
 
 #[derive(Debug, Clone)]
 pub struct DataSchema {
@@ -36,6 +36,16 @@ pub struct DataSchema {
     pub labels: HashMap<String, String>,
     /// Descriptions someone set, for narration and for the LLM.
     pub descriptions: HashMap<String, String>,
+    /// Metrics someone declared over this table's columns.
+    pub metrics: Vec<DeclaredMetric>,
+}
+
+/// A named metric from the resolved semantics: the contract's structured
+/// form plus its name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredMetric {
+    pub name: String,
+    pub ext: MetricExt,
 }
 
 impl DataSchema {
@@ -131,6 +141,7 @@ pub fn detect_schema(df: &DataFrame) -> Result<DataSchema> {
         entity_columns: Vec::new(),
         labels: HashMap::new(),
         descriptions: HashMap::new(),
+        metrics: Vec::new(),
     })
 }
 

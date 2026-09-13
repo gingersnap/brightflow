@@ -2,8 +2,9 @@
 //!
 //! Rising revenue is good; rising churn is not. `apply_sentiment` walks a
 //! finished tree and tags every directional finding whose measure has a
-//! non-neutral polarity. Display-only in v1: this module writes sentiment onto
-//! the tree for renderers and feeds nothing back into scoring.
+//! non-neutral polarity, for renderers. Scoring reads the same direction
+//! table through `direction_of_analysis` (`scoring::polarity_boost_for`), so
+//! the tag and the boost cannot disagree about which way a finding points.
 
 use std::collections::HashMap;
 
@@ -17,8 +18,13 @@ use crate::data::config::Polarity;
 /// and the two must stay in lockstep — a unit test here pins the table so a
 /// drift shows up as a failing test, not a silent disagreement.
 pub fn direction_of(node: &AnalysisNode) -> Option<bool> {
+    direction_of_analysis(&node.analysis)
+}
+
+/// `direction_of` for a finding that is not on a tree yet.
+pub fn direction_of_analysis(analysis: &AnalysisType) -> Option<bool> {
     // true = up, false = down
-    match &node.analysis {
+    match analysis {
         AnalysisType::Anomaly { z_score, .. } => Some(*z_score > 0.0),
         AnalysisType::PeriodComparison { change_percent, .. }
         | AnalysisType::PeriodAnomaly { change_percent, .. }

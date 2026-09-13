@@ -120,10 +120,7 @@ mod tests {
 
     #[test]
     fn add_scored_root_adds_passing_and_floors_weak_findings() {
-        let ctx = ScoringContext {
-            kpi_columns: std::collections::HashSet::new(),
-            min_effect_size: None,
-        };
+        let ctx = ScoringContext::new();
         let mut tree = AnalysisTree::new();
 
         let meta = |why: &str| RootMeta {
