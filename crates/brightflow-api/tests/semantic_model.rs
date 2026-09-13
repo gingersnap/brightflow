@@ -1,7 +1,8 @@
 //! A pasted semantic model becomes declared rows: the import route applies a
 //! document per table under `document:{name}`, reports datasets with no
 //! table, refuses a malformed model, and a dry run writes nothing. The
-//! export route then rebuilds a document from the resolved rows.
+//! export route then rebuilds a document from the resolved rows, and the
+//! table-semantics route shows the resolved table with the layer behind it.
 
 #![expect(
     clippy::unwrap_used,
@@ -13,8 +14,10 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use polars::prelude::*;
 
-use brightflow_api::semantics::handlers::{export_semantic_model, import_semantic_model};
-use brightflow_api::semantics::types::ImportQuery;
+use brightflow_api::semantics::handlers::{
+    export_semantic_model, get_table_semantics, import_semantic_model,
+};
+use brightflow_api::semantics::types::{ImportQuery, LayersQuery};
 use brightflow_api::state::AppState;
 use brightflow_store::ParquetStore;
 use brightflow_test_support::{copy_template, TestWorkspace};
@@ -146,6 +149,30 @@ async fn import_applies_the_model_per_table_and_export_rebuilds_it() {
         Some("Issues of the repository")
     );
     assert_eq!(exported.document.semantic_model[0].metrics.len(), 1);
+
+    // The table route shows the resolved table and, with `?layers=1`, the
+    // declared row the document wrote.
+    let semantics = get_table_semantics(
+        State(state.clone()),
+        Path((SOURCE.to_string(), "issues".to_string())),
+        Query(LayersQuery { layers: Some(true) }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(semantics.table_name, "issues");
+    assert_eq!(
+        semantics
+            .table
+            .as_ref()
+            .and_then(|t| t.display_name.as_deref()),
+        Some("Issues")
+    );
+    let layers = semantics.layers.unwrap();
+    assert_eq!(layers.len(), 1);
+    assert_eq!(layers[0].provenance.layer, Layer::Declared);
+    assert_eq!(layers[0].provenance.producer, "document:hand-written");
+    assert_eq!(layers[0].display_name.as_deref(), Some("Issues"));
 }
 
 #[tokio::test]

@@ -6,7 +6,7 @@
 
 use brightflow_types::{
     ColumnOpinion, DeclarationDiff, OssieDocument, ResolvedColumn, ResolvedTable, SemanticModel,
-    TimeGranularity,
+    TableOpinion, TimeGranularity,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -28,6 +28,21 @@ pub struct ColumnSemanticsResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub layers: Option<Vec<ColumnOpinion>>,
+}
+
+/// The table as every reader sees it, and the opinion rows behind it when
+/// asked for. `table` is `None` when no layer has said anything.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct TableSemanticsResponse {
+    pub table_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub table: Option<ResolvedTable>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub layers: Option<Vec<TableOpinion>>,
 }
 
 /// The resolved table settings. Writes go through `set_table_settings` on

@@ -131,6 +131,7 @@ export type { TableDeclaration } from './TableDeclaration';
 export type { TableInfo } from './TableInfo';
 export type { TableOpinion } from './TableOpinion';
 export type { TableSchema } from './TableSchema';
+export type { TableSemanticsResponse } from './TableSemanticsResponse';
 export type { TableSettingsResponse } from './TableSettingsResponse';
 export type { TableSettings } from './TableSettings';
 export type { TaxonomyCategory } from './TaxonomyCategory';

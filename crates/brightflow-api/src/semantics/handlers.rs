@@ -12,7 +12,8 @@ use axum::{
 
 use crate::semantics::types::{
     ColumnSemanticsResponse, DeclarationChangesResponse, ImportQuery, ImportedTable, LayersQuery,
-    SemanticModelImportResponse, SemanticModelResponse, TableSettings, TableSettingsResponse,
+    SemanticModelImportResponse, SemanticModelResponse, TableSemanticsResponse, TableSettings,
+    TableSettingsResponse,
 };
 use crate::shared::AppResult;
 use crate::state::AppState;
@@ -34,6 +35,28 @@ pub async fn list_semantics(
     Ok(Json(ColumnSemanticsResponse {
         table_name: name,
         columns,
+        layers,
+    }))
+}
+
+/// GET /api/sources/{source_id}/tables/{name}/semantics/table — the
+/// resolved table (settings, doc columns, who said the most); `?layers=1`
+/// also returns every opinion row behind it.
+pub async fn get_table_semantics(
+    State(state): State<AppState>,
+    Path((source_id, name)): Path<(String, String)>,
+    Query(query): Query<LayersQuery>,
+) -> AppResult<Json<TableSemanticsResponse>> {
+    let store = state.require_store()?;
+    let table = store.resolved_table(&source_id, &name).await?;
+    let layers = if query.layers.unwrap_or(false) {
+        Some(store.table_opinions(&source_id, &name).await?)
+    } else {
+        None
+    };
+    Ok(Json(TableSemanticsResponse {
+        table_name: name,
+        table,
         layers,
     }))
 }

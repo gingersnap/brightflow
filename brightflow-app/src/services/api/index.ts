@@ -9,7 +9,7 @@ export { actionsApi, agentApi } from './curation';
 export { enrichFnApi, llmApi } from './enrich';
 export { insightHistoryApi, insightRunsApi, insightsApi } from './insights';
 export { productAnalyticsApi } from './productAnalytics';
-export { datasetApi, semanticModelApi, sourceApi, tableApi } from './sources';
+export { datasetApi, semanticModelApi, semanticsApi, sourceApi, tableApi } from './sources';
 export {
   mentionsApi,
   taxonomyApi,

@@ -538,6 +538,16 @@ impl ParquetStore {
         self.db.column_opinions(&table_id).await
     }
 
+    /// Every layer's opinion about the table itself, by source and name.
+    pub async fn table_opinions(
+        &self,
+        source_id: &str,
+        table_name: &str,
+    ) -> StoreResult<Vec<brightflow_types::TableOpinion>> {
+        let table_id = self.table_id(source_id, table_name).await?;
+        self.db.table_opinions(&table_id).await
+    }
+
     /// The whole source as an Ossie-shaped model.
     pub async fn export_model(
         &self,

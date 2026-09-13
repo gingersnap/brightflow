@@ -55,8 +55,11 @@ export type {
 // Unified source types come from the backend via ts-rs.
 export type { SourceKind, SourceTable, SourceTool, UnifiedSource } from './generated';
 
-/** Tool ids the UI routes on: the backend's tools plus the client-side settings tab. */
-export type ToolId = SourceTool | 'settings';
+/**
+ * Tool ids the UI routes on: the backend's tools plus the two client-side
+ * tabs every source gets, Semantics (what its tables mean) and Settings.
+ */
+export type ToolId = SourceTool | 'semantics' | 'settings';
 
 export interface ToolDef {
   id: ToolId;
@@ -73,13 +76,14 @@ export const TOOL_DEFS: Record<ToolId, { label: string; icon: string }> = {
   insights: { label: 'Insights', icon: 'i-lucide-sparkles' },
   textexplore: { label: 'Text Explorer', icon: 'i-lucide-text-search' },
   textenrichment: { label: 'Text enrichment', icon: 'i-lucide-messages-square' },
+  semantics: { label: 'Semantics', icon: 'i-lucide-book-open-text' },
   settings: { label: 'Settings', icon: 'i-lucide-settings' },
 };
 
 export function toolsForSource(source: UnifiedSource): ToolDef[] {
   // Collision-free by type: the backend's SourceTool can't contain
-  // 'settings', which is the client-side tab.
-  const ids: ToolId[] = [...source.tools, 'settings'];
+  // 'semantics' or 'settings', which are the client-side tabs.
+  const ids: ToolId[] = [...source.tools, 'semantics', 'settings'];
   return ids.map((id) => {
     const def = TOOL_DEFS[id];
     return { icon: def.icon, id, label: def.label };

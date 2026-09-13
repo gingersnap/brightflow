@@ -203,6 +203,10 @@ fn api_routes() -> Router<AppState> {
             get(semantics_handlers::list_declaration_changes),
         )
         .route(
+            "/sources/{source_id}/tables/{name}/semantics/table",
+            get(semantics_handlers::get_table_semantics),
+        )
+        .route(
             "/sources/{source_id}/tables/{name}/settings",
             get(semantics_handlers::get_table_settings),
         )

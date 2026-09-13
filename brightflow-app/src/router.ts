@@ -89,6 +89,16 @@ const router = createRouter({
       }),
     },
     {
+      path: '/:sourceId/semantics/:table',
+      name: 'semantics-table',
+      component: () => import('./components/layout/SourceLayout.vue'),
+      props: (route) => ({
+        sourceId: String(route.params['sourceId'] ?? ''),
+        tool: 'semantics' as const,
+        table: String(route.params['table'] ?? ''),
+      }),
+    },
+    {
       path: '/:sourceId/:tool',
       name: 'source-tool',
       component: () => import('./components/layout/SourceLayout.vue'),

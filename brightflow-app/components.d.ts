@@ -74,6 +74,7 @@ declare module 'vue' {
     SeasonalityRenderer: typeof import('./src/components/insights/renderers/SeasonalityRenderer.vue')['default']
     SegmentRenderer: typeof import('./src/components/insights/renderers/SegmentRenderer.vue')['default']
     SemanticModelPanel: typeof import('./src/components/settings/SemanticModelPanel.vue')['default']
+    SemanticsTool: typeof import('./src/components/semantics/SemanticsTool.vue')['default']
     SetupPane: typeof import('./src/components/textenrichment/SetupPane.vue')['default']
     SourceCard: typeof import('./src/components/layout/SourceCard.vue')['default']
     SourceLanding: typeof import('./src/components/layout/SourceLanding.vue')['default']

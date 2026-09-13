@@ -6,12 +6,15 @@
 import type { UnifiedSource } from '@/types';
 import type { UploadSourceResult } from '@/types/enrichment';
 import type {
+  ColumnSemanticsResponse,
   DatasetInfo,
+  DeclarationChangesResponse,
   LoadTableResponse,
   QueryResponse,
   SemanticModelImportResponse,
   SemanticModelResponse,
   Source,
+  TableSemanticsResponse,
 } from '@/types/generated';
 import type { TableInfo } from '@/types/generated/TableInfo';
 
@@ -41,6 +44,24 @@ export const semanticModelApi = {
     api.post<SemanticModelImportResponse>(
       `/api/sources/${encodeURIComponent(sourceId)}/semantic-model/import${dryRun ? '?dry_run=true' : ''}`,
       document,
+    ),
+};
+
+// One table's semantics, read-only: the resolved columns and table with the
+// Opinion rows behind them, and what a producer's re-declarations changed.
+// Writes go through the action bus.
+export const semanticsApi = {
+  columns: (sourceId: string, table: string): Promise<ColumnSemanticsResponse | null> =>
+    api.get<ColumnSemanticsResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/semantics?layers=true`,
+    ),
+  table: (sourceId: string, table: string): Promise<TableSemanticsResponse | null> =>
+    api.get<TableSemanticsResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/semantics/table?layers=true`,
+    ),
+  changes: (sourceId: string, table: string): Promise<DeclarationChangesResponse | null> =>
+    api.get<DeclarationChangesResponse>(
+      `/api/sources/${encodeURIComponent(sourceId)}/tables/${encodeURIComponent(table)}/semantics/changes`,
     ),
 };
 

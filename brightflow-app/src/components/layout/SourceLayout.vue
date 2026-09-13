@@ -40,6 +40,9 @@ const TextEnrichmentView = defineAsyncComponent(
 const TextExploreTool = defineAsyncComponent(
   () => import('@/components/textexplore/TextExploreTool.vue'),
 );
+const SemanticsTool = defineAsyncComponent(
+  () => import('@/components/semantics/SemanticsTool.vue'),
+);
 const WebSourceSettings = defineAsyncComponent(
   () => import('@/components/settings/WebSourceSettings.vue'),
 );
@@ -162,6 +165,9 @@ const eventNames = computed(() => (eventList.value ?? []).map((e) => e.name));
         :source-id="sourceId"
         :table="table"
       />
+
+      <!-- Semantics -->
+      <SemanticsTool v-else-if="activeTool === 'semantics'" :source-id="sourceId" :table="table" />
 
       <!-- Settings -->
       <template v-else-if="activeTool === 'settings'">

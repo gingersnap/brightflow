@@ -16,7 +16,7 @@ import AgentActions from '@/components/actions/AgentActions.vue';
 import CollapsibleSection from '@/components/common/CollapsibleSection.vue';
 import { useSources } from '@/composables/useSources';
 import type { SourceTable } from '@/types';
-import type { DeclarationDiff } from '@/types/generated';
+import { changeDetail, changeSummary } from '@/utils/declarationChanges';
 
 const props = defineProps<{
   sourceId: string;
@@ -65,29 +65,6 @@ watch(
   },
   { immediate: true },
 );
-
-/** "Declaration 0.2.0 → 0.3.0 changed reactions_total, created_at". */
-function changeSummary(diff: DeclarationDiff): string {
-  const columns: string[] = [];
-  for (const change of diff.changes) {
-    if (change.column != null && !columns.includes(change.column)) {
-      columns.push(change.column);
-    }
-  }
-  const versions =
-    diff.fromVersion != null && diff.toVersion != null
-      ? `${diff.fromVersion} → ${diff.toVersion}`
-      : (diff.toVersion ?? '');
-  const what = columns.length > 0 ? columns.join(', ') : 'table settings';
-  return `Declaration ${versions} changed ${what}`.replace('  ', ' ');
-}
-
-/** One line per changed field, for the tooltip. */
-function changeDetail(diff: DeclarationDiff): string {
-  return diff.changes
-    .map((c) => `${c.column ?? 'table'}.${c.field}: ${c.from ?? '—'} → ${c.to ?? '—'}`)
-    .join('\n');
-}
 
 function handleCardClick(table: SourceTable): void {
   expanded.value = false;
