@@ -248,3 +248,242 @@ async fn a_model_over_a_model_rebuilds_after_its_feeder_and_empty_results_keep_t
         0
     );
 }
+
+/// The bus round trip, both actors: create → applied and the table exists →
+/// update → rows change → undo → rows back → delete → gone → undo → back
+/// under the same model id; an agent under auto_apply gets `applied` for
+/// create and `proposed` for rebuild.
+#[tokio::test]
+async fn model_actions_round_trip_through_the_bus_for_both_actors() {
+    use brightflow_api::actions::types::{Action, ActionStatus, Scope};
+    use brightflow_api::actions::{dispatch_action, Actor};
+
+    let ws = copy_template().unwrap();
+    let state = state_with_orders(&ws).await;
+    let store = Arc::clone(state.store().unwrap());
+    let input_scope = || Scope {
+        source_id: SOURCE.to_string(),
+        table: INPUT.to_string(),
+    };
+    let human = || Actor::Human {
+        user_id: "u1".to_string(),
+    };
+
+    let response = dispatch_action(
+        &state,
+        Action::CreateModel {
+            scope: input_scope(),
+            name: "eu_orders".to_string(),
+            recipe: ModelRecipe::new(vec![Operation::Filter {
+                column: "region".to_string(),
+                op: FilterOp::Eq,
+                value: serde_json::json!("EU"),
+            }]),
+            client_spec: Some(serde_json::json!({ "version": 1 })),
+        },
+        "req-create",
+        human(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(response.status, ActionStatus::Applied));
+    let model_id = response.result["model_id"].as_str().unwrap().to_string();
+    assert_eq!(response.result["rows"], 3);
+    assert_eq!(
+        store
+            .read_table(SOURCE, "eu_orders")
+            .await
+            .unwrap()
+            .height(),
+        3
+    );
+
+    // A bad recipe never leaves a half-model.
+    let bad = dispatch_action(
+        &state,
+        Action::CreateModel {
+            scope: input_scope(),
+            name: "broken".to_string(),
+            recipe: ModelRecipe::new(vec![Operation::Sort {
+                by: "nope".to_string(),
+                descending: false,
+            }]),
+            client_spec: None,
+        },
+        "req-create-bad",
+        human(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(bad.status, ActionStatus::Failed));
+    assert!(store
+        .db()
+        .get_table(SOURCE, "broken")
+        .await
+        .unwrap()
+        .is_none());
+
+    let output_scope = || Scope {
+        source_id: SOURCE.to_string(),
+        table: "eu_orders".to_string(),
+    };
+    let updated = dispatch_action(
+        &state,
+        Action::UpdateModel {
+            scope: output_scope(),
+            model_id: model_id.clone(),
+            recipe: ModelRecipe::new(vec![Operation::Filter {
+                column: "region".to_string(),
+                op: FilterOp::Eq,
+                value: serde_json::json!("US"),
+            }]),
+            client_spec: None,
+        },
+        "req-update",
+        human(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(updated.status, ActionStatus::Applied));
+    assert_eq!(updated.result["version"], 2);
+    assert_eq!(
+        store
+            .read_table(SOURCE, "eu_orders")
+            .await
+            .unwrap()
+            .height(),
+        1
+    );
+
+    let rows = store.db().list_actions(10).await.unwrap();
+    let update_row = rows.iter().find(|r| r.request_id == "req-update").unwrap();
+    let undone = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(update_row.id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(undone.0.status, ActionStatus::Undone));
+    assert_eq!(
+        store
+            .read_table(SOURCE, "eu_orders")
+            .await
+            .unwrap()
+            .height(),
+        3
+    );
+    let model = store.db().get_model(&model_id).await.unwrap().unwrap();
+    assert_eq!(model.current_version, 1);
+
+    // An agent under auto_apply: create applies, rebuild is a proposal.
+    let agent = || Actor::Agent {
+        run_id: 7,
+        auto_apply: true,
+    };
+    let by_agent = dispatch_action(
+        &state,
+        Action::CreateModel {
+            scope: input_scope(),
+            name: "agent_summary".to_string(),
+            recipe: by_month(),
+            client_spec: None,
+        },
+        "req-agent-create",
+        agent(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(by_agent.status, ActionStatus::Applied));
+    let agent_table = store
+        .db()
+        .get_table(SOURCE, "agent_summary")
+        .await
+        .unwrap()
+        .unwrap();
+    let agent_model = store
+        .db()
+        .get_model_by_output(&agent_table.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(agent_model.created_by.as_deref(), Some("agent:7"));
+    let proposed = dispatch_action(
+        &state,
+        Action::RebuildModel {
+            scope: Scope {
+                source_id: SOURCE.to_string(),
+                table: "agent_summary".to_string(),
+            },
+            model_id: agent_model.id.clone(),
+        },
+        "req-agent-rebuild",
+        agent(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(proposed.status, ActionStatus::Proposed));
+
+    // Delete and undo bring the model back under its own id.
+    let deleted = dispatch_action(
+        &state,
+        Action::DeleteModel {
+            scope: output_scope(),
+            model_id: model_id.clone(),
+        },
+        "req-delete",
+        human(),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(deleted.status, ActionStatus::Applied));
+    assert!(store
+        .db()
+        .get_table(SOURCE, "eu_orders")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(store.db().get_model(&model_id).await.unwrap().is_none());
+
+    let later_rows = store.db().list_actions(20).await.unwrap();
+    let delete_row = later_rows
+        .iter()
+        .find(|r| r.request_id == "req-delete")
+        .unwrap();
+    let restored_response = brightflow_api::actions::handlers::undo(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(delete_row.id),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(restored_response.0.status, ActionStatus::Undone));
+    assert_eq!(
+        store
+            .read_table(SOURCE, "eu_orders")
+            .await
+            .unwrap()
+            .height(),
+        3
+    );
+    let restored = store.db().get_model(&model_id).await.unwrap().unwrap();
+    assert_eq!(restored.current_version, 1);
+    assert_eq!(
+        store
+            .db()
+            .list_model_versions(&model_id)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // The listing names both tables and the last build.
+    let listed = brightflow_api::models::handlers::list_models(
+        axum::extract::State(state.clone()),
+        axum::extract::Path(SOURCE.to_string()),
+    )
+    .await
+    .unwrap();
+    let eu = listed.0.iter().find(|m| m.table == "eu_orders").unwrap();
+    assert_eq!(eu.input_table.as_deref(), Some(INPUT));
+    assert_eq!(eu.last_build.as_ref().unwrap().status, "completed");
+}

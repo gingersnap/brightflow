@@ -12,6 +12,7 @@
 //! (`actions::exec::models`); this module only builds.
 
 pub mod deps;
+pub mod handlers;
 pub mod semantics;
 
 use std::future::Future;

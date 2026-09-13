@@ -7,6 +7,7 @@
 //! compile until both sides exist.
 
 pub(crate) mod insights;
+pub(crate) mod models;
 pub(crate) mod semantics;
 pub(crate) mod taxonomy;
 pub(crate) mod views;

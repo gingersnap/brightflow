@@ -581,7 +581,7 @@ pub async fn execute_action(
     actor: &Actor,
     action: &Action,
 ) -> AppResult<(serde_json::Value, Option<UndoOp>)> {
-    use crate::actions::exec::{insights, semantics, taxonomy, views};
+    use crate::actions::exec::{insights, models, semantics, taxonomy, views};
     match action {
         Action::DismissInsight {
             scope: Scope { source_id, table },
@@ -685,6 +685,48 @@ pub async fn execute_action(
             scope: Scope { source_id, table },
             view_id,
         } => views::execute_delete_view(state, source_id, table, view_id).await,
+        Action::CreateModel {
+            scope: Scope { source_id, table },
+            name,
+            recipe,
+            client_spec,
+        } => {
+            models::execute_create_model(
+                state,
+                actor,
+                source_id,
+                table,
+                name,
+                recipe,
+                client_spec.as_ref(),
+            )
+            .await
+        },
+        Action::UpdateModel {
+            scope: Scope { source_id, table },
+            model_id,
+            recipe,
+            client_spec,
+        } => {
+            models::execute_update_model(
+                state,
+                actor,
+                source_id,
+                table,
+                model_id,
+                recipe,
+                client_spec.as_ref(),
+            )
+            .await
+        },
+        Action::DeleteModel {
+            scope: Scope { source_id, table },
+            model_id,
+        } => models::execute_delete_model(state, source_id, table, model_id).await,
+        Action::RebuildModel {
+            scope: Scope { source_id, table },
+            model_id,
+        } => models::execute_rebuild_model(state, source_id, table, model_id).await,
         Action::SetTableSettings {
             scope: Scope { source_id, table },
             display_name,
@@ -780,10 +822,20 @@ pub async fn execute_action(
 /// Apply an inverse operation. Same shape as `execute_action`: one line per
 /// arm, bodies in `exec::*` next to the executes they invert.
 pub async fn apply_undo(state: &AppState, op: &UndoOp) -> AppResult<()> {
-    use crate::actions::exec::{insights, semantics, taxonomy, views};
+    use crate::actions::exec::{insights, models, semantics, taxonomy, views};
     match op {
         UndoOp::DeleteSavedView { view_id } => views::undo_delete_saved_view(state, view_id).await,
         UndoOp::RestoreSavedView { row } => views::undo_restore_saved_view(state, row).await,
+        UndoOp::DeleteModel { model_id } => models::undo_delete_model(state, model_id).await,
+        UndoOp::RestoreModelVersion { model_id, version } => {
+            models::undo_restore_model_version(state, model_id, *version).await
+        },
+        UndoOp::RecreateModel {
+            source_id,
+            table,
+            model,
+            versions,
+        } => models::undo_recreate_model(state, source_id, table, model, versions).await,
         UndoOp::DeleteInsightState {
             table_id,
             fingerprint,

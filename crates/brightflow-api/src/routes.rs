@@ -301,6 +301,11 @@ fn api_routes() -> Router<AppState> {
             "/sources/{source_id}/overview",
             get(crate::sources::overview::source_overview),
         )
+        // Models of a source (writes go through the action bus)
+        .route(
+            "/sources/{source_id}/models",
+            get(crate::models::handlers::list_models),
+        )
         // Saved views of a source (writes go through the action bus)
         .route(
             "/sources/{source_id}/views",

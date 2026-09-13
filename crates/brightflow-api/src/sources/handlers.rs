@@ -30,6 +30,25 @@ async fn source_tables(
             .await
             .ok()
             .and_then(|mut changes| (!changes.is_empty()).then(|| changes.remove(0)));
+        let model = match store.db().get_model_by_output(&t.id).await {
+            Ok(Some(m)) => {
+                let input_table = match &m.input_table_id {
+                    Some(id) => store
+                        .db()
+                        .get_table_by_id(id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|row| row.name),
+                    None => None,
+                };
+                Some(crate::sources::types::ModelBadge {
+                    id: m.id,
+                    input_table,
+                })
+            },
+            _ => None,
+        };
         out.push(SourceTable {
             name: t.name.clone(),
             display_name: resolved.as_ref().and_then(|r| r.display_name.clone()),
@@ -37,6 +56,7 @@ async fn source_tables(
             num_rows: Some(t.total_rows),
             enrichable: crate::shared::schema_has_text_column(&t),
             last_declaration_change,
+            model,
         });
     }
     out

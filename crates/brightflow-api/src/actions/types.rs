@@ -9,6 +9,7 @@
 //! execute the exact same code path; only the recorded actor differs.
 
 use brightflow_engine::data::config::{ColumnRole, Polarity, TimeGranularity};
+use brightflow_types::ModelRecipe;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -226,6 +227,50 @@ pub enum Action {
         scope: Scope,
         view_id: String,
     },
+    /// Create a model: a table named `name` in this table's source, built by
+    /// running `recipe` over this table and rebuilt after every write to it.
+    /// The scope is the input table. Undo drops the model and its table.
+    CreateModel {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        name: String,
+        recipe: ModelRecipe,
+        /// The Explore snapshot the recipe was captured from, kept so the
+        /// builder can reopen the model; opaque to the server.
+        #[serde(default)]
+        #[ts(optional, type = "unknown")]
+        client_spec: Option<serde_json::Value>,
+    },
+    /// Replace a model's recipe: a new version and an immediate rebuild.
+    /// The scope is the model's output table. Undo restores the previous
+    /// version and rebuilds.
+    UpdateModel {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        model_id: String,
+        recipe: ModelRecipe,
+        #[serde(default)]
+        #[ts(optional, type = "unknown")]
+        client_spec: Option<serde_json::Value>,
+    },
+    /// Remove a model and its output table. The scope is the output table.
+    /// Undo recreates both from the stored recipe.
+    DeleteModel {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        model_id: String,
+    },
+    /// Build the model's output again from its current recipe, then the
+    /// models fed by it. Idempotent, so not undoable.
+    RebuildModel {
+        #[serde(flatten)]
+        #[ts(flatten)]
+        scope: Scope,
+        model_id: String,
+    },
     /// The table's own settings — display name, description, analysis
     /// period and how many periods to compare — as one opinion at the
     /// actor's layer. A field left out is "no opinion", so a producer's
@@ -362,6 +407,10 @@ impl Action {
             Self::SaveView { .. } => "save_view",
             Self::RenameView { .. } => "rename_view",
             Self::DeleteView { .. } => "delete_view",
+            Self::CreateModel { .. } => "create_model",
+            Self::UpdateModel { .. } => "update_model",
+            Self::DeleteModel { .. } => "delete_model",
+            Self::RebuildModel { .. } => "rebuild_model",
         }
     }
 
@@ -387,7 +436,11 @@ impl Action {
             | Self::ResetColumnSemantics { scope, .. }
             | Self::SaveView { scope, .. }
             | Self::RenameView { scope, .. }
-            | Self::DeleteView { scope, .. } => scope,
+            | Self::DeleteView { scope, .. }
+            | Self::CreateModel { scope, .. }
+            | Self::UpdateModel { scope, .. }
+            | Self::DeleteModel { scope, .. }
+            | Self::RebuildModel { scope, .. } => scope,
         };
         (&scope.source_id, &scope.table)
     }
@@ -576,6 +629,18 @@ pub enum UndoOp {
     DeleteSavedView { view_id: String },
     /// Undo of a rename, a re-save or a delete: put the previous row back.
     RestoreSavedView { row: brightflow_store::SavedViewRow },
+    /// Undo of create_model: drop the model and its output table.
+    DeleteModel { model_id: String },
+    /// Undo of update_model: make the previous version current and rebuild.
+    RestoreModelVersion { model_id: String, version: i64 },
+    /// Undo of delete_model: recreate the output table row, put the model
+    /// and every version back under their original ids, and rebuild.
+    RecreateModel {
+        source_id: String,
+        table: String,
+        model: brightflow_store::ModelRow,
+        versions: Vec<brightflow_store::ModelVersionRow>,
+    },
     DeleteInsightState {
         table_id: String,
         fingerprint: String,
@@ -803,6 +868,34 @@ pub const ACTION_KINDS: &[(&str, &str, &str, bool)] = &[
         "Delete view",
         "Remove a saved view. Undo puts it back as it was.",
         true,
+    ),
+    (
+        "create_model",
+        "Create model",
+        "Create a model: a new table in this source, built by running a chain \
+         of operations (filter, withColumns, groupBy, pivot, sort, limit) over \
+         this table and rebuilt after every sync of it. Give it a short \
+         snake_case name that says what it is for. Preview the chain first.",
+        true,
+    ),
+    (
+        "update_model",
+        "Update model",
+        "Replace a model's recipe with a new chain of operations; the output \
+         is rebuilt at once. Undo restores the previous recipe.",
+        true,
+    ),
+    (
+        "delete_model",
+        "Delete model",
+        "Remove a model and its output table. Undo recreates both.",
+        true,
+    ),
+    (
+        "rebuild_model",
+        "Rebuild model",
+        "Build a model's output again from its current recipe.",
+        false,
     ),
 ];
 
@@ -1055,6 +1148,38 @@ mod tests {
                     table: String::new(),
                 },
                 view_id: String::new(),
+            },
+            Action::CreateModel {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                name: String::new(),
+                recipe: ModelRecipe::new(vec![]),
+                client_spec: None,
+            },
+            Action::UpdateModel {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                model_id: String::new(),
+                recipe: ModelRecipe::new(vec![]),
+                client_spec: None,
+            },
+            Action::DeleteModel {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                model_id: String::new(),
+            },
+            Action::RebuildModel {
+                scope: Scope {
+                    source_id: String::new(),
+                    table: String::new(),
+                },
+                model_id: String::new(),
             },
         ];
         assert_eq!(

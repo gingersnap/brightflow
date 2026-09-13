@@ -65,6 +65,22 @@ pub struct SourceTable {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_declaration_change: Option<brightflow_types::DeclarationDiff>,
+    /// Present when the table is a model's output: which model, built from
+    /// what.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model: Option<ModelBadge>,
+}
+
+/// The one line a table list says about a model.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelBadge {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub input_table: Option<String>,
 }
 
 /// Unified view of a data source (event source or connector)
