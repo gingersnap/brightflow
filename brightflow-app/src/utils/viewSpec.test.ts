@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from 'vitest';
+import { reactive } from 'vue';
 
 import {
   applyExploreView,
@@ -80,6 +81,19 @@ describe('captureExploreView and applyExploreView', () => {
     // The stores got their own copy: editing them leaves the spec intact.
     emptyQuery.filters.pop();
     expect(spec.query.filters).toHaveLength(1);
+  });
+});
+
+describe('captureExploreView from reactive state', () => {
+  test('captures store state that is a Vue reactive proxy', () => {
+    // The stores hand over reactive proxies; structuredClone would throw here.
+    const liveQuery = reactive(query());
+    const livePivot = reactive(pivot());
+    const spec = captureExploreView(liveQuery, livePivot);
+    expect(spec).toEqual(captureExploreView(query(), pivot()));
+    // A plain object, not a proxy, and not shared with the source.
+    expect(Object.getPrototypeOf(spec.pivot.rowFields[0])).toBe(Object.prototype);
+    expect(spec.pivot.rowFields).not.toBe(livePivot.rowFields);
   });
 });
 

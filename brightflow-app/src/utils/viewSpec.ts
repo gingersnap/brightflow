@@ -6,6 +6,8 @@
  * a shape this version wrote, so a foreign or damaged spec applies nothing.
  */
 
+import { toRaw } from 'vue';
+
 import type { Filter, PivotField, QuerySections, SectionState } from '@/types';
 
 export const VIEW_SPEC_VERSION = 1;
@@ -50,9 +52,25 @@ export interface PivotSnapshot {
   decimalPlaces: number;
 }
 
-/** Deep-copy so the spec never shares objects with the stores. */
+/**
+ * Deep-copy so the spec never shares objects with the stores. The inputs come
+ * straight out of Pinia as Vue reactive proxies, which `structuredClone`
+ * refuses, so every level is unwrapped with `toRaw` first.
+ */
+function unwrap(value: unknown): unknown {
+  const raw: unknown = toRaw(value);
+  if (Array.isArray(raw)) {
+    return raw.map((item) => unwrap(item));
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    return Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, unwrap(item)]));
+  }
+  return raw;
+}
+
 function clone<T>(value: T): T {
-  return structuredClone(value);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- unwrap keeps the shape, only the proxies go
+  return structuredClone(unwrap(value) as T);
 }
 
 export function captureExploreView(query: QuerySnapshot, pivot: PivotSnapshot): ExploreViewSpec {
