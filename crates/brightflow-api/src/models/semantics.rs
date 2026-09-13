@@ -95,7 +95,7 @@ pub async fn declare_model_output(
     fields: Vec<Field>,
 ) -> AppResult<()> {
     let mut dataset = Dataset::new(output, format!("{source_id}/{output}"));
-    dataset.description = Some(format!("Built from `{input}` by the model `{output}`."));
+    dataset.description = Some(format!("Built from {input} by the model {output}."));
     dataset.fields = fields;
     let decl = TableDeclaration {
         dataset: Some(dataset),
