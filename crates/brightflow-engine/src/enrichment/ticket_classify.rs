@@ -18,9 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use super::function::{TicketClassifySpec, VocabEntry};
 use super::vocabulary::{is_other, OTHER, OTHER_PARENT};
-use super::OutputSemantic;
 use crate::data::config::ColumnRole;
-use brightflow_types::LogicalType;
+use brightflow_types::{ColumnExt, Field, LogicalType};
 
 /// Upper bound the prompt states for the summary; validation trims, never
 /// rejects, so a verbose model degrades to a truncated summary rather than a
@@ -46,48 +45,45 @@ pub const OUTPUT_COLUMNS: [&str; 5] = [
     "sentiment",
 ];
 
-/// The meaning of each output column, in `OUTPUT_COLUMNS` order. `summary`
-/// is free text and so `ignored` for analysis; the rest are dimensions.
-pub const OUTPUT_SEMANTICS: [OutputSemantic; 5] = [
-    OutputSemantic {
-        name: "summary",
-        datatype: LogicalType::String,
-        role: ColumnRole::Ignored,
-        label: "Summary",
-        description: "One-sentence summary of the ticket, written by the model.",
-    },
-    OutputSemantic {
-        name: "language",
-        datatype: LogicalType::String,
-        role: ColumnRole::Dimension,
-        label: "Language",
-        description: "Language of the ticket text, detected before the model call.",
-    },
-    OutputSemantic {
-        name: "category",
-        datatype: LogicalType::String,
-        role: ColumnRole::Dimension,
-        label: "Category",
-        description: "What is wrong for the user, from the table's category vocabulary; \
+/// The meaning of each output column, in `OUTPUT_COLUMNS` order.
+///
+/// The fields the runner declares under the function's name. `summary` is
+/// free text and so `ignored` for analysis; the rest are dimensions.
+/// Declared beside the column list that writes them so the two cannot
+/// drift apart.
+pub fn output_fields() -> Vec<Field> {
+    vec![
+        Field::column("summary")
+            .with_datatype(LogicalType::String)
+            .with_description("One-sentence summary of the ticket, written by the model.")
+            .with_brightflow(&ColumnExt::role(ColumnRole::Ignored).with_label("Summary")),
+        Field::column("language")
+            .with_datatype(LogicalType::String)
+            .with_description("Language of the ticket text, detected before the model call.")
+            .with_brightflow(&ColumnExt::role(ColumnRole::Dimension).with_label("Language")),
+        Field::column("category")
+            .with_datatype(LogicalType::String)
+            .with_description(
+                "What is wrong for the user, from the table's category vocabulary; \
                       'other' when no entry fits.",
-    },
-    OutputSemantic {
-        name: "subcategory",
-        datatype: LogicalType::String,
-        role: ColumnRole::Dimension,
-        label: "Subcategory",
-        description: "The finer entry under the category, from the table's subcategory \
+            )
+            .with_brightflow(&ColumnExt::role(ColumnRole::Dimension).with_label("Category")),
+        Field::column("subcategory")
+            .with_datatype(LogicalType::String)
+            .with_description(
+                "The finer entry under the category, from the table's subcategory \
                       vocabulary; 'other' when no entry fits.",
-    },
-    OutputSemantic {
-        name: "sentiment",
-        datatype: LogicalType::String,
-        role: ColumnRole::Dimension,
-        label: "Sentiment",
-        description: "How the customer feels about the matter: neutral (no evaluative \
+            )
+            .with_brightflow(&ColumnExt::role(ColumnRole::Dimension).with_label("Subcategory")),
+        Field::column("sentiment")
+            .with_datatype(LogicalType::String)
+            .with_description(
+                "How the customer feels about the matter: neutral (no evaluative \
                       content), mixed (both directions at once), positive, or negative.",
-    },
-];
+            )
+            .with_brightflow(&ColumnExt::role(ColumnRole::Dimension).with_label("Sentiment")),
+    ]
+}
 
 /// Output columns this call used to write and no longer does. Materialisation
 /// drops these alongside the current names, so a table enriched under an
@@ -565,10 +561,16 @@ mod tests {
     /// The semantics list and the column list are two views of one thing.
     #[test]
     fn output_semantics_name_exactly_the_output_columns() {
-        let declared: Vec<&str> = OUTPUT_SEMANTICS.iter().map(|s| s.name).collect();
+        let fields = output_fields();
+        let declared: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(declared, OUTPUT_COLUMNS.to_vec());
-        for s in &OUTPUT_SEMANTICS {
-            assert!(!s.label.trim().is_empty() && !s.description.trim().is_empty());
+        for f in &fields {
+            let ext = f.brightflow().unwrap();
+            assert!(ext.role.is_some() && ext.label.is_some_and(|l| !l.trim().is_empty()));
+            assert!(f
+                .description
+                .as_deref()
+                .is_some_and(|d| !d.trim().is_empty()));
         }
     }
 }

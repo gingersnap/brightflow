@@ -9,23 +9,6 @@ pub mod mentions;
 pub mod ticket_classify;
 pub mod vocabulary;
 
-use crate::data::config::ColumnRole;
-use brightflow_types::LogicalType;
-
-/// What a materialised output column means.
-///
-/// Declared beside the column list that writes it so the two cannot drift
-/// apart. The runner turns these into `column_semantics` rows the first time
-/// a column lands; a user's later edit to the row wins over a re-run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutputSemantic {
-    pub name: &'static str,
-    pub datatype: LogicalType,
-    pub role: ColumnRole,
-    pub label: &'static str,
-    pub description: &'static str,
-}
-
 pub use function::{
     input_hash, ticket_classify_hash, ticket_extract_hash, FunctionSpec, TicketClassifySpec,
     TicketExtractSpec, VocabEntry,

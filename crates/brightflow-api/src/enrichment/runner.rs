@@ -21,16 +21,13 @@ use futures::StreamExt;
 use polars::prelude::*;
 
 use brightflow_engine::data::config::ColumnRole;
-use brightflow_engine::enrichment::mentions::{
-    self, ExtractCell, SubjectResolver, FLAG_COLUMNS, FLAG_SEMANTICS,
-};
+use brightflow_engine::enrichment::mentions::{self, ExtractCell, SubjectResolver, FLAG_COLUMNS};
 use brightflow_engine::enrichment::ticket_classify::{
-    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS, OUTPUT_SEMANTICS,
-    RETIRED_COLUMNS,
+    self, ClassifyCell, VocabNames, LANGUAGE_INPUT, OUTPUT_COLUMNS, RETIRED_COLUMNS,
 };
 use brightflow_engine::enrichment::{
-    input_hash, ticket_classify_hash, ticket_extract_hash, FunctionSpec, OutputSemantic,
-    TicketClassifySpec, TicketExtractSpec,
+    input_hash, ticket_classify_hash, ticket_extract_hash, FunctionSpec, TicketClassifySpec,
+    TicketExtractSpec,
 };
 use brightflow_engine::nlp::detect_language;
 use brightflow_llm::{
@@ -333,10 +330,10 @@ impl RunSpec {
     }
 
     /// What each output column means, in `output_columns` order.
-    pub fn output_semantics(&self) -> &'static [OutputSemantic] {
+    pub fn output_fields(&self) -> Vec<Field> {
         match self {
-            Self::TicketClassify { .. } => &OUTPUT_SEMANTICS,
-            Self::TicketExtract { .. } => &FLAG_SEMANTICS,
+            Self::TicketClassify { .. } => ticket_classify::output_fields(),
+            Self::TicketExtract { .. } => mentions::flag_fields(),
         }
     }
 
@@ -1067,33 +1064,14 @@ async fn declare_output_semantics(
     function_name: &str,
     run: &RunSpec,
 ) {
-    let field = |name: &str,
-                 datatype: LogicalType,
-                 role: ColumnRole,
-                 label: Option<&str>,
-                 description: &str| {
-        let mut ext = ColumnExt::role(role);
-        if let Some(label) = label {
-            ext = ext.with_label(label);
-        }
-        Field::column(name)
-            .with_datatype(datatype)
-            .with_description(description)
-            .with_brightflow(&ext)
-    };
     let mut dataset = Dataset::new(table_name, format!("{source_id}/{table_name}"));
-    dataset.fields = run
-        .output_semantics()
-        .iter()
-        .map(|s| field(s.name, s.datatype, s.role, Some(s.label), s.description))
-        .collect();
-    dataset.fields.push(field(
-        &format!("{function_name}__status"),
-        LogicalType::String,
-        ColumnRole::Ignored,
-        None,
-        "Per-row outcome of the enrichment run; bookkeeping, not data.",
-    ));
+    dataset.fields = run.output_fields();
+    dataset.fields.push(
+        Field::column(format!("{function_name}__status"))
+            .with_datatype(LogicalType::String)
+            .with_description("Per-row outcome of the enrichment run; bookkeeping, not data.")
+            .with_brightflow(&ColumnExt::role(ColumnRole::Ignored)),
+    );
     let decl = TableDeclaration {
         dataset: Some(dataset),
         ..TableDeclaration::new(table_name)

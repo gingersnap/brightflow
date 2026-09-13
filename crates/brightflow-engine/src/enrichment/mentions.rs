@@ -25,9 +25,8 @@ use serde::{Deserialize, Serialize};
 use super::function::{TicketExtractSpec, VocabEntry};
 use super::ticket_classify::{VocabNames, SENTIMENT_VALUES};
 use super::vocabulary::{is_other, OTHER};
-use super::OutputSemantic;
 use crate::data::config::ColumnRole;
-use brightflow_types::LogicalType;
+use brightflow_types::{ColumnExt, Field, LogicalType};
 
 /// Child-table name for a parent `table`.
 pub fn mentions_table_name(table: &str) -> String {
@@ -66,40 +65,41 @@ pub const FLAG_COLUMNS: [&str; 4] = [
     "mention_count",
 ];
 
-/// The meaning of each parent-row flag, in `FLAG_COLUMNS` order.
-pub const FLAG_SEMANTICS: [OutputSemantic; 4] = [
-    OutputSemantic {
-        name: "has_feedback",
-        datatype: LogicalType::Boolean,
-        role: ColumnRole::Dimension,
-        label: "Has feedback",
-        description: "Whether the ticket contains at least one piece of feedback about \
+/// The meaning of each parent-row flag, in `FLAG_COLUMNS` order, as the
+/// fields the runner declares under the function's name.
+pub fn flag_fields() -> Vec<Field> {
+    vec![
+        Field::column("has_feedback")
+            .with_datatype(LogicalType::Boolean)
+            .with_description(
+                "Whether the ticket contains at least one piece of feedback about \
                       the product or service.",
-    },
-    OutputSemantic {
-        name: "has_incidental_feedback",
-        datatype: LogicalType::Boolean,
-        role: ColumnRole::Dimension,
-        label: "Has incidental feedback",
-        description: "Whether the ticket contains feedback that is not the reason the \
+            )
+            .with_brightflow(&ColumnExt::role(ColumnRole::Dimension).with_label("Has feedback")),
+        Field::column("has_incidental_feedback")
+            .with_datatype(LogicalType::Boolean)
+            .with_description(
+                "Whether the ticket contains feedback that is not the reason the \
                       customer wrote in.",
-    },
-    OutputSemantic {
-        name: "has_competitor_mention",
-        datatype: LogicalType::Boolean,
-        role: ColumnRole::Dimension,
-        label: "Mentions a competitor",
-        description: "Whether the ticket names a competitor.",
-    },
-    OutputSemantic {
-        name: "mention_count",
-        datatype: LogicalType::Integer,
-        role: ColumnRole::Measure,
-        label: "Mention count",
-        description: "How many products, competitors, prices, services or pieces of \
+            )
+            .with_brightflow(
+                &ColumnExt::role(ColumnRole::Dimension).with_label("Has incidental feedback"),
+            ),
+        Field::column("has_competitor_mention")
+            .with_datatype(LogicalType::Boolean)
+            .with_description("Whether the ticket names a competitor.")
+            .with_brightflow(
+                &ColumnExt::role(ColumnRole::Dimension).with_label("Mentions a competitor"),
+            ),
+        Field::column("mention_count")
+            .with_datatype(LogicalType::Integer)
+            .with_description(
+                "How many products, competitors, prices, services or pieces of \
                       feedback the ticket mentions.",
-    },
-];
+            )
+            .with_brightflow(&ColumnExt::role(ColumnRole::Measure).with_label("Mention count")),
+    ]
+}
 
 /// One validated mention. The cache's `value_json` is `{"mentions": [..]}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -764,10 +764,16 @@ mod tests {
     /// The semantics list and the flag list are two views of one thing.
     #[test]
     fn flag_semantics_name_exactly_the_flag_columns() {
-        let declared: Vec<&str> = FLAG_SEMANTICS.iter().map(|s| s.name).collect();
+        let fields = flag_fields();
+        let declared: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(declared, FLAG_COLUMNS.to_vec());
-        for s in &FLAG_SEMANTICS {
-            assert!(!s.label.trim().is_empty() && !s.description.trim().is_empty());
+        for f in &fields {
+            let ext = f.brightflow().unwrap();
+            assert!(ext.role.is_some() && ext.label.is_some_and(|l| !l.trim().is_empty()));
+            assert!(f
+                .description
+                .as_deref()
+                .is_some_and(|d| !d.trim().is_empty()));
         }
     }
 }
