@@ -1,5 +1,5 @@
 /* ============================================================================
-   MIAMI — Design Tokens v0.0.6
+   MIAMI — Design Tokens v0.0.7
    ============================================================================
 
    Colors:
@@ -454,7 +454,7 @@
    UTILITIES — Presentation layer
    ============================================================================
    Surface effects (glass, card-surface / card-surface-hover), textures
-   (bg-grid, bg-noise), and masks (mask-fade-b, mask-fade-x) that recur
+   (bg-grid), and masks (mask-fade-b, mask-fade-x) that recur
    across marketing compositions. Used as Tailwind classes:
 
      <div class="glass rounded-2xl p-6"> ... </div>
