@@ -1,5 +1,5 @@
 <script setup lang="ts">
- /**
+/**
  * Static empty-state panel shown before any source is selected: brand
  * mark and a pointer to the sidebar.
  */

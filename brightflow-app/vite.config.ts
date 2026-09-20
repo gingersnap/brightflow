@@ -45,6 +45,7 @@ export default defineConfig({
       'func-style': 'off', // Function declarations idiomatic in Vue/Pinia
       'unicorn/no-null': 'off', // Vue ref<T | null>(null) is standard
       'unicorn/filename-case': 'off', // PascalCase SFCs = official Vue convention
+      'one-var': 'off', // One `const` per ref/computed is the Vue idiom; merging them hides the shape
 
       // --- Off: too aggressive ---
       'no-magic-numbers': 'off', // Flags 0, 1024, 3600 etc.

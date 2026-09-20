@@ -6,7 +6,7 @@
  * details are shown only for completed runs.
  */
 
-import { formatTimeAgo, useNow } from '@vueuse/core';
+import { formatTimeAgo, useIntervalFn, useNow } from '@vueuse/core';
 import { computed } from 'vue';
 
 import type { UnifiedConnector } from '@/types';
@@ -38,7 +38,9 @@ function isRunning(c: UnifiedConnector): boolean {
   return c.lastRun != null && (c.lastRun.status === 'running' || c.lastRun.status === 'pending');
 }
 
-const now = useNow({ interval: 30_000 });
+/* VueUse 15 dropped the `interval` option; the tick rate is expressed as a
+   scheduler instead. rAF would re-render every frame for nothing here. */
+const now = useNow({ scheduler: (cb) => useIntervalFn(cb, 30_000) });
 
 function relativeTime(dateStr: string): string {
   return formatTimeAgo(new Date(dateStr), {}, now.value);

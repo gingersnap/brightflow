@@ -7,7 +7,7 @@
  */
 
 import type { TableColumn, TableRow, ContextMenuItem } from '@nuxt/ui';
-import { formatTimeAgo, useClipboard, useNow } from '@vueuse/core';
+import { formatTimeAgo, useClipboard, useIntervalFn, useNow } from '@vueuse/core';
 import { computed, h, ref } from 'vue';
 
 const { copy } = useClipboard();
@@ -24,7 +24,9 @@ const emit = defineEmits<{
   run: [connectorName: string];
 }>();
 
-const now = useNow({ interval: 30_000 });
+/* VueUse 15 dropped the `interval` option; the tick rate is expressed as a
+   scheduler instead. rAF would re-render every frame for nothing here. */
+const now = useNow({ scheduler: (cb) => useIntervalFn(cb, 30_000) });
 
 /** Rows are render functions, so per-row useTimeAgo can't be used; reading
  * `now` here makes the cells re-derive as time passes. */
