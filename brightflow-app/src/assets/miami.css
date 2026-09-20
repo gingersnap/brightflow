@@ -1,5 +1,5 @@
 /* ============================================================================
-   MIAMI — Design Tokens v0.0.8
+   MIAMI — Design Tokens v0.0.9
    ============================================================================
 
    Colors:
@@ -266,9 +266,9 @@
 }
 
 .dark {
-  /* Identical to Nuxt UI's stock dark palette (bg 900, muted = elevated 800,
-     accented 700); restated here because marketing imports this file without
-     the Nuxt UI plugin. */
+  /* Backgrounds are Nuxt UI's stock dark palette (bg 900, muted = elevated
+     800, accented 700); restated here because marketing imports this file
+     without the Nuxt UI plugin. */
   --ui-bg: var(--color-neutral-900);
   --ui-bg-muted: var(--color-neutral-800);
   --ui-bg-elevated: var(--color-neutral-800);
@@ -282,7 +282,10 @@
   --ui-text-highlighted: var(--color-white);
   --ui-text-inverted: var(--color-neutral-900);
 
-  --ui-border: var(--color-neutral-800);
+  /* One step above the raised surface (800) so a card's edge shows against
+     its own fill, not only against the page. Nuxt UI stock keeps 800 here
+     because its surfaces stay at 900. */
+  --ui-border: var(--color-neutral-700);
   --ui-border-muted: var(--color-neutral-700);
   --ui-border-accented: var(--color-neutral-700);
   --ui-border-inverted: var(--color-white);

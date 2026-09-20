@@ -174,7 +174,7 @@ function goToSources(): void {
     class="bg-elevated"
     :ui="{
       body: '[--ui-bg-elevated:var(--ui-bg-accented)]',
-      footer: 'lg:border-t lg:border-accented dark:lg:border-default',
+      footer: 'lg:border-t lg:border-default',
     }"
   >
     <!-- Header: logo -->
