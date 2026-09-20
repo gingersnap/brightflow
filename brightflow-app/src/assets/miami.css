@@ -1,5 +1,5 @@
 /* ============================================================================
-   MIAMI — Design Tokens v0.0.7
+   MIAMI — Design Tokens v0.0.8
    ============================================================================
 
    Colors:
@@ -475,9 +475,11 @@
 }
 
 @utility card-surface {
+  /* A raised card that fades toward the page at its foot, so it reads as
+     lifted (elevated at the top) rather than as a flat slab. */
   background: linear-gradient(
     180deg,
-    color-mix(in oklab, var(--ui-bg-muted) 80%, transparent) 0%,
+    color-mix(in oklab, var(--ui-bg-elevated) 80%, transparent) 0%,
     color-mix(in oklab, var(--ui-bg) 80%, transparent) 100%
   );
   border: 1px solid color-mix(in oklab, var(--ui-border) 90%, transparent);
