@@ -87,7 +87,7 @@ function handleCardClick(table: SourceTable): void {
     </template>
 
     <!-- Content -->
-    <div class="border-t border-default bg-muted/10 p-4">
+    <div class="border-t border-default bg-accented/10 p-4">
       <div v-if="selectedTable" class="mb-3 flex flex-wrap items-center gap-3">
         <AgentActions :source-id="sourceId" :table="selectedTable" :kinds="DESCRIBE_KIND" />
         <span class="text-xs text-muted">

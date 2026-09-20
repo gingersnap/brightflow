@@ -50,6 +50,9 @@
 
    Semantic utilities (bound below to --ui-* tokens):
      bg-default / bg-muted / bg-elevated / bg-accented / bg-inverted
+     Surfaces: bg-default is the page, bg-elevated is every raised panel
+     (sidebar, cards). bg-muted equals bg-elevated — use bg-accented for a
+     tint that must show on either surface.
      text-default / text-muted / text-dimmed / text-toned /
        text-highlighted / text-inverted / text-brand
      border-default / border-muted / border-accented / border-inverted
@@ -231,9 +234,15 @@
      so Tailwind's standard radius scale holds. */
   --ui-radius: 0.25rem;
 
-  /* Backgrounds — page sits on warm sand, cards pop forward in white */
+  /* Backgrounds — two surfaces plus a tint. The page (bg) sits on warm
+     sand; the sidebar and every card share one raised surface (elevated) in
+     white. muted is deliberately the same value as elevated, mirroring what
+     Nuxt UI does in its own dark palette, so there is no third in-between
+     surface. accented is the one tint that stays visible on both surfaces
+     (hover, pressed, table headers, inset panels): darker in light mode,
+     lighter in dark — always one step away from whatever it sits on. */
   --ui-bg: var(--color-neutral-50);
-  --ui-bg-muted: var(--color-neutral-100);
+  --ui-bg-muted: var(--color-white);
   --ui-bg-elevated: var(--color-white);
   --ui-bg-accented: var(--color-neutral-200);
   --ui-bg-inverted: var(--color-neutral-900);
@@ -257,8 +266,11 @@
 }
 
 .dark {
-  --ui-bg: var(--color-neutral-950);
-  --ui-bg-muted: var(--color-neutral-900);
+  /* Identical to Nuxt UI's stock dark palette (bg 900, muted = elevated 800,
+     accented 700); restated here because marketing imports this file without
+     the Nuxt UI plugin. */
+  --ui-bg: var(--color-neutral-900);
+  --ui-bg-muted: var(--color-neutral-800);
   --ui-bg-elevated: var(--color-neutral-800);
   --ui-bg-accented: var(--color-neutral-700);
   --ui-bg-inverted: var(--color-white);

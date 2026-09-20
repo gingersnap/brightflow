@@ -134,7 +134,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
     </template>
 
     <!-- Content -->
-    <div class="space-y-2 border-t border-default bg-muted/10 px-4 py-2">
+    <div class="space-y-2 border-t border-default bg-accented/10 px-4 py-2">
       <!-- Filters Row -->
       <div class="flex flex-wrap items-center gap-2">
         <span class="w-12 text-sm font-medium text-muted">Filter:</span>
@@ -182,7 +182,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
 
           <!-- Remove button -->
           <button
-            class="rounded p-0.5 text-muted transition-colors hover:bg-muted/50 hover:text-default"
+            class="rounded p-0.5 text-muted transition-colors hover:bg-accented/50 hover:text-default"
             @click="queryStore.removeFilter(filter.id)"
           >
             <UIcon name="i-lucide-x" class="h-3 w-3" />
@@ -191,7 +191,7 @@ const hasActiveFilters = computed(() => queryStore.filters.some((f) => f.column 
 
         <!-- Add filter button -->
         <button
-          class="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted transition-colors hover:bg-muted/30 hover:text-default"
+          class="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted transition-colors hover:bg-accented/30 hover:text-default"
           @click="queryStore.addFilter()"
         >
           <UIcon name="i-lucide-plus" class="h-3.5 w-3.5" />

@@ -73,14 +73,14 @@ const textSizes: { value: TextSize; label: string; description: string }[] = [
               <p class="mb-3 text-sm text-muted">
                 Adjust the overall density of the app. Layout and spacing scale with the text size.
               </p>
-              <div class="flex items-center gap-1 rounded-lg bg-muted p-0.5">
+              <div class="flex items-center gap-1 rounded-lg bg-accented p-0.5">
                 <button
                   v-for="size in textSizes"
                   :key="size.value"
                   class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
                   :class="
                     uiStore.textSize === size.value
-                      ? 'bg-default text-highlighted shadow-sm'
+                      ? 'bg-elevated text-highlighted shadow-sm'
                       : 'cursor-pointer text-muted hover:text-highlighted'
                   "
                   @click="uiStore.textSize = size.value"

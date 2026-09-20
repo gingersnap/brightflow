@@ -56,7 +56,7 @@ onBeforeUnmount(() => {
     <div class="flex-1 overflow-y-auto">
       <section>
         <h3
-          class="border-b border-default bg-muted/10 px-4 py-1.5 text-xs font-semibold tracking-wider text-muted uppercase"
+          class="border-b border-default bg-accented/10 px-4 py-1.5 text-xs font-semibold tracking-wider text-muted uppercase"
         >
           Running ({{ running.length }})
         </h3>

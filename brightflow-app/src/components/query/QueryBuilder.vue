@@ -314,9 +314,9 @@ const sortColumnOptions = computed(() =>
     </template>
 
     <!-- Content -->
-    <div class="flex border-t border-default bg-muted/10">
+    <div class="flex border-t border-default bg-accented/10">
       <!-- Column List (left side) -->
-      <div class="w-48 border-r border-default bg-muted/20 p-3">
+      <div class="w-48 border-r border-default bg-accented/20 p-3">
         <UContextMenu v-model:open="menuOpen" :items="menuItems">
           <div v-if="columns.length" class="max-h-48 space-y-1 overflow-y-auto">
             <draggable
@@ -380,7 +380,7 @@ const sortColumnOptions = computed(() =>
             <!-- Flip button between Rows and Columns -->
             <button
               v-if="pivotStore.rowFields.length > 0 || pivotStore.columnFields.length > 0"
-              class="absolute top-8 -left-5 z-10 rounded-full bg-muted/50 p-1 text-muted transition-colors hover:bg-muted hover:text-default"
+              class="absolute top-8 -left-5 z-10 rounded-full bg-accented/50 p-1 text-muted transition-colors hover:bg-accented hover:text-default"
               title="Flip rows and columns"
               @click="pivotStore.flipRowsAndColumns()"
             >

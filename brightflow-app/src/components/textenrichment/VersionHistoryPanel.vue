@@ -75,7 +75,9 @@ function pretty(version: FunctionVersion): string {
             class="space-y-2 border-t border-default p-3"
           >
             <!-- Dense config dump: 12px is intentional here -->
-            <pre class="overflow-x-auto rounded bg-muted/10 p-2 text-xs">{{ pretty(version) }}</pre>
+            <pre class="overflow-x-auto rounded bg-accented/10 p-2 text-xs">{{
+              pretty(version)
+            }}</pre>
             <UButton
               v-if="version.version !== currentVersion"
               size="md"

@@ -163,13 +163,19 @@ function goToSources(): void {
 </script>
 
 <template>
+  <!-- The sidebar shares the raised (elevated) surface with cards. The nav
+       menu's stock hover/active tint is also "elevated", which would vanish
+       here, so the body slot remaps that token one step up to accented. -->
   <UDashboardSidebar
     id="default"
     v-model:open="open"
     collapsible
     resizable
-    class="bg-muted"
-    :ui="{ footer: 'lg:border-t lg:border-accented dark:lg:border-default' }"
+    class="bg-elevated"
+    :ui="{
+      body: '[--ui-bg-elevated:var(--ui-bg-accented)]',
+      footer: 'lg:border-t lg:border-accented dark:lg:border-default',
+    }"
   >
     <!-- Header: logo -->
     <template #header="{ collapsed }">
@@ -202,7 +208,7 @@ function goToSources(): void {
     <template #footer="{ collapsed }">
       <UDropdownMenu :items="userMenuItems" :content="{ side: 'right', align: 'end' }">
         <button
-          class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-elevated"
+          class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-accented"
           :class="collapsed ? 'justify-center' : ''"
         >
           <UIcon name="i-lucide-user" class="h-4 w-4 shrink-0 text-muted" />

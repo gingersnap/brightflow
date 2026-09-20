@@ -333,7 +333,7 @@ function isNumeric(datatype: LogicalType | undefined): boolean {
     <!-- Grouping toolbar -->
     <div
       v-if="hasGrouping && pivotData"
-      class="flex items-center gap-2 border-b border-default bg-muted/30 px-3 py-1.5 text-sm"
+      class="flex items-center gap-2 border-b border-default bg-accented/30 px-3 py-1.5 text-sm"
     >
       <span class="text-muted">Groups:</span>
       <UButton variant="ghost" color="neutral" size="md" @click="expandAll">Expand all</UButton>
@@ -346,13 +346,13 @@ function isNumeric(datatype: LogicalType | undefined): boolean {
     <div v-if="pivotData" class="flex-1 overflow-auto">
       <table class="w-full border-collapse text-sm">
         <!-- Header -->
-        <thead class="sticky top-0 z-1 bg-muted/50 backdrop-blur">
+        <thead class="sticky top-0 z-1 bg-accented/50 backdrop-blur">
           <tr>
             <!-- Index column headers -->
             <th
               v-for="col in pivotData.indexColumns"
               :key="'idx-' + col.name"
-              class="border-b border-default bg-muted/50 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted uppercase"
+              class="border-b border-default bg-accented/50 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted uppercase"
             >
               {{ col.name == null ? '' : datasetStore.labelFor(col.name) }}
             </th>
@@ -361,7 +361,7 @@ function isNumeric(datatype: LogicalType | undefined): boolean {
             <th
               v-for="col in pivotData.valueColumns"
               :key="'val-' + col.name"
-              class="border-b border-default bg-muted/50 px-3 py-2 text-right text-xs font-semibold tracking-wide text-muted uppercase"
+              class="border-b border-default bg-accented/50 px-3 py-2 text-right text-xs font-semibold tracking-wide text-muted uppercase"
             >
               {{ col.name == null ? '' : datasetStore.labelFor(col.name) }}
             </th>
@@ -374,7 +374,7 @@ function isNumeric(datatype: LogicalType | undefined): boolean {
             <!-- Group header row -->
             <tr
               v-if="row.isGroup && row.groupKey"
-              class="cursor-pointer bg-muted/40 transition-colors hover:bg-muted/60"
+              class="cursor-pointer bg-accented/40 transition-colors hover:bg-accented/60"
               @click="pivotStore.toggleGroup(row.groupKey)"
             >
               <!-- Group label with expand/collapse icon -->
@@ -415,7 +415,7 @@ function isNumeric(datatype: LogicalType | undefined): boolean {
             <!-- Regular data row -->
             <tr
               v-else
-              class="transition-colors hover:bg-muted/30"
+              class="transition-colors hover:bg-accented/30"
               :class="{ 'pl-4': row.level > 0 }"
             >
               <!-- Index cells (row labels) -->

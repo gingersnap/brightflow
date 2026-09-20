@@ -12,10 +12,10 @@ const open = defineModel<boolean>('open', { default: true });
   <div>
     <!-- Header lives outside UCollapsible: sites put interactive controls in #actions,
          and UCollapsible's default slot is the trigger (as-child), which would nest them. -->
-    <div class="flex items-center justify-between bg-muted/30">
+    <div class="flex items-center justify-between bg-accented/30">
       <button
         type="button"
-        class="flex flex-1 items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-muted/40"
+        class="flex flex-1 items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-accented/40"
         @click="open = !open"
       >
         <UIcon

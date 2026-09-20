@@ -543,7 +543,7 @@ const modelOpen = ref(false);
                     </UDropdownMenu>
                   </td>
                 </tr>
-                <tr v-if="expanded.has(column.name)" class="border-b border-default bg-muted/10">
+                <tr v-if="expanded.has(column.name)" class="border-b border-default bg-accented/10">
                   <td colspan="7" class="px-3 py-2 pl-9">
                     <ul class="space-y-2">
                       <li

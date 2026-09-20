@@ -210,8 +210,8 @@ function handleChange(evt: DragEvent): void {
       class="min-h-[80px] flex-1 rounded-md border-2 border-dashed p-2 transition-colors"
       :class="{
         'border-primary bg-primary/5': canAcceptMore(),
-        'border-muted/30 bg-muted/5 opacity-50': disabled,
-        'border-muted/50 bg-muted/10': !canAcceptMore() && !disabled,
+        'border-muted/30 bg-accented/5 opacity-50': disabled,
+        'border-muted/50 bg-accented/10': !canAcceptMore() && !disabled,
       }"
       ghost-class="opacity-50"
       drag-class="bg-primary/20"
@@ -276,7 +276,7 @@ function handleChange(evt: DragEvent): void {
 
             <!-- Remove button -->
             <button
-              class="rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 hover:bg-muted"
+              class="rounded p-0.5 opacity-0 transition-colors group-hover:opacity-100 hover:bg-accented"
               @click.stop="emit('remove', element.id)"
             >
               <UIcon name="i-lucide-x" class="h-3.5 w-3.5 text-muted hover:text-default" />
