@@ -1627,7 +1627,7 @@ mod tests {
             table_context,
         } = classify_run()
         else {
-            unreachable!()
+            panic!("classify_run builds a TicketClassify spec")
         };
         spec.categories[0].description = Some(description.to_string());
         RunSpec::TicketClassify {
@@ -1643,7 +1643,7 @@ mod tests {
     fn table_context_is_appended_to_the_system_turn_but_not_hashed() {
         let plain = classify_run();
         let RunSpec::TicketClassify { spec, names, .. } = classify_run() else {
-            unreachable!()
+            panic!("classify_run builds a TicketClassify spec")
         };
         let with_context = RunSpec::TicketClassify {
             spec,
@@ -1698,7 +1698,7 @@ mod tests {
             table_context,
         } = classify_run()
         else {
-            unreachable!()
+            panic!("classify_run builds a TicketClassify spec")
         };
         spec.language_column = Some("lang".to_string());
         let run = RunSpec::TicketClassify {
@@ -1721,7 +1721,7 @@ mod tests {
     fn classify_hash_ignores_names() {
         let a = classify_run();
         let RunSpec::TicketClassify { spec, .. } = classify_run() else {
-            unreachable!()
+            panic!("classify_run builds a TicketClassify spec")
         };
         let b = RunSpec::TicketClassify {
             spec,

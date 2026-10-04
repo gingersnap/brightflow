@@ -537,13 +537,15 @@ fn finite_view(frame: &SeriesFrame) -> Option<(Vec<String>, Vec<f64>)> {
 /// One "why is this interesting" sentence: impact + null framing
 /// (+ low-confidence caveat).
 fn why_sentence(frame: &SeriesFrame, sig: Significance, null_clause: &str) -> String {
-    use std::fmt::Write as _;
     let mut s = format!(
         "affects {:.0}% of rows; {null_clause}",
         frame.impact * 100.0
     );
     if sig.low_confidence {
-        let _ = write!(s, " (low confidence: only {} periods)", frame.values.len());
+        crate::enrichment::push_fmt(
+            &mut s,
+            format_args!(" (low confidence: only {} periods)", frame.values.len()),
+        );
     }
     s
 }

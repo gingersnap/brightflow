@@ -39,6 +39,8 @@ pub mod declaration;
 pub mod ext;
 pub mod import;
 pub mod ops;
+#[cfg(test)]
+mod ossie_conformance;
 pub mod provenance;
 pub mod resolved;
 pub mod semantic;

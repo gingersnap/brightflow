@@ -1,11 +1,10 @@
-//! Integration tests for the Drivers report: planted-delta attribution,
+//! The Drivers report over in-memory DataFrames: planted-delta attribution,
 //! sign-cancellation surfacing, and fingerprint hygiene across passes.
 
 #![expect(
-    clippy::unwrap_used,
     clippy::cast_precision_loss,
     clippy::suboptimal_flops,
-    reason = "integration tests panic on failure by design"
+    reason = "planted fixtures cast row indices into float deltas"
 )]
 
 use std::collections::HashSet;
@@ -13,9 +12,9 @@ use std::collections::HashSet;
 use chrono::NaiveDate;
 use polars::prelude::*;
 
-use brightflow_engine::analysis::engine::AnalysisEngine;
-use brightflow_engine::analysis::tree::{AnalysisTree, AnalysisType};
-use brightflow_engine::data::schema::detect_schema;
+use crate::analysis::engine::AnalysisEngine;
+use crate::analysis::tree::{AnalysisTree, AnalysisType};
+use crate::data::schema::detect_schema;
 
 /// 8 weekly periods × 3 regions; in the final week EU revenue halves while
 /// the other regions stay flat — EU must surface as the top driver.
@@ -113,7 +112,7 @@ fn offsetting_dataframe() -> DataFrame {
     .unwrap()
 }
 
-fn drivers_roots(tree: &AnalysisTree) -> Vec<&brightflow_engine::analysis::tree::AnalysisNode> {
+fn drivers_roots(tree: &AnalysisTree) -> Vec<&crate::analysis::tree::AnalysisNode> {
     tree.roots
         .iter()
         .filter_map(|id| tree.nodes.get(id.0))

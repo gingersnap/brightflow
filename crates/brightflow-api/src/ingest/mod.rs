@@ -29,7 +29,7 @@ use tokio::sync::RwLock;
 
 use self::buffer::EventBuffer;
 use self::db::IngestDb;
-use self::error::IngestResult;
+use self::error::{IngestError, IngestResult};
 use self::models::Source;
 
 /// Shared ingest state held in the API server's `AppState`.
@@ -115,7 +115,8 @@ pub async fn init(
     let db = IngestDb::new(ingest_url).await?;
     let buffer = EventBuffer::new(buffer_dir.to_path_buf());
     let geo_reader = geo::load_geoip_reader(geoip_base_path);
-    let ua_parser = ua::create_parser();
+    let ua_parser =
+        ua::create_parser().map_err(|e| IngestError::Other(format!("UA parser regexes: {e}")))?;
 
     IngestState::new(db, buffer, geo_reader, ua_parser).await
 }

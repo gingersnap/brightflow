@@ -462,21 +462,10 @@ impl StoreDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
-    /// Fresh, fully migrated `StoreDb` backed by a SQLite file in `tmp`.
-    async fn temp_db(tmp: &TempDir) -> StoreDb {
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        StoreDb::new(&db_url).await.expect("failed to open db")
-    }
 
     #[tokio::test]
     async fn recreating_a_category_reports_a_name_clash() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
 
         let original = db
             .upsert_taxonomy_category("t1", "category", 0, "billing", None, None, 0)
@@ -504,8 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn names_are_unique_per_level_not_per_table() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
 
         let billing = db
             .upsert_taxonomy_category("t1", "category", 0, "billing", None, None, 0)
@@ -547,8 +535,7 @@ mod tests {
 
     #[tokio::test]
     async fn unresolved_subjects_sync_keeps_status_and_zeroes_the_unseen() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let first = vec![
             (("competitor".to_string(), "Unknown Corp".to_string()), 9),
             (("product".to_string(), "invoices page".to_string()), 2),

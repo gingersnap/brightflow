@@ -78,6 +78,12 @@ impl StoreDb {
 
         Ok(Self { pool })
     }
+
+    /// A fresh, fully migrated in-memory database for unit tests.
+    #[cfg(test)]
+    pub(crate) async fn in_memory() -> Self {
+        Self::new(":memory:").await.expect("in-memory store opens")
+    }
 }
 
 #[cfg(test)]
@@ -102,5 +108,131 @@ mod tests {
         on_disk.sort();
         let embedded: Vec<String> = MIGRATIONS.iter().map(|m| m.name.to_owned()).collect();
         assert_eq!(embedded, on_disk);
+    }
+
+    /// An in-memory database migrated up to, not including, `version`, so a
+    /// data migration can be applied over rows the test plants first.
+    fn migrated_before(version: i64) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.pragma_update(None, "foreign_keys", "ON")
+            .expect("fk pragma");
+        for m in MIGRATIONS.iter().take_while(|m| m.version < version) {
+            conn.execute_batch(m.sql).expect(m.name);
+        }
+        conn
+    }
+
+    fn migration_sql(version: i64) -> &'static str {
+        MIGRATIONS
+            .iter()
+            .find(|m| m.version == version)
+            .expect("migration exists")
+            .sql
+    }
+
+    #[test]
+    fn migration_016_converts_settings_to_promoted_functions() {
+        let conn = migrated_before(16);
+        // One table with customized enrichment settings, one without any.
+        conn.execute_batch(
+            r#"
+            INSERT INTO tables (id, name, source_id) VALUES ('t-issues', 'issues', 'connector:x');
+            INSERT INTO tables (id, name, source_id) VALUES ('t-users', 'users', 'connector:x');
+            INSERT INTO table_enrichment_settings
+                (table_id, text_columns, cleaning_profile, language_column, embedder, min_cluster_size, algorithm)
+            VALUES
+                ('t-issues', '["title","body"]', 'plain', NULL, 'potion-base-32M', 25, 'hdbscan');
+            "#,
+        )
+        .expect("fixture");
+
+        conn.execute_batch(migration_sql(16)).expect("016 applies");
+
+        let (id, name, kind, status, current_version): (String, String, String, String, i64) = conn
+            .query_row(
+                "SELECT id, name, kind, status, current_version FROM enrichment_functions",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .expect("one migrated function");
+        assert_eq!(id, "topic-t-issues");
+        assert_eq!(name, "topics");
+        assert_eq!(kind, "topic_model");
+        assert_eq!(status, "promoted");
+        assert_eq!(current_version, 1);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM enrichment_functions", [], |r| {
+                r.get(0)
+            })
+            .expect("count");
+        assert_eq!(count, 1, "tables without settings must not get a function");
+
+        let config_json: String = conn
+            .query_row(
+                "SELECT config_json FROM enrichment_function_versions WHERE function_id = 'topic-t-issues' AND version = 1",
+                [],
+                |r| r.get(0),
+            )
+            .expect("version 1 snapshot");
+        let config: serde_json::Value = serde_json::from_str(&config_json).expect("valid json");
+        assert_eq!(config["kind"], "topic_model");
+        assert_eq!(config["text_columns"], serde_json::json!(["title", "body"]));
+        assert_eq!(config["cleaning_profile"], "plain");
+        assert_eq!(config["language_column"], serde_json::Value::Null);
+        assert_eq!(config["embedder"], "potion-base-32M");
+        assert_eq!(config["min_cluster_size"], 25);
+        assert_eq!(config["algorithm"], "hdbscan");
+    }
+
+    #[test]
+    fn migration_029_rewrites_old_schema_json_into_table_schema() {
+        use brightflow_types::LogicalType as L;
+        let conn = migrated_before(29);
+        conn.execute_batch(
+            r#"
+            INSERT INTO tables (id, name, source_id, schema_json) VALUES
+              ('t-old', 'issues', 'c:x',
+               '{"fields":[{"name":"id","type":"i64","nullable":true},{"name":"title","type":"str","nullable":true},{"name":"ts","type":"datetime[μs, UTC]","nullable":true},{"name":"tags","type":"list[str]","nullable":true}]}'),
+              ('t-new', 'orders', 'c:x',
+               '{"columns":[{"name":"id","datatype":"Integer","nullable":true}]}'),
+              ('t-none', 'empty', 'c:x', NULL);
+            "#,
+        )
+        .expect("fixture");
+
+        conn.execute_batch(migration_sql(29)).expect("029 applies");
+
+        let read = |id: &str| -> Option<String> {
+            conn.query_row("SELECT schema_json FROM tables WHERE id = ?", [id], |r| {
+                r.get(0)
+            })
+            .expect("row")
+        };
+        let old: brightflow_types::TableSchema =
+            serde_json::from_str(&read("t-old").expect("json")).expect("parses as TableSchema");
+        let types: Vec<(String, L, Option<String>)> = old
+            .columns
+            .iter()
+            .map(|c| (c.name.clone(), c.datatype, c.physical.clone()))
+            .collect();
+        assert_eq!(
+            types,
+            vec![
+                ("id".to_string(), L::Integer, Some("i64".to_string())),
+                ("title".to_string(), L::String, Some("str".to_string())),
+                (
+                    "ts".to_string(),
+                    L::DateTimeTz,
+                    Some("datetime[μs, UTC]".to_string())
+                ),
+                ("tags".to_string(), L::Opaque, Some("list[str]".to_string())),
+            ]
+        );
+        assert_eq!(
+            read("t-new").as_deref(),
+            Some(r#"{"columns":[{"name":"id","datatype":"Integer","nullable":true}]}"#)
+        );
+        assert_eq!(read("t-none"), None);
     }
 }

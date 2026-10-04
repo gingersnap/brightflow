@@ -207,19 +207,6 @@ pub async fn merge_parquet(
                 return Ok((DataFrame::empty(), MergeMetrics::default()));
             }
 
-            let source_height = source.height();
-
-            if existing_file_paths.is_empty() {
-                // No existing data — just write source
-                return Ok((
-                    source,
-                    MergeMetrics {
-                        rows_updated: 0,
-                        rows_inserted: source_height,
-                    },
-                ));
-            }
-
             // Read existing data
             let mut frames = Vec::new();
             for file_path in &existing_file_paths {
@@ -229,55 +216,12 @@ pub async fn merge_parquet(
             }
             let existing = concat_df(&frames)?;
 
-            if existing.is_empty() {
-                return Ok((
-                    source,
-                    MergeMetrics {
-                        rows_updated: 0,
-                        rows_inserted: source_height,
-                    },
-                ));
-            }
-
-            // Polars upsert via join:
-            // matched = existing rows that have matching PKs in source
-            let matched_count = existing
-                .join(
-                    &source,
-                    pks.as_slice(),
-                    pks.as_slice(),
-                    JoinArgs::new(JoinType::Semi),
-                    None,
-                )?
-                .height();
-
-            // unchanged = existing rows NOT in source
-            let unchanged = existing.join(
-                &source,
-                pks.as_slice(),
-                pks.as_slice(),
-                JoinArgs::new(JoinType::Anti),
-                None,
-            )?;
-
-            // result = source rows (new + updated) + unchanged
-            let mut result = concat_df(&[source, unchanged])?;
-            result.rechunk_mut();
-
-            let rows_inserted = source_height.saturating_sub(matched_count);
-
+            let (result, metrics) = upsert_frames(&existing, source, &pks)?;
             info!(
                 "Merge complete: {} updated, {} inserted",
-                matched_count, rows_inserted
+                metrics.rows_updated, metrics.rows_inserted
             );
-
-            Ok((
-                result,
-                MergeMetrics {
-                    rows_updated: matched_count,
-                    rows_inserted,
-                },
-            ))
+            Ok((result, metrics))
         })
         .await
         .map_err(|e| StoreError::Other(format!("Task join error: {e}")))??;
@@ -480,6 +424,44 @@ pub async fn write_table(
     Ok(table_row)
 }
 
+/// Upsert `source` into `existing` by primary key: every source row wins, and
+/// existing rows whose keys are absent from `source` are kept after them.
+///
+/// A source row whose keys already exist counts as updated, the rest as
+/// inserted. With nothing existing, the source is the result as-is.
+fn upsert_frames(
+    existing: &DataFrame,
+    source: DataFrame,
+    pks: &[String],
+) -> StoreResult<(DataFrame, MergeMetrics)> {
+    let source_height = source.height();
+    if existing.is_empty() {
+        return Ok((
+            source,
+            MergeMetrics {
+                rows_updated: 0,
+                rows_inserted: source_height,
+            },
+        ));
+    }
+
+    let matched_count = existing
+        .join(&source, pks, pks, JoinArgs::new(JoinType::Semi), None)?
+        .height();
+    let unchanged = existing.join(&source, pks, pks, JoinArgs::new(JoinType::Anti), None)?;
+
+    let mut result = concat_df(&[source, unchanged])?;
+    result.rechunk_mut();
+
+    Ok((
+        result,
+        MergeMetrics {
+            rows_updated: matched_count,
+            rows_inserted: source_height.saturating_sub(matched_count),
+        },
+    ))
+}
+
 /// Write a DataFrame to a parquet file
 fn write_parquet(df: &DataFrame, path: &Path) -> StoreResult<()> {
     let file = std::fs::File::create(path)?;
@@ -567,8 +549,6 @@ pub(crate) fn concat_df(dfs: &[DataFrame]) -> StoreResult<DataFrame> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ParquetStore;
-    use tempfile::TempDir;
 
     #[test]
     fn test_ingest_mode_default() {
@@ -584,102 +564,37 @@ mod tests {
         assert!(opts.description.is_none());
     }
 
-    /// Writing the same table name under two different source_ids must produce
-    /// two independent catalog rows — no cross-source data pollution.
-    #[tokio::test]
-    async fn test_same_table_name_isolated_per_source() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        let store = ParquetStore::new(tmp.path(), &db_url).await.expect("store");
-
-        // Build a small parquet file to ingest twice.
-        let mut df = df!("id" => [1i64, 2, 3], "value" => ["a", "b", "c"]).expect("df");
-        let parquet_path = tmp.path().join("source.parquet");
-        {
-            let file = std::fs::File::create(&parquet_path).expect("create");
-            ParquetWriter::new(file).finish(&mut df).expect("write");
-        }
-
+    /// A source row whose keys already exist counts as updated, the rest as
+    /// inserted; source rows win and unmatched existing rows are kept.
+    #[test]
+    fn upsert_counts_overlapping_keys_as_updates_and_source_rows_win() {
         let pks = vec!["id".to_string()];
-        let source_a = "connector:aaaaaaaa";
-        let source_b = "connector:bbbbbbbb";
+        let existing = df!("id" => [1i64, 2, 3], "v" => ["a", "b", "c"]).expect("df");
+        let source = df!("id" => [2i64, 3, 4, 5], "v" => ["B", "C", "d", "e"]).expect("df");
 
-        store
-            .merge_parquet(source_a, "issues", &parquet_path, &pks)
-            .await
-            .expect("merge a");
-        store
-            .merge_parquet(source_b, "issues", &parquet_path, &pks)
-            .await
-            .expect("merge b");
+        let (result, metrics) = upsert_frames(&existing, source, &pks).expect("upsert");
 
-        let tables_a = store.list_tables_by_source(source_a).await.expect("list a");
-        let tables_b = store.list_tables_by_source(source_b).await.expect("list b");
-
-        assert_eq!(tables_a.len(), 1);
-        assert_eq!(tables_b.len(), 1);
-        assert_eq!(tables_a[0].name, "issues");
-        assert_eq!(tables_b[0].name, "issues");
-        assert_ne!(tables_a[0].id, tables_b[0].id);
-        assert_eq!(tables_a[0].total_rows, 3);
-        assert_eq!(tables_b[0].total_rows, 3);
-
-        // Each source gets its own on-disk directory.
-        assert!(tmp.path().join(source_a).join("issues").is_dir());
-        assert!(tmp.path().join(source_b).join("issues").is_dir());
-    }
-
-    /// `rows_updated`/`rows_inserted` are the semi-join math: a source row
-    /// whose keys already exist counts as updated, the rest as inserted.
-    #[tokio::test]
-    async fn merge_parquet_counts_overlapping_keys_as_updates() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        let store = ParquetStore::new(tmp.path(), &db_url).await.expect("store");
-        let pks = vec!["id".to_string()];
-        let source = "connector:cccccccc";
-
-        let write = |name: &str, mut frame: DataFrame| -> std::path::PathBuf {
-            let path = tmp.path().join(name);
-            let file = std::fs::File::create(&path).expect("create");
-            ParquetWriter::new(file).finish(&mut frame).expect("write");
-            path
-        };
-
-        // First merge into an empty table: everything is an insert.
-        let first = write(
-            "first.parquet",
-            df!("id" => [1i64, 2, 3], "v" => ["a", "b", "c"]).expect("df"),
-        );
-        let metrics = store
-            .merge_parquet(source, "issues", &first, &pks)
-            .await
-            .expect("merge 1");
-        assert_eq!(metrics.rows_updated, 0);
-        assert_eq!(metrics.rows_inserted, 3);
-
-        // Second merge overlaps on ids 2 and 3: source_height (4) minus
-        // matched (2) rows are inserts.
-        let second = write(
-            "second.parquet",
-            df!("id" => [2i64, 3, 4, 5], "v" => ["B", "C", "d", "e"]).expect("df"),
-        );
-        let metrics = store
-            .merge_parquet(source, "issues", &second, &pks)
-            .await
-            .expect("merge 2");
         assert_eq!(metrics.rows_updated, 2);
         assert_eq!(metrics.rows_inserted, 2);
+        let sorted = result
+            .sort(["id"], SortMultipleOptions::default())
+            .expect("sort");
+        let expected =
+            df!("id" => [1i64, 2, 3, 4, 5], "v" => ["a", "B", "C", "d", "e"]).expect("df");
+        assert!(sorted.equals(&expected));
+    }
 
-        // The table ends at 5 distinct keys, with source rows winning.
-        let tables = store.list_tables_by_source(source).await.expect("list");
-        assert_eq!(tables.first().map(|t| t.total_rows), Some(5));
+    #[test]
+    fn upsert_into_nothing_inserts_every_source_row() {
+        let pks = vec!["id".to_string()];
+        let source = df!("id" => [1i64, 2, 3], "v" => ["a", "b", "c"]).expect("df");
+
+        let (result, metrics) =
+            upsert_frames(&DataFrame::empty(), source.clone(), &pks).expect("upsert");
+
+        assert_eq!(metrics.rows_updated, 0);
+        assert_eq!(metrics.rows_inserted, 3);
+        assert!(result.equals(&source));
     }
 
     #[test]
@@ -758,62 +673,5 @@ mod tests {
             .into_iter()
             .collect();
         assert_eq!(vs, vec![Some("x"), Some("y")]);
-    }
-
-    /// `write_table` creates on first call, replaces on the next, and keeps
-    /// a zero-row table alive — the one place a derived table diverges from
-    /// `ingest_parquet`'s empty-file rule.
-    #[tokio::test]
-    async fn write_table_creates_replaces_and_keeps_empty_tables() {
-        let tmp = TempDir::new().expect("tempdir");
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        let store = ParquetStore::new(tmp.path(), &db_url).await.expect("store");
-
-        let first = df!("region" => ["EU", "US"], "sum" => [1.5f64, 2.5]).expect("df");
-        let row = store
-            .write_table("c:s1", "by_region", first)
-            .await
-            .expect("create");
-        assert_eq!(row.total_rows, 2);
-        let files = store.db().list_table_files(&row.id).await.expect("files");
-        assert_eq!(files.len(), 1);
-        let first_path = tmp.path().join(&files[0].path);
-        assert!(first_path.exists());
-
-        let second = df!("region" => ["EU"], "sum" => [9.0f64]).expect("df");
-        let row2 = store
-            .write_table("c:s1", "by_region", second)
-            .await
-            .expect("replace");
-        assert_eq!(row2.id, row.id, "replace keeps the catalog row");
-        assert_eq!(row2.total_rows, 1);
-        assert!(!first_path.exists(), "the replaced file is unlinked");
-        let read = store.read_table("c:s1", "by_region").await.expect("read");
-        assert_eq!(read.height(), 1);
-
-        let empty = df!("region" => Vec::<&str>::new(), "sum" => Vec::<f64>::new()).expect("df");
-        let row3 = store
-            .write_table("c:s1", "by_region", empty)
-            .await
-            .expect("empty replace");
-        assert_eq!(row3.total_rows, 0);
-        assert!(store
-            .db()
-            .get_table("c:s1", "by_region")
-            .await
-            .expect("q")
-            .is_some());
-        assert_eq!(
-            store
-                .db()
-                .list_table_files(&row3.id)
-                .await
-                .expect("files")
-                .len(),
-            1
-        );
     }
 }

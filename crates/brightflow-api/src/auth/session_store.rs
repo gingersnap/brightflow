@@ -148,9 +148,8 @@ mod tests {
     use crate::auth::AuthDb;
     use std::collections::HashMap;
 
-    async fn temp_store(dir: &tempfile::TempDir) -> RusqliteSessionStore {
-        let url = format!("sqlite:{}?mode=rwc", dir.path().join("auth.db").display());
-        let db = AuthDb::new(&url).await.expect("auth db");
+    async fn memory_store() -> RusqliteSessionStore {
+        let db = AuthDb::new(":memory:").await.expect("auth db");
         RusqliteSessionStore::new(db.pool().clone())
     }
 
@@ -167,8 +166,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_load_round_trip_preserves_record() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let store = temp_store(&dir).await;
+        let store = memory_store().await;
         let mut rec = record(3600);
         store.create(&mut rec).await.expect("create");
 
@@ -187,8 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn expired_sessions_do_not_load_and_get_swept() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let store = temp_store(&dir).await;
+        let store = memory_store().await;
         let mut rec = record(-60);
         store.create(&mut rec).await.expect("create");
 
@@ -208,8 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_regenerates_id_on_collision() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let store = temp_store(&dir).await;
+        let store = memory_store().await;
         let mut first = record(3600);
         store.create(&mut first).await.expect("create first");
 
@@ -222,8 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_upserts_and_delete_removes() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let store = temp_store(&dir).await;
+        let store = memory_store().await;
         let mut rec = record(3600);
         store.create(&mut rec).await.expect("create");
 

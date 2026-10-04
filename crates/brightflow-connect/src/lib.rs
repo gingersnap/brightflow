@@ -45,56 +45,61 @@ pub struct AvailableConnector {
 
 /// Discover all available connectors from builtins and an optional custom directory.
 pub fn discover_connectors(custom_dir: Option<&Path>) -> Vec<AvailableConnector> {
-    let mut result = Vec::new();
+    let custom = custom_dir.map(read_custom_sources).unwrap_or_default();
+    merge_connectors(&custom)
+}
+
+/// The `.lua` files in `dir` as `(file stem, source)` pairs. A missing or
+/// unreadable directory, and any file that cannot be read, contributes nothing.
+fn read_custom_sources(dir: &Path) -> Vec<(String, String)> {
+    if !dir.is_dir() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "lua"))
+        .filter_map(|path| {
+            let source = std::fs::read_to_string(&path).ok()?;
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            Some((stem, source))
+        })
+        .collect()
+}
+
+/// Builtins first, then custom sources. A connector is named by its
+/// frontmatter `name`, else by its key (builtin) or file stem (custom); the
+/// first connector to claim a name keeps it, so a builtin is never shadowed.
+fn merge_connectors(custom: &[(String, String)]) -> Vec<AvailableConnector> {
+    let builtins = BUILTIN_CONNECTORS
+        .iter()
+        .map(|(name, source)| (*name, *source, "builtin"));
+    let customs = custom
+        .iter()
+        .map(|(stem, source)| (stem.as_str(), source.as_str(), "custom"));
+
     let mut seen = std::collections::HashSet::new();
-
-    // 1. Builtins
-    for (name, source) in BUILTIN_CONNECTORS.iter() {
-        let meta = longbow::pipeline::parse_frontmatter(source);
-        let display_name = meta.name.clone().unwrap_or_else(|| (*name).to_string());
-        seen.insert(display_name.clone());
-        result.push(AvailableConnector {
-            name: display_name,
-            version: meta.version,
-            description: meta.description,
-            source_type: "builtin".to_string(),
-            source_hash: meta.source_hash,
-        });
-    }
-
-    // 2. Custom directory
-    if let Some(dir) = custom_dir {
-        if dir.exists() && dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|ext| ext == "lua") {
-                        if let Ok(source) = std::fs::read_to_string(&path) {
-                            let meta = longbow::pipeline::parse_frontmatter(&source);
-                            let name = meta.name.clone().unwrap_or_else(|| {
-                                path.file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("unknown")
-                                    .to_string()
-                            });
-                            if !seen.contains(&name) {
-                                seen.insert(name.clone());
-                                result.push(AvailableConnector {
-                                    name,
-                                    version: meta.version,
-                                    description: meta.description,
-                                    source_type: "custom".to_string(),
-                                    source_hash: meta.source_hash,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    result
+    builtins
+        .chain(customs)
+        .filter_map(|(fallback_name, source, source_type)| {
+            let meta = longbow::pipeline::parse_frontmatter(source);
+            let name = meta.name.unwrap_or_else(|| fallback_name.to_string());
+            seen.insert(name.clone()).then(|| AvailableConnector {
+                name,
+                version: meta.version,
+                description: meta.description,
+                source_type: source_type.to_string(),
+                source_hash: meta.source_hash,
+            })
+        })
+        .collect()
 }
 
 /// Built-in connector Lua sources, embedded at compile time.
@@ -419,11 +424,6 @@ mod tests {
 
     // -- discover_connectors ------------------------------------------------
 
-    /// Write `contents` as `<dir>/<file_name>` and return the directory path.
-    fn write_lua(dir: &Path, file_name: &str, contents: &str) {
-        std::fs::write(dir.join(file_name), contents).unwrap();
-    }
-
     #[test]
     fn discovery_without_custom_dir_lists_only_builtins() {
         let found = discover_connectors(None);
@@ -434,21 +434,19 @@ mod tests {
     }
 
     #[test]
-    fn discovery_keeps_builtin_on_name_collision_and_adds_custom_files() {
-        let dir = tempfile::tempdir().unwrap();
+    fn a_custom_connector_never_shadows_a_builtin_and_is_named_by_its_stem() {
+        let custom = vec![
+            // Collides with the builtin "github" via its frontmatter name.
+            (
+                "my_github".to_string(),
+                "--[[ @longbow\nname = \"github\"\nversion = \"9.9.9\"\n]]\nreturn function(p) end\n"
+                    .to_string(),
+            ),
+            // No frontmatter name, so the file stem is the name.
+            ("acme".to_string(), "return function(p) end\n".to_string()),
+        ];
 
-        // Collides with the builtin "github" via its frontmatter name.
-        write_lua(
-            dir.path(),
-            "my_github.lua",
-            "--[[ @longbow\nname = \"github\"\nversion = \"9.9.9\"\n]]\nreturn function(p) end\n",
-        );
-        // Does not collide; no frontmatter name, so the file stem is the name.
-        write_lua(dir.path(), "acme.lua", "return function(p) end\n");
-        // Wrong extension: must be ignored entirely.
-        write_lua(dir.path(), "notes.txt", "not a connector");
-
-        let found = discover_connectors(Some(dir.path()));
+        let found = merge_connectors(&custom);
 
         // Exactly one "github" survives, and it is the builtin: its hash is
         // the builtin source's hash, not the custom file's.
@@ -461,22 +459,9 @@ mod tests {
         assert_eq!(githubs[0].source_hash, builtin_hash);
         assert_ne!(githubs[0].version.as_deref(), Some("9.9.9"));
 
-        // The non-colliding custom file is discovered under its file stem.
         let acme = found.iter().find(|c| c.name == "acme").unwrap();
         assert_eq!(acme.source_type, "custom");
-
-        // The .txt file contributed nothing.
-        assert_eq!(found.len(), discover_connectors(None).len() + 1);
-    }
-
-    #[test]
-    fn discovery_ignores_a_missing_custom_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let gone = dir.path().join("does-not-exist");
-        assert_eq!(
-            discover_connectors(Some(&gone)).len(),
-            discover_connectors(None).len()
-        );
+        assert_eq!(found.len(), merge_connectors(&[]).len() + 1);
     }
 
     // -- pipeline helpers ---------------------------------------------------

@@ -28,10 +28,48 @@ Analytics platform with a Rust backend (Axum + Polars) and Vue 3 frontend.
 
 ## Conventions
 
-Three rules every change should follow, lifted from the engine-crate habits to
-repo-wide expectations:
+Nine rules for every change. They apply to the code a change touches: rules 4–7
+describe the shape new and changed code takes, not a tree-wide audit — don't
+refactor untouched code to match them.
 
-1. **Inline comments are the primary documentation, and they are maintained
+1. **Keep changes small.** Make the smallest change that solves the task. Add
+   no new abstractions or dependencies unless needed, and prefer deleting or
+   simplifying over adding. Before creating a file, check whether the change
+   belongs in an existing one. Create a new file only when the code is a new
+   concern, not to avoid reading what's already there.
+2. **Read before writing.** Read nearby code and its docs first. Reuse existing
+   helpers and follow existing patterns and module structure.
+3. **Ask when it's big or unclear.** If the task is unclear, touches many files
+   or needs a new dependency, give a short plan and ask first.
+4. **Make invalid data unrepresentable.** Use newtypes with private fields, and
+   enums rather than flags. Parse external input (requests, webhooks, files, API
+   and LLM responses) into these types at a thin boundary that holds no
+   business logic. API types generate the frontend's types
+   (`brightflow-app/src/types/generated/`), so changing one changes the
+   frontend contract too.
+5. **Keep business logic pure.** Prefer taking values or `&` references and
+   returning new values; to transform state, take `self` by value and return
+   `Self`. `&mut self` on state a type owns is fine. Avoid `&mut` to borrowed
+   arguments, except where a trait requires it (`fmt::Formatter`, `Write`) or
+   for an accumulator local to one algorithm. Pass time, ids and randomness in
+   as arguments. I/O and shared mutable state belong at the edges only (request
+   handlers, I/O handles, a UI update function); local `mut` inside a function
+   is fine.
+6. **Return typed errors with context.** No `unsafe`, `unwrap`, `expect` or
+   `panic` outside tests, and ignore no errors; the workspace lints in
+   `Cargo.toml` deny these. When discarding a result is genuinely correct, say
+   so explicitly with the reason in a comment (e.g. a send to a receiver that
+   is gone, or `write!` into a `String`, which cannot fail).
+7. **Unit-test the core and the parsers.** A test builds plain values, calls a
+   function and checks the result: no files, no temp dirs, no network, no
+   processes, no shared fixtures, no mocks. In-memory SQLite is allowed — it
+   runs inside the test and needs nothing built. If a test needs setup, move
+   the logic out of the I/O code instead of building a harness. Test parsers in
+   both directions, with real payloads as fixtures (`include_str!`). Code that
+   only does I/O is not unit-tested; keep it thin. Write no integration or E2E
+   tests: the author does E2E. When you change pure logic, add or update its
+   test; don't add tests for code you didn't touch unless that's the task.
+8. **Document in code. Inline comments are the primary documentation, and they are maintained
    with the code.** Modules, non-trivial functions, and non-obvious decisions
    get a comment explaining *why*, not *what*. For Rust that means a `//!`
    module doc on every `src/` file; for the frontend a `/** ... */` header on
@@ -41,12 +79,12 @@ repo-wide expectations:
    Presence is the easy half. When you change code, re-read the comments
    covering what you changed and make them true again — correct them, or delete
    them when the reason they recorded is gone. A comment you can only keep by
-   watering it down is one to remove. Same scope rule as the tests below: the
+   watering it down is one to remove. Same scope rule as the tests above: the
    comments on what you touched, never a tree-wide audit.
 
    And never write a *why* you have not confirmed. A header asserting a
-   rationale inferred from a skim is exactly the failure rule 3 describes — a
-   wrong doc is still believed, and this one is harder to catch because it sits
+   rationale inferred from a skim is exactly the failure the prose-file rule
+   below describes — a wrong doc is still believed, and this one is harder to catch because it sits
    next to the code it misdescribes. `scripts/check-conventions.sh` can only
    check that a comment exists; nothing mechanical can check that it is true, so
    this rule is the only thing standing between a header and a confident lie.
@@ -61,11 +99,8 @@ repo-wide expectations:
    out. Worst of all is asserting an *absence* ("nothing checks this today") —
    it is wrong the instant someone adds the check. Absences are findings, not
    documentation: raise them, don't compile them in.
-2. **Unit tests per piece the agent touches.** When you add or change pure
-   logic, add or update a co-located unit test covering the new behavior. Don't
-   leave a touched function without coverage; don't add tests for code you
-   didn't touch unless that's the explicit task.
-3. **A prose file must be unable to go stale.** Three kinds qualify, and a file
+
+   **A prose file must be unable to go stale.** Three kinds qualify, and a file
    has to be one of them:
    - **normative** — philosophy and intent, what we mean to do
      (`docs/human_ai_interaction.md`, `docs/ux-principles.md`);
@@ -86,21 +121,28 @@ repo-wide expectations:
    hand-write it. `scripts/check-conventions.sh` enforces the mechanical part on
    staged files, diff-scoped so it can never fail on code you didn't touch.
 
+9. **Verify, then hand over.** Run the full gate and never weaken lints or
+   tests to pass it:
+   `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+   `cargo test --workspace`, and from `brightflow-app/` `npm run check`,
+   `npm run test`; then `cargo build --release` and `npm run build`. Don't run
+   the app, a browser or E2E checks. End the hand-over with what the checks
+   cover and what they don't (wiring, config, UI behavior), so the author knows
+   what to test.
+
 ### Rust shape
 
 - `//!` module doc comment at the top of every file under `crates/*/src/`.
 - Pure-logic files get a `#[cfg(test)] mod tests { use super::*; ... }` block at
   the end, mirroring the function under test (`crates/brightflow-api/src/ingest/identity.rs`
-  is the canonical example).
+  is the canonical example). There is no `crates/*/tests/` directory.
 - Test code may use `.unwrap()` / `.expect()` / `panic!` / indexing / `dbg!` /
   `println!` freely — these are allowed under `#[cfg(test)]` via the
   `allow-*-in-tests` keys in `clippy.toml` (production code stays fully denied).
-  This matches the team's existing intent: the engine crate already annotates test
-  modules the same way. Use `assert!`/`assert_eq!` for assertions; reserve
+  Use `assert!`/`assert_eq!` for assertions; reserve
   `#![expect(clippy::foo, reason = "...")]` at the top of a test module for any
   *non-covered* lint (e.g. `unnecessary_wraps`) that surfaces there — `expect`
   warns if it later becomes unnecessary, so the list doesn't rot.
-- Cross-crate / HTTP-level integration tests live in `crates/*/tests/`.
 - Run a single crate's unit tests with `cargo test -p <crate>` (scope to a
   module path with an extra filter, e.g. `cargo test -p brightflow-api --lib auth::password`).
 
@@ -114,30 +156,24 @@ repo-wide expectations:
   globals are not injected.
 - Use `environment: 'node'` for pure utilities; switch to a DOM env
   (`happy-dom`/`jsdom`) only when a component test lands.
-- Two tiers, one runner (`vp test`, Vitest; config in the `test:` block of
-  `vite.config.ts`, tiers split via Vitest `projects`):
-  - **Unit** (default): stores via `setActivePinia(createPinia())`
-    (`brightflow-app/src/stores/query.test.ts`), never mounting the app.
-  - **Integration** (below the UI, not E2E): the `services/api` client + Pinia
-    Colada (server-data store) against a real backend over HTTP on a fresh
-    `testdata/workspaces/test` copy. `node` env; no browser/Playwright/DOM.
+- Stores are tested via `setActivePinia(createPinia())`
+  (`brightflow-app/src/stores/query.test.ts`), never mounting the app.
 
 ### Carve-outs (no unit test required)
 
-- Axum handlers and other thin HTTP wiring — exercise via integration tests in
-  `crates/*/tests/` instead.
+- Axum handlers and other thin I/O wiring — keep them thin (parse into types,
+  call the core, write the result); the author's E2E covers them.
 - `mod.rs` re-export files and `types.rs` aggregations.
 - Generated code under `brightflow-app/src/types/generated/`.
-- Frontend `.vue` components (closer to integration tests; out of scope for the
-  unit-test rule until a DOM test runner is wired).
+- Frontend `.vue` components (out of scope for the unit-test rule until a DOM
+  test runner is wired).
 
 ## Workflow
 
 - Git: work on `main` only. Commit directly to `main` and push there; never
   create feature branches unless explicitly asked to.
-- When debugging or testing changes, run both backend and frontend as background tasks to monitor output
-- Vite 8 built-in `server.forwardConsole` forwards browser console output to the Vite terminal
-- After Rust work is complete and debug compilation succeeds, always finish with `cargo build --release`
+- Never run the app (backend, frontend or browser): verify with the rule-9
+  gate, finish with both release builds, then hand over. The author runs it.
 
 ## Commands
 
@@ -165,22 +201,15 @@ npm run check                     # type-check + lint + format (vp check + vue-t
 npm run check:fix                 # auto-fix lint + format issues
 npm run fmt                       # auto-fix formatting
 npm run test                      # vp test (Vitest, built-in)
+npm run build                     # production build (vp build)
 
 # Backend dev server
-cargo run -- run-all              # API + WebSocket server (or just `cargo run`)
+cargo run -- run-all              # API + WebSocket server (the author runs it, not the agent)
 
 # Git hooks
 ./scripts/install-hooks.sh        # install pre-commit hooks
 ./scripts/check-conventions.sh    # module-doc + prose-file conventions on staged files
                                   # (diff-scoped; also runs from the pre-commit hook)
-
-# Test workspace
-./scripts/build-test-template.sh          # rebuild testdata/workspaces/test through the
-                                          # real CLI + HTTP paths (see the script header)
-./scripts/build-test-template.sh --check  # report drift between the committed template
-                                          # and what the script produces
-./scripts/test-env.sh setup|reset|status  # the persistent interactive copy at
-                                          # data/workspaces/test
 ```
 
 ## Logs

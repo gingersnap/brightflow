@@ -18,13 +18,10 @@ pub struct UaInfo {
 /// Bundled UA parser regex definitions (from the ua-parser-project).
 const REGEXES_YAML: &[u8] = include_bytes!("../../regexes.yaml");
 
-/// Create a UA parser. Call once at startup.
-pub fn create_parser() -> UserAgentParser {
-    UserAgentParser::from_bytes(REGEXES_YAML).unwrap_or_else(|e| {
-        tracing::warn!("Could not load UA parser regexes: {e}. Using empty fallback.");
-        UserAgentParser::from_bytes(b"user_agent_parsers: []\nos_parsers: []\ndevice_parsers: []")
-            .unwrap_or_else(|_| unreachable!())
-    })
+/// Create a UA parser from the bundled regexes. Call once at startup. The
+/// regexes are compiled into the binary, so an error means a broken build.
+pub fn create_parser() -> Result<UserAgentParser, uaparser::Error> {
+    UserAgentParser::from_bytes(REGEXES_YAML)
 }
 
 /// Parse a User-Agent string into browser, OS, and device info.
@@ -86,6 +83,17 @@ pub fn classify_screen_size(screen_width: Option<u16>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_regexes_parse_and_recognise_a_real_agent() {
+        let parser = create_parser().expect("bundled regexes parse");
+        let ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+                  (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        let info = parse_ua(&parser, ua, Some(1920));
+        assert_eq!(info.browser, "Chrome");
+        assert_eq!(info.os, "Windows");
+        assert_eq!(info.device_type, "Desktop");
+    }
 
     #[test]
     fn mobile_os_classification_by_width() {

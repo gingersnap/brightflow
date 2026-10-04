@@ -697,13 +697,7 @@ impl AnalysisEngine {
             let xs = ctx.cache.numeric.get(target_col).cloned();
             let ys = ctx.cache.numeric.get(other_col).cloned();
             let scatter_data = match (xs, ys) {
-                (Some(x), Some(y)) => Some(build_scatter_data(
-                    &x,
-                    &y,
-                    target_col,
-                    other_col,
-                    corr.r_value,
-                )),
+                (Some(x), Some(y)) => Some(build_scatter_data(&x, &y, target_col, other_col)),
                 _ => None,
             };
             let analysis = AnalysisType::Correlation {

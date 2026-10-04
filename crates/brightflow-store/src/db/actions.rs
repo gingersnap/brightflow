@@ -206,16 +206,6 @@ impl StoreDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
-    /// Fresh, fully migrated `StoreDb` backed by a SQLite file in `tmp`.
-    async fn temp_db(tmp: &TempDir) -> StoreDb {
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        StoreDb::new(&db_url).await.expect("failed to open db")
-    }
 
     /// Bulk approve applies proposals **oldest first**, and this is the accessor
     /// that guarantees it.
@@ -228,8 +218,7 @@ mod tests {
     /// backwards by copy-paste.
     #[tokio::test]
     async fn list_proposed_actions_is_oldest_first_and_only_proposed() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
 
         // Insert in creation order: two proposals, one already applied, one more.
         for (request_id, kind, status) in [
@@ -271,8 +260,7 @@ mod tests {
 
     #[tokio::test]
     async fn count_proposed_actions_is_zero_on_a_fresh_store() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         assert_eq!(db.count_proposed_actions().await.expect("count"), 0);
         assert!(db.list_proposed_actions().await.expect("list").is_empty());
     }

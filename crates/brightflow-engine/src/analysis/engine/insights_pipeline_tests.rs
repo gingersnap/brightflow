@@ -1,22 +1,20 @@
-//! Integration test exercising the full insights pipeline end-to-end on an
-//! in-memory DataFrame. Verifies that the new fields (data, scoreBreakdown,
+//! The full insights pipeline over an in-memory DataFrame. Verifies that the new fields (data, scoreBreakdown,
 //! filterChain) are populated and that scoring/dedup behave reasonably.
 
 #![expect(
-    clippy::unwrap_used,
     clippy::cast_precision_loss,
     clippy::cognitive_complexity,
     clippy::suboptimal_flops,
     clippy::too_many_lines,
-    reason = "integration tests panic on failure by design"
+    reason = "planted fixtures cast row indices and assert on whole reports"
 )]
 
 use chrono::NaiveDate;
 use polars::prelude::*;
 
-use brightflow_engine::analysis::engine::AnalysisEngine;
-use brightflow_engine::analysis::tree::AnalysisType;
-use brightflow_engine::data::schema::detect_schema;
+use crate::analysis::engine::AnalysisEngine;
+use crate::analysis::tree::AnalysisType;
+use crate::data::schema::detect_schema;
 
 fn build_test_dataframe() -> DataFrame {
     // 90 days × 3 regions × 2 channels = 540 rows
@@ -83,11 +81,7 @@ fn full_review_pipeline_populates_new_fields() {
 
     let engine = AnalysisEngine::new(2.0, 0.05, 3);
     let result = engine
-        .run_review_with_cadence(
-            &df,
-            &schema,
-            brightflow_engine::analysis::tree::ReviewCadence::Daily,
-        )
+        .run_review_with_cadence(&df, &schema, crate::analysis::tree::ReviewCadence::Daily)
         .unwrap();
 
     let tree = &result.tree;
@@ -228,11 +222,7 @@ fn planted_spike_outranks_weak_trend() {
 
     let engine = AnalysisEngine::new(2.0, 0.05, 3);
     let result = engine
-        .run_review_with_cadence(
-            &df,
-            &schema,
-            brightflow_engine::analysis::tree::ReviewCadence::Daily,
-        )
+        .run_review_with_cadence(&df, &schema, crate::analysis::tree::ReviewCadence::Daily)
         .unwrap();
     let tree = &result.tree;
     assert!(!tree.roots.is_empty(), "expected findings for the spike");

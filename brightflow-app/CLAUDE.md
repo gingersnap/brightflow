@@ -56,29 +56,16 @@ Run `npm run check` to verify all (types + lint + format). Run `npm run check:fi
 
 ## Testing
 
-`vp test` (Vitest 4.x via Vite+), no extra runner/dep and no
-`vitest.config.ts` — config lives in the `test:` block of `vite.config.ts`;
-split tiers there with Vitest `projects`. Imports: Vitest primitives explicitly
-(globals not injected). Environments: `node` for utilities and integration; DOM
-only for component tests. No Vitest `browser` mode — that's the E2E path we
-avoid.
-
-Two tiers, one runner:
-
-- **Unit (default):** co-located `*.test.ts` next to the module; stores via
-  `setActivePinia(createPinia())` (`src/stores/query.test.ts`), never mounting
-  the app.
-- **Integration (below the UI, not E2E):** the data layer — the `services/api`
-  client + Pinia Colada (the server-data Pinia store) queries/mutations —
-  against a real backend over HTTP: real `build_app` on an ephemeral port, a
-  fresh `testdata/workspaces/test` copy, real session + storage round-trip.
-  Asserted on data; no browser/Playwright/DOM/mounted components.
-
-Integration plumbing: runtime API-base override (default `VITE_API_BASE`);
-server booted in `globalSetup` on a throwaway workspace + ephemeral port, torn
-down after; minimal server (no scheduler/WS unless targeted); session via
-replayed `Set-Cookie` (Node `fetch` doesn't persist cookies); prove one
-read+write+session round-trip before breadth.
+Unit tests only, following the root CLAUDE.md rules (isolated: build values,
+call, check; no network, no backend, no mocks). `vp test` (Vitest 4.x via
+Vite+), no extra runner/dep and no `vitest.config.ts` — config lives in the
+`test:` block of `vite.config.ts`. Imports: Vitest primitives explicitly
+(globals not injected). Environment `node` for utilities; DOM only for
+component tests. Co-located `*.test.ts` next to the module; stores via
+`setActivePinia(createPinia())` (`src/stores/query.test.ts`), never mounting
+the app. Parsers of server payloads are tested with real payloads as fixtures.
+The cross-boundary contract is the generated types in `src/types/generated/`;
+the author does E2E.
 
 ## Architecture
 

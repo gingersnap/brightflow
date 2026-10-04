@@ -277,13 +277,7 @@ pub(super) fn build_outlier_cluster_data(
     })
 }
 
-pub(super) fn build_scatter_data(
-    xs: &[f64],
-    ys: &[f64],
-    x_label: &str,
-    y_label: &str,
-    r: f64,
-) -> NodeData {
+pub(super) fn build_scatter_data(xs: &[f64], ys: &[f64], x_label: &str, y_label: &str) -> NodeData {
     // Empty input has no pairs to sample or fit; `take` would be 0 below and
     // the stride division would panic. Mirrors the `n == 0` guard in
     // `build_trend_data`.
@@ -321,7 +315,6 @@ pub(super) fn build_scatter_data(
     } else {
         (None, None)
     };
-    let _ = r; // r already part of analysis
     NodeData::Scatter {
         x,
         y,
@@ -521,7 +514,7 @@ mod tests {
             fit_slope,
             fit_intercept,
             ..
-        } = build_scatter_data(&xs, &ys, "x", "y", 1.0)
+        } = build_scatter_data(&xs, &ys, "x", "y")
         else {
             panic!("expected Scatter");
         };
@@ -539,7 +532,7 @@ mod tests {
             fit_slope,
             fit_intercept,
             ..
-        } = build_scatter_data(&[], &[], "x", "y", 0.0)
+        } = build_scatter_data(&[], &[], "x", "y")
         else {
             panic!("expected Scatter");
         };
@@ -550,7 +543,7 @@ mod tests {
 
         // One side empty is equally unfittable.
         let NodeData::Scatter { x: half_empty, .. } =
-            build_scatter_data(&[1.0, 2.0], &[], "x", "y", 0.0)
+            build_scatter_data(&[1.0, 2.0], &[], "x", "y")
         else {
             panic!("expected Scatter");
         };
@@ -565,7 +558,7 @@ mod tests {
             fit_slope,
             fit_intercept,
             ..
-        } = build_scatter_data(&xs, &ys, "x", "y", 0.0)
+        } = build_scatter_data(&xs, &ys, "x", "y")
         else {
             panic!("expected Scatter");
         };

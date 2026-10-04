@@ -638,7 +638,6 @@ dependencies = [
  "brightflow-llm",
  "brightflow-scheduler",
  "brightflow-store",
- "brightflow-test-support",
  "brightflow-types",
  "chrono",
  "csv",
@@ -650,11 +649,9 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror",
  "time",
  "tokio",
- "tower",
  "tower-http",
  "tower-sessions",
  "tower-sessions-core",
@@ -684,7 +681,6 @@ dependencies = [
  "rpassword",
  "serde_json",
  "tempfile",
- "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
  "tracing",
@@ -700,7 +696,6 @@ dependencies = [
  "longbow",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror",
  "tokio",
 ]
@@ -734,7 +729,6 @@ dependencies = [
 name = "brightflow-llm"
 version = "0.1.0"
 dependencies = [
- "axum",
  "reqwest",
  "serde",
  "serde_json",
@@ -755,7 +749,6 @@ dependencies = [
  "polars",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -769,7 +762,6 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "brightflow-core",
- "brightflow-test-support",
  "brightflow-types",
  "chrono",
  "deadpool-sqlite",
@@ -777,20 +769,11 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "ts-rs",
  "uuid",
-]
-
-[[package]]
-name = "brightflow-test-support"
-version = "0.1.0"
-dependencies = [
- "brightflow-core",
- "tempfile",
 ]
 
 [[package]]
@@ -4660,17 +4643,6 @@ dependencies = [
  "byteorder",
  "integer-encoding",
  "ordered-float",
-]
-
-[[package]]
-name = "tikv-jemalloc-ctl"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c"
-dependencies = [
- "libc",
- "paste",
- "tikv-jemalloc-sys",
 ]
 
 [[package]]

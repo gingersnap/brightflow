@@ -6,13 +6,12 @@
 //! typed request/response shapes are in `brightflow-app/src/types/generated/`.
 //!
 //! Routes are grouped by area and wrapped in an auth middleware layer, with the
-//! public exceptions (event collection, the tracking script, health) mounted
-//! outside it.
+//! public exceptions (`public_routes`, plus `/health`) mounted outside it.
 
 use axum::{
     extract::State,
     middleware,
-    routing::{delete, get, post, put},
+    routing::{delete, get, post, put, MethodRouter},
     Json, Router,
 };
 
@@ -43,20 +42,30 @@ pub fn create_router() -> Router<AppState> {
         .nest("/api", api_routes())
 }
 
+/// The `/api` routes reachable without a session — the whole public surface.
+/// Every other `/api` route is mounted behind `require_auth`, so adding a
+/// route here is a security decision; the test below pins the list.
+fn public_routes() -> Vec<(&'static str, MethodRouter<AppState>)> {
+    vec![
+        ("/auth/login", post(auth_handlers::login)),
+        ("/auth/logout", post(auth_handlers::logout)),
+        ("/auth/me", get(auth_handlers::me)),
+        // Event ingestion: called by the tracking script from external domains.
+        ("/event", post(ingest_handlers::ingest_event)),
+        ("/collect", post(ingest_handlers::ingest_event)),
+        ("/track", post(ingest_handlers::track_event)),
+        ("/identify", post(ingest_handlers::identify_user)),
+        ("/script.js", get(ingest_handlers::serve_script)),
+    ]
+}
+
 /// API routes under /api prefix
 fn api_routes() -> Router<AppState> {
-    let public = Router::new()
-        .route("/auth/login", post(auth_handlers::login))
-        .route("/auth/logout", post(auth_handlers::logout))
-        .route("/auth/me", get(auth_handlers::me))
-        // Event ingestion (public — called by tracking script from external domains)
-        .route("/event", post(ingest_handlers::ingest_event))
-        .route("/collect", post(ingest_handlers::ingest_event))
-        .route("/track", post(ingest_handlers::track_event))
-        .route("/identify", post(ingest_handlers::identify_user))
-        .route("/script.js", get(ingest_handlers::serve_script))
-        // No public route takes a filesystem-bound path param today, but guard
-        // the whole router anyway so that stays true by construction.
+    let public = public_routes()
+        .into_iter()
+        .fold(Router::new(), |router, (path, route)| router.route(path, route))
+        // Guarded like the protected routes, so a path param added to a public
+        // route is checked by construction.
         .route_layer(middleware::from_fn(
             crate::shared::reject_unsafe_path_params,
         ));
@@ -403,4 +412,27 @@ async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> 
         "status": "ok",
         "uptime_secs": state.start_time.elapsed().as_secs(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_public_surface_is_exactly_login_and_event_collection() {
+        let paths: Vec<&str> = public_routes().into_iter().map(|(path, _)| path).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "/auth/login",
+                "/auth/logout",
+                "/auth/me",
+                "/event",
+                "/collect",
+                "/track",
+                "/identify",
+                "/script.js",
+            ]
+        );
+    }
 }

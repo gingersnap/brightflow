@@ -659,16 +659,9 @@ mod tests {
         use brightflow_connect::{ConnectorResult, EndpointResultInfo};
         use brightflow_types::{Layer, TableDeclaration};
 
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let store = ParquetStore::new(
-            tmp.path().join("store"),
-            &format!(
-                "sqlite:{}?mode=rwc",
-                tmp.path().join("litehouse.db").display()
-            ),
-        )
-        .await
-        .expect("store");
+        let store = ParquetStore::new(PathBuf::new(), ":memory:")
+            .await
+            .expect("store");
         // The tables exist (the merges ran); only their meaning is missing.
         store
             .db()

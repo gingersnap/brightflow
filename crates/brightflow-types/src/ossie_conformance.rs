@@ -7,7 +7,7 @@
 //! rendered ANSI SQL expression and the structured form in its extension; and
 //! a dataset-level extension.
 
-use brightflow_types::{
+use crate::{
     Aggregation, AiContext, AiContextFields, ColumnExt, ColumnRole, Dataset, DatasetExt, DocFields,
     Field, LogicalType, Metric, MetricExpr, MetricExt, OssieDocument, Polarity, Relationship,
     SemanticModel, TimeGranularity,
@@ -105,7 +105,8 @@ fn exported_document_validates_against_the_vendored_schema() {
 
     let document = serde_json::to_value(OssieDocument::new(model)).expect("serialise");
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/ossie-schema.json")).expect("fixture parses");
+        serde_json::from_str(include_str!("../fixtures/ossie-schema.json"))
+            .expect("fixture parses");
     let validator = jsonschema::validator_for(&schema).expect("schema compiles");
     let errors: Vec<String> = validator
         .iter_errors(&document)

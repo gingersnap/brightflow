@@ -11,6 +11,11 @@ mod pipeline;
 mod review;
 mod trends;
 
+#[cfg(test)]
+mod drivers_report_tests;
+#[cfg(test)]
+mod insights_pipeline_tests;
+
 pub use cache::ColumnCache;
 
 use anyhow::Result;

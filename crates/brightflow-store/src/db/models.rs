@@ -407,15 +407,6 @@ fn insert_version(tx: &rusqlite::Connection, version: &ModelVersionRow) -> rusql
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
-    async fn temp_db(tmp: &TempDir) -> StoreDb {
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        StoreDb::new(&db_url).await.expect("failed to open db")
-    }
 
     fn model(id: &str, output: &str, input: &str) -> ModelRow {
         ModelRow {
@@ -442,8 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_get_list_version_and_delete() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let input = db.create_table("orders", "c:s1").await.expect("input");
         let output = db
             .create_table("orders_by_month", "c:s1")
@@ -513,8 +503,7 @@ mod tests {
     /// nulls the link.
     #[tokio::test]
     async fn cascades_follow_the_output_and_set_null_follows_the_input() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let input = db.create_table("orders", "c:s1").await.expect("input");
         let output = db.create_table("derived", "c:s1").await.expect("output");
         db.insert_model(&model("m1", &output.id, &input.id), &version("m1", 1))
@@ -535,8 +524,7 @@ mod tests {
 
     #[tokio::test]
     async fn builds_are_recorded_finished_and_failed_on_restart() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let input = db.create_table("orders", "c:s1").await.expect("input");
         let output = db.create_table("derived", "c:s1").await.expect("output");
         db.insert_model(&model("m1", &output.id, &input.id), &version("m1", 1))

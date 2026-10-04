@@ -172,23 +172,33 @@ pub async fn chat_with_backoff(
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
-        let result = client.chat_with_options(messages, tools, options).await;
-        match result {
+        let err = match client.chat_with_options(messages, tools, options).await {
             Ok(outcome) => return Ok(outcome),
-            Err(err @ (LlmError::RateLimited(_) | LlmError::Server { .. } | LlmError::Timeout)) => {
-                if attempt >= policy.max_attempts {
-                    return Err(err);
-                }
-                let exp = attempt.saturating_sub(1).min(10);
-                let backoff = policy.base_delay_ms.saturating_mul(1_u64 << exp);
-                tokio::time::sleep(std::time::Duration::from_millis(
-                    backoff.saturating_add(jitter_ms(backoff)),
-                ))
-                .await;
-            },
-            Err(err) => return Err(err),
-        }
+            Err(err) => err,
+        };
+        let Some(backoff) = retry_backoff_ms(policy, attempt, &err) else {
+            return Err(err);
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(
+            backoff.saturating_add(jitter_ms(backoff)),
+        ))
+        .await;
     }
+}
+
+/// The delay before retrying after `err` on the 1-based `attempt`, or `None`
+/// to give up. Only transient failures (rate limit, 5xx, timeout) are retried,
+/// and only while attempts remain; the delay doubles per attempt.
+fn retry_backoff_ms(policy: &RetryPolicy, attempt: u32, err: &LlmError) -> Option<u64> {
+    let transient = matches!(
+        err,
+        LlmError::RateLimited(_) | LlmError::Server { .. } | LlmError::Timeout
+    );
+    if !transient || attempt >= policy.max_attempts {
+        return None;
+    }
+    let exp = attempt.saturating_sub(1).min(10);
+    Some(policy.base_delay_ms.saturating_mul(1_u64 << exp))
 }
 
 /// Cheap decorrelated jitter in `[0, backoff/2]` without a rand dependency.
@@ -277,22 +287,7 @@ impl ChatClient {
             .await
             .map_err(|e| LlmError::Transport(e.to_string()))?;
 
-        match status.as_u16() {
-            200 => parse_completion(&text),
-            401 | 403 => Err(LlmError::Auth {
-                status: status.as_u16(),
-                message: truncate(&text),
-            }),
-            429 => Err(LlmError::RateLimited(truncate(&text))),
-            s if s >= 500 => Err(LlmError::Server {
-                status: s,
-                message: truncate(&text),
-            }),
-            s => Err(LlmError::Transport(format!(
-                "unexpected status {s}: {}",
-                truncate(&text)
-            ))),
-        }
+        parse_response(status.as_u16(), &text)
     }
 
     /// Cheap connectivity test: one-token completion.
@@ -405,6 +400,28 @@ struct WireUsage {
 struct WirePromptDetails {
     #[serde(default)]
     cached_tokens: Option<u64>,
+}
+
+/// Map an HTTP status and body to an outcome: 200 parses the completion,
+/// auth failures, rate limits and 5xx get their own variants (so the retry
+/// policy can tell transient from fatal), anything else is a transport error.
+fn parse_response(status: u16, text: &str) -> Result<ChatOutcome, LlmError> {
+    match status {
+        200 => parse_completion(text),
+        401 | 403 => Err(LlmError::Auth {
+            status,
+            message: truncate(text),
+        }),
+        429 => Err(LlmError::RateLimited(truncate(text))),
+        s if s >= 500 => Err(LlmError::Server {
+            status: s,
+            message: truncate(text),
+        }),
+        s => Err(LlmError::Transport(format!(
+            "unexpected status {s}: {}",
+            truncate(text)
+        ))),
+    }
 }
 
 fn parse_completion(text: &str) -> Result<ChatOutcome, LlmError> {
@@ -592,6 +609,70 @@ mod tests {
         let s = format!("y{}", "😀".repeat(76));
         let out = truncate(&s);
         assert_eq!(out, format!("y{}…", "😀".repeat(74)));
+    }
+
+    #[test]
+    fn statuses_map_to_their_error_variants() {
+        assert!(matches!(
+            parse_response(401, "no"),
+            Err(LlmError::Auth { status: 401, .. })
+        ));
+        assert!(matches!(
+            parse_response(403, "no"),
+            Err(LlmError::Auth { status: 403, .. })
+        ));
+        assert!(matches!(
+            parse_response(429, "slow down"),
+            Err(LlmError::RateLimited(_))
+        ));
+        assert!(matches!(
+            parse_response(503, "down"),
+            Err(LlmError::Server { status: 503, .. })
+        ));
+        assert!(matches!(
+            parse_response(404, "?"),
+            Err(LlmError::Transport(_))
+        ));
+        assert!(matches!(
+            parse_response(200, "not json"),
+            Err(LlmError::BadResponse(_))
+        ));
+    }
+
+    #[test]
+    fn transient_errors_back_off_doubling_until_attempts_run_out() {
+        let policy = RetryPolicy {
+            max_attempts: 3,
+            base_delay_ms: 100,
+        };
+        let limited = LlmError::RateLimited(String::new());
+        assert_eq!(retry_backoff_ms(&policy, 1, &limited), Some(100));
+        assert_eq!(retry_backoff_ms(&policy, 2, &LlmError::Timeout), Some(200));
+        assert_eq!(retry_backoff_ms(&policy, 3, &limited), None);
+
+        let server = LlmError::Server {
+            status: 500,
+            message: String::new(),
+        };
+        assert_eq!(retry_backoff_ms(&policy, 1, &server), Some(100));
+    }
+
+    #[test]
+    fn fatal_errors_are_never_retried() {
+        let policy = RetryPolicy::default();
+        let auth = LlmError::Auth {
+            status: 401,
+            message: String::new(),
+        };
+        assert_eq!(retry_backoff_ms(&policy, 1, &auth), None);
+        assert_eq!(
+            retry_backoff_ms(&policy, 1, &LlmError::BadResponse(String::new())),
+            None
+        );
+        assert_eq!(
+            retry_backoff_ms(&policy, 1, &LlmError::Transport(String::new())),
+            None
+        );
     }
 
     #[test]

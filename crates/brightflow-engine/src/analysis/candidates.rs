@@ -12,8 +12,8 @@
 //! under filtering — a child slice can never cover more rows than its parent
 //! — which is what makes the pruning sound (QuickInsights).
 
+use crate::enrichment::push_fmt;
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 use crate::analysis::engine::ColumnCache;
 use crate::analysis::tree::ProvenanceStep;
@@ -125,10 +125,10 @@ impl Provenance {
                 .map(|f| format!("{}={}", f.column, f.value))
                 .collect::<Vec<_>>()
                 .join(" and ");
-            let _ = write!(s, " where {filters}");
+            push_fmt(&mut s, format_args!(" where {filters}"));
         }
         for d in &self.derivations {
-            let _ = write!(s, ", {}", d.human());
+            push_fmt(&mut s, format_args!(", {}", d.human()));
         }
         s
     }

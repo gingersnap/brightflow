@@ -19,9 +19,5 @@ deadpool-sqlite = "0.13"
 rusqlite = { version = "0.38", features = ["bundled"] }
 uuid = { workspace = true }
 
-[dev-dependencies]
-tempfile = "3"
-brightflow-test-support = { path = "../brightflow-test-support" }
-
 [lints]
 workspace = true

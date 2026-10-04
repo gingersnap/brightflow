@@ -73,34 +73,9 @@ export default defineConfig({
     },
   },
   test: {
-    /* Two tiers, one runner (see CLAUDE.md > Testing). The unit tier is the
-       default fast loop; the integration tier boots a live backend and is
-       opt-in via TEST_INTEGRATION=1 so it never slows `vp test` or the hook. */
-    projects: [
-      {
-        resolve: { tsconfigPaths: true },
-        test: {
-          name: 'unit',
-          environment: 'node',
-          include: ['src/**/*.test.ts', '!src/**/*.integration.test.ts'],
-        },
-      },
-      ...(process.env['TEST_INTEGRATION'] === '1'
-        ? [
-            {
-              resolve: { tsconfigPaths: true },
-              test: {
-                name: 'integration',
-                environment: 'node',
-                /* One live server per run; run files sequentially over it. */
-                fileParallelism: false,
-                include: ['src/**/*.integration.test.ts'],
-                globalSetup: ['./src/testing/globalSetup.ts'],
-              },
-            },
-          ]
-        : []),
-    ],
+    /* Unit tests only: isolated, co-located `*.test.ts` (see CLAUDE.md > Conventions). */
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
   plugins: [
     vue(),

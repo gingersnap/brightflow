@@ -28,7 +28,7 @@ arrow-schema = { version = "54", optional = true }
 
 [dev-dependencies]
 # Ossie conformance test only: validates an exported document against the
-# vendored `tests/fixtures/ossie-schema.json`.
+# vendored `fixtures/ossie-schema.json`.
 jsonschema = { version = "0.56", default-features = false }
 
 [lints]

@@ -535,13 +535,10 @@ mod tests {
         assert_eq!(embedded, on_disk);
     }
 
-    /// The RETURNING-based CRUD round-trips through a real file-backed pool —
-    /// the scheduler had no db coverage at all before the rusqlite port.
+    /// The RETURNING-based CRUD round-trips through a migrated pool.
     #[tokio::test]
     async fn connector_config_and_job_crud_round_trip() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let url = format!("sqlite:{}?mode=rwc", tmp.path().join("sched.db").display());
-        let db = SchedulerDb::new(&url).await.expect("db");
+        let db = SchedulerDb::new(":memory:").await.expect("db");
 
         let cfg = db
             .create_connector_config("gh", "/bin/gh", "{}", Some("tok"))

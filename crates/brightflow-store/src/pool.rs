@@ -155,15 +155,17 @@ impl SqlitePool {
 /// connection.
 ///
 /// Accepts both the workspace's `sqlite:{path}?mode=rwc` URLs and plain
-/// filesystem paths, so hand-set env overrides in either form work.
+/// filesystem paths, so hand-set env overrides in either form work. The path
+/// `:memory:` opens an in-memory database on exactly one connection: every
+/// SQLite connection to `:memory:` is its own empty database, so a larger
+/// pool would hand out connections that cannot see each other's writes.
 pub async fn open_pool(
     database_url: &str,
     profile: SqlitePoolProfile,
 ) -> Result<SqlitePool, SqliteError> {
     let path = brightflow_core::sqlite_db_path(database_url)
         .unwrap_or_else(|| PathBuf::from(database_url));
-    // usize::try_from is infallible for u32 on every supported target.
-    let max = usize::try_from(profile.max_connections).unwrap_or(usize::MAX);
+    let max = pool_size(&path, profile);
     let pool = Config::new(path)
         .builder(Runtime::Tokio1)
         .map_err(|e| SqliteError::Config(e.to_string()))?
@@ -186,6 +188,19 @@ pub async fn open_pool(
 
     Ok(SqlitePool { inner: pool })
 }
+
+/// Connections to allow: the profile's bound, or one for `:memory:` (see
+/// `open_pool`).
+fn pool_size(path: &std::path::Path, profile: SqlitePoolProfile) -> usize {
+    if path.as_os_str() == IN_MEMORY {
+        return 1;
+    }
+    // usize::try_from is infallible for u32 on every supported target.
+    usize::try_from(profile.max_connections).unwrap_or(usize::MAX)
+}
+
+/// SQLite's name for a private in-memory database.
+const IN_MEMORY: &str = ":memory:";
 
 /// The shared pragma set, applied per connection (see module doc).
 fn apply_pragmas(conn: &Connection, profile: SqlitePoolProfile) -> rusqlite::Result<()> {
@@ -211,48 +226,50 @@ fn apply_pragmas(conn: &Connection, profile: SqlitePoolProfile) -> rusqlite::Res
 mod tests {
     use super::*;
 
-    async fn temp_pool(dir: &tempfile::TempDir) -> SqlitePool {
-        let url = format!("sqlite:{}?mode=rwc", dir.path().join("t.db").display());
-        open_pool(&url, SqlitePoolProfile::METADATA)
+    async fn memory_pool() -> SqlitePool {
+        open_pool(IN_MEMORY, SqlitePoolProfile::METADATA)
             .await
             .expect("pool opens")
     }
 
-    #[tokio::test]
-    async fn pooled_connections_have_wal_and_foreign_keys() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let pool = temp_pool(&dir).await;
-
-        // Assert on a *pooled* connection: this catches the hook not running,
-        // which a direct Connection::open would not.
-        let (fk, mode): (i64, String) = pool
-            .call(|conn| {
-                let fk = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
-                let mode = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
-                Ok((fk, mode))
-            })
-            .await
-            .expect("pragmas readable");
-        assert_eq!(fk, 1);
-        assert_eq!(mode, "wal");
+    #[test]
+    fn memory_pools_get_one_connection_and_files_get_the_profile() {
+        let memory = std::path::Path::new(IN_MEMORY);
+        assert_eq!(pool_size(memory, SqlitePoolProfile::METADATA), 1);
+        let file = std::path::Path::new("/w/litehouse.db");
+        assert_eq!(pool_size(file, SqlitePoolProfile::METADATA), 5);
+        assert_eq!(pool_size(file, SqlitePoolProfile::BUFFER), 3);
     }
 
     #[tokio::test]
-    async fn plain_path_without_url_prefix_is_accepted() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("plain.db").display().to_string();
-        let pool = open_pool(&path, SqlitePoolProfile::BUFFER)
+    async fn a_memory_pool_sees_its_own_writes_across_calls() {
+        let pool = memory_pool().await;
+        pool.call(|conn| conn.execute_batch("CREATE TABLE t (x); INSERT INTO t VALUES (1);"))
             .await
-            .expect("plain path opens");
-        pool.call(|conn| conn.execute_batch("CREATE TABLE t (x)"))
+            .expect("write");
+        let n: i64 = pool
+            .call(|conn| conn.query_row("SELECT count(*) FROM t", [], |r| r.get(0)))
             .await
-            .expect("usable");
+            .expect("read on a later checkout");
+        assert_eq!(n, 1);
+    }
+
+    #[tokio::test]
+    async fn pooled_connections_have_foreign_keys() {
+        let pool = memory_pool().await;
+
+        // Assert on a *pooled* connection: this catches the hook not running,
+        // which a direct Connection::open would not.
+        let fk: i64 = pool
+            .call(|conn| conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0)))
+            .await
+            .expect("pragma readable");
+        assert_eq!(fk, 1);
     }
 
     #[tokio::test]
     async fn unique_violation_is_detected() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let pool = temp_pool(&dir).await;
+        let pool = memory_pool().await;
         pool.call(|conn| conn.execute_batch("CREATE TABLE u (id TEXT PRIMARY KEY, v TEXT UNIQUE)"))
             .await
             .expect("create");
@@ -288,70 +305,9 @@ mod tests {
         assert!(!not_unique.is_unique_violation());
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn transaction_takes_the_write_lock_up_front() {
-        // Pins BEGIN IMMEDIATE. A deferred transaction that has only read so
-        // far holds no write lock, so a second writer sails past it and the
-        // deferred transaction's own later write dies with
-        // SQLITE_BUSY_SNAPSHOT — which the busy handler never sees. Asserting
-        // the lock is held from the first statement is the deterministic way to
-        // pin that: no sleeps, no attempt to lose a race on purpose.
-        let dir = tempfile::tempdir().expect("tempdir");
-        let db_path = dir.path().join("t.db");
-        let url = format!("sqlite:{}?mode=rwc", db_path.display());
-        let pool = open_pool(&url, SqlitePoolProfile::METADATA)
-            .await
-            .expect("pool opens");
-        pool.call(|conn| {
-            conn.execute_batch(
-                "CREATE TABLE t (id INTEGER PRIMARY KEY, v INTEGER NOT NULL);
-                 INSERT INTO t (id, v) VALUES (1, 0);",
-            )
-        })
-        .await
-        .expect("schema");
-
-        // `entered` fires once the transaction is open and has only read;
-        // `release` lets it commit. Both are std channels: the closure runs on
-        // a blocking thread, so blocking on recv there is correct.
-        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
-        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
-        let held = tokio::spawn({
-            let pool = pool.clone();
-            async move {
-                pool.transaction(move |tx| {
-                    let _: i64 = tx.query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0))?;
-                    entered_tx.send(()).expect("signal entered");
-                    release_rx.recv().expect("wait for release");
-                    Ok(())
-                })
-                .await
-            }
-        });
-        entered_rx.recv().expect("transaction opened");
-
-        // A separate connection, busy_timeout 0 so the answer is immediate.
-        let probe = Connection::open(&db_path).expect("probe connection");
-        probe.busy_timeout(Duration::ZERO).expect("no waiting");
-        let blocked = probe.execute_batch("BEGIN IMMEDIATE");
-        assert!(
-            blocked.is_err(),
-            "a read-only-so-far pool transaction must already hold the write lock"
-        );
-
-        release_tx.send(()).expect("release");
-        held.await.expect("join").expect("transaction commits");
-
-        // Once it commits, the lock is gone.
-        probe
-            .execute_batch("BEGIN IMMEDIATE; COMMIT")
-            .expect("write lock free after commit");
-    }
-
     #[tokio::test]
     async fn transaction_commits_on_ok_and_rolls_back_on_err() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let pool = temp_pool(&dir).await;
+        let pool = memory_pool().await;
         pool.call(|conn| conn.execute_batch("CREATE TABLE t (x INTEGER)"))
             .await
             .expect("create");

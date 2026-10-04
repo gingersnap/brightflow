@@ -626,36 +626,3 @@ impl ParquetStore {
         Ok(count)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_create_store() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        let store = ParquetStore::new(tmp.path(), &db_url)
-            .await
-            .expect("failed to create store");
-        assert_eq!(store.root_path(), tmp.path());
-    }
-
-    #[tokio::test]
-    async fn test_list_empty_store() {
-        let tmp = TempDir::new().expect("failed to create temp dir");
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        let store = ParquetStore::new(tmp.path(), &db_url)
-            .await
-            .expect("failed to create store");
-        let tables = store.list_tables().await.expect("failed to list tables");
-        assert!(tables.is_empty());
-    }
-}

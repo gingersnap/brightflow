@@ -43,6 +43,8 @@ pub fn build_pruning_query(table_id: &str, filters: &[ScanFilter]) -> (String, V
         }
     }
 
+    // Every `writeln!` below writes into this `String`, which cannot fail, so
+    // their `fmt::Result`s are discarded on purpose.
     let mut sql = String::from(
         "SELECT DISTINCT tf.id, tf.table_id, tf.path, tf.num_rows, tf.size_bytes, tf.added_at\nFROM table_files tf\n",
     );

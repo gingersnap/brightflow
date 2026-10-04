@@ -2,7 +2,7 @@
 //!
 //! These structs *are* Apache Ossie's core model (`0.2.0.dev0`), field for
 //! field, so serialising a [`SemanticModel`] with serde produces an Ossie
-//! document and the vendored JSON Schema in `tests/fixtures` can check it. The
+//! document and the vendored JSON Schema in `fixtures/` can check it. The
 //! only liberty is on input: deserialising accepts the exact Ossie form and a
 //! shorter one meant for hand-authored declarations in Lua or TOML —
 //! `expression` may be a bare column string or absent (it defaults to the

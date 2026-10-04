@@ -865,16 +865,6 @@ impl StoreDb {
 mod tests {
     use super::*;
     use brightflow_types::{Aggregation, ColumnRole, Field, Layer, LogicalType};
-    use tempfile::TempDir;
-
-    /// Fresh, fully migrated `StoreDb` backed by a SQLite file in `tmp`.
-    async fn temp_db(tmp: &TempDir) -> StoreDb {
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        StoreDb::new(&db_url).await.expect("failed to open db")
-    }
 
     fn github() -> Provenance {
         Provenance::declared("connector:github").with_version("0.3.0")
@@ -927,8 +917,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_then_resolve_and_a_user_edit_layers_on_top() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let table = db.create_table("issues", "c:s1").await.expect("table");
 
         let applied = db
@@ -1021,8 +1010,7 @@ mod tests {
     /// versions on either side; an identical re-apply records nothing.
     #[tokio::test]
     async fn redeclaring_records_a_diff_between_versions() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let table = db.create_table("issues", "c:s1").await.expect("table");
         let first = db
             .apply_declaration("c:s1", &issues_declaration(), &github())
@@ -1064,8 +1052,7 @@ mod tests {
     /// returned; the connector's rows stay.
     #[tokio::test]
     async fn reset_removes_edits_above_the_declaration_and_returns_them() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let table = db.create_table("issues", "c:s1").await.expect("table");
         db.apply_declaration("c:s1", &issues_declaration(), &github())
             .await
@@ -1100,8 +1087,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_producer_only_replaces_its_own_rows() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let table = db.create_table("issues", "c:s1").await.expect("table");
         db.apply_declaration("c:s1", &issues_declaration(), &github())
             .await
@@ -1136,8 +1122,7 @@ mod tests {
 
     #[tokio::test]
     async fn relationships_wait_for_their_target_table() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         db.create_table("issue_comments", "c:s1")
             .await
             .expect("table");
@@ -1164,8 +1149,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_rebuilds_a_valid_model_from_the_resolved_views() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         db.create_table("issues", "c:s1").await.expect("issues");
         db.create_table("issue_comments", "c:s1")
             .await
@@ -1213,8 +1197,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_refuses_a_missing_table_and_an_invalid_declaration() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let err = db
             .apply_declaration("c:s1", &issues_declaration(), &github())
             .await
@@ -1233,8 +1216,7 @@ mod tests {
 
     #[tokio::test]
     async fn columns_without_data_come_from_the_stored_schema() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let table = db.create_table("issues", "c:s1").await.expect("table");
         db.update_table_meta(
             &table.id,
@@ -1256,8 +1238,7 @@ mod tests {
 
     #[tokio::test]
     async fn table_opinions_write_and_delete_per_producer() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
         let table = db.create_table("issues", "c:s1").await.expect("table");
         let mut mine = TableOpinion::empty(user());
         mine.time_granularity = Some(TimeGranularity::Month);

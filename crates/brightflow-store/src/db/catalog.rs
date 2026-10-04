@@ -586,23 +586,34 @@ impl StoreDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
-    /// Fresh, fully migrated `StoreDb` backed by a SQLite file in `tmp`.
-    async fn temp_db(tmp: &TempDir) -> StoreDb {
-        let db_url = format!(
-            "sqlite:{}?mode=rwc",
-            tmp.path().join("litehouse.db").display()
-        );
-        StoreDb::new(&db_url).await.expect("failed to open db")
+    /// The same table name under two sources is two independent catalog
+    /// rows — no cross-source pollution.
+    #[tokio::test]
+    async fn same_table_name_is_isolated_per_source() {
+        let db = StoreDb::in_memory().await;
+
+        let a = db.create_table("issues", "connector:a").await.expect("a");
+        let b = db.create_table("issues", "connector:b").await.expect("b");
+        assert_ne!(a.id, b.id);
+
+        let in_a = db
+            .list_tables_by_source("connector:a")
+            .await
+            .expect("list a");
+        let in_b = db
+            .list_tables_by_source("connector:b")
+            .await
+            .expect("list b");
+        assert_eq!(in_a.iter().map(|t| &t.id).collect::<Vec<_>>(), vec![&a.id]);
+        assert_eq!(in_b.iter().map(|t| &t.id).collect::<Vec<_>>(), vec![&b.id]);
     }
 
     /// Values must come deduplicated (many files share a partition value),
     /// sorted, and scoped to the requested table and key.
     #[tokio::test]
     async fn list_partition_values_dedupes_sorts_and_scopes() {
-        let tmp = TempDir::new().expect("temp dir");
-        let db = temp_db(&tmp).await;
+        let db = StoreDb::in_memory().await;
 
         let table = db.create_table("events", "web:s1").await.expect("table");
         let other = db.create_table("events", "web:s2").await.expect("other");

@@ -18,7 +18,6 @@ tracing-appender = "0.2"
 ts-rs = { version = "10", features = ["serde-compat", "chrono-impl", "serde-json-impl"] }
 dotenvy = "0.15"
 tikv-jemallocator = "0.6"
-tikv-jemalloc-ctl = "0.6"
 
 # ===========================================
 # Workspace Lint Configuration
@@ -47,7 +46,8 @@ correctness = { level = "deny", priority = -1 }
 # Denials - panic/error handling
 unwrap_used = "deny"
 expect_used = "deny"
-panic = "warn"  # Some panics are intentional in unreachable code
+panic = "deny"
+unreachable = "deny"
 unwrap_in_result = "deny"
 dbg_macro = "deny"
 print_stdout = "deny"

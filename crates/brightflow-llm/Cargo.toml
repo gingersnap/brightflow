@@ -14,9 +14,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { version = "1", default-features = false, features = ["time"] }
 
-[dev-dependencies]
-axum = { workspace = true }
-tokio = { workspace = true }
-
 [lints]
 workspace = true

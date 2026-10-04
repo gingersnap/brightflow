@@ -9,13 +9,12 @@ pub mod mentions;
 pub mod ticket_classify;
 pub mod vocabulary;
 
-/// Append formatted text to a prompt buffer; writing into a `String` cannot
+/// Append formatted text to a `String` buffer; writing into a `String` cannot
 /// fail, so the `fmt::Result` is not worth a `?` at every call.
 pub(crate) fn push_fmt(out: &mut String, args: std::fmt::Arguments<'_>) {
     use std::fmt::Write as _;
-    if out.write_fmt(args).is_err() {
-        unreachable!("fmt::Write for String is infallible");
-    }
+    // Discarded on purpose: `fmt::Write` for `String` never returns an error.
+    let _ = out.write_fmt(args);
 }
 
 pub use function::{
