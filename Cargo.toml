@@ -94,3 +94,17 @@ many_single_char_names = "allow"
 unreadable_literal = "allow"
 doc_markdown = "allow"
 missing_const_for_fn = "allow"
+
+# Optimize the CPU-heavy dependencies in dev/test builds: unoptimized Argon2
+# took ~1s per password hash and unoptimized regex compilation ~5s for the
+# bundled UA parser, which kept unit tests far from milliseconds.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.regex]
+opt-level = 3
+[profile.dev.package.regex-automata]
+opt-level = 3
+[profile.dev.package.regex-syntax]
+opt-level = 3

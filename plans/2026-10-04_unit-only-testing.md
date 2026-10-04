@@ -118,3 +118,12 @@ What the deleted tests guarded and no unit test now covers:
 - **Frontend data layer:** login + session cookie, sources/catalog, events and
   web-analytics reads, insights run log, enrichment function CRUD, Text Explorer
   search.
+
+## Deferred: generated route types
+
+Response shapes are compile-checked through the generated types; route paths
+and methods are not (`api.get<T>('/api/...')` takes a string). Generating an
+`ApiRoutes.ts` from `routes.rs` would close that, at the cost of a route macro
+and a rewrite of the router's auth layering. No route mismatch appears in the
+306 commits to date, so it is deferred. Trigger: a route mismatch reaches E2E,
+or `routes.rs` is restructured for another reason.

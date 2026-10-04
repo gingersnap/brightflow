@@ -49,21 +49,33 @@ pub fn discover_connectors(custom_dir: Option<&Path>) -> Vec<AvailableConnector>
     merge_connectors(&custom)
 }
 
-/// The `.lua` files in `dir` as `(file stem, source)` pairs. A missing or
-/// unreadable directory, and any file that cannot be read, contributes nothing.
+/// The `.lua` files in `dir` as `(file stem, source)` pairs. The custom
+/// directory is optional, so a missing one contributes nothing silently; an
+/// unreadable directory or file also contributes nothing, but is logged so a
+/// connector that fails to appear can be traced.
 fn read_custom_sources(dir: &Path) -> Vec<(String, String)> {
     if !dir.is_dir() {
         return Vec::new();
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            tracing::warn!("Skipping custom connector dir {}: {e}", dir.display());
+            return Vec::new();
+        },
     };
     entries
-        .flatten()
+        .filter_map(|entry| {
+            entry
+                .map_err(|e| tracing::warn!("Skipping an entry in {}: {e}", dir.display()))
+                .ok()
+        })
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "lua"))
         .filter_map(|path| {
-            let source = std::fs::read_to_string(&path).ok()?;
+            let source = std::fs::read_to_string(&path)
+                .map_err(|e| tracing::warn!("Skipping connector {}: {e}", path.display()))
+                .ok()?;
             let stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())

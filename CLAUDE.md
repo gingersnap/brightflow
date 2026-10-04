@@ -46,7 +46,9 @@ refactor untouched code to match them.
    and LLM responses) into these types at a thin boundary that holds no
    business logic. API types generate the frontend's types
    (`brightflow-app/src/types/generated/`), so changing one changes the
-   frontend contract too.
+   frontend contract too. The one exception: the frontend trusts server JSON as
+   those generated types without a runtime parser, since both sides come from
+   the same Rust structs (the cast lives in `services/api/core.ts`).
 5. **Keep business logic pure.** Prefer taking values or `&` references and
    returning new values; to transform state, take `self` by value and return
    `Self`. `&mut self` on state a type owns is fine. Avoid `&mut` to borrowed

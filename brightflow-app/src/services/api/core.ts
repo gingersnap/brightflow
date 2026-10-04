@@ -89,6 +89,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   // Handle empty responses
   const text = await response.text();
+  /* Trusted as `T` without a runtime parse: response types are generated from
+     the same Rust structs the server serializes (CLAUDE.md, rule 4). */
   // oxlint-disable-next-line @typescript-eslint/no-unsafe-return -- JSON boundary: parse returns any
   return text ? JSON.parse(text) : null;
 }

@@ -180,7 +180,7 @@ pub async fn chat_with_backoff(
             return Err(err);
         };
         tokio::time::sleep(std::time::Duration::from_millis(
-            backoff.saturating_add(jitter_ms(backoff)),
+            backoff.saturating_add(jitter_ms(backoff, clock_seed())),
         ))
         .await;
     }
@@ -201,13 +201,18 @@ fn retry_backoff_ms(policy: &RetryPolicy, attempt: u32, err: &LlmError) -> Optio
     Some(policy.base_delay_ms.saturating_mul(1_u64 << exp))
 }
 
-/// Cheap decorrelated jitter in `[0, backoff/2]` without a rand dependency.
-fn jitter_ms(backoff: u64) -> u64 {
-    let half = (backoff / 2).max(1);
-    let nanos = std::time::SystemTime::now()
+/// Jitter in `[0, backoff/2)` (0 below a backoff of 2) drawn from `seed`.
+/// The seed is passed in so this stays deterministic; callers seed it from the
+/// clock, which is cheap decorrelation without a rand dependency.
+fn jitter_ms(backoff: u64, seed: u64) -> u64 {
+    seed % (backoff / 2).max(1)
+}
+
+/// The current clock's sub-second nanoseconds, as a jitter seed.
+fn clock_seed() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::from(d.subsec_nanos()));
-    nanos % half
+        .map_or(0, |d| u64::from(d.subsec_nanos()))
 }
 
 /// Minimal chat-completions client.
@@ -677,12 +682,12 @@ mod tests {
 
     #[test]
     fn jitter_stays_within_half_backoff() {
-        // Jitter is time-seeded so the exact value is not assertable, but the
-        // contract `[0, backoff/2]` (and 0 for backoff 0) is.
-        assert_eq!(jitter_ms(0), 0);
-        assert_eq!(jitter_ms(1), 0);
-        for backoff in [2, 100, 4000] {
-            assert!(jitter_ms(backoff) <= backoff / 2);
+        assert_eq!(jitter_ms(0, 12_345), 0);
+        assert_eq!(jitter_ms(1, 12_345), 0);
+        assert_eq!(jitter_ms(100, 7), 7);
+        assert_eq!(jitter_ms(100, 57), 7);
+        for seed in [0, 1, 49, 50, 999_999_999] {
+            assert!(jitter_ms(100, seed) < 50);
         }
     }
 
