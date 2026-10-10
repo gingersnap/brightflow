@@ -1,7 +1,7 @@
 [package]
 name = "brightflow-types"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "The contract between Longbow, Litehouse and the tools: logical types, the ingest declaration, the Ossie-shaped semantic model, Brightflow's extension vocabulary, and provenance. Types and validation only."
 
 [lib]

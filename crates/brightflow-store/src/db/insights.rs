@@ -81,7 +81,6 @@ impl StoreDb {
     /// Cap on retained runs per table (pruned on insert).
     const INSIGHT_RUNS_KEEP: i64 = 100;
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn insert_insight_run(
         &self,
         table_id: &str,

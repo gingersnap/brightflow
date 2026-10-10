@@ -14,7 +14,6 @@ impl StoreDb {
 
     /// Insert a new action-log entry. Returns None when the request_id was
     /// already recorded (idempotent replay — fetch the existing row instead).
-    #[allow(clippy::too_many_arguments)]
     pub async fn insert_action(
         &self,
         request_id: &str,

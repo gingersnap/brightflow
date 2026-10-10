@@ -468,7 +468,6 @@ impl StoreDb {
         Ok(out)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_cached_cell(
         &self,
         function_id: &str,

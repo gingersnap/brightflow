@@ -76,7 +76,6 @@ impl StoreDb {
     /// Define (or touch) a vocabulary entry. Idempotent on
     /// (table, kind, parent, name): re-defining keeps the id and only fills
     /// a missing description.
-    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_taxonomy_category(
         &self,
         table_id: &str,

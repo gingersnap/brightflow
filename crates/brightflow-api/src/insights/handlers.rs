@@ -296,7 +296,6 @@ fn record_shown_insights(state: &AppState, table_id: Option<String>, tree: &Anal
 
 /// Fire-and-forget: persist an `insight_runs` row and push the
 /// `insightsComputed` WS event.
-#[allow(clippy::too_many_arguments)]
 fn record_insight_run(
     state: &AppState,
     table_id: Option<String>,

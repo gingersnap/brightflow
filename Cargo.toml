@@ -2,6 +2,10 @@
 members = ["crates/*"]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
 [workspace.dependencies]
 # Shared dependencies for consistency
 serde = { version = "1.0", features = ["derive"] }
@@ -25,7 +29,6 @@ tikv-jemallocator = "0.6"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
-missing_docs = "allow"  # Enable later when adding documentation
 rust_2018_idioms = { level = "warn", priority = -1 }
 future_incompatible = { level = "warn", priority = -1 }
 unused_must_use = "deny"

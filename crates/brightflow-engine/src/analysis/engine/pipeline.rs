@@ -467,7 +467,7 @@ impl AnalysisEngine {
         })
     }
 
-    #[allow(clippy::too_many_arguments, clippy::unused_self)]
+    #[allow(clippy::unused_self)]
     fn add_frame_root(
         &self,
         tree: &mut AnalysisTree,

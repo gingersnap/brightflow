@@ -1303,7 +1303,6 @@ fn drop_stale_columns(df: DataFrame, names: &[String]) -> PolarsResult<DataFrame
 /// Full/incremental run driver: execute all cells, materialize, finish the
 /// run row. Spawned as an aborted-on-cancel task; the abort handle lives in
 /// `state.enrichment_jobs`.
-#[allow(clippy::too_many_arguments)]
 pub async fn execute_full_run(
     state: AppState,
     run_id: String,
@@ -1345,7 +1344,6 @@ pub async fn execute_full_run(
     crate::jobs::emit_enrichment_job(&state, &run_id).await;
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn drive_run(
     state: &AppState,
     run_id: &str,
