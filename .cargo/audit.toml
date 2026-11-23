@@ -17,15 +17,6 @@
 
 [advisories]
 ignore = [
-  # RUSTSEC-2023-0071 — rsa: Marvin Attack, key recovery via timing sidechannel.
-  # No fixed version exists upstream.
-  # Not reachable: rsa enters only through sqlx-mysql, and `cargo tree -i sqlx-mysql`
-  # (and `-i rsa`, both with --target all) print "nothing to print" — neither crate is in
-  # the resolved build graph. This is a Cargo.lock ghost from sqlx's feature union.
-  # RECHECK IF: a MySQL feature is ever enabled on sqlx, or `cargo tree -i rsa` starts
-  # returning a path.
-  "RUSTSEC-2023-0071",
-
   # RUSTSEC-2026-0194 — quick-xml: quadratic run time checking a start tag for duplicate
   # attribute names.
   # RUSTSEC-2026-0195 — quick-xml: unbounded namespace-declaration allocation in NsReader
